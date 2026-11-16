@@ -1,7 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamTask, Teammate } from "@galahad/core/team";
 import { TeamHarness } from "@galahad/core/team";
-import { engramLine, HANDLE_PATTERN, HARNESS, harnessNote, landingHash, removalPlan, takenHandles, taskDependencies, teamHash, teamLocation, teamSpeaker, teammateId, teammateMaker, teammateState } from "./team.ts";
+import { engramLine, HANDLE_PATTERN, HARNESS, harnessNote, knightRoleLine, knightRoles, landingHash, removalPlan, takenHandles, taskDependencies, teamHash, teamLocation, teamSpeaker, teammateId, teammateMaker, teammateState } from "./team.ts";
+
+describe("the role a knight works on", () => {
+  test("offered: the roles for knights, engineer first, and the one it has now; never the reviewer or a tool's", () => {
+    const roster = { planner: { models: ["a/p"], forKnights: true }, engineer: { models: ["a/e"], forKnights: true }, reviewer: { models: ["a/r"], forKnights: false }, swift: { models: [], forKnights: true }, eyes: { models: ["a/v"], forKnights: false }, frontend: { models: ["a/f"], forKnights: true } };
+    expect(knightRoles(roster)).toEqual(["engineer", "planner", "swift", "frontend"]);
+    expect(knightRoles(roster, "reviewer")).toEqual(["engineer", "planner", "swift", "frontend", "reviewer"]);
+    // An older node says nothing of which are for knights: the usual four, then every other, as before.
+    expect(knightRoles({ engineer: { models: [] }, fold: { models: ["a/x"] } }, "made-up")).toEqual(["engineer", "planner", "reviewer", "swift", "fold", "made-up"]);
+  });
+
+  test("what it works on, in a line", () => {
+    expect(knightRoleLine("frontend", { models: ["orcarouter/anthropic/claude-opus-5.5", "deepseek/deepseek-v4-pro"] })).toBe("Its work runs on orcarouter/anthropic/claude-opus-5.5 (then 1 more); its plan and the independent review stay the planner's and the reviewer's");
+    expect(knightRoleLine("swift", { models: [] })).toBe("swift has no model yet: put one on it on the Models page");
+    expect(knightRoleLine("made-up", undefined)).toBe("made-up isn't on your roster: the engineer's models do its work");
+    expect(knightRoleLine("reviewer", { models: ["a/r"], forKnights: false })).toBe("It talks on the reviewer's models; its tasks' work runs on the engineer's, since the reviewer never does the work it checks");
+  });
+});
 
 const person: Teammate = { id: "ada", name: "Ada", instructions: "", role: "engineer", harness: "native", enabled: true, dailyTurns: 4, turnsToday: 1, memory: "", repository: null, workspaceNode: null, workspace: null, createdAt: 1, updatedAt: 1 };
 const task: TeamTask = { id: "task-abcdefghijkl", room: "work", assignee: "ada", title: "Check inputs", goal: "Check", dependsOn: [], gates: [], status: "done", verified: true, progress: "", output: "", error: null, chainId: "chain", createdAt: 1, updatedAt: 1 };

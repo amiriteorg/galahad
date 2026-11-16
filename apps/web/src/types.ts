@@ -34,6 +34,10 @@ export interface RoleSpec {
   models: string[];
   configured: boolean;
   description: string;
+  /** A role you made: yours to remove (absent from an older node). */
+  custom?: boolean;
+  /** A knight may work on it: the planner, engineer and swift roles and yours (absent from an older node). */
+  forKnights?: boolean;
 }
 
 export type ActionClass = "read" | "create" | "modify" | "outward" | "delete" | "forbidden";

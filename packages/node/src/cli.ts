@@ -108,7 +108,7 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   run [--providers a,b] -- <cmd>  run a tool (opencode, claude, codex…) on a scoped gateway token
   provider add <id> [--preset p] [--base-url url] [--kind openai|anthropic] [--secret name]
   provider list | provider models <id> | provider presets
-  roster | roster set <role> <provider/model>... | roster check <provider/model>... [--only format,reads,places]
+  roster | roster set <role> <provider/model>... | roster rm <role> | roster check <provider/model>... [--only format,reads,places]
   ask [--role planner] [--model provider/model] [--project id] [--chat id] [--temp] [--detach] <prompt>
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one.
                                   The turn runs on the node: Ctrl-C stops it; a terminal that goes away stops
@@ -944,6 +944,13 @@ Next:
         if (!rest[0] || rest.length < 2) fail("usage: galahad roster set <role> <provider/model>...");
         await admin.call("setRoster", { role: rest[0], models: rest.slice(1) });
       }
+      if (sub === "rm") {
+        // A role you made goes (not while a knight works on it: the node says which); a built-in one goes back to its defaults.
+        if (rest.length !== 1) fail("usage: galahad roster rm <role>");
+        const { roster } = await admin.call<{ roster: Record<string, unknown> }>("setRoster", { role: rest[0], models: [] });
+        console.log(roster[rest[0]!] ? `${rest[0]} is back to its default models.` : `${rest[0]} is removed.`);
+        return;
+      }
       if (sub === "check") {
         // What each model can do, measured: the quest loop's format, reading a screen, placing a click (about eight calls each).
         if (!rest.length) fail("usage: galahad roster check <provider/model>... [--only format,reads,places]");
@@ -955,7 +962,7 @@ Next:
         }
         return;
       }
-      const { roster, spent = [], checks = {} } = await admin.call<{ roster: Record<string, { models: string[]; configured: boolean }>; spent?: { provider: string; until: number }[]; checks?: Record<string, ModelCheck> }>("roster");
+      const { roster, spent = [], checks = {} } = await admin.call<{ roster: Record<string, { models: string[]; configured: boolean; custom?: boolean }>; spent?: { provider: string; until: number }[]; checks?: Record<string, ModelCheck> }>("roster");
       const spentUntilOf = (ref: string) => spent.find((w) => ref.startsWith(`${w.provider}/`));
       for (const [role, spec] of Object.entries(roster)) {
         // (A coding plan's model does his coding and the knights': he passes it over for anything else.)
@@ -963,7 +970,7 @@ Next:
           const window = spentUntilOf(ref);
           return [ref, onPlan(ref) ? dim("(coding only)") : "", window ? dim(`(spent until ${new Date(window.until).toISOString().slice(11, 16)} UTC)`) : ""].filter(Boolean).join(" ");
         };
-        console.log(`  ${role.padEnd(10)} ${spec.models.map(shown).join(" → ")}${spec.configured ? "" : dim("  (default)")}`);
+        console.log(`  ${role.padEnd(10)} ${spec.models.map(shown).join(" → ")}${spec.configured ? "" : dim("  (default)")}${spec.custom ? dim("  (a role you made)") : ""}`);
       }
       for (const window of spent) console.log(dim(`  ${window.provider}: its allowance is spent until ${new Date(window.until).toISOString().slice(11, 16)} UTC; its models are passed over until then, and the next on each role answers.`));
       const checked = Object.entries(checks);

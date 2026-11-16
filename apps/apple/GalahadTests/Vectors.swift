@@ -97,10 +97,14 @@ struct Vectors: Decodable {
         }
         struct Profile: Decodable { let look: String; let temperament: String; let profile: AvatarProfile }
         struct Temperament: Decodable { let id: String; let avatar: JSONValue?; let temperament: String }
+        struct RoleCase: Decodable { let roster: [String: Knights.RoleInfo]; let current: String?; let roles: [String] }
+        struct RoleLine: Decodable { let role: String; let spec: Knights.RoleInfo?; let line: String }
         let handles: [Handle]
         let removals: [Removal]
         let profiles: [Profile]
         let temperaments: [Temperament]
+        let roles: [RoleCase]
+        let roleLines: [RoleLine]
     }
 
     struct KeyCases: Decodable {

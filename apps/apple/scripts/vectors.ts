@@ -24,7 +24,7 @@ import { connectorState } from "../../web/src/lib/connector-state.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
-import { removalPlan, teamSpeaker, teammateId } from "../../web/src/lib/team.ts";
+import { knightRoleLine, knightRoles, removalPlan, teamSpeaker, teammateId } from "../../web/src/lib/team.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, keptDiffers, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
 
@@ -311,6 +311,11 @@ const rooms = {
 };
 
 // ---- seating and keeping knights (the PWA's forms) --------------------------------------------------------------------
+const knightRoster = {
+  reviewer: { models: ["a/r"], forKnights: false }, frontend: { models: ["orcarouter/anthropic/claude-opus-5.5", "deepseek/deepseek-v4-pro"], forKnights: true },
+  planner: { models: ["a/p"], forKnights: true }, eyes: { models: ["a/v"], forKnights: false }, engineer: { models: ["a/e"], forKnights: true },
+  swift: { models: [], forKnights: true }, "cheap-coder": { models: ["a/c"], forKnights: true }, fold: { models: ["a/x"], forKnights: false },
+};
 const knightForms = {
   handles: [
     ["Ada", []], ["Owner", []], ["Galahad", []], ["System", ["system-2"]], ["Áda", ["ada", "ada-2"]], ["123", []], ["研究", []],
@@ -325,6 +330,21 @@ const knightForms = {
     { workspace: false, workspaceNode: true, maySandbox: true },
     { workspace: false, workspaceNode: true, maySandbox: false },
   ].map((c) => ({ ...c, id: "ada", name: "Ada", plan: removalPlan({ id: "ada", name: "Ada", workspace: c.workspace ? { node: "n1", id: "0123456789" } : null, workspaceNode: c.workspaceNode ? "n1" : null }, { sandbox: c.maySandbox }) })),
+  // The roles a knight may be given, from a roster that says which are for knights, and from an older one that doesn't.
+  roles: [
+    { roster: knightRoster },
+    { roster: knightRoster, current: "reviewer" },
+    { roster: knightRoster, current: "frontend" },
+    { roster: { swift: { models: [] }, engineer: { models: ["a/e"] }, fold: { models: ["a/x"] }, Odd: { models: ["a/o"] } }, current: "made-up" },
+    { roster: {} },
+  ].map((c) => ({ ...c, roles: knightRoles(c.roster, c.current) })),
+  roleLines: [
+    { role: "frontend", spec: knightRoster.frontend },
+    { role: "engineer", spec: knightRoster.engineer },
+    { role: "swift", spec: knightRoster.swift },
+    { role: "reviewer", spec: knightRoster.reviewer },
+    { role: "made-up" },
+  ].map((c) => ({ ...c, line: knightRoleLine(c.role, c.spec) })),
   profiles: core.AVATAR_LOOKS.flatMap((look) => core.AVATAR_TEMPERAMENTS.map((temperament) => ({ look: look.id, temperament, profile: core.lookProfile(look.id, temperament) }))),
   temperaments: [
     { id: "ada" }, { id: "bors" }, { id: "x" }, { id: "knight-123" }, { id: "percival-2" },

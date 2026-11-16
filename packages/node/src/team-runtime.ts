@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { addUsage, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
-import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
+import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import type { TeamRunContext } from "./team.ts";
 
@@ -11,7 +11,7 @@ export interface TeamRuntimeDeps {
   exec(teammate: Teammate, command: string, timeout: number, signal: AbortSignal): Promise<ExecResult>;
   prepare(teammate: Teammate, signal: AbortSignal): Promise<void>;
   tools(teammate: Teammate, signal: AbortSignal): ChatTools;
-  /** The engineer's roster models this knight's harness can run on through the gateway, from its VM. */
+  /** The roster models of this knight's role that its harness can run on through the gateway, from its VM. */
   models(teammate: Teammate): AgentModel[];
   /** When there are none: roster models it could speak to, on providers its VM's gateway token doesn't cover. */
   modelsOutside?(teammate: Teammate): AgentModel[];
@@ -150,14 +150,15 @@ export interface HarnessReadiness {
 }
 
 /**
- * Decided from what the harness's own check said in that VM (`probe`) and the engineer's roster models that
- * speak its API and that this VM's gateway token covers (`roster`). A vendor's tool that is signed in there runs
- * on that sign-in first, and the roster's models are its fallbacks through the gateway; one that isn't runs on
- * the roster alone. Galahad never installs a harness or signs one in: with nothing to run on, the reason says
- * what the owner can do. `outside`: roster models it could speak to, on providers this VM's token doesn't cover
- * (a VM's token covers the providers that had a key when the VM was made).
+ * Decided from what the harness's own check said in that VM (`probe`) and the roster models of the knight's role
+ * (`role`: the engineer's unless you gave it another) that speak its API and that this VM's gateway token covers
+ * (`roster`). A vendor's tool that is signed in there runs on that sign-in first, and the roster's models are its
+ * fallbacks through the gateway; one that isn't runs on the roster alone. Galahad never installs a harness or signs
+ * one in: with nothing to run on, the reason says what the owner can do. `outside`: roster models it could speak
+ * to, on providers this VM's token doesn't cover (a VM's token covers the providers that had a key when the VM was made).
  */
-export function harnessReadiness(driver: AgentDriver, probe: Pick<ExecResult, "exitCode" | "stdout">, roster: readonly AgentModel[], outside: readonly AgentModel[] = []): HarnessReadiness {
+export function harnessReadiness(driver: AgentDriver, probe: Pick<ExecResult, "exitCode" | "stdout">, roster: readonly AgentModel[], outside: readonly AgentModel[] = [], role = "engineer"): HarnessReadiness {
+  const on = role === "engineer" ? "the engineer's roster" : `the ${role} role`;
   if (probe.exitCode !== 0) return { ready: false, models: [], reason: `Install ${driver.title} in this knight's VM (Galahad never installs or signs in a harness)` };
   const gateway = roster[0] ? `${agentModelName(roster[0])} through the gateway` : null;
   // (What the VM printed is data: the driver reads one flag and one known word from it.)
@@ -165,8 +166,8 @@ export function harnessReadiness(driver: AgentDriver, probe: Pick<ExecResult, "e
   if (told?.signedIn) return { ready: true, models: [OWN_SIGN_IN, ...roster], on: `its own sign-in in this VM${told.method ? ` (${told.method})` : ""}${gateway ? `, then ${gateway}` : ""}` };
   if (gateway) return { ready: true, models: [...roster], on: gateway };
   const uncovered = outside[0] ? `. ${agentModelName(outside[0])} is on the roster, but this VM's gateway token covers only the providers that had a key when the VM was made` : "";
-  if (driver.signIn) return { ready: false, models: [], reason: `Sign ${driver.title} in in this knight's VM (${driver.signIn.login}), or put ${driver.signIn.roster} on the engineer's roster${uncovered}` };
-  return { ready: false, models: [], reason: `Put a keyed ${driver.kind === "anthropic" ? "Anthropic-API" : "OpenAI-compatible"} model on the engineer's roster${uncovered}` };
+  if (driver.signIn) return { ready: false, models: [], reason: `Sign ${driver.title} in in this knight's VM (${driver.signIn.login}), or put ${driver.signIn.roster} on ${on}${uncovered}` };
+  return { ready: false, models: [], reason: `Put a keyed ${driver.kind === "anthropic" ? "Anthropic-API" : "OpenAI-compatible"} model on ${on}${uncovered}` };
 }
 
 /** A task's progress line for one step of its run. Each starts with its step's mark, which the knight's avatar reads (taskStep). */
@@ -407,7 +408,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         if (probe.exitCode !== 0 && !answered) throw new Error(`${teammate.harness} is not ready in this VM: ${redact(probe.stderr || probe.stdout).slice(0, 400)}`);
         // Which credential this task runs on is decided here, as it starts: the tool's own sign-in in this VM
         // when it says it has one, then the roster's models through the gateway.
-        const ready = harnessReadiness(driver, probe, deps.models(teammate), deps.modelsOutside?.(teammate));
+        const ready = harnessReadiness(driver, probe, deps.models(teammate), deps.modelsOutside?.(teammate), workRole(teammate.role));
         if (!ready.ready) throw new Error(`${driver.title} can't work in this VM yet: ${ready.reason}`);
         const saved = (await exec(`cat ${quote(sessionFile)} 2>/dev/null || true`, 10)).stdout.trim();
         agent = { driver, models: ready.models, minutes: 12, workdir: root, ...(/^[A-Za-z0-9_.:-]{1,160}$/.test(saved) ? { session: saved } : {}) };
@@ -418,7 +419,9 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const ownNotes = data("Your notes", teammate.memory);
       const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
       const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: TEAM_TASK_COMMANDS, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, escalate: true, ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
-        ask: (role, messages, turn) => ask(teammate, role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes, (model, usage) => addUsage(spent, role, model, usage), turn?.loop),
+        // The work is done on the models of the role you gave this knight (workRole: never the reviewer's); its plan
+        // and the independent review stay the planner's and the reviewer's, whoever did the work.
+        ask: (role, messages, turn) => ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes, (model, usage) => addUsage(spent, role, model, usage), turn?.loop),
         exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
         stopAgent: () => deps.stopWorker(teammate),
         agentSession: async (id) => {

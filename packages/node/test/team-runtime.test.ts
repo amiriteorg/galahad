@@ -243,6 +243,25 @@ test("a task comes back with what it came to, as the runner counted it: its time
   expect(gave.record!.spent.every((line) => line.unknown === line.calls && line.input === 0)).toBe(true);
 });
 
+test("a knight's work runs on the models of the role you gave it; its plan and the independent review stay the planner's and the reviewer's", async () => {
+  const knight: Teammate = { ...member, role: "frontend" };
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], { teammate: () => knight });
+  f.setRoster("frontend", ["local/front"]);
+  const outcome = await f.runtime.executeTask(knight, task, f.context);
+  expect(outcome.verified).toBe(true);
+  expect(f.bodies.map((body) => body.model)).toEqual(["fake", "front", "front", "fake"]);
+  expect(outcome.record!.spent.find((line) => line.role === "engineer")).toMatchObject({ model: "local/front", calls: 2 });
+});
+
+test("a knight on the reviewer's role talks on it, but its work is the engineer's: the reviewer never does the work it checks", async () => {
+  const knight: Teammate = { ...member, role: "reviewer" };
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], { teammate: () => knight });
+  f.setRoster("reviewer", ["local/critic"]);
+  const outcome = await f.runtime.executeTask(knight, task, f.context);
+  expect(outcome.verified).toBe(true);
+  expect(f.bodies.map((body) => body.model)).toEqual(["fake", "fake", "fake", "critic"]);
+});
+
 test("a knight's reply with no command to run is shown as it happens, is not counted as a command, and three in a row end the task saying what was sent", async () => {
   const odd = "Listing first.\n```console\n$ ls -la\n```";
   const progress: string[] = [];
@@ -395,6 +414,9 @@ test("what a harness would run on: its own sign-in first, then the roster's mode
   expect(harnessReadiness(opencode, { exitCode: 0, stdout: "2.2.6" }, [sol])).toEqual({ ready: true, models: [sol], on: "orcarouter/gpt-6.1-sol through the gateway" });
   expect(harnessReadiness(opencode, { exitCode: 0, stdout: "2.2.6" }, [])).toEqual({ ready: false, models: [], reason: "Put a keyed OpenAI-compatible model on the engineer's roster" });
   expect(harnessReadiness(opencode, { exitCode: 127, stdout: "" }, [sol]).reason).toBe("Install OpenCode in this knight's VM (Galahad never installs or signs in a harness)");
+  // A knight on a role of its own is told of that role's models, not the engineer's.
+  expect(harnessReadiness(opencode, { exitCode: 0, stdout: "2.2.6" }, [], [], "frontend").reason).toBe("Put a keyed OpenAI-compatible model on the frontend role");
+  expect(harnessReadiness(claude, ok({ signedIn: false }), [], [], "frontend").reason).toBe("Sign Claude Code in in this knight's VM (claude auth login), or put an Anthropic-API model on the frontend role");
 });
 
 /** A knight on a vendor's tool: the VM answers the status question as told, then plays one finished run. */

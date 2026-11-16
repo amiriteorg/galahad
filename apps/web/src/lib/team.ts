@@ -14,6 +14,37 @@ export interface HarnessStatus { id: string; ready: boolean; on?: string; reason
 /** The line under a harness's name: what to do so that it can work, or what it would run on. */
 export const harnessNote = (harness: HarnessStatus): string | null => harness.reason ?? (harness.on ? `Runs on ${harness.on}` : null);
 
+/** A roster role, as far as a knight's editor needs it (`forKnights` is absent from an older node). */
+export interface KnightRoleSpec { models: string[]; forKnights?: boolean }
+
+const BUILT_IN_ROLES = ["engineer", "planner", "reviewer", "swift"];
+
+/**
+ * The roles a knight may be given, engineer first: the roster's that are for knights (the planner, engineer and swift
+ * roles, then the ones you made by name; never the reviewer, which checks its work, or a tool's), and the one it has
+ * now, whatever that is. An older node says nothing of which are for knights: then the usual four and every other.
+ * (In an order of its own, not the roster's: the iPhone app's twin, Knights.roles, reads the roster unordered.)
+ */
+export function knightRoles(roster: Record<string, KnightRoleSpec>, current?: string): string[] {
+  const told = Object.values(roster).some((spec) => spec.forKnights !== undefined);
+  const theirs = (role: string): boolean => !told || Boolean(roster[role]?.forKnights);
+  const builtIn = told ? ["engineer", "planner", "swift"].filter((role) => role === "engineer" || theirs(role)) : BUILT_IN_ROLES;
+  const others = Object.keys(roster).filter((role) => !BUILT_IN_ROLES.includes(role) && theirs(role)).sort();
+  return [...new Set([...builtIn, ...others, ...(current ? [current] : [])])];
+}
+
+/** What a knight on this role works on, in a line: the first model and how many follow it, or that none answers. */
+export function knightRoleLine(role: string, spec: KnightRoleSpec | undefined): string {
+  // (A role the roster doesn't have answers with the engineer's models: brain's roleModels.)
+  if (!spec) return `${role} isn't on your roster: the engineer's models do its work`;
+  // (The reviewer's role, or a tool's, never does a task's work: brain's workRole.)
+  if (spec.forKnights === false) return `It talks on the ${role}'s models; its tasks' work runs on the engineer's, since the reviewer never does the work it checks`;
+  const models = spec.models;
+  const first = models[0];
+  if (!first) return `${role} has no model yet: put one on it on the Models page`;
+  return `Its work runs on ${first}${models.length > 1 ? ` (then ${models.length - 1} more)` : ""}; its plan and the independent review stay the planner's and the reviewer's`;
+}
+
 /**
  * The notes store (Engram) in a knight's Workspace, in a line: the node's switch, and whether this VM has the
  * pinned binary. A store that isn't in the VM is never called on for it. Null: the node says nothing of one.

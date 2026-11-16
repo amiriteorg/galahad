@@ -165,11 +165,10 @@ import Observation
     }
 
     /// The model roles your Models page has, each with whether a model answers for it (nil: this device may not read them).
-    func roles() async -> [String: Bool]? {
-        struct Role: Decodable { let models: [JSONValue]? }
-        struct Roster: Decodable { let roster: [String: Role] }
+    func roles() async -> [String: Knights.RoleInfo]? {
+        struct Roster: Decodable { let roster: [String: Knights.RoleInfo] }
         guard can("mind:read"), let roster = try? await client.get("/api/roster", as: Roster.self).roster else { return nil }
-        return roster.mapValues { !($0.models ?? []).isEmpty }
+        return roster
     }
 
     /// The lists the node answers with, each under its own name.

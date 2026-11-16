@@ -18,6 +18,8 @@ import { openAddKey } from "./vault.ts";
  */
 
 const NAME_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+/** A role you make: a name a knight can carry (core's TeammateRole). */
+const ROLE_NAME_RE = /^[a-z][a-z0-9-]{0,39}$/;
 const REF_RE = /^[^/\s]+\/\S+$/;
 const ROLE_ICON: Record<string, IconName> = { planner: "compass", engineer: "code", reviewer: "review", swift: "zap" };
 
@@ -54,7 +56,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
       h(
         "div",
         { class: "grow" },
-        h("div", { class: "row", style: "gap:6px" }, h("span", { class: "strong" }, role), spec.configured ? null : badge("default", "neutral")),
+        h("div", { class: "row", style: "gap:6px" }, h("span", { class: "strong" }, role), spec.custom ? badge("yours", "accent") : spec.configured ? null : badge("default", "neutral")),
         h("div", { class: "tiny subtle ellipsis" }, spec.description),
         h("div", { class: "row", style: "margin-top:4px;min-width:0" }, chain),
       ),
@@ -62,12 +64,18 @@ export const modelsView: View = (root, ctx, { scope }) => {
     );
   }
 
-  /** The role's models in order, in a sheet: move, remove, add, then Save. */
-  function openRole(role: string, spec: RoleSpec): void {
+  /**
+   * The role's models in order, in a sheet: move, remove, add, then Save. Without a role, a new one of yours: its name
+   * first. A role you made can be removed here (the node refuses while a knight works on it, and says which).
+   */
+  function openRole(existing?: string, spec: RoleSpec = { models: [], configured: false, description: "", custom: true, forKnights: true }): void {
+    let role = existing ?? "";
     let models = [...spec.models];
-    const list = h("div", { class: "reorder", role: "list", "aria-label": `Models for ${role}` });
-    const input = h("input", { class: "input mono", type: "text", placeholder: "provider/model", list: knownModels.id, autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": `Add a model to ${role}` });
-    const save = button("Save", { variant: "primary", icon: "check" });
+    const name = existing ? null : h("input", { class: "input mono", type: "text", placeholder: "frontend", maxlength: 40, autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": "The role's name" });
+    const list = h("div", { class: "reorder", role: "list", "aria-label": existing ? `Models for ${existing}` : "Models for the new role" });
+    const input = h("input", { class: "input mono", type: "text", placeholder: "provider/model", list: knownModels.id, autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": existing ? `Add a model to ${existing}` : "Add a model to the new role" });
+    const save = button(existing ? "Save" : "Make role", { variant: "primary", icon: "check" });
+    const removeRole = existing && spec.custom ? button("Remove role", { variant: "danger", icon: "trash" }) : null;
 
     function render(focus?: string): void {
       // (Which of them answer, and in what order: his own. A coding plan's do coding, in their own order.)
@@ -116,22 +124,45 @@ export const modelsView: View = (root, ctx, { scope }) => {
     }
     save.addEventListener("click", () =>
       void busy(save, async () => {
+        if (name) {
+          role = name.value.trim();
+          // A knight carries it by this name: lowercase letters, digits and hyphens, and not one the roster has.
+          if (!ROLE_NAME_RE.test(role)) return void toast("Name it in lowercase letters, digits and hyphens", { tone: "warn", description: "Starting with a letter, at most 40: frontend, cheap-coder." });
+          if (roster[role]) return void toast(`There is a ${role} role already`, { tone: "warn", description: "Change its models from its own row." });
+          if (!models.length) return void toast("Give it a model", { tone: "warn", description: "A role with no model can't answer." });
+        }
         try {
           const result = await ctx.api.post<{ roster: Record<string, RoleSpec> }>("/api/roster", { role, models });
           roster = result.roster;
           sheet.close();
           renderRoster();
-          toast(`${role} updated on every node`, { tone: "ok" });
+          toast(existing ? `${role} updated on every node` : `${role} made: give it to a knight from its editor`, { tone: "ok" });
         } catch (error) {
           toast("Couldn't save the roster", { tone: "error", description: errorMessage(error) });
         }
       }),
     );
+    removeRole?.addEventListener("click", () =>
+      void busy(removeRole, async () => {
+        if (!(await confirmAction({ title: `Remove ${role}?`, body: [h("p", {}, "Its models stay where else you hired them. A knight that works on it must be given another role first.")], confirmLabel: "Remove" }))) return;
+        try {
+          roster = (await ctx.api.post<{ roster: Record<string, RoleSpec> }>("/api/roster", { role, models: [] })).roster;
+          sheet.close();
+          renderRoster();
+          toast(`${role} removed`, { tone: "info" });
+        } catch (error) {
+          toast(`Couldn't remove ${role}`, { tone: "error", description: errorMessage(error) });
+        }
+      }),
+    );
     render();
     const sheet = openSheet({
-      title: `Models for ${role}`,
-      description: "The first answers; the rest are fallbacks, tried in order. provider/* means whatever that local runtime serves.",
+      title: existing ? `Models for ${existing}` : "A role of yours",
+      description: existing
+        ? "The first answers; the rest are fallbacks, tried in order. provider/* means whatever that local runtime serves."
+        : "A name, and the models that answer for it in order. A knight you give it to does its work on them; its plan and the independent review stay the planner's and the reviewer's.",
       body: [
+        name ? field("Name", name, { hint: "Lowercase letters, digits and hyphens: frontend, cheap-coder." }) : null,
         list,
         h(
           "form",
@@ -146,9 +177,9 @@ export const modelsView: View = (root, ctx, { scope }) => {
           button("Add", { type: "submit", icon: "plus" }),
         ),
       ],
-      footer: [button("Cancel", { onClick: () => sheet.close() }), save],
+      footer: [removeRole, button("Cancel", { onClick: () => sheet.close() }), save],
       // On a touch screen the keyboard waits until you tap the field.
-      initialFocus: () => (matchMedia("(pointer: coarse)").matches ? (list.querySelector<HTMLElement>("button:not(:disabled)") ?? input) : input),
+      initialFocus: () => (matchMedia("(pointer: coarse)").matches ? (list.querySelector<HTMLElement>("button:not(:disabled)") ?? input) : (name ?? input)),
     });
   }
 
@@ -268,7 +299,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
       { class: "page" },
       pageHead("Models", "Hired by role, not by vendor. The roster is shared by every node; keys stay sealed in the vault.", write ? button("Add provider", { icon: "plus", onClick: () => openAddProvider(ctx, presets, refresh) }) : null),
       write ? null : callout("quiet", "This device can see the roster but not change it (no brain:write scope)."),
-      section("Roster", {}, rosterBox),
+      section("Roster", { actions: write ? button("New role", { size: "sm", icon: "plus", onClick: () => openRole() }) : null }, rosterBox),
       section("Providers", {}, providersBox),
       cost.el,
       knownModels,

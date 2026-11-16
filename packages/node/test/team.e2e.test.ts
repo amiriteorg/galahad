@@ -157,3 +157,18 @@ test("real API: given to the Roundtable, a task goes to the knight best suited t
   expect((await request("giveTeamTask", { goal }, token)).status).toBe(403);
 });
 
+
+test("real API: a role you made is yours to remove, but not while a knight works on it: you're told which", async () => {
+  await api("setRoster", { role: "frontend", models: ["stand-in/front"] });
+  await api("saveTeammate", { id: "rolly", name: "Rolly", role: "frontend" });
+  expect((await api("roster")).roster.frontend).toMatchObject({ models: ["stand-in/front"], custom: true, forKnights: true });
+  const refused = await request("setRoster", { role: "frontend", models: [] });
+  expect(refused.status).toBe(409);
+  expect((await refused.json()).error).toBe("Rolly works on frontend: give it another role first");
+  expect((await api("roster")).roster.frontend).toMatchObject({ models: ["stand-in/front"] });
+  // Given another, the role is yours to remove; a built-in one emptied goes back to its defaults instead.
+  await api("saveTeammate", { id: "rolly", name: "Rolly", role: "engineer" });
+  expect((await api("setRoster", { role: "frontend", models: [] })).roster.frontend).toBeUndefined();
+  expect((await api("setRoster", { role: "swift", models: [] })).roster.swift).toMatchObject({ configured: false, custom: false });
+  await api("removeTeammate", { id: "rolly" });
+});

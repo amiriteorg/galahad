@@ -221,6 +221,10 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 
 `<provider>/*` resolves to the first model that runtime serves on this node (never an embedding model: a runtime serving the archive's embedder isn't picked to chat). The embedder is different: its first model is the archive's, with no fallback, because vectors from different models can't be compared.
 
+**Roles you make.** Any name a knight can carry (lowercase letters, digits and hyphens) becomes a role once you hire models for it: `galahad roster set frontend <provider/model>…`, or **New role** on the Models page. `galahad roster rm <role>` (or **Remove role**) removes one you made, refused while a knight works on it (the node names which); a built-in role emptied goes back to its defaults. A chore's role (`fold`, §8) is hired the same way. A role nobody hired (one a knight was made with, or one since removed) answers with the engineer's models as you set them. The roster says of each role whether it is yours (`custom`) and whether a knight may work on it (`forKnights`: the planner, engineer and swift roles and yours; never the reviewer, which checks its work, or a tool's).
+
+**A knight's models** are its role's: its conversations, the work of its tasks, and what its harness runs on through the gateway. A task's plan and its independent review stay the planner's and the reviewer's, whoever does the work. A knight on the reviewer's role, or a tool's, talks on it while its tasks' work runs on the engineer's (`workRole`): the reviewer never does the work it checks ([ROUNDTABLE](ROUNDTABLE.md#models-and-engineering-harnesses)).
+
 **Provider presets:**
 
 | Preset | Kind | Base URL |

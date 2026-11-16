@@ -20,7 +20,7 @@ struct KnightEditor: View {
     @State private var role: String
     @State private var dailyTurns: Int
     @State private var enabled: Bool
-    @State private var roles: [String: Bool]?
+    @State private var roles: [String: Knights.RoleInfo]?
     @State private var working = false
     @State private var problem: String?
 
@@ -141,14 +141,15 @@ struct KnightEditor: View {
                         ForEach(Knights.harnesses, id: \.id) { each in Text(each.name).tag(each.id) }
                     }
                     Picker("Model role", selection: $role) {
-                        ForEach(Knights.roles(known: (roles ?? [:]).keys.sorted(), current: existing?.role), id: \.self) { each in
-                            Text(roles?[each] == false ? "\(each) · no model yet" : each).tag(each)
+                        ForEach(Knights.roles(roster: roles ?? [:], current: existing?.role), id: \.self) { each in
+                            Text(roles?[each]?.models.isEmpty == true ? "\(each) · no model yet" : each).tag(each)
                         }
                     }
                 } header: {
                     Text("How it works")
                 } footer: {
-                    Text("Choosing a harness doesn't install it or sign it in: that is done in the knight's VM. The role picks its models from your Models settings.")
+                    // (A device that may not read the roster is told only where the role's models come from.)
+                    Text("Choosing a harness doesn't install it or sign it in: that is done in the knight's VM. \(roles.map { Knights.roleLine(role: role, spec: $0[role]) + "." } ?? "The role picks its models from your Models settings.")")
                 }
 
                 Section {

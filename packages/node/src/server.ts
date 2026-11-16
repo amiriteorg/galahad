@@ -93,6 +93,8 @@ import {
   chooseAgentModels,
   engramFound,
   roleModels,
+  ROLES,
+  workRole,
   chat,
   decide,
   DecisionError,
@@ -1752,11 +1754,12 @@ export function createApp(ctx: AppContext) {
     ctx.ledger?.({ class: "delete", resource: "team", target: `worker:${removed.id}`, verdict: "approved", reason: `removed by you (${p.device.slice(0, 12)})`, detail });
     return { removed: { id: removed.id, name: removed.name }, workspace };
   }
-  /** The engineer's roster models a harness can run on through the gateway: keyed, speaking that harness's API, and (given a
-   * VM's providers) covered by that VM's token. `outside`: when it covers none of them, the ones it doesn't. */
-  const harnessModels = (harness: string, vm?: readonly string[]) => {
+  /** The models of a knight's role (the engineer's unless you gave it another) a harness can run on through the gateway:
+   * keyed, speaking that harness's API, and (given a VM's providers) covered by that VM's token. `outside`: when it covers
+   * none of them, the ones it doesn't. */
+  const harnessModels = (harness: string, role: string, vm?: readonly string[]) => {
     const views = providerViews(ctx.store, ctx.vault);
-    const choose = (providers: typeof views) => chooseAgentModels(roleModels(ctx.store, "engineer"), providers, 3, AGENTS[harness]?.kind);
+    const choose = (providers: typeof views) => chooseAgentModels(roleModels(ctx.store, role), providers, 3, AGENTS[harness]?.kind);
     const models = choose(views.filter((p) => !vm || vm.includes(p.id)));
     return { models, outside: models.length ? [] : choose(views) };
   };
@@ -1776,8 +1779,8 @@ export function createApp(ctx: AppContext) {
         if (!bound) throw new HttpError(424, "this knight has no VM");
         return (await inProcess(teamOwner, new AbortController().signal).call<{ artifact: { id: string } }>("saveArtifact", { on: bound.node, sandbox: bound.id, path, label: label.slice(0, 200) })).artifact.id;
       },
-      models: (member) => harnessModels(member.harness, leased.get(member.id)).models,
-      modelsOutside: (member) => harnessModels(member.harness, leased.get(member.id)).outside,
+      models: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).models,
+      modelsOutside: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).outside,
       engram: () => ctx.team!.store.engram(),
       memories: (query) => memoryContext(query) ?? "",
       roundtable: () => teamOf().overview().workers,
@@ -1912,6 +1915,7 @@ export function createApp(ctx: AppContext) {
       // His own computer runs no harness and no notes store: only he works there.
       if (member.id === TEAM_GALAHAD) return { workspace, harnesses: [], engram: { on: teamOf().store.engram(), pinned: ENGRAM_VERSION } };
       const state = teamOf().snapshot();
+      const role = workRole(teamMember(member.id).role);
       const busy = state.tasks.some((t) => t.assignee === member.id && t.status === "running") || state.deliveries.some((d) => d.teammate === member.id && d.status === "running");
       // Each harness: is it installed there, and what would it run on (a vendor's tool: its own sign-in, asked of
       // the tool itself and never read; then, or otherwise, a roster model through the gateway).
@@ -1921,8 +1925,8 @@ export function createApp(ctx: AppContext) {
           harnesses.push({ id, ready: false, reason: busy ? "Readiness is checked when this knight is idle" : "Install this harness in the knight's VM" });
           continue;
         }
-        const usable = harnessModels(id, workspace.providers);
-        const { ready, on, reason } = harnessReadiness(driver, await execTeam(member, driver.check, 30, req.signal), usable.models, usable.outside);
+        const usable = harnessModels(id, role, workspace.providers);
+        const { ready, on, reason } = harnessReadiness(driver, await execTeam(member, driver.check, 30, req.signal), usable.models, usable.outside, role);
         harnesses.push({ id, ready, ...(on ? { on } : {}), ...(reason ? { reason } : {}) });
       }
       // The notes store: the node's switch, and whether this VM has the pinned binary (asked as a harness is: of an
@@ -2092,6 +2096,12 @@ export function createApp(ctx: AppContext) {
     },
     setRoster: (input) => {
       for (const ref of input.models) parseRef(ref);
+      // A role you made goes when you empty it (a built-in one goes back to its defaults), but not from under a knight
+      // that works on it: you're told which, to give it another first.
+      if (!input.models.length && !ROLES[input.role]) {
+        const on = ctx.team?.store.teammates().filter((m) => m.role === input.role) ?? [];
+        if (on.length) throw new HttpError(409, `${on.map((m) => m.name).join(", ")} ${on.length === 1 ? "works" : "work"} on ${input.role}: give ${on.length === 1 ? "it" : "them"} another role first`);
+      }
       ctx.store.emit(ctx.identity, "roster.set", { role: input.role, models: input.models });
       return { roster: roster(ctx.store) };
     },

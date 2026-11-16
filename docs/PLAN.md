@@ -32,6 +32,8 @@ What breaks today comes first, then what costs too much or proves too little, th
 | 20 | **Export a knight.** Its name, job, role, harness and skills as a Markdown bundle, with keys scrubbed and nothing executable, to import on another node. | Reuse. | OpenMausBot's portable bots | 🔜 |
 | 21 | **What he knows of you.** One page of durable facts he keeps about you (preferences, conventions, what not to do), yours to read and edit. He proposes, you keep (your ruling, 16 Nov): what you keep goes with every answer, his proposals wait. His `about_you` tool, the context, `galahad about`, About you on the PWA's Memory page and in its Inbox, and his proposals in the iPhone app's Inbox (what you kept is read and edited in the PWA and with `galahad about`) ✅. | Interventions: corrections you don't have to repeat. | Hermes' `USER.md` | ✅ 16 Nov 2026 |
 
+| 22 | **Roles you make, and a knight's models.** A role of your own is a name and its models (**New role** on the Models page, `galahad roster set <role> …`), removed when you're done with it (refused while a knight works on it). A knight's role is what its conversations, its tasks' work and its harness run on; a task's plan and its independent review stay the planner's and the reviewer's, and a knight on the reviewer's role does its work on the engineer's. A role nobody hired answers with your engineer's models, not a built-in default you may hold no key for. | Cost and correctness: the models each knight's work costs and passes on, in its task records. | The owner | ✅ 16 Nov 2026 |
+
 ## Already here
 
 What the others are known for, and where Galahad has it.

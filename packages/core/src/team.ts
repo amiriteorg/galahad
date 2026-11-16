@@ -34,7 +34,8 @@ export const AvatarProfileSchema = z.strictObject({
   eyes: z.enum(AVATAR_EYES), accessory: z.enum(AVATAR_ACCESSORIES), temperament: z.enum(AVATAR_TEMPERAMENTS),
 });
 
-const TeammateRole = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
+/** The model role a knight works on: one of the roster's, built in or one you made. */
+export const TeammateRole = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
 
 export const TeammateInput = z.strictObject({
   id: TeammateId,

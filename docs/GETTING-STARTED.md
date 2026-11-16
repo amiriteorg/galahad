@@ -224,8 +224,12 @@ A **Claude subscription's sign-in** (what `claude setup-token` prints, `sk-ant-o
 bun galahad roster                                  # planner / engineer / reviewer / swift / decider / embedder
 bun galahad provider models deepseek                # what the provider serves
 bun galahad roster set reviewer deepseek/<model-id> # a different family reviews the work
+bun galahad roster set frontend <provider/model>... # a role of your own, for the knights you give it to
+bun galahad roster rm frontend                      # removed (not while a knight works on it)
 bun galahad ask "Good morning, Galahad. What do you know about my fleet?"
 ```
+
+A knight works on its role's models: `galahad roundtable add <id> --name <name> --role frontend` (saving an existing knight), or **Model role** in its editor. Its tasks' plans and their independent review stay the planner's and the reviewer's.
 
 **Local models** for cheap work:
 

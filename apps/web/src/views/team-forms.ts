@@ -6,7 +6,7 @@ import { isAbort } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
 import { hasDesktop } from "../lib/desktop.ts";
 import { gatesFrom, type Given, giveInput, givenTo } from "../lib/give.ts";
-import { HANDLE_PATTERN, HARNESS, removalPlan, takenHandles, teammateId } from "../lib/team.ts";
+import { HANDLE_PATTERN, HARNESS, knightRoleLine, knightRoles, removalPlan, takenHandles, teammateId } from "../lib/team.ts";
 import { asCaps, type RoleSpec } from "../types.ts";
 import { badge, busy, button, callout, field } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -44,10 +44,11 @@ function editor(ctx: Ctx, title: string, description: string, fields: Child[], s
 
 const goRoom = (ctx: Ctx, room: string): void => ctx.navigate("team", { room });
 
-/** The roles your Models page has, asked for when a knight is first edited (a device that may not read them is offered the usual four). */
+/** The roles your Models page has, asked for each time a knight is edited, so a role you just made is there (a device that
+ * may not read them is offered the usual four; the last answer stands in when the node can't be asked). */
 let roster: Record<string, RoleSpec> | null = null;
 async function roles(ctx: Ctx): Promise<Record<string, RoleSpec>> {
-  if (!roster && ctx.can("mind:read")) roster = await ctx.api.get<{ roster: Record<string, RoleSpec> }>("/api/roster").then((result) => result.roster, () => null);
+  if (ctx.can("mind:read")) roster = await ctx.api.get<{ roster: Record<string, RoleSpec> }>("/api/roster").then((result) => result.roster, () => roster);
   return roster ?? {};
 }
 
@@ -62,8 +63,11 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
   const instructions = h("textarea", { class: "input", rows: 6, maxlength: 8000, placeholder: "Their job, how they work, and when to ask you." }, existing?.instructions ?? "");
   const repository = h("input", { class: "input mono", type: "url", maxlength: 300, value: existing?.repository ?? "", placeholder: "https://github.com/owner/repository", autocomplete: "off" });
   const harness = h("select", { class: "select" }, ...Object.entries(HARNESS).map(([value, label]) => h("option", { value, selected: value === (existing?.harness ?? "native") }, label)));
-  const names = [...new Set(["engineer", "planner", "reviewer", "swift", ...Object.keys(known), ...(existing ? [existing.role] : [])])];
+  const names = knightRoles(known, existing?.role);
   const role = h("select", { class: "select" }, ...names.map((value) => h("option", { value, selected: value === (existing?.role ?? "engineer") }, `${value}${known[value] && !known[value]?.models.length ? " · no model configured" : ""}`)));
+  // What the chosen role's models are, under it, as it changes.
+  const roleHint = h("span", {}, knightRoleLine(existing?.role ?? "engineer", known[existing?.role ?? "engineer"]));
+  role.addEventListener("change", () => { roleHint.textContent = knightRoleLine(role.value, known[role.value]); });
   const dailyTurns = h("input", { class: "input", type: "number", min: 0, max: 1000, step: 1, required: true, value: existing?.dailyTurns ?? 40 });
   const enabled = h("input", { type: "checkbox", checked: existing?.enabled ?? true });
   const appearance = avatarEditor({ id: () => id.value, name: () => name.value, profile: existing?.avatar });
@@ -77,7 +81,7 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
     field("Name", name), field("Handle", id, { hint: "Used to address this knight. It stays the same after a rename." }),
     field("Job and instructions", instructions, { hint: "No keys or passwords. Those belong in the vault." }),
     field("Repository (optional)", repository, { hint: "An HTTPS GitHub repository. Tasks get their own worktrees in the VM." }),
-    h("div", { class: "team-form-grid" }, field("Coding harness", harness, { hint: "Selecting a harness doesn't install it or sign it in: that is yours to do, in the knight's VM. Workspace checks show what's ready." }), field("Model role", role, { hint: "The role selects models from your Models settings." })),
+    h("div", { class: "team-form-grid" }, field("Coding harness", harness, { hint: "Selecting a harness doesn't install it or sign it in: that is yours to do, in the knight's VM. Workspace checks show what's ready." }), field("Model role", role, { hint: roleHint })),
     field("Daily turn and job budget", dailyTurns, { hint: "Maximum reply turns and jobs per day, not a money limit. Zero holds new work." }),
     h("label", { class: "row" }, enabled, h("span", {}, "Enabled")),
   ], existing ? "Save knight" : "Create knight", async () => {

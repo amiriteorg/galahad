@@ -60,10 +60,46 @@ enum Knights {
     /// The harnesses a knight can work in, as they are named to you (the PWA's HARNESS), in its order.
     static let harnesses: [(id: String, name: String)] = [("native", "Galahad"), ("opencode", "OpenCode"), ("hermes", "Hermes Agent"), ("claude", "Claude Code"), ("codex", "Codex")]
 
-    /// The model roles a knight may answer as: the usual four, then your Models page's, then its own (the PWA's order).
-    static func roles(known: [String], current: String?) -> [String] {
+    /// A roster role, as far as a knight's editor needs it (`forKnights` is absent from an older node).
+    struct RoleInfo: Decodable, Sendable, Equatable {
+        let models: [String]
+        let forKnights: Bool?
+
+        init(models: [String], forKnights: Bool?) {
+            self.models = models
+            self.forKnights = forKnights
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            models = try container.decodeIfPresent([String].self, forKey: .models) ?? []
+            forKnights = try container.decodeIfPresent(Bool.self, forKey: .forKnights)
+        }
+
+        private enum CodingKeys: String, CodingKey { case models, forKnights }
+    }
+
+    private static let builtInRoles = ["engineer", "planner", "reviewer", "swift"]
+
+    /// The roles a knight may be given, engineer first: the roster's that are for knights (the planner, engineer and swift
+    /// roles, then yours by name; never the reviewer or a tool's), and the one it has now. An older node says nothing of
+    /// which are for knights: then the usual four and every other. The PWA's `knightRoles`.
+    static func roles(roster: [String: RoleInfo], current: String?) -> [String] {
+        let told = roster.values.contains { $0.forKnights != nil }
+        func theirs(_ role: String) -> Bool { !told || roster[role]?.forKnights == true }
+        let builtIn = told ? ["engineer", "planner", "swift"].filter { $0 == "engineer" || theirs($0) } : builtInRoles
+        let others = roster.keys.filter { !builtInRoles.contains($0) && theirs($0) }.sorted()
         var seen = Set<String>()
-        return (["engineer", "planner", "reviewer", "swift"] + known + (current.map { [$0] } ?? [])).filter { seen.insert($0).inserted }
+        return (builtIn + others + (current.map { [$0] } ?? [])).filter { seen.insert($0).inserted }
+    }
+
+    /// What a knight on this role works on, in a line (the PWA's `knightRoleLine`).
+    static func roleLine(role: String, spec: RoleInfo?) -> String {
+        guard let spec else { return "\(role) isn't on your roster: the engineer's models do its work" }
+        if spec.forKnights == false { return "It talks on the \(role)'s models; its tasks' work runs on the engineer's, since the reviewer never does the work it checks" }
+        guard let first = spec.models.first else { return "\(role) has no model yet: put one on it on the Models page" }
+        let more = spec.models.count > 1 ? " (then \(spec.models.count - 1) more)" : ""
+        return "Its work runs on \(first)\(more); its plan and the independent review stay the planner's and the reviewer's"
     }
 
     /// A new knight's handle, from its name: lowercase letters, digits and hyphens, never a reserved one or one taken

@@ -27,6 +27,16 @@ struct KnightsTests {
         }
     }
 
+    @Test func theRolesAKnightMayBeGivenAreThePWAs() {
+        #expect(!vectors.knightForms.roles.isEmpty)
+        for item in vectors.knightForms.roles {
+            #expect(Knights.roles(roster: item.roster, current: item.current) == item.roles, "\(item.current ?? "none")")
+        }
+        for item in vectors.knightForms.roleLines {
+            #expect(Knights.roleLine(role: item.role, spec: item.spec) == item.line, "\(item.role)")
+        }
+    }
+
     @Test func removingAKnightSaysWhatThePWASays() {
         for item in vectors.knightForms.removals {
             let plan = Knights.removal(id: item.id, name: item.name, workspace: item.workspace, workspaceNode: item.workspaceNode, maySandbox: item.maySandbox)

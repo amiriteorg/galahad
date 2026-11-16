@@ -2129,6 +2129,271 @@
         }
       }
     ],
+    "roles": [
+      {
+        "roster": {
+          "reviewer": {
+            "models": [
+              "a/r"
+            ],
+            "forKnights": false
+          },
+          "frontend": {
+            "models": [
+              "orcarouter/anthropic/claude-opus-5.5",
+              "deepseek/deepseek-v4-pro"
+            ],
+            "forKnights": true
+          },
+          "planner": {
+            "models": [
+              "a/p"
+            ],
+            "forKnights": true
+          },
+          "eyes": {
+            "models": [
+              "a/v"
+            ],
+            "forKnights": false
+          },
+          "engineer": {
+            "models": [
+              "a/e"
+            ],
+            "forKnights": true
+          },
+          "swift": {
+            "models": [],
+            "forKnights": true
+          },
+          "cheap-coder": {
+            "models": [
+              "a/c"
+            ],
+            "forKnights": true
+          },
+          "fold": {
+            "models": [
+              "a/x"
+            ],
+            "forKnights": false
+          }
+        },
+        "roles": [
+          "engineer",
+          "planner",
+          "swift",
+          "cheap-coder",
+          "frontend"
+        ]
+      },
+      {
+        "roster": {
+          "reviewer": {
+            "models": [
+              "a/r"
+            ],
+            "forKnights": false
+          },
+          "frontend": {
+            "models": [
+              "orcarouter/anthropic/claude-opus-5.5",
+              "deepseek/deepseek-v4-pro"
+            ],
+            "forKnights": true
+          },
+          "planner": {
+            "models": [
+              "a/p"
+            ],
+            "forKnights": true
+          },
+          "eyes": {
+            "models": [
+              "a/v"
+            ],
+            "forKnights": false
+          },
+          "engineer": {
+            "models": [
+              "a/e"
+            ],
+            "forKnights": true
+          },
+          "swift": {
+            "models": [],
+            "forKnights": true
+          },
+          "cheap-coder": {
+            "models": [
+              "a/c"
+            ],
+            "forKnights": true
+          },
+          "fold": {
+            "models": [
+              "a/x"
+            ],
+            "forKnights": false
+          }
+        },
+        "current": "reviewer",
+        "roles": [
+          "engineer",
+          "planner",
+          "swift",
+          "cheap-coder",
+          "frontend",
+          "reviewer"
+        ]
+      },
+      {
+        "roster": {
+          "reviewer": {
+            "models": [
+              "a/r"
+            ],
+            "forKnights": false
+          },
+          "frontend": {
+            "models": [
+              "orcarouter/anthropic/claude-opus-5.5",
+              "deepseek/deepseek-v4-pro"
+            ],
+            "forKnights": true
+          },
+          "planner": {
+            "models": [
+              "a/p"
+            ],
+            "forKnights": true
+          },
+          "eyes": {
+            "models": [
+              "a/v"
+            ],
+            "forKnights": false
+          },
+          "engineer": {
+            "models": [
+              "a/e"
+            ],
+            "forKnights": true
+          },
+          "swift": {
+            "models": [],
+            "forKnights": true
+          },
+          "cheap-coder": {
+            "models": [
+              "a/c"
+            ],
+            "forKnights": true
+          },
+          "fold": {
+            "models": [
+              "a/x"
+            ],
+            "forKnights": false
+          }
+        },
+        "current": "frontend",
+        "roles": [
+          "engineer",
+          "planner",
+          "swift",
+          "cheap-coder",
+          "frontend"
+        ]
+      },
+      {
+        "roster": {
+          "swift": {
+            "models": []
+          },
+          "engineer": {
+            "models": [
+              "a/e"
+            ]
+          },
+          "fold": {
+            "models": [
+              "a/x"
+            ]
+          },
+          "Odd": {
+            "models": [
+              "a/o"
+            ]
+          }
+        },
+        "current": "made-up",
+        "roles": [
+          "engineer",
+          "planner",
+          "reviewer",
+          "swift",
+          "Odd",
+          "fold",
+          "made-up"
+        ]
+      },
+      {
+        "roster": {},
+        "roles": [
+          "engineer",
+          "planner",
+          "reviewer",
+          "swift"
+        ]
+      }
+    ],
+    "roleLines": [
+      {
+        "role": "frontend",
+        "spec": {
+          "models": [
+            "orcarouter/anthropic/claude-opus-5.5",
+            "deepseek/deepseek-v4-pro"
+          ],
+          "forKnights": true
+        },
+        "line": "Its work runs on orcarouter/anthropic/claude-opus-5.5 (then 1 more); its plan and the independent review stay the planner's and the reviewer's"
+      },
+      {
+        "role": "engineer",
+        "spec": {
+          "models": [
+            "a/e"
+          ],
+          "forKnights": true
+        },
+        "line": "Its work runs on a/e; its plan and the independent review stay the planner's and the reviewer's"
+      },
+      {
+        "role": "swift",
+        "spec": {
+          "models": [],
+          "forKnights": true
+        },
+        "line": "swift has no model yet: put one on it on the Models page"
+      },
+      {
+        "role": "reviewer",
+        "spec": {
+          "models": [
+            "a/r"
+          ],
+          "forKnights": false
+        },
+        "line": "It talks on the reviewer's models; its tasks' work runs on the engineer's, since the reviewer never does the work it checks"
+      },
+      {
+        "role": "made-up",
+        "line": "made-up isn't on your roster: the engineer's models do its work"
+      }
+    ],
     "profiles": [
       {
         "look": "kay",

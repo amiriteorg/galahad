@@ -1,3 +1,4 @@
+import { TeammateRole } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
 
 /*
@@ -54,6 +55,20 @@ export const ROLES: Record<string, RoleSpec> = {
   },
 };
 
+/** The chores that run on a role of their own once you hire models for one (choreRole), and what each does. */
+export const CHORES: Record<string, string> = {
+  fold: "sums up a long chat, or a room's conversation, into its story; the swift role does it until you hire models for this",
+};
+
+/** Built-in roles that aren't a knight's to work on: the independent check of its work, and the tools'. */
+const NOT_FOR_KNIGHTS = new Set(["reviewer", "decider", "eyes", "embedder"]);
+
+/**
+ * The role a knight's work runs on (its tasks, its harness): its own, unless that is the reviewer's or a tool's, when
+ * it is the engineer's. A knight may talk on the reviewer's models; the reviewer never does the work it checks.
+ */
+export const workRole = (role: string): string => (NOT_FOR_KNIGHTS.has(role) ? "engineer" : role);
+
 /**
  * The role a chore runs on (`fold`: a long chat or a room's conversation summed up into its story): the role named after
  * the chore once you hire models for it (`galahad roster set fold <provider/model> …`), the swift role until then. What a
@@ -66,21 +81,42 @@ export function choreRole(store: MindStore, chore: string): string {
 export function roleModels(store: MindStore, role: string): string[] {
   const configured = store.lww<string[]>(`roster:${role}`)?.value;
   if (configured?.length) return configured;
-  return ROLES[role]?.defaults ?? ROLES.planner!.defaults;
+  if (ROLES[role]) return ROLES[role].defaults;
+  // A role nobody hired (a knight made with a role of its own, or one you since removed): the engineer's models as
+  // you set them. (Its built-in default would be a model you may hold no key for.)
+  return roleModels(store, "engineer");
 }
 
-export function roster(store: MindStore): Record<string, { models: string[]; configured: boolean; description: string }> {
+export interface RosterRole {
+  models: string[];
+  configured: boolean;
+  description: string;
+  /** A role you made (not built in, not a chore's): yours to remove. */
+  custom: boolean;
+  /** A knight may work on it: the planner, engineer and swift roles, and the roles you made. */
+  forKnights: boolean;
+}
+
+export function roster(store: MindStore): Record<string, RosterRole> {
   const names = new Set([...Object.keys(ROLES), ...store.lwwPrefix("roster:").map((e) => e.key.slice("roster:".length))]);
   return Object.fromEntries(
-    [...names].map((role) => {
+    [...names].flatMap((role) => {
       const configured = store.lww<string[]>(`roster:${role}`)?.value;
+      const builtIn = Boolean(ROLES[role]);
+      // A role you made and then emptied is gone; a built-in one goes back to its defaults.
+      if (!builtIn && !configured?.length) return [];
+      const chore = CHORES[role];
       return [
-        role,
-        {
-          models: configured?.length ? configured : (ROLES[role]?.defaults ?? []),
-          configured: !!configured?.length,
-          description: ROLES[role]?.description ?? "custom role",
-        },
+        [
+          role,
+          {
+            models: configured?.length ? configured : (ROLES[role]?.defaults ?? []),
+            configured: !!configured?.length,
+            description: ROLES[role]?.description ?? chore ?? "a role you made",
+            custom: !builtIn && !chore,
+            forKnights: !chore && !NOT_FOR_KNIGHTS.has(role) && TeammateRole.safeParse(role).success,
+          },
+        ],
       ];
     }),
   );

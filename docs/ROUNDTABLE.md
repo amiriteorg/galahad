@@ -219,19 +219,19 @@ A knight that has none may be given its first repository at any time, with or wi
 
 ### Models and engineering harnesses
 
-The knight's conversation role chooses from Galahad's roster. Its engineering harness is a separate choice:
+The knight's role says which of your models it works on: the engineer's unless you give it another, built in (the planner, the engineer, swift) or one you made (`galahad roster set frontend <provider/model>…`, or **New role** on the Models page, then **Model role** in its editor or `galahad roundtable add <id> --name <name> --role frontend`). Its conversations, the work of its tasks and what its harness runs on are that role's models; a task's plan and its independent review stay the planner's and the reviewer's, whoever did the work. A knight on the reviewer's role (Lin, above) talks on the reviewer's models, but its tasks' work runs on the engineer's: the reviewer never does the work it checks. Its engineering harness is a separate choice:
 
 | Harness | Requirement |
 |---|---|
-| `native` | Galahad's existing planner, engineer and independent reviewer flow, using configured roster models. |
-| `opencode` | Owner-installed OpenCode in the VM; `opencode --version` must succeed. Needs a keyed OpenAI-compatible engineer model on the roster. |
-| `hermes` | Owner-installed Hermes and Python 3 in the VM; `hermes acp --check` must succeed. Uses ACP sessions and a dedicated persistent `/work/.hermes` profile, with a keyed OpenAI-compatible engineer model. |
-| `claude` | Owner-installed Claude Code in the VM, as Anthropic publishes it (`claude --version` must succeed), and Python 3. Runs on its own sign-in in that VM when it has one; otherwise on a keyed Anthropic-API engineer model through the gateway. |
-| `codex` | Owner-installed Codex CLI in the VM, as OpenAI publishes it (`codex --version` must succeed), and Python 3. Runs on its own sign-in in that VM when it has one; otherwise on a keyed OpenAI-compatible engineer model through the gateway, on an endpoint that speaks the Responses API. |
+| `native` | Galahad's existing planner, engineer and independent reviewer flow, the engineer's part on the knight's role's models. |
+| `opencode` | Owner-installed OpenCode in the VM; `opencode --version` must succeed. Needs a keyed OpenAI-compatible model on the knight's role. |
+| `hermes` | Owner-installed Hermes and Python 3 in the VM; `hermes acp --check` must succeed. Uses ACP sessions and a dedicated persistent `/work/.hermes` profile, with a keyed OpenAI-compatible model on the knight's role. |
+| `claude` | Owner-installed Claude Code in the VM, as Anthropic publishes it (`claude --version` must succeed), and Python 3. Runs on its own sign-in in that VM when it has one; otherwise on a keyed Anthropic-API model of the knight's role through the gateway. |
+| `codex` | Owner-installed Codex CLI in the VM, as OpenAI publishes it (`codex --version` must succeed), and Python 3. Runs on its own sign-in in that VM when it has one; otherwise on a keyed OpenAI-compatible model of the knight's role through the gateway, on an endpoint that speaks the Responses API. |
 
 With the notes store turned on, each of these is also given Engram in its VM, in its own way: [A notes store the harness can ask](#a-notes-store-the-harness-can-ask-engram).
 
-A coding plan (GLM Coding Plan, Kimi Code and the others in [ARCHITECTURE §6](ARCHITECTURE.md)) is for exactly this: put its model on the `engineer` roster and it does the coding, whichever harness the knight has. The native runner calls it as Galahad; OpenCode or Hermes in the knight's VM runs on it through the gateway, calling as itself. The roster's next model is the fallback either way.
+A coding plan (GLM Coding Plan, Kimi Code and the others in [ARCHITECTURE §6](ARCHITECTURE.md)) is for exactly this: put its model on the `engineer` roster (or on the role of the knights you want on it) and it does the coding, whichever harness the knight has. A plan whose terms keep it to a vendor's tool (Z.ai's, Xiaomi MiMo's and others: not Galahad's own runner) works only for a knight on OpenCode, Hermes or another tool, never on the native runner. The native runner calls it as Galahad; OpenCode or Hermes in the knight's VM runs on it through the gateway, calling as itself. The roster's next model is the fallback either way.
 
 The Workspace panel checks external harness readiness when the knight is idle: whether the harness is installed in the VM, and what it would run on there (a vendor's tool on its own sign-in, or a roster model through the gateway), or what to do so that it can. A roster model counts only if the VM's gateway token covers its provider: a VM's token covers the providers that had a key when the VM was made. Selecting a harness is not proof it is installed or signed in, and Galahad never installs, updates or signs in one. Retained harness sessions support retrying the same task; protocol success alone does not mark a task verified.
 
