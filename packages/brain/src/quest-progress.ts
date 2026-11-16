@@ -57,6 +57,8 @@ export function standingAfter(s: QuestStanding, event: QuestEvent): QuestStandin
       return { ...s, doing: line(`${event.model} couldn't answer as ${event.role}: ${event.answered} answers instead`, 300) };
     case "escalated":
       return { ...s, doing: line(`The same gate failed twice in a row: the ${event.to}'s models take the work`, 300) };
+    case "tripped":
+      return { ...s, step: Math.max(s.step, event.step), doing: line(`Your tripwire ${event.rule} ${event.does === "halt" ? "halted it" : "refused"}: $ ${redact(event.command)}`, 300) };
     case "finished":
       return {
         ...s,

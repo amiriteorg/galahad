@@ -109,4 +109,11 @@ describe("where a quest stands, from its events", () => {
     const standing = standingAfter({ ...questStanding(30), state: "working" }, { type: "escalated", to: "planner", gate: "bun test" });
     expect(standing).toMatchObject({ state: "working", doing: "The same gate failed twice in a row: the planner's models take the work" });
   });
+
+  test("a command your tripwire stopped is what he is doing until the next thing happens: which rule, and what it did", () => {
+    const working = { ...questStanding(30), state: "working" as const };
+    const trip = { type: "tripped" as const, step: 4, command: "rm -f bun.lock\necho more", rule: "no-locks", why: "the word `bun.lock` matches `*.lock`" };
+    expect(standingAfter(working, { ...trip, does: "refuse" })).toMatchObject({ state: "working", step: 4, doing: "Your tripwire no-locks refused: $ rm -f bun.lock" });
+    expect(standingAfter(working, { ...trip, does: "halt" }).doing).toBe("Your tripwire no-locks halted it: $ rm -f bun.lock");
+  });
 });

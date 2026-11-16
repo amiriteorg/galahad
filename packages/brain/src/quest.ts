@@ -1,7 +1,8 @@
-import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, redact } from "@galahad/core";
+import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, type NamedRule, redact, type RuleDoes } from "@galahad/core";
 import { type AgentDriver, type AgentModel, agentModelName, runAgent } from "./agents.ts";
 import { engramBriefing, engramProject } from "./engram.ts";
 import { readOf, testFilesOf, writesOf } from "./shell-paths.ts";
+import { type Trip, tripOf } from "./tripwires.ts";
 
 /*
  * A quest: plan → work → independent review, in a sandbox.
@@ -37,6 +38,15 @@ export interface QuestDeps {
   signal?: AbortSignal;
   /** How to wait before asking a model again (tests pass one that doesn't). */
   sleep?(ms: number): Promise<void>;
+  /**
+   * Your rules (core's rules.ts) as they stand now: read before each command, each parallel batch and each run of the
+   * gates, so a tripwire you add while the quest runs stops its next command. Absent: none. If they can't be read, the
+   * quest stops: no command runs unchecked. (A coding agent's own commands run inside its sandbox, unseen: only its
+   * gates are checked.)
+   */
+  rules?(): readonly NamedRule[] | Promise<readonly NamedRule[]>;
+  /** A tripwire stopped a command (`gate`: one of the gates), for the ledger. What it did stands whatever this does. */
+  tripped?(trip: Trip & { command: string; gate?: boolean }): void | Promise<void>;
 }
 
 export interface QuestOptions {
@@ -154,13 +164,15 @@ export interface QuestOutcome {
   gatesBefore?: GateResult[];
   /**
    * How many of `steps` were replies with no command to run (each spent a turn and ran nothing); absent: none.
-   * The commands that ran are `steps` less these.
+   * The commands that ran are `steps` less these, and less those a tripwire stopped.
    */
   malformed?: number;
+  /** How many of `steps` were commands a tripwire of yours stopped (refused, or a batch it halted): none of them ran. Absent: none. */
+  tripped?: number;
 }
 
-/** The commands a quest ran: its turns, less the replies that had no command to run. */
-export const commandsRun = (outcome: Pick<QuestOutcome, "steps" | "malformed">): number => outcome.steps - (outcome.malformed ?? 0);
+/** The commands a quest ran: its turns, less the replies that had no command to run and the commands a tripwire stopped. */
+export const commandsRun = (outcome: Pick<QuestOutcome, "steps" | "malformed" | "tripped">): number => outcome.steps - (outcome.malformed ?? 0) - (outcome.tripped ?? 0);
 
 export type QuestEvent =
   | { type: "plan"; text: string; model: string }
@@ -188,6 +200,11 @@ export type QuestEvent =
   | { type: "skipped"; role: QuestRole; model: string; error: string; answered: string }
   /** A gate failed again as it failed the submission before: the rest of the work is that role's (escalate). */
   | { type: "escalated"; to: QuestRole; gate: string }
+  /**
+   * A tripwire of yours stopped a command before it ran (`gate`: one of the gates): `halt` ends the quest, `refuse`
+   * leaves that command unrun and the work going on. `why`: the word and the glob it matched, the text it holds.
+   */
+  | { type: "tripped"; step: number; command: string; rule: string; does: RuleDoes; why: string; gate?: boolean }
   | { type: "finished"; outcome: QuestOutcome };
 
 export const QUEST_DEFAULTS = { maxSteps: 30, maxRevisions: 2, commandTimeoutSec: 300 } as const;
@@ -440,6 +457,28 @@ export function reviewQuestion(input: { goal: string; plan: string; steps: { com
 
 class Stopped extends Error {}
 
+/** A tripwire of yours halted the quest, at this command. */
+class Halted extends Error {
+  constructor(
+    readonly trip: Trip,
+    readonly command: string,
+  ) {
+    super(trip.rule);
+  }
+}
+
+/** Your rules could not be read: nothing more runs. */
+class Unread extends Error {}
+
+/** What the engineer is told of a command a tripwire of yours refused (a refused gate's excerpt too, and the reviewer's trail). */
+const refusal = (trip: Trip): string => `Not run: your liege's tripwire "${trip.rule}" refuses this command (${trip.why}). Do the work another way, without what it refuses.`;
+
+/** How a quest a tripwire halted ends: which rule, why, and the command it stopped. */
+const haltedSummary = (trip: Trip, command: string): string => `Halted by your tripwire "${trip.rule}": ${trip.why}.\n$ ${command.split("\n")[0]}`;
+
+/** A refused command as a failure, for telling a run of the same one (it ran nothing, so it has nothing else to say). */
+const NOT_RUN: ExecResult = { exitCode: -1, stdout: "", stderr: "", durationMs: 0, truncated: false };
+
 /**
  * How much of one reply of the engineer's stays in the conversation: its beginning and its end. Every reply is
  * sent again on each later turn, so one that runs away (a file written inline, a model that doesn't stop) would
@@ -603,21 +642,52 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   let before: GateResult[] | undefined;
   /** The test files the gates name, as they were before any work (path → sha256): the contract the work may not change. */
   let locked = new Map<string, string>();
+  /** Commands a tripwire stopped (refused, or a batch it halted): each is one of `steps`, and none of them ran. */
+  let tripped = 0;
   const finish = (outcome: Omit<QuestOutcome, "steps" | "revisions" | "plan" | "gates">): QuestOutcome => {
     const last = gateRounds.at(-1);
-    const done = { ...outcome, steps, revisions, plan, ...(last ? { gates: last } : {}), ...(before ? { gatesBefore: before } : {}), ...(malformed ? { malformed } : {}) };
+    const done = { ...outcome, steps, revisions, plan, ...(last ? { gates: last } : {}), ...(before ? { gatesBefore: before } : {}), ...(malformed ? { malformed } : {}), ...(tripped ? { tripped } : {}) };
     emit({ type: "finished", outcome: done });
     return done;
   };
 
-  /** One gate, in the quest's own sandbox: its result, and what it printed as an observation. One the sandbox can't run has not passed. */
-  const runGate = async (gate: Gate): Promise<{ result: GateResult; seen: string }> => {
+  /** Your rules as they stand now; if they can't be read, nothing more runs. */
+  const rulesNow = async (): Promise<readonly NamedRule[]> => {
+    if (!deps.rules) return [];
+    try {
+      return await deps.rules();
+    } catch (error) {
+      throw new Unread(redact(String((error as Error).message ?? error)).slice(0, 300));
+    }
+  };
+  /** A command a tripwire stopped: said as an event and handed to the ledger. */
+  const trip = async (found: Trip, command: string, step: number, gate = false): Promise<void> => {
+    emit({ type: "tripped", step, command, rule: found.rule, does: found.does, why: found.why, ...(gate ? { gate: true } : {}) });
+    try {
+      await deps.tripped?.({ ...found, command, ...(gate ? { gate: true } : {}) });
+    } catch {
+      /* the ledger couldn't be told: the command was stopped all the same */
+    }
+  };
+
+  /**
+   * One gate, in the quest's own sandbox: its result, and what it printed as an observation. One the sandbox can't run
+   * has not passed, nor has one a tripwire of yours refuses (it isn't run); one a tripwire halts ends the quest.
+   */
+  const runGate = async (gate: Gate, rules: readonly NamedRule[]): Promise<{ result: GateResult; seen: string }> => {
     check();
     let ran: ExecResult;
-    try {
-      ran = await deps.exec(gate.command, o.commandTimeoutSec);
-    } catch (error) {
-      ran = { exitCode: -1, stdout: "", stderr: `The sandbox could not run this: ${(error as Error).message}`, durationMs: 0, truncated: false };
+    const found = tripOf(rules, gate.command);
+    if (found) {
+      await trip(found, gate.command, steps, true);
+      if (found.does === "halt") throw new Halted(found, gate.command);
+      ran = { ...NOT_RUN, stdout: refusal(found) };
+    } else {
+      try {
+        ran = await deps.exec(gate.command, o.commandTimeoutSec);
+      } catch (error) {
+        ran = { exitCode: -1, stdout: "", stderr: `The sandbox could not run this: ${(error as Error).message}`, durationMs: 0, truncated: false };
+      }
     }
     const seen = observation(ran);
     return { result: { ...gate, exitCode: ran.exitCode, durationMs: ran.durationMs, excerpt: clip(seen.split("\n").slice(1).join("\n"), 600, 300) }, seen };
@@ -627,8 +697,9 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   const runGates = async (): Promise<GateResult[]> => {
     const round = gateRounds.length + 1;
     const results: GateResult[] = [];
+    const rules = await rulesNow();
     for (const [i, gate] of gates.entries()) {
-      const { result, seen } = await runGate(gate);
+      const { result, seen } = await runGate(gate, rules);
       results.push(result);
       emit({ type: "gate", index: i + 1, of: gates.length, round, command: gate.command, by: gate.by, exitCode: result.exitCode, durationMs: result.durationMs, output: seen });
     }
@@ -784,7 +855,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
 
     if (o.gatesFirst && gates.length) {
       before = [];
-      for (const gate of gates) before.push((await runGate(gate)).result);
+      const rules = await rulesNow();
+      for (const gate of gates) before.push((await runGate(gate, rules)).result);
       emit({ type: "baseline", results: before });
     }
 
@@ -885,18 +957,31 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         const batch = action.commands.slice(0, o.maxSteps - first + 1);
         steps = first + batch.length - 1;
         if (action.thought) emit({ type: "thought", step: first, text: action.thought, model: reply.model });
-        for (const [i, command] of batch.entries()) emit({ type: "command", step: first + i, command });
+        // Your tripwires, before any of the batch runs: one that halts stops all of it; one refused is said in its place.
+        const rules = await rulesNow();
+        const found = batch.map((command) => tripOf(rules, command));
+        for (const [i, f] of found.entries()) if (f) await trip(f, batch[i]!, first + i);
+        const halt = found.findIndex((f) => f?.does === "halt");
+        if (halt !== -1) {
+          tripped += batch.length;
+          throw new Halted(found[halt]!, batch[halt]!);
+        }
+        tripped += found.filter(Boolean).length;
+        for (const [i, command] of batch.entries()) if (!found[i]) emit({ type: "command", step: first + i, command });
         check();
         const results = await Promise.all(
-          batch.map((command) =>
-            deps.exec(command, o.commandTimeoutSec).catch((error): ExecResult => ({ exitCode: -1, stdout: "", stderr: `The sandbox could not run this: ${(error as Error).message}`, durationMs: 0, truncated: false })),
+          batch.map((command, i) =>
+            found[i]
+              ? null
+              : deps.exec(command, o.commandTimeoutSec).catch((error): ExecResult => ({ exitCode: -1, stdout: "", stderr: `The sandbox could not run this: ${(error as Error).message}`, durationMs: 0, truncated: false })),
           ),
         );
-        const seen = results.map((result) => observation(result));
-        const notes = batch.map((command, i) => repeated(command, first + i, results[i]!, seen[i]!));
+        const seen = results.map((result, i) => (result ? observation(result) : refusal(found[i]!)));
+        const notes = batch.map((command, i) => repeated(command, first + i, results[i] ?? NOT_RUN, results[i] ? seen[i]! : `not run\n${seen[i]}`));
         for (const [i, command] of batch.entries()) {
-          emit({ type: "observation", step: first + i, exitCode: results[i]!.exitCode, durationMs: results[i]!.durationMs, output: seen[i]! });
-          trail.push({ command: trailCommand(command), exitCode: results[i]!.exitCode, excerpt: clip(seen[i]!.split("\n").slice(1).join("\n"), 600, 300) });
+          const result = results[i];
+          if (result) emit({ type: "observation", step: first + i, exitCode: result.exitCode, durationMs: result.durationMs, output: seen[i]! });
+          trail.push({ command: trailCommand(command), exitCode: result ? result.exitCode : -1, excerpt: result ? clip(seen[i]!.split("\n").slice(1).join("\n"), 600, 300) : seen[i]! });
         }
         const stuck = notes.findIndex((n) => n.stop);
         if (stuck >= 0) return looped(batch[stuck]!, seen[stuck]!);
@@ -914,6 +999,19 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
       if (action.kind === "command") {
         if (action.thought) emit({ type: "thought", step: steps, text: action.thought, model: reply.model });
+        // Your tripwires first: a command one halts ends the quest; one refused isn't run, and he is told which and why.
+        const found = tripOf(await rulesNow(), action.command);
+        if (found) {
+          tripped += 1;
+          await trip(found, action.command, steps);
+          if (found.does === "halt") throw new Halted(found, action.command);
+          const said = refusal(found);
+          trail.push({ command: trailCommand(action.command), exitCode: -1, excerpt: said });
+          const again = repeated(action.command, steps, NOT_RUN, `not run\n${said}`);
+          if (again.stop) return looped(action.command, said);
+          messages.push({ role: "user", content: `${said}${again.note}${cut}${leftNote(o.maxSteps - steps)}${spentNote()}` });
+          continue;
+        }
         emit({ type: "command", step: steps, command: action.command });
         check();
         let result: ExecResult;
@@ -977,6 +1075,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     return finish({ status: "stopped", summary: stopped });
   } catch (error) {
     if (error instanceof Stopped) return finish({ status: "stopped", summary: "Stopped at your request." });
+    if (error instanceof Halted) return finish({ status: "stopped", summary: haltedSummary(error.trip, error.command) });
+    if (error instanceof Unread) return finish({ status: "stopped", summary: `Stopped: your tripwires could not be read (${error.message}), so no command ran unchecked.` });
     throw error;
   }
 }
