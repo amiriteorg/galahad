@@ -552,7 +552,8 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
             icon: "repeat",
             title: "No loops yet",
             body: "A loop runs a heartbeat, a quest or a connector call on a schedule, on one node. A missed run happens once when its node is back.",
-            actions: write ? button("Add a loop", { variant: "primary", icon: "plus", onClick: () => openLoopSheet(ctx) }) : null,
+            // (The page's own Add loop is its primary action.)
+            actions: write ? button("Add a loop", { icon: "plus", onClick: () => openLoopSheet(ctx) }) : null,
           }),
         ),
       );
