@@ -111,6 +111,20 @@ struct Joining: Sendable {
         return parts.url
     }
 
+    /// What a `galahad:` link hands this device to join with (the Mac app opens them): the invite link it carries
+    /// (`galahad:https://keep.example.ts.net/#pair=gi1.…`), whose address is where the node is, as when it is pasted; or
+    /// the invite alone (`galahad://pair#pair=gi1.…`, `galahad:gi1.…`), whose node is where the invite says. Nil for any
+    /// other link, and for one that carries no invite.
+    static func handed(_ url: URL) -> String? {
+        guard url.scheme?.lowercased() == "galahad" else { return nil }
+        let rest = String(url.absoluteString.drop { $0 != ":" }.dropFirst())
+        if let carried = URLComponents(string: rest)?.scheme?.lowercased(), ["http", "https"].contains(carried) {
+            return (try? Invite.decode(rest)) != nil ? rest : nil
+        }
+        let token = rest.firstMatch(of: #/[#&?]pair=([A-Za-z0-9._-]+)/#).map { String($0.1) } ?? String(rest.drop { $0 == "/" })
+        return (try? Invite.decode(token)) != nil ? token : nil
+    }
+
     private static func said(_ status: Int, _ data: Data) -> String {
         struct Said: Decodable { let error: String? }
         return (try? JSONDecoder().decode(Said.self, from: data))?.error ?? "The node answered \(status)."

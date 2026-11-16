@@ -99,6 +99,21 @@ struct JoiningTests {
         #expect(Joining.origin(for: pairing.token, invite: pairing.invite)?.absoluteString == "http://127.0.0.1:7777")
         #expect(Joining.origin(for: "ftp://keep.example.ts.net/#pair=\(pairing.token)", invite: pairing.invite) == nil)
     }
+
+    /// A `galahad:` link (the Mac opens these) hands over the invite link it carries, which keeps its address, or else the
+    /// invite alone, whose node is where it says; nothing else is taken for one.
+    @Test func aGalahadLinkHandsOverTheInviteItCarries() throws {
+        let link = { (text: String) in try #require(URL(string: text)) }
+        #expect(Joining.handed(try link("galahad:\(pairing.url)")) == pairing.url)
+        #expect(Joining.handed(try link("galahad://pair#pair=\(pairing.token)")) == pairing.token)
+        #expect(Joining.handed(try link("galahad:\(pairing.token)")) == pairing.token)
+        #expect(Joining.handed(try link("GALAHAD://\(pairing.token)")) == pairing.token)
+        let handed = try #require(Joining.handed(try link("galahad://pair#pair=\(pairing.token)")))
+        #expect(Joining.origin(for: handed, invite: try Invite.decode(handed))?.absoluteString == "http://127.0.0.1:7777")
+        #expect(Joining.handed(try link("galahad://pair")) == nil)
+        #expect(Joining.handed(try link("galahad://pair#pair=gi1.bm90LWFuLWludml0ZQ")) == nil)
+        #expect(Joining.handed(try link("https://keep.example.ts.net/#pair=\(pairing.token)")) == nil)
+    }
 }
 
 final class Recorded<Value: Sendable>: @unchecked Sendable {
