@@ -1,5 +1,5 @@
 import { clampNeed, type Decision, type ExecResult, type NodeCapacity, type SandboxView, VM_OVERHEAD } from "@galahad/core";
-import { chooseIsolation, type CreateInput, SandboxError, SandboxHost, type SandboxHostOptions } from "@galahad/sandbox";
+import { chooseIsolation, type CreateInput, type DesktopAction, type DesktopView, SandboxError, SandboxHost, type SandboxHostOptions } from "@galahad/sandbox";
 import { CapacityError, type Governor } from "./governor.ts";
 
 /*
@@ -61,6 +61,27 @@ export class GovernedSandboxHost extends SandboxHost {
     const ended = this.governed.governor.work(id);
     try {
       return await super.exec(id, cmd, timeoutSec);
+    } finally {
+      ended();
+    }
+  }
+
+  /**
+   * A terminal in a knight's VM: what you run there is work as much as its own commands are, so its threads count
+   * against the ceiling from the moment it opens until a while after it closes.
+   */
+  override async terminal(id: string, size: { cols: number; rows: number }, onData: (bytes: Uint8Array) => void): ReturnType<SandboxHost["terminal"]> {
+    const opened = await super.terminal(id, size, onData);
+    const ended = this.governed.governor.work(id);
+    void opened.process.exited.finally(ended);
+    return opened;
+  }
+
+  /** What is done on a knight's desktop (yours, or Galahad's on his computer) is work in its VM too: a click opens a page, and the page runs. */
+  override async desktop(id: string, quest: string, action: DesktopAction): Promise<DesktopView> {
+    const ended = this.governed.governor.work(id);
+    try {
+      return await super.desktop(id, quest, action);
     } finally {
       ended();
     }

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { b64u, type NodeCapacity, newNodeIdentity, SELF_ACTION_QUEST } from "@galahad/core";
+import { b64u, type NodeCapacity, newNodeIdentity, SELF_ACTION_QUEST, VM_OVERHEAD } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import type { CreateInput, LedgerEntryInput } from "@galahad/sandbox";
+import type { CreateInput, LedgerEntryInput, SpawnTerminal } from "@galahad/sandbox";
 import type { Capabilities } from "../src/capabilities.ts";
 import { GovernedSandboxHost } from "../src/compute/governed-host.ts";
-import { Governor } from "../src/compute/governor.ts";
+import { Governor, KEPT_WORK_MS } from "../src/compute/governor.ts";
 import { modelSpeed, sandboxStart } from "../src/compute/measure.ts";
 import { fakeDocker } from "./fake-docker.ts";
 
@@ -18,11 +18,11 @@ import { fakeDocker } from "./fake-docker.ts";
 const capacity = (over: Partial<NodeCapacity> = {}): NodeCapacity => ({ cores: 8, memoryGb: 16, sandboxes: 2, modelCalls: 2, strength: 8, speed: 1, measured: true, reasons: [], ...over });
 const request = (over: Partial<CreateInput> = {}): CreateInput => ({ network: "isolated", cpus: 4, memoryGb: 8, ttlMinutes: 60, persistent: false, ...over });
 
-function host(over: { capacity?: () => NodeCapacity; microVMs?: boolean; maxWaitMs?: number } = {}) {
+function host(over: { capacity?: () => NodeCapacity; microVMs?: boolean; maxWaitMs?: number; now?: () => number; spawnTerminal?: SpawnTerminal } = {}) {
   const docker = fakeDocker();
   const ledger: LedgerEntryInput[] = [];
   const cap = over.capacity ?? (() => capacity());
-  const governor = new Governor({ capacity: cap, host: () => null, retryMs: 5, maxWaitMs: over.maxWaitMs ?? 2_000 });
+  const governor = new Governor({ capacity: cap, host: () => null, retryMs: 5, maxWaitMs: over.maxWaitMs ?? 2_000, ...(over.now ? { now: over.now } : {}) });
   let minted = 0;
   const sandbox = new GovernedSandboxHost(
     {
@@ -33,6 +33,7 @@ function host(over: { capacity?: () => NodeCapacity; microVMs?: boolean; maxWait
       maxMemoryGb: 512,
       runner: docker.runner,
       microVMs: over.microVMs ?? false,
+      ...(over.spawnTerminal ? { spawnTerminal: over.spawnTerminal } : {}),
     },
     { governor, capacity: cap, microVMs: over.microVMs ?? false },
   );
@@ -87,6 +88,36 @@ describe("every sandbox takes a slot first", () => {
     expect(governor.usage().cores).toBe(6);
     await sandbox.exec(quest.id, ["true"], 30);
     expect(governor.usage().cores).toBe(6);
+  });
+
+  test("a terminal into a knight's VM holds its threads while it is open, and a while after; what is done on its desktop does too", async () => {
+    let clock = 1_000_000;
+    let hangUp!: (code: number) => void;
+    const shell = { write() {}, resize() {}, kill: () => hangUp(0), exited: new Promise<number>((resolve) => (hangUp = resolve)) };
+    const { sandbox, governor, docker } = host({ microVMs: true, capacity: () => capacity({ cores: 32, memoryGb: 64 }), now: () => clock, spawnTerminal: () => shell });
+    const quest = "arm.team.abcdef0123.ada";
+    const vm = await sandbox.create(request({ quest, persistent: true, cpus: 2, memoryGb: 2, isolation: "vm" }));
+    const threads = 2 + VM_OVERHEAD.cpus;
+    expect(governor.usage().cores).toBe(0);
+
+    const opened = await sandbox.terminal(vm.id, { cols: 80, rows: 24 }, () => {});
+    expect(governor.usage().cores).toBe(threads);
+    // Open an hour with nothing else run in it: what you run there is work all the while.
+    clock += 60 * 60_000;
+    expect(governor.usage().cores).toBe(threads);
+    opened.process.kill();
+    await opened.process.exited;
+    expect(governor.usage().cores).toBe(threads);
+    clock += KEPT_WORK_MS;
+    expect(governor.usage().cores).toBe(0);
+
+    let during = -1;
+    docker.onExec = () => ((during = governor.usage().cores), { code: 0, stdout: "c2hvdA==" });
+    await sandbox.desktop(vm.id, quest, { do: "click", x: 10, y: 20 });
+    expect(during).toBe(threads);
+    expect(governor.usage().cores).toBe(threads);
+    clock += KEPT_WORK_MS;
+    expect(governor.usage().cores).toBe(0);
   });
 
   test("more than the ceiling gets the ceiling; a microVM's overhead comes out of it", async () => {
