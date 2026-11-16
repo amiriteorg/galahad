@@ -8,11 +8,13 @@ import {
   findSecrets,
   type FleetView,
   MAX_QUEST_GATES,
+  type NamedRule,
   type ProviderView,
   QuestGates,
   redact,
   type Results,
   type RouteName,
+  type RuleView,
   type SandboxNetwork,
   type SandboxView,
   SECRET_REDIRECT,
@@ -55,6 +57,7 @@ import {
   runEffort,
   runQuest,
   standingAfter,
+  type Trip,
 } from "@galahad/brain";
 
 /*
@@ -135,6 +138,29 @@ export interface DoOptions {
    */
   engram?: boolean;
 }
+
+/**
+ * Your tripwires as the node holds them now, for the quest's loop to check each command against (it asks before every
+ * command, so one you add while the quest runs stops its next). A node from before rules has none to hold it to.
+ */
+async function rulesOf(node: NodeClient): Promise<NamedRule[]> {
+  try {
+    const { rules } = await node.call<{ rules: RuleView[] }>("rules");
+    return rules.flatMap((r) => (r.rule ? [{ name: r.name, ...r.rule }] : []));
+  } catch (error) {
+    if (/no such route/.test(String((error as Error).message))) return [];
+    throw error;
+  }
+}
+
+/** A command a tripwire stopped, told to the node for its ledger (which checks the rule stops it). Never holds the quest up. */
+const tellTrip =
+  (node: NodeClient, quest: string) =>
+  (trip: Trip & { command: string; gate?: boolean }): Promise<void> =>
+    node.call("ruleTripped", { quest, rule: trip.rule, command: trip.command.slice(0, 100_000), ...(trip.gate ? { gate: true } : {}) }).then(
+      () => {},
+      () => {},
+    );
 
 /** A quest's gates in a line, for its memory and the terminal: how many passed, and which didn't. */
 export function gatesLine(gates: readonly GateResult[]): string {
@@ -314,7 +340,8 @@ function environment(sandbox: SandboxView, host: string): string {
   ].join(" ");
 }
 
-function print(event: QuestEvent): void {
+/** One of a quest's events as `galahad do` prints it. */
+export function printQuestEvent(event: QuestEvent): void {
   switch (event.type) {
     case "plan":
       console.log(`${bold("◇ Plan")} ${dim(`· ${event.model}`)}\n${indent(event.text)}\n`);
@@ -365,6 +392,9 @@ function print(event: QuestEvent): void {
     case "budget":
       console.log(`  ${bold(event.out ? `The budget is spent ($${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)}): the work stops` : `$${event.spentUsd.toFixed(2)} of the $${event.budgetUsd.toFixed(2)} budget spent: wrapping up`)}`);
       return;
+    case "tripped":
+      console.log(`  ${bold(`Your tripwire "${event.rule}" ${event.does === "halt" ? "halted the quest" : event.gate ? "refused a gate" : "refused it"}: ${event.why}`)}\n${dim(indent(`$ ${firstLines(event.command, 2)}`, "    "))}`);
+      return;
     case "finished":
       return;
   }
@@ -403,6 +433,9 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       return;
     case "budget":
       console.log(`${tag} ${bold(event.out ? "the budget is spent: stopping" : `$${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)} spent: wrapping up`)}`);
+      return;
+    case "tripped":
+      console.log(`${tag} ${bold(`tripwire ${event.rule}: ${event.does === "halt" ? "halted" : "refused"}`)} ${dim(`$ ${firstLines(event.command, 1)}`)}`);
       return;
     case "finished":
       console.log(`${tag} ${event.outcome.status} ${dim(`· ${commandsRun(event.outcome)} commands`)}`);
@@ -566,6 +599,9 @@ async function workIn(
       emit: (event) => (shop.trail.on(event), run.emit?.(event)),
       signal: run.signal,
       ...(run.spentUsd ? { spentUsd: run.spentUsd } : {}),
+      // Your tripwires, as the node holds them before each command; each trip a line in its ledger, under this sandbox's quest.
+      rules: () => rulesOf(node),
+      tripped: tellTrip(node, shop.quest),
     },
   );
   // A repository's changes are kept as a patch (new files included) to read, and as a
@@ -855,7 +891,7 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   try {
     ({ outcome, artifact, shipped, effort, learned, usage } = await runNodeQuest(node, options, {
       // One attempt reads as ever; several are told apart, a line each.
-      emit: (event, attempt) => (attempt ? printAttempt(attempt, event) : print(event)),
+      emit: (event, attempt) => (attempt ? printAttempt(attempt, event) : printQuestEvent(event)),
       signal: controller.signal,
       started: ({ quest, sandbox, host, attempt }) => {
         console.log(dim(`[${attempt ? `attempt ${attempt}` : "quest"} ${quest} · sandbox ${sandbox.id} on ${host} · network ${sandbox.network}${attempt ? "" : " · Ctrl-C stops after the current step"}]${attempt ? "" : "\n"}`));
@@ -965,6 +1001,8 @@ export async function runNodeInvestigation(
         register: async (registration) => (await node.call<{ id: string }>("registerInvestigation", { registration })).id,
         emit: hooks.emit,
         signal: hooks.signal,
+        rules: () => rulesOf(node),
+        tripped: tellTrip(node, quest),
       },
     );
     const read = await exec("cat /work/out/results.json 2>/dev/null | head -c 200000", 60).catch(() => null);
@@ -1032,7 +1070,7 @@ export async function investigateFromCli(node: NodeClient, options: InvestigateO
   process.once("SIGINT", onInterrupt);
   try {
     const { result, artifact, predictions } = await runNodeInvestigation(node, options, {
-      emit: print,
+      emit: printQuestEvent,
       signal: controller.signal,
       started: ({ quest, sandbox, host }) => {
         console.log(dim(`[investigation ${quest} · ${sandbox.image.includes("/lab") ? "the Lab" : "workshop"} sandbox ${sandbox.id} on ${host} · network ${sandbox.network}]\n`));

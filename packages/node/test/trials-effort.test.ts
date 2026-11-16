@@ -109,6 +109,9 @@ function fakeNode(options: { pick: string; slots?: number }) {
           recorded.push(view);
           return { trial: view } as T;
         }
+        case "rules":
+          // (A node that holds no rules of yours: no command is held to a tripwire.)
+          return { rules: [] } as T;
         default:
           throw new Error(`unexpected call ${name}`);
       }

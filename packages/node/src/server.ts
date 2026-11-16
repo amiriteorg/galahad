@@ -887,8 +887,11 @@ export function createApp(ctx: AppContext) {
   const rulesView = (): RuleView[] => ctx.store.rules().map((r) => ({ name: r.name, rule: readRule(r.rule), setAt: decodeHlc(r.hlc).ms, setVia: r.via }));
   /** The tripwires the quests this node runs or serves are held to, as they stand now. */
   const rulesInForce = (): NamedRule[] => rulesView().flatMap((r) => (r.rule ? [{ name: r.name, ...r.rule }] : []));
-  /** A command a tripwire stopped, as a line in the ledger: the rule, what it did and why, the quest, the command (redacted, its middle cut when long). */
-  const ledgerTrip = (quest: string, trip: Trip, command: string, gate: boolean): void =>
+  /**
+   * A command a tripwire stopped, as a line in the ledger: the rule, what it did and why, the quest, the command (redacted,
+   * its middle cut when long), and what it was part of (`about`: a knight's task).
+   */
+  const ledgerTrip = (quest: string, trip: Trip, command: string, gate: boolean, about?: string): void =>
     ctx.ledger?.({
       class: "forbidden",
       resource: "rule",
@@ -896,7 +899,7 @@ export function createApp(ctx: AppContext) {
       verdict: "deny",
       reason: redact(`your tripwire ${trip.does === "halt" ? "halted the work" : `refused the ${gate ? "gate" : "command"}`}: ${trip.why}`).slice(0, 500),
       quest: quest.slice(0, 64),
-      detail: clip(redact(command), 300, 100),
+      detail: `${clip(redact(command), 300, 100)}${about ? ` · ${about}` : ""}`,
     });
 
   const fullNode = (ref: string): Device => {
@@ -1815,6 +1818,10 @@ export function createApp(ctx: AppContext) {
       story: (room) => teamOf().story(room),
       keepStory: (room, text, through) => teamOf().keepStory(room, text, through),
       search: (id, query) => teamOf().search(id, query),
+      // Your tripwires: each command of a knight's task on Galahad's own runner, and each gate, held to them as the mind
+      // holds them now; each trip a line in the ledger under its VM's quest.
+      rules: rulesInForce,
+      tripped: (member, given, trip) => ledgerTrip(armQuest(teammateLabel(member.id)), trip, trip.command, trip.gate === true, `task ${given.id}`),
       tools: (member, signal) => {
         const p = teammatePrincipal(member.id);
         const allowed = new Set(["recall", "remember", "skills", "skill_read", "connectors", "connector_call", "connector_request", "archive_search", "archive_read", "fleet", "compute", "ledger", "notices"]);

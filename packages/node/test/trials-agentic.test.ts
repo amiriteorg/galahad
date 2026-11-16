@@ -86,6 +86,9 @@ function fakeNode(script: Scripted) {
           recorded.push(view);
           return { trial: view } as T;
         }
+        case "rules":
+          // (A node that holds no rules of yours: no command is held to a tripwire.)
+          return { rules: [] } as T;
         default:
           throw new Error(`unexpected call ${name}`);
       }

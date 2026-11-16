@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { addUsage, costOf, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
-import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
+import { addUsage, costOf, type NamedRule, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
+import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type Trip } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import type { TeamRunContext } from "./team.ts";
 
@@ -39,6 +39,13 @@ export interface TeamRuntimeDeps {
   eyes?(teammate: Teammate): string | null;
   /** Keep a directory of the knight's VM (under /work) as an artifact on its host; gives the artifact's id. Absent: nothing is kept. */
   keep?(teammate: Teammate, path: string, label: string): Promise<string>;
+  /**
+   * Your rules as they stand now (the mind's): every command of a task on the native runner, and every gate, is checked
+   * against them before it runs. A vendor's coding tool runs its own commands inside the VM, unseen: only its gates are.
+   */
+  rules?(): readonly NamedRule[];
+  /** A command of a task's that a tripwire stopped: the ledger is told. */
+  tripped?(teammate: Teammate, task: TeamTask, trip: Trip & { command: string; gate?: boolean }): void;
 }
 
 export const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -195,6 +202,7 @@ export function progress(event: QuestEvent): string {
     case "escalated": return `Escalated · the same gate failed twice in a row: the ${event.to}'s models take the work\n$ ${event.gate}`;
     case "locked": return `Tests changed · ${event.changed.join(", ")}: the tests its gates run are the contract, so the work goes back`;
     case "budget": return event.out ? `Budget · spent ($${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)}): the work stops` : `Budget · $${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)} spent: wrapping up`;
+    case "tripped": return `Tripwire · ${event.rule} ${event.does === "halt" ? "halted the task" : event.gate ? "refused a gate" : "refused a command"}: ${event.why}\n$ ${event.command}`;
     default: return event.type;
   }
 }
@@ -432,6 +440,9 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         // and the independent review stay the planner's and the reviewer's, whoever did the work.
         ask: (role, messages, turn) => ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : ownNotes, (model, usage) => addUsage(spent, role, model, usage), turn?.loop),
         exec, signal: ctx.signal, emit: (event) => ctx.emit(progress(event)),
+        // Your tripwires, as the mind holds them before each command; each trip told to the ledger.
+        ...(deps.rules ? { rules: deps.rules } : {}),
+        tripped: (trip) => deps.tripped?.(teammate, task, trip),
         // What this task's calls have cost so far, at your prices (a coding tool's own calls go through the gateway and aren't in it yet).
         spentUsd: () => {
           const cost = costOf(spent, deps.prices?.() ?? {});

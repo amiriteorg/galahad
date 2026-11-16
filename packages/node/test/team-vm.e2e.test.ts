@@ -343,6 +343,29 @@ test("the notes store is one switch, the owner's: on unless turned off, a task i
   }
 }, 30000);
 
+test("a knight's task on the node is held to your tripwires: a refused command never reaches its VM, and its trail and the ledger say which rule", async () => {
+  await api("setRule", { name: "no-beta-writes", does: "refuse", words: [], contains: "# write-beta" });
+  try {
+    const ran = events.length;
+    const made = (await create("ada", "BETA")).task;
+    await until(async () => !["queued", "running"].includes((await task(made.id)).status));
+    // Refused, it was told why and said it was done; the gate and the reviewer judged what was there.
+    expect(await task(made.id)).toMatchObject({ status: "done", verified: true });
+    expect(events.slice(ran).some((event) => event.kind === "exec" && event.text.includes("write-beta"))).toBe(false);
+    const trail = await api<{ entries: { text: string }[] }>("teamTrail", { task: made.id });
+    expect(trail.entries.some((entry) => entry.text.includes("Tripwire · no-beta-writes refused a command: it holds `# write-beta`"))).toBe(true);
+    const { entries } = await api<{ entries: LedgerEntry[] }>("ledger");
+    expect(entries.find((entry) => entry.resource === "rule")).toMatchObject({
+      target: "no-beta-writes",
+      verdict: "deny",
+      quest: `arm.${teamArmLabel(daemon.identity.id, "ada")}`,
+      detail: `printf '%s' BETA > result.txt # write-beta · task ${made.id}`,
+    });
+  } finally {
+    await api("removeRule", { name: "no-beta-writes" });
+  }
+});
+
 test("controller restart keeps the exact VM; failed old-worker cleanup blocks new credentials and work", async () => {
   const binding = (await snapshot()).teammates.find((member) => member.id === "ada")!.workspace;
   await daemon.stop(); daemon = await start();

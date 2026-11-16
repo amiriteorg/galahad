@@ -318,6 +318,35 @@ test("a knight's reply with no command to run is shown as it happens, is not cou
   expect(f.bodies).toHaveLength(4);
 });
 
+test("a knight's task is held to your tripwires: a refused command never reaches its VM, its trail says which rule and why, and the ledger is told", async () => {
+  const progress: string[] = [];
+  const told: { teammate: string; task: string; rule: string; does: string; command: string }[] = [];
+  const f = fixture([say("1. Fix it, leave the lockfile."), say("```sh\nrm -f bun.lock\n```"), say("```sh\necho fixed\n```"), say("DONE\nFixed without the lockfile."), say("PASS\nThe evidence supports it.")], {
+    rules: () => [{ name: "no-locks", on: "command", does: "refuse", words: ["*.lock"] }],
+    tripped: (teammate, given, trip) => void told.push({ teammate: teammate.id, task: given.id, rule: trip.rule, does: trip.does, command: trip.command }),
+  });
+  const outcome = await f.runtime.executeTask(member, task, { ...f.context, emit: (text) => void progress.push(text) });
+  expect(outcome.verified).toBe(true);
+  expect(f.commands.some((c) => c.includes("bun.lock"))).toBe(false);
+  expect(f.commands.some((c) => c.includes("echo fixed"))).toBe(true);
+  expect(progress).toContain("Tripwire · no-locks refused a command: the word `bun.lock` matches `*.lock`\n$ rm -f bun.lock");
+  expect(told).toEqual([{ teammate: "ada", task: task.id, rule: "no-locks", does: "refuse", command: "rm -f bun.lock" }]);
+  // The engineer was told, and it is not counted as one of the task's commands.
+  expect(JSON.stringify(f.bodies[2])).toContain('Not run: your liege\'s tripwire \\"no-locks\\" refuses this command');
+  expect(outcome.record.commands).toBe(1);
+});
+
+test("a tripwire that halts ends a knight's task there, saying which rule: nothing more runs and it is not verified", async () => {
+  const f = fixture([say("1. Look at the settings."), say("```sh\ncat .env\n```"), say("```sh\necho never\n```")], {
+    rules: () => [{ name: "no-env", on: "command", does: "halt", words: [".env*"] }],
+  });
+  const outcome = await f.runtime.executeTask(member, task, f.context);
+  expect(outcome.verified).toBe(false);
+  expect(outcome.output).toStartWith('Halted by your tripwire "no-env": the word `.env` matches `.env*`.\n$ cat .env');
+  // (Every command in the VM is wrapped, and the wrapper says `os.environ`: what must not be there is the command.)
+  expect(f.commands.some((c) => c.includes("cat .env") || c.includes("echo never"))).toBe(false);
+});
+
 test("failing task gates cannot be replaced by an approving review or a knight's claim", async () => {
   let gates = 0;
   const f = fixture([say("1. Build."), say("DONE\nWorks."), say("DONE\nWorks now."), say("DONE\nTrust me.")], {
@@ -843,8 +872,17 @@ test("every step a task reports starts with the mark its knight's avatar shows i
     [{ type: "retry", role: "engineer", attempt: 1, error: "429", waitMs: 10 }, "working"],
     // The work goes on, on the planner's models: still work.
     [{ type: "escalated", to: "planner", gate: "bun run check" }, "working"],
+    // A command your tripwire stopped: the knight is at its work all the same (or its task has ended).
+    [{ type: "tripped", step: 4, command: "rm -f bun.lock", rule: "no-locks", does: "refuse", why: "the word `bun.lock` matches `*.lock`" }, "working"],
   ];
   for (const [event, step] of steps) expect(`${event.type}: ${taskStep(progress(event))}`).toBe(`${event.type}: ${step}`);
+});
+
+test("a tripwire is said in words on a task's timeline: which rule, what it did, why, and the command it stopped", () => {
+  const trip = { type: "tripped" as const, step: 4, command: "git push origin main", rule: "no-push", why: "it holds `git push`" };
+  expect(progress({ ...trip, does: "refuse" })).toBe("Tripwire · no-push refused a command: it holds `git push`\n$ git push origin main");
+  expect(progress({ ...trip, does: "refuse", gate: true })).toBe("Tripwire · no-push refused a gate: it holds `git push`\n$ git push origin main");
+  expect(progress({ ...trip, does: "halt" })).toBe("Tripwire · no-push halted the task: it holds `git push`\n$ git push origin main");
 });
 
 test("the gates are said in words on a task's timeline: which they are, then how they went", () => {
