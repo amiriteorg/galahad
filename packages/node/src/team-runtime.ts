@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { addUsage, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, randomId, redact } from "@galahad/core";
-import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
+import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import type { TeamRunContext } from "./team.ts";
 
@@ -245,7 +245,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
     const fold = (role: string) => ask(teammate, role, [{ role: "user", content }], signal, STORY_BRIEF);
     // A chore, on the swift role as a chat's story is (what to keep needs no costly model); the knight's own role when
     // swift has no model that answers, so a room never stalls on its story.
-    const work = fold("swift")
+    const work = fold(choreRole(deps.brain(teammate).store, "fold"))
       .catch(() => fold(teammate.role))
       .then(({ text }) => { if (text.trim()) deps.keepStory!(room.id, text.trim(), older.at(-1)!.id); });
     telling.set(room.id, work);

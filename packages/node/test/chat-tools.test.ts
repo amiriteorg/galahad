@@ -309,6 +309,18 @@ describe("your chat history", () => {
     expect(logs.some((line) => line.startsWith(`fold ${id}:`))).toBe(true);
   });
 
+  test("folding is a chore of its own: once you hire a model for the fold role, it folds instead of the swift role", async () => {
+    const admin = home.adminToken();
+    expect((await call("setRoster", { role: "fold", models: ["stand-in/fold-model"] }, admin)).status).toBe(200);
+    script = [say("One.")];
+    const { id } = conversationOf(await ask(admin, "p".repeat(30_000), { save: true }));
+    script = [say("Two.")];
+    await ask(admin, "q".repeat(30_000), { conversation: id });
+    script = [say("You sent two long notes."), say("Three.")];
+    await ask(admin, "And three?", { conversation: id });
+    expect(bodies.map((b) => b.model)).toEqual(["fold-model", "m"]);
+  });
+
   test("asking again replaces the last exchange; tool steps are kept with the answer", async () => {
     script = [say("First try.")];
     const { id } = conversationOf(await ask(home.adminToken(), "Try me.", { save: true }));

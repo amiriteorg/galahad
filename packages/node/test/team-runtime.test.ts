@@ -147,6 +147,19 @@ test("a room's story is a chore: told on the swift role, while the knight's repl
   expect(kept!.text).toBe("Ada drafts the notes.");
 });
 
+test("a room's story goes to the fold role once you hire a model for it, before the swift role", async () => {
+  let kept: { text: string; through: string } | null = null;
+  const f = fixture([say("Folded."), say("Understood.")], {
+    story: () => kept,
+    keepStory: (_where: string, text: string, through: string) => { kept = { text, through }; },
+  });
+  f.setRoster("swift", ["local/swift-model"]);
+  f.setRoster("fold", ["local/fold-model"]);
+  const long = Array.from({ length: 40 }, (_, i) => said(i + 1, i % 2 ? "ada" : "owner", `Message ${i + 1} ${"x".repeat(1000)}`));
+  await f.runtime.respond(member, room, long, f.context);
+  expect(f.bodies.map((body) => body.model)).toEqual(["fold-model", "fake"]);
+});
+
 test("a knight searches everything said in its conversations, older than it was shown included, with its own tool", async () => {
   const asked: [string, string][] = [];
   const f = fixture([call("search_conversations", { query: "release date" }), say("We settled on Monday.")], {

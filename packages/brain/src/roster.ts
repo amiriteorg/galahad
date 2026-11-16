@@ -54,6 +54,15 @@ export const ROLES: Record<string, RoleSpec> = {
   },
 };
 
+/**
+ * The role a chore runs on (`fold`: a long chat or a room's conversation summed up into its story): the role named after
+ * the chore once you hire models for it (`galahad roster set fold <provider/model> …`), the swift role until then. What a
+ * chore costs is yours to choose, apart from what answers you.
+ */
+export function choreRole(store: MindStore, chore: string): string {
+  return store.lww<string[]>(`roster:${chore}`)?.value?.length ? chore : "swift";
+}
+
 export function roleModels(store: MindStore, role: string): string[] {
   const configured = store.lww<string[]>(`roster:${role}`)?.value;
   if (configured?.length) return configured;
