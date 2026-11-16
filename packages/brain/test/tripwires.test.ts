@@ -129,7 +129,7 @@ describe("a rule, against a command", () => {
 
   test("its piece of text trips on the whole command, here-documents included, and case counts", () => {
     expect(tripOf([rule("no-push", "refuse", [], "git push")], "git add -A && git push origin main")).toEqual({ rule: "no-push", does: "refuse", why: "it holds `git push`" });
-    expect(tripOf([rule("no-key", "refuse", [], "BEGIN PRIVATE")], "cat > k <<'EOF'\n-----BEGIN PRIVATE KEY-----\nEOF")).toEqual({ rule: "no-key", does: "refuse", why: "it holds `BEGIN PRIVATE`" });
+    expect(tripOf([rule("no-drops", "refuse", [], "DROP TABLE")], "psql <<'SQL'\nDROP TABLE users;\nSQL")).toEqual({ rule: "no-drops", does: "refuse", why: "it holds `DROP TABLE`" });
     expect(tripOf([rule("no-push", "refuse", [], "git push")], "GIT PUSH")).toBeNull();
   });
 
