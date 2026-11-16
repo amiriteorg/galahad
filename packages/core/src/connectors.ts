@@ -63,6 +63,8 @@ export const NATIVE_TOOLS = {
   "outlook.send": "https://graph.microsoft.com",
   "outlook.archive": "https://graph.microsoft.com",
   "outlook.trash": "https://graph.microsoft.com",
+  /** Whether a Cloudflare API token works, whoever owns it: a user's address first, then each account it can see. */
+  "cloudflare.verify": "https://api.cloudflare.com",
 } as const;
 export type NativeName = keyof typeof NATIVE_TOOLS;
 const NativeName = z.enum(Object.keys(NATIVE_TOOLS) as [NativeName, ...NativeName[]]);

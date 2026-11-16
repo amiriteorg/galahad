@@ -203,7 +203,7 @@ export const CATALOG: Record<string, CatalogEntry> = {
     },
   },
   cloudflare: {
-    keyHelp: "an API token from https://dash.cloudflare.com/profile/api-tokens (R2 edit for buckets)",
+    keyHelp: "an API token, a user's (https://dash.cloudflare.com/profile/api-tokens) or an account's (Manage Account → Account API Tokens); R2 edit for buckets",
     manifest: {
       id: "cloudflare",
       label: "Cloudflare",
@@ -212,7 +212,13 @@ export const CATALOG: Record<string, CatalogEntry> = {
       basePath: "/client/v4",
       auth: { secret: "cloudflare", scheme: "bearer" },
       tools: {
-        "token.verify": { description: "Check the API token works.", method: "GET", path: "/user/tokens/verify", class: "read" },
+        "token.verify": {
+          description: "Check the API token works, whoever owns it: a user's or an account's (says which, its status and when it expires).",
+          native: "cloudflare.verify",
+          method: "GET",
+          path: "/user/tokens/verify",
+          class: "read",
+        },
         accounts: { description: "Accounts the token can see.", method: "GET", path: "/accounts", class: "read" },
         zones: {
           description: "Zones (domains).",
