@@ -42,3 +42,8 @@ export const SHOWN: Record<AvatarExpression, { eyes: Eyes; gaze: readonly [numbe
   concerned: { eyes: "low", gaze: [0, 0.3] },
   resting: { eyes: "shut", gaze: [0, 0] },
 };
+
+/** How much larger than drawn the live eyes are on a face `size` px across: as drawn on a row's face (56 and under),
+ * a quarter larger on a card's portrait (112 and over), in proportion between; where there is room, what they say reads
+ * at a glance. Their glances grow with them; they stay in the slit's dark either way. */
+export const eyeScale = (size: number): number => Math.round(Math.min(1.25, Math.max(1, 1 + ((size - 56) / 56) * 0.25)) * 100) / 100;

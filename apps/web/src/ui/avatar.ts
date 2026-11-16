@@ -1,6 +1,7 @@
 import { AVATAR_EXPRESSIONS, AVATAR_LOOKS, AVATAR_TEMPERAMENTS, avatarLook, lookProfile, resolveAvatar, type AvatarExpression, type AvatarLook, type AvatarProfile } from "@galahad/core/avatar";
-import { ART, type Art, CANVAS, type Eyes, SHOWN } from "../lib/knight-eyes.ts";
-import { button, field } from "./controls.ts";
+import { ART, type Art, CANVAS, eyeScale, type Eyes, SHOWN } from "../lib/knight-eyes.ts";
+import { type KnightState, STATES } from "../lib/knight-state.ts";
+import { button, dot, field } from "./controls.ts";
 import { h, replace, svg } from "./dom.ts";
 
 /*
@@ -25,8 +26,9 @@ const LARGE_FROM = 120;
 const title = (value: string) => value[0]!.toUpperCase() + value.slice(1);
 const n1 = (value: number) => String(Math.round(value * 10) / 10);
 
-/** The live eyes: the drawn ones covered in the slit's own dark, and drawn again as this state has them. */
-function eyes(art: Art, eyes: Eyes, gaze: readonly [number, number]): SVGElement[] {
+/** The live eyes: the drawn ones covered in the slit's own dark, and drawn again as this state has them, `scale` times
+ * as large about their own middles (lib/knight-eyes.ts's eyeScale), glances and all. */
+function eyes(art: Art, eyes: Eyes, gaze: readonly [number, number], scale = 1): SVGElement[] {
   return ART[art].eyes.flatMap(([x, y, r, slit]) => {
     const cover = svg("circle", { cx: n1(x), cy: n1(y), r: n1(r * 1.3), fill: slit });
     const [gx, gy] = [x + gaze[0] * r, y + gaze[1] * r];
@@ -36,7 +38,8 @@ function eyes(art: Art, eyes: Eyes, gaze: readonly [number, number]): SVGElement
     // Embers: a red glow in rings round a hot core, with no filter (nothing in an avatar has an id).
     else if (eyes === "ember") eye = svg("g", { class: "kn-ember" }, svg("circle", { cx: n1(gx), cy: n1(gy), r: n1(2.3 * r), fill: "#ff3b4e", opacity: 0.16 }), svg("circle", { cx: n1(gx), cy: n1(gy), r: n1(1.6 * r), fill: "#ff3b4e", opacity: 0.32 }), svg("circle", { cx: n1(gx), cy: n1(gy), r: n1(1.12 * r), fill: "#ff4a5a" }), svg("circle", { cx: n1(gx), cy: n1(gy), r: n1(0.55 * r), fill: "#fff1f2" }));
     else eye = svg("circle", { cx: n1(gx), cy: n1(gy + (eyes === "low" ? 0.12 * r : 0)), r: n1(r * (eyes === "wide" ? 1.18 : eyes === "low" ? 0.86 : 1)), fill: "#ffffff" });
-    return [cover, svg("g", { class: "kn-gaze" }, svg("g", { class: "kn-eye" }, eye))];
+    const live = svg("g", { class: "kn-gaze" }, svg("g", { class: "kn-eye" }, eye));
+    return [cover, scale === 1 ? live : svg("g", { transform: `matrix(${scale} 0 0 ${scale} ${n1((1 - scale) * x)} ${n1((1 - scale) * y)})` }, live)];
   });
 }
 
@@ -81,7 +84,8 @@ export const KNIGHT_CSS = `
 @keyframes kn-embers { 0%, 100% { opacity: .78; } 50% { opacity: 1; } }
 .knight[data-beast] .kn-ember { animation: kn-embers 1.6s ease-in-out infinite; }
 .knight[data-still], .knight[data-still] * { animation: none !important; }
-@media (prefers-reduced-motion: reduce) { .knight, .knight * { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) :is(.knight, .knight *) { animation: none !important; } }
+:root[data-motion="reduce"] :is(.knight, .knight *) { animation: none !important; }
 .avatar-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 4px; }
 .avatar-look { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px 8px; border: 0; border-radius: 14px; background: none; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
 .avatar-look:hover { background: var(--surface-2, transparent); }
@@ -141,12 +145,35 @@ export function workerAvatar(options: WorkerAvatarOptions): HTMLElement {
     h("span", { class: "kn-figure" },
       h("img", { src: `/knights/${art}.webp`, ...(large ? { srcset: `/knights/${art}.webp 288w, /knights/${art}@2x.webp 576w`, sizes: `${size}px` } : {}), alt: "", draggable: "false", decoding: "async" }),
       svg("svg", { class: "kn-live", viewBox: `0 0 ${CANVAS} ${CANVAS}`, "aria-hidden": "true", focusable: "false" },
-        ...eyes(art, beast ? "ember" : shown.eyes, shown.gaze),
+        ...eyes(art, beast ? "ember" : shown.eyes, shown.gaze, beast ? 1 : eyeScale(size)),
         expression === "asking" && size >= 48 ? askMark(art) : null,
       ),
     ),
   );
 }
+
+/**
+ * A knight in its seat: the face in a ring of its state's colour (lib/knight-state.ts), as wide as the drawing's own
+ * reach and a little more, so the ring covers and cuts nothing of it. The ring turns while the knight works (it rests
+ * when the device asks for less motion), calls softly while the knight waits on you, and is a hairline at rest. Its
+ * size follows the face's: `seat-s` for a row's, `seat-m` for a card's, `seat-l` for a portrait.
+ */
+export function seat(options: WorkerAvatarOptions & { state?: KnightState }): HTMLElement {
+  const size = Number.isFinite(options.size) ? options.size! : 40;
+  return h("span", { class: `seat seat-${size <= 48 ? "s" : size <= 96 ? "m" : "l"}`, "data-state": options.state ?? "resting" }, workerAvatar(options));
+}
+
+/** A knight's state in words, beside its name (a badge in the state's tone; working has a live dot, so it isn't read as
+ * a quiet state). Null at rest: its line says what it is for. */
+export function stateChip(state: KnightState | undefined): HTMLElement | null {
+  const look = STATES[state ?? "resting"];
+  if (!look.words) return null;
+  return h("span", { class: "badge state-chip", "data-tone": look.tone }, state === "working" ? dot("accent", { live: true }) : null, look.words);
+}
+
+/** The mark of the one who leads the Roundtable, beside its name: small, in ink, in words. */
+export const leadMark = (name?: string): HTMLElement =>
+  h("span", { class: "lead-mark", title: name && name !== "Galahad" ? `${name} leads the Roundtable: what you say to a room ${name} sits in without naming anyone is its to answer` : "Leads the Roundtable" }, "Leads");
 
 /** An unsaved draft. The enclosing profile editor decides whether to persist it. */
 export function avatarEditor(options: { id(): string; name(): string; profile?: unknown }): { element: HTMLElement; value(): AvatarProfile | null; refreshIdentity(): void } {

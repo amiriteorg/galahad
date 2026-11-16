@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AVATAR_EXPRESSIONS, AVATAR_LOOKS, defaultAvatar, lookProfile } from "@galahad/core/avatar";
 import { avatarSheet } from "../../design/avatars.ts";
-import { KNIGHT_CSS, workerAvatar, type WorkerAvatarOptions } from "./avatar.ts";
+import { eyeScale } from "../lib/knight-eyes.ts";
+import { KNIGHT_CSS, leadMark, seat, stateChip, workerAvatar, type WorkerAvatarOptions } from "./avatar.ts";
 
 /** Captures the renderer's real createElement and createElementNS calls, without an HTML parser or a browser. */
 class Node_ {
@@ -15,6 +16,9 @@ class Node_ {
   addEventListener() {}
 }
 function render(...options: WorkerAvatarOptions[]): Node_[] {
+  return withDocument(() => options.map((option) => workerAvatar(option) as unknown as Node_));
+}
+function withDocument<T>(draw: () => T): T {
   const original = Object.getOwnPropertyDescriptor(globalThis, "document");
   Object.defineProperty(globalThis, "document", { configurable: true, value: {
     createElement: (tag: string) => new Node_(tag, "html"),
@@ -24,7 +28,7 @@ function render(...options: WorkerAvatarOptions[]): Node_[] {
     },
     createTextNode: (text: string) => new Node_("#text", "html", text),
   } });
-  try { return options.map((option) => workerAvatar(option) as unknown as Node_); }
+  try { return draw(); }
   finally { if (original) Object.defineProperty(globalThis, "document", original); else Reflect.deleteProperty(globalThis, "document"); }
 }
 const walk = (node: Node_): Node_[] => [node, ...node.children.flatMap(walk)];
@@ -115,6 +119,64 @@ describe("knights at the page's boundary", () => {
     expect(img(small!).attrs.srcset).toBeUndefined();
     expect(img(beast!).attrs.srcset).toContain("black-knight@2x.webp");
     expect(img(knight!).attrs.srcset).toBeUndefined();
+  });
+});
+
+describe("a knight in its seat", () => {
+  test("its ring says its state; the face in it is the knight's own, at the size asked, and the seat's size follows it", () => {
+    const [working, resting, portrait, card] = withDocument(() => [
+      seat({ id: "ada", name: "Ada", state: "working", expression: "working", size: 32 }),
+      seat({ id: "ada", name: "Ada", size: 32 }),
+      seat({ id: "ada", name: "Ada", state: "needs", expression: "asking", size: 104 }),
+      seat({ id: "ada", name: "Ada", state: "paused", size: 84 }),
+    ] as unknown as Node_[]);
+    expect([working!.attrs.class, working!.attrs["data-state"]]).toEqual(["seat seat-s", "working"]);
+    expect(resting!.attrs["data-state"]).toBe("resting");
+    expect([portrait!.attrs.class, card!.attrs.class]).toEqual(["seat seat-l", "seat seat-m"]);
+    // Nothing but the face inside, named as the face is, and no style of the seat's own: its size is the stylesheet's.
+    expect(working!.children).toHaveLength(1);
+    expect(working!.children[0]!.attrs["aria-label"]).toBe("Ada · working");
+    expect(working!.attrs.style).toBeUndefined();
+  });
+
+  test("its state is said in words beside its name, in its tone; working with a live dot, so it isn't read as a quiet one", () => {
+    const [working, needs, failed, resting] = withDocument(() => [stateChip("working"), stateChip("needs"), stateChip("failed"), stateChip("resting")] as unknown as (Node_ | null)[]);
+    expect([working!.attrs["data-tone"], working!.children.map((child) => child.text || child.attrs.class)]).toEqual(["accent", ["dot live", "Working"]]);
+    expect([needs!.attrs["data-tone"], needs!.children.map((child) => child.text)]).toEqual(["needs", ["Needs you"]]);
+    expect(failed!.attrs["data-tone"]).toBe("danger");
+    // At rest there is nothing to say beyond its line.
+    expect(resting).toBeNull();
+  });
+
+  test("the one who leads wears a mark in words, which says what leading means", () => {
+    const [lin, galahad] = withDocument(() => [leadMark("Lin"), leadMark()] as unknown as Node_[]);
+    expect(lin!.children.map((child) => child.text)).toEqual(["Leads"]);
+    expect(lin!.attrs.title).toContain("what you say to a room Lin sits in without naming anyone is its to answer");
+    expect(galahad!.attrs.title).toBe("Leads the Roundtable");
+  });
+});
+
+describe("live eyes where there is room", () => {
+  test("as drawn on a row's face, a quarter larger on a portrait, in proportion between", () => {
+    expect([20, 32, 40, 56].map(eyeScale)).toEqual([1, 1, 1, 1]);
+    expect([84, 112, 160, 256].map(eyeScale)).toEqual([1.13, 1.25, 1.25, 1.25]);
+  });
+
+  test("a large face draws its eyes larger about their own middles, glances and all; a small one as drawn", () => {
+    const [small, large, beast] = render({ id: "ada", name: "Ada", profile: lookProfile("kay"), expression: "working", size: 40 }, { id: "ada", name: "Ada", profile: lookProfile("kay"), expression: "working", size: 112 }, { id: "galahad", name: "Galahad", beast: true, size: 112 });
+    const scaled = (node: Node_) => walk(node).filter((child) => child.tag === "g" && child.attrs.transform);
+    expect(scaled(small!)).toHaveLength(0);
+    // Kay's left eye is at (271, 304): scaled 1.25 about it.
+    expect(scaled(large!).map((group) => group.attrs.transform)).toEqual(["matrix(1.25 0 0 1.25 -67.7 -76)", "matrix(1.25 0 0 1.25 -111 -76)"]);
+    // Each holds the eye that glances, so its glances grow with it.
+    for (const group of scaled(large!)) expect(group.children[0]!.attrs.class).toBe("kn-gaze");
+    // Embers glow as they are.
+    expect(scaled(beast!)).toHaveLength(0);
+  });
+
+  test("the eyes stop moving when the device asks for less motion, or when Settings does", () => {
+    expect(KNIGHT_CSS).toContain('@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) :is(.knight, .knight *) { animation: none !important; } }');
+    expect(KNIGHT_CSS).toContain(':root[data-motion="reduce"] :is(.knight, .knight *) { animation: none !important; }');
   });
 });
 

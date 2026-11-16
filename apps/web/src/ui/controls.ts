@@ -19,7 +19,8 @@ import { toast } from "./toast.ts";
  * (h) and lifetimes are dom.ts's. Tones map to semantic tokens: a component never picks a colour.
  */
 
-export type Tone = "ok" | "warn" | "danger" | "info" | "accent" | "agent" | "neutral";
+/** `needs`: Galahad's oxblood, for what waits on you at the Roundtable (a knight's chip, lib/knight-state.ts). */
+export type Tone = "ok" | "warn" | "danger" | "info" | "accent" | "agent" | "neutral" | "needs";
 
 export function badge(text: string, tone: Tone = "neutral", iconName?: IconName): HTMLElement {
   return h("span", { class: "badge", "data-tone": tone }, iconName ? icon(iconName, { size: 12 }) : null, text);

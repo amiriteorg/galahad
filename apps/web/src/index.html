@@ -654,6 +654,7 @@
       [data-tone="accent"] { --tone: var(--accent); --tone-soft: var(--accent-soft); }
       [data-tone="agent"] { --tone: var(--agent); --tone-soft: var(--agent-soft); }
       [data-tone="neutral"] { --tone: var(--text-2); --tone-soft: var(--surface-2); }
+      [data-tone="needs"] { --tone: var(--oxblood); --tone-soft: var(--oxblood-soft); }
       /* Words in their tone (an action class beside a tool's name). */
       .toned { color: var(--tone); }
       .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone, var(--text-3)); flex: none; display: inline-block; }
@@ -1175,6 +1176,47 @@
       .team-head .workspace-toggle[aria-pressed="true"] { --btn-bg: var(--surface-3); }
       :root[data-keyboard="open"] .team-layout { height: calc(100dvh - var(--topbar-h)); }
       @media (pointer: coarse) { .team-member-choice, .team-task-details > summary { min-height: 44px; } }
+      /* A knight in its seat (ui/avatar.ts seat()): its face in a ring of its state's colour (lib/knight-state.ts), the
+         ring just outside the drawing's reach. A hairline at rest; an arc of ink that turns while it works; Galahad's
+         oxblood, calling softly, while it waits on you; red for a failure; green for work just verified; grey while
+         queued; dashed while paused. The turning and the calling stop when the device asks for less motion. */
+      .seat {
+        --ring: var(--border-strong); --ring-w: 1px; --seat-pad: 4px;
+        position: relative; display: inline-grid; place-items: center; flex: none; padding: var(--seat-pad); border-radius: 50%; background: var(--surface-2);
+      }
+      .seat.seat-m { --seat-pad: 7px; }
+      .seat.seat-l { --seat-pad: 9px; }
+      .seat::before { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 var(--ring-w) var(--ring); pointer-events: none; }
+      .seat:not([data-state="resting"]) { --ring-w: 2px; }
+      .seat.seat-m:not([data-state="resting"]) { --ring-w: 2.5px; }
+      .seat.seat-l:not([data-state="resting"]) { --ring-w: 3px; }
+      .seat[data-state="working"] { --ring: var(--accent); box-shadow: inset 0 0 0 1px var(--border-strong); }
+      .seat[data-state="needs"] { --ring: var(--oxblood); }
+      .seat[data-state="failed"] { --ring: var(--danger); }
+      .seat[data-state="verified"] { --ring: var(--ok); }
+      .seat[data-state="queued"] { --ring: var(--text-3); }
+      .seat[data-state="paused"]::before { box-shadow: none; border: var(--ring-w) dashed var(--text-3); }
+      .seat[data-state="working"]::before {
+        box-shadow: none; background: conic-gradient(from 0turn, transparent 0.08turn, var(--accent) 0.82turn);
+        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000 calc(100% - var(--ring-w) + 0.5px));
+        mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000 calc(100% - var(--ring-w) + 0.5px));
+        animation: seat-turn 1.6s linear infinite; will-change: transform;
+      }
+      .seat[data-state="needs"]::after {
+        content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 var(--ring-w) var(--oxblood); opacity: 0; pointer-events: none;
+        animation: seat-call 2.8s var(--ease-out) infinite;
+      }
+      @keyframes seat-turn { to { transform: rotate(1turn); } }
+      @keyframes seat-call { 0% { opacity: 0.6; transform: scale(1); } 55%, 100% { opacity: 0; transform: scale(1.16); } }
+      :root[data-motion="reduce"] .seat::before, :root[data-motion="reduce"] .seat::after { animation: none; }
+      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .seat::before, :root:not([data-motion="full"]) .seat::after { animation: none; } }
+      /* A knight's state in words (ui/avatar.ts stateChip()): a badge in its tone; working's carries a live dot. */
+      .state-chip .dot { width: 6px; height: 6px; }
+      /* The one who leads the Roundtable (ui/avatar.ts leadMark()): beside its name, small, in ink, in words. */
+      .lead-mark {
+        display: inline-flex; align-items: center; flex: none; height: 18px; padding: 0 6px; border-radius: var(--r-full); border: 1px solid var(--accent-border);
+        color: var(--text); font-size: var(--fs-11); font-weight: 600; line-height: 1; letter-spacing: 0.01em; white-space: nowrap;
+      }
       /* The knights' faces (ui/avatar.ts): drawn whole in SVG and never moving. Galahad's own is in ink, whatever the theme. */
       .worker-avatar { display: block; flex: none; }
       .worker-avatar[data-galahad] { color: var(--accent); }

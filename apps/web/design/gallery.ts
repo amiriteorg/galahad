@@ -10,11 +10,16 @@
  */
 import { badge, button, callout, card, chipInput, copyField, count, disclosure, dot, empty, errorState, field, formActions, kbd, kv, linkButton, list, listRow, meta, meter, note, pageHead, rangeControl, sasCode, secretInput, section, segmented, skeletonBlock, skeletonRows, skeletonStat, spinner, statTile, switchControl, type Tone } from "../src/ui/controls.ts";
 import { openSheet } from "../src/ui/dialog.ts";
+import { leadMark, seat, stateChip } from "../src/ui/avatar.ts";
+import type { KnightState } from "../src/lib/knight-state.ts";
 import { h, Scope } from "../src/ui/dom.ts";
 import { icon } from "../src/ui/icons.ts";
 import { selector } from "../src/ui/selector.ts";
 
-const TONES: Tone[] = ["ok", "warn", "danger", "info", "accent", "agent", "neutral"];
+const TONES: Tone[] = ["ok", "warn", "danger", "info", "accent", "agent", "neutral", "needs"];
+/** Each state a knight can be in, with the face it shows in it. */
+const SEATED: [KnightState, "working" | "asking" | "concerned" | "resting" | "waiting" | "pleased" | "idle"][] = [["working", "working"], ["needs", "asking"], ["failed", "concerned"], ["paused", "resting"], ["queued", "waiting"], ["verified", "pleased"], ["resting", "idle"]];
+const chip = (state: KnightState) => stateChip(state) ?? h("span", { class: "tiny subtle" }, "at rest: no chip");
 const scope = new Scope();
 
 /** One component: its name as code calls it, what it's for, and its states side by side. */
@@ -155,6 +160,14 @@ const page = h(
     ),
 
     shown(
+      "seat() · stateChip() · leadMark()",
+      "A knight in its seat: its face in a ring of its state's colour, the chip that says it in words, and the mark of the one who leads.",
+      state("each state, on a row's face", h("div", { class: "gallery-seats" }, ...SEATED.map(([each, expression]) => h("div", { class: "stack snug gallery-seat" }, seat({ id: "percival", name: "Percival", state: each, expression, size: 32 }), chip(each))))),
+      state("on a card, and as a portrait", h("div", { class: "row wrap" }, seat({ id: "percival", name: "Percival", state: "working", expression: "working", size: 84 }), seat({ id: "gareth", name: "Gareth", state: "needs", expression: "asking", size: 104 }))),
+      state("who leads", h("div", { class: "row wrap" }, h("strong", {}, "Lin"), leadMark("Lin"), stateChip("working")), h("div", { class: "row wrap" }, h("strong", {}, "Galahad"), leadMark())),
+    ),
+
+    shown(
       "callout()",
       "What a part of a page wants you to know, in its tone, with a way forward.",
       state("tones", h("div", { class: "stack" }, callout("info", "Fetched from the node a moment ago."), callout("ok", "Sealed. No model ever sees it.", { title: "In the vault" }), callout("warn", "No disk limit here: a sandbox can fill this host's disk.", { title: "No disk limit", actions: button("How to fix it", { size: "sm" }) }), callout("danger", "The vault couldn't be unlocked on this node."), callout("quiet", "This device can see loops but not change them."))),
@@ -200,6 +213,8 @@ const css = h(
    .gallery-caption { font: 500 11px/1.4 var(--font-mono); color: var(--text-3); }
    .gallery-split { display: grid; gap: var(--sp-6); grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
    .gallery-key { width: 7ch; }
+   .gallery-seats { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+   .gallery-seat { align-items: center; }
    .gallery-bar { display: inline-block; height: 12px; background: var(--accent-fill); border-radius: 2px; }
    .gallery-sheet-frame { position: relative; padding: var(--sp-4) 0; }
    dialog.sheet.gallery-sheet { position: relative; inset: auto; margin: 0 auto; opacity: 1; transform: none; max-height: none; }`,
