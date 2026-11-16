@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { NamedRule } from "@galahad/core";
+import type { NamedCheck, NamedRule } from "@galahad/core";
 import { commandWords } from "../src/shell-paths.ts";
-import { compileGlob, globMatches, tripOf } from "../src/tripwires.ts";
+import { checksAfter, compileGlob, globMatches, tripOf } from "../src/tripwires.ts";
 
 /*
  * Tripwires: your rules, checked before a command runs. A rule's globs are matched against the command's words as
@@ -146,5 +146,27 @@ describe("a rule, against a command", () => {
     expect(tripOf([...rules].reverse(), "rm bun.lock")?.rule).toBe("a-halt");
     expect(tripOf(rules.filter((r) => r.does === "refuse"), "rm bun.lock")?.rule).toBe("a-refuse");
     expect(tripOf([], "rm -rf /")).toBeNull();
+  });
+});
+
+const check = (name: string, run: string, words: string[], contains?: string): NamedCheck => ({ name, on: "after", does: "check", run, words, ...(contains !== undefined ? { contains } : {}) });
+
+describe("a check, against a command", () => {
+  test("a command its globs or its text match calls for it; any other doesn't", () => {
+    const types = check("types", "bunx tsc --noEmit", ["*.ts"]);
+    expect(checksAfter([types], "cat > src/a.ts <<'EOF'\nexport const a = 1;\nEOF")).toEqual([types]);
+    expect(checksAfter([types], "sed -i 's/a/b/' packages/web/src/b.ts")).toEqual([types]);
+    expect(checksAfter([types], "cat README.md")).toEqual([]);
+    const commits = check("tests", "bun test", [], "git commit");
+    expect(checksAfter([commits], "git add -A && git commit -m wip")).toEqual([commits]);
+    expect(checksAfter([commits], "git status")).toEqual([]);
+  });
+
+  test("several, by name, each once; a tripwire is never a check, and a check never trips", () => {
+    const rules = [check("z-lint", "bun run lint", ["*.ts"]), rule("no-locks", "halt", ["*.ts"]), check("a-types", "bunx tsc --noEmit", ["src/**", "*.ts"])];
+    expect(checksAfter(rules, "touch src/a.ts").map((r) => r.name)).toEqual(["a-types", "z-lint"]);
+    expect(checksAfter([...rules].reverse(), "touch src/a.ts").map((r) => r.name)).toEqual(["a-types", "z-lint"]);
+    expect(tripOf(rules, "touch src/a.ts")?.rule).toBe("no-locks");
+    expect(tripOf(rules.filter((r) => r.on === "after"), "touch src/a.ts")).toBeNull();
   });
 });

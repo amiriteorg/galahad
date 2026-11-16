@@ -1,8 +1,8 @@
-import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, type NamedRule, redact, type RuleDoes } from "@galahad/core";
+import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, type NamedCheck, type NamedRule, redact, type RuleDoes } from "@galahad/core";
 import { type AgentDriver, type AgentModel, agentModelName, runAgent } from "./agents.ts";
 import { engramBriefing, engramProject } from "./engram.ts";
 import { readOf, testFilesOf, writesOf } from "./shell-paths.ts";
-import { type Trip, tripOf } from "./tripwires.ts";
+import { checksAfter, type Trip, tripOf } from "./tripwires.ts";
 
 /*
  * A quest: plan → work → independent review, in a sandbox.
@@ -205,6 +205,11 @@ export type QuestEvent =
    * leaves that command unrun and the work going on. `why`: the word and the glob it matched, the text it holds.
    */
   | { type: "tripped"; step: number; command: string; rule: string; does: RuleDoes; why: string; gate?: boolean }
+  /**
+   * A check of yours ran after the command at `step` (or after a batch, at its last), which it matched and which exited
+   * 0: `command` is the check's, and `output` what it printed, as the engineer was told it.
+   */
+  | { type: "checked"; step: number; rule: string; command: string; exitCode: number; durationMs: number; output: string }
   | { type: "finished"; outcome: QuestOutcome };
 
 export const QUEST_DEFAULTS = { maxSteps: 30, maxRevisions: 2, commandTimeoutSec: 300 } as const;
@@ -473,6 +478,12 @@ class Unread extends Error {}
 /** What the engineer is told of a command a tripwire of yours refused (a refused gate's excerpt too, and the reviewer's trail). */
 const refusal = (trip: Trip): string => `Not run: your liege's tripwire "${trip.rule}" refuses this command (${trip.why}). Do the work another way, without what it refuses.`;
 
+/** What the engineer is told of a check of yours that ran after his command: a line when it passed, all of it when it didn't. */
+const checkSaid = (name: string, run: string, exitCode: number, seen: string): string =>
+  exitCode === 0
+    ? `\n\n(Your liege's check "${name}" ran after this, and passed: $ ${run})`
+    : `\n\nYour liege's check "${name}" ran after this, and failed:\n$ ${run}\n${seen}\nFix what it found before you go on.`;
+
 /** How a quest a tripwire halted ends: which rule, why, and the command it stopped. */
 const haltedSummary = (trip: Trip, command: string): string => `Halted by your tripwire "${trip.rule}": ${trip.why}.\n$ ${command.split("\n")[0]}`;
 
@@ -668,6 +679,29 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     } catch {
       /* the ledger couldn't be told: the command was stopped all the same */
     }
+  };
+
+  /**
+   * Your checks a command (or a batch) called for, once it has run: each in turn, in the quest's own sandbox, as a
+   * command of his is (not one of his steps). Each is an event and a line of the reviewer's trail; what they found is
+   * what the engineer is told, after the command's own output.
+   */
+  const runChecks = async (checks: readonly NamedCheck[], step: number, trail: Step[]): Promise<string> => {
+    let said = "";
+    for (const c of checks) {
+      check();
+      let result: ExecResult;
+      try {
+        result = await deps.exec(c.run, o.commandTimeoutSec);
+      } catch (error) {
+        result = { exitCode: -1, stdout: "", stderr: `The sandbox could not run this: ${(error as Error).message}`, durationMs: 0, truncated: false };
+      }
+      const seen = observation(result);
+      emit({ type: "checked", step, rule: c.name, command: c.run, exitCode: result.exitCode, durationMs: result.durationMs, output: seen });
+      trail.push({ command: trailCommand(c.run), exitCode: result.exitCode, excerpt: `(your liege's check "${c.name}", after the command before it)\n${clip(seen.split("\n").slice(1).join("\n"), 600, 300)}` });
+      said += checkSaid(c.name, c.run, result.exitCode, seen);
+    }
+    return said;
   };
 
   /**
@@ -993,11 +1027,19 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         }
         const stuck = notes.findIndex((n) => n.stop);
         if (stuck >= 0) return looped(batch[stuck]!, seen[stuck]!);
+        // Your checks, once the whole batch has run: each that a command of it called for (one that ran and exited 0), once.
+        const checks = batch.flatMap((command, i) => (results[i]?.exitCode === 0 ? checksAfter(rules, command) : []));
+        const checked = await runChecks(
+          checks.filter((c, i) => checks.findIndex((d) => d.name === c.name) === i).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+          steps,
+          trail,
+        );
         const dropped = action.commands.length - batch.length;
         messages.push({
           role: "user",
           content:
             batch.map((command, i) => `[${i + 1}] $ ${command.split("\n")[0]}${command.includes("\n") ? " …" : ""}\n${seen[i]}${notes[i]!.note}`).join("\n\n") +
+            checked +
             (dropped ? `\n\n(${dropped} more command${dropped === 1 ? " was" : "s were"} not run: you are out of commands.)` : "") +
             cut +
             leftNote(o.maxSteps - steps) +
@@ -1009,7 +1051,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         turn += 1;
         if (action.thought) emit({ type: "thought", step: steps, text: action.thought, model: reply.model });
         // Your tripwires first: a command one halts ends the quest; one refused isn't run, and he is told which and why.
-        const found = tripOf(await rulesNow(), action.command);
+        const rules = await rulesNow();
+        const found = tripOf(rules, action.command);
         if (found) {
           tripped += 1;
           await trip(found, action.command, steps);
@@ -1034,7 +1077,9 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         trail.push({ command: trailCommand(action.command), exitCode: result.exitCode, excerpt: clip(seen.split("\n").slice(1).join("\n"), 600, 300) });
         const again = repeated(action.command, steps, result, seen);
         if (again.stop) return looped(action.command, seen);
-        messages.push({ role: "user", content: `${seen}${again.note}${cut}${leftNote(o.maxSteps - steps)}${spentNote()}` });
+        // Your checks after it, if it ran clean and one matches it.
+        const checked = result.exitCode === 0 ? await runChecks(checksAfter(rules, action.command), steps, trail) : "";
+        messages.push({ role: "user", content: `${seen}${checked}${again.note}${cut}${leftNote(o.maxSteps - steps)}${spentNote()}` });
         continue;
       }
 

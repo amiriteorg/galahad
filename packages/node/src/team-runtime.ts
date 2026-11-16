@@ -216,6 +216,7 @@ export function progress(event: QuestEvent): string {
     case "locked": return `Tests changed · ${event.changed.join(", ")}: the tests its gates run are the contract, so the work goes back`;
     case "budget": return event.out ? `Budget · spent ($${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)}): the work stops` : `Budget · $${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)} spent: wrapping up`;
     case "tripped": return `Tripwire · ${event.rule} ${event.does === "halt" ? "halted the task" : event.gate ? "refused a gate" : "refused a command"}: ${event.why}\n$ ${event.command}`;
+    case "checked": return `Check · ${event.rule} ${event.exitCode === 0 ? "passed" : "failed"} · ${event.command}${event.exitCode === 0 ? "" : `\n${event.output}`}`;
     default: return event.type;
   }
 }

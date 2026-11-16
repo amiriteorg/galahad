@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MAX_RULE_GLOBS as CONTRACT_GLOBS, RuleInput } from "@galahad/core";
-import { globsFromText, MAX_GLOB_LENGTH, MAX_RULE_GLOBS, MAX_TEXT_LENGTH, ruleFromForm, ruleParts, ruleWhen } from "./rules.ts";
+import { globsFromText, MAX_CHECK_LENGTH, MAX_GLOB_LENGTH, MAX_RULE_GLOBS, MAX_TEXT_LENGTH, ruleFromForm, ruleParts, ruleWhen } from "./rules.ts";
 
 describe("a tripwire typed into the app", () => {
   test("its globs at spaces, commas or new lines, each once, as typed", () => {
@@ -28,9 +28,25 @@ describe("a tripwire typed into the app", () => {
     expect(problem({ name: "No Locks" })).toBe("Its name: lowercase letters, digits and . _ - (at most 40), starting with a letter or digit.");
     expect(problem({ name: "" })).toBe("Its name: lowercase letters, digits and . _ - (at most 40), starting with a letter or digit.");
     expect(problem({ globs: "", contains: "" })).toBe("Give it a glob to match a command's words, or a piece of text it must hold.");
-    expect(problem({ globs: Array.from({ length: MAX_RULE_GLOBS + 1 }, (_, i) => `g${i}`).join(" ") })).toBe("A tripwire takes at most 8 globs (this is 9).");
+    expect(problem({ globs: Array.from({ length: MAX_RULE_GLOBS + 1 }, (_, i) => `g${i}`).join(" ") })).toBe("A rule takes at most 8 globs (this is 9).");
     expect(problem({ globs: `ok ${"x".repeat(MAX_GLOB_LENGTH + 1)}` })).toBe("Glob 2 is longer than 100 characters.");
     expect(problem({ contains: "x".repeat(MAX_TEXT_LENGTH + 1) })).toBe("The text it must hold is longer than 200 characters.");
+  });
+
+  test("a check: what to run after a command it matches, one line; a tripwire never sends one", () => {
+    const made = ruleFromForm({ name: "types", does: "check", globs: "*.ts *.tsx", contains: "", run: "  bunx tsc --noEmit " });
+    expect(made).toEqual({ rule: { name: "types", does: "check", words: ["*.ts", "*.tsx"], run: "bunx tsc --noEmit" } });
+    expect("rule" in made && RuleInput.safeParse(made.rule).success).toBe(true);
+    expect(ruleFromForm({ name: "no-locks", does: "refuse", globs: "*.lock", contains: "", run: "bun test" })).toEqual({ rule: { name: "no-locks", does: "refuse", words: ["*.lock"] } });
+    const problem = (run: string) => {
+      const said = ruleFromForm({ name: "types", does: "check", globs: "*.ts", contains: "", run });
+      return "problem" in said ? said.problem : null;
+    };
+    expect(problem("   ")).toBe("Give it the command to run after: bunx tsc --noEmit, bun test.");
+    expect(problem("bun test\nrm -rf /")).toBe("The check is one line: join commands with && or ;.");
+    expect(problem("x".repeat(MAX_CHECK_LENGTH + 1))).toBe("The check is longer than 1000 characters.");
+    expect(RuleInput.safeParse({ name: "r", does: "check", words: ["x"], run: "x".repeat(MAX_CHECK_LENGTH) }).success).toBe(true);
+    expect(RuleInput.safeParse({ name: "r", does: "check", words: ["x"], run: "x".repeat(MAX_CHECK_LENGTH + 1) }).success).toBe(false);
   });
 
   test("the app's limits are the contract's", () => {
@@ -51,6 +67,8 @@ describe("a tripwire in words", () => {
     expect(ruleWhen({ does: "refuse", words: [], contains: "git push" })).toBe('refuses the command when it holds "git push"');
     expect(ruleWhen({ does: "refuse", words: ["git"], contains: "--force" })).toBe('refuses the command when a word matches git and it holds "--force"');
     expect(ruleWhen({ does: "refuse", words: ["a", "b", "c"] })).toBe("refuses the command when a word matches a, b or c");
+    expect(ruleWhen({ does: "check", run: "bunx tsc --noEmit", words: ["*.ts"] })).toBe("runs bunx tsc --noEmit after a command that succeeds, when a word matches *.ts");
+    expect(ruleWhen({ does: "check", run: "bun test", words: [], contains: "git commit" })).toBe('runs bun test after a command that succeeds, when it holds "git commit"');
   });
 
   test("in parts, so what it matches is shown as written: each glob, and its text", () => {

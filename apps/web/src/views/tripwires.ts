@@ -10,20 +10,28 @@ import { toast } from "../ui/toast.ts";
 import { deviceName } from "./activity.ts";
 
 /*
- * Tripwires, on the Loops page: your rules on the commands his work runs (core's rules.ts). Before each command of
- * his quests (yours from a terminal, his loops', a trial's) and of a knight's task on his own runner, and before each
- * gate, a rule halts the work or refuses that command, and he is told which and why. Data you write, never code and
- * never a model's judgment; yours alone to set (fleet:admin). A coding tool's own commands inside its VM aren't seen,
- * and the section says so.
+ * Tripwires and checks, on the Loops page: your rules on the commands his work runs (core's rules.ts). Before each
+ * command of his quests (yours from a terminal, his loops', a trial's) and of a knight's task on his own runner, and
+ * before each gate, a tripwire halts the work or refuses that command, and he is told which and why. After such a
+ * command has succeeded, a check runs a command of yours, and he is told at once if it fails. Data you write, never a
+ * model's judgment; yours alone to set (fleet:admin). A coding tool's own commands inside its VM aren't seen, and the
+ * section says so.
  */
 
 const PATH = "/api/rules";
 
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** What a rule does, and when, as a sentence: what it matches shown as written. */
+/** What a rule does, and when, as a sentence: what it matches, and what it runs, shown as written. */
 const sentence = (rule: NonNullable<RuleView["rule"]>): HTMLElement =>
   h("span", {}, ...ruleParts(rule).map((part, i) => (part.kind === "words" ? (i ? part.text : capital(part.text)) : h("span", { class: "mono" }, part.text))), ".");
+
+/** How a rule's row leads: what it does, at a glance. */
+const LEAD: Record<RuleDoes, { icon: "ban" | "shield" | "shield-check"; tone: "danger" | "warn" | "info" }> = {
+  halt: { icon: "ban", tone: "danger" },
+  refuse: { icon: "shield", tone: "warn" },
+  check: { icon: "shield-check", tone: "info" },
+};
 
 /** The Tripwires section, and how to bring it up to date (the page asks now and then). */
 export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; refresh(): Promise<void> } {
@@ -32,10 +40,10 @@ export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; ref
   let signature = "";
 
   function row(r: RuleView): HTMLElement {
-    const halts = r.rule?.does === "halt";
+    const lead = r.rule ? LEAD[r.rule.does] : null;
     return listRow({
-      lead: halts ? "ban" : "shield",
-      leadTone: r.rule ? (halts ? "danger" : "warn") : "neutral",
+      lead: lead?.icon ?? "shield",
+      leadTone: lead?.tone ?? "neutral",
       top: true,
       title: h("span", { class: "mono" }, r.name),
       sub: r.rule ? sentence(r.rule) : "A newer node's rule: this node doesn't understand it, and doesn't apply it.",
@@ -49,7 +57,11 @@ export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; ref
     replace(
       box,
       list(rules.map(row), {
-        empty: { icon: "shield", title: "No tripwires", body: "A tripwire halts the work, or refuses a command, whose words match a glob of yours: *.lock, .env*, migrations/**, rm." },
+        empty: {
+          icon: "shield",
+          title: "No tripwires or checks",
+          body: "A tripwire halts the work, or refuses a command, whose words match a glob of yours: *.lock, .env*, migrations/**, rm. A check runs a command of yours after one that matches: bunx tsc --noEmit after *.ts.",
+        },
       }),
     );
   }
@@ -68,7 +80,7 @@ export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; ref
   }
 
   async function remove(r: RuleView): Promise<void> {
-    const ok = await confirmAction({ title: `Remove ${r.name}?`, body: "No command is held to it any more, on any node.", confirmLabel: "Remove tripwire" });
+    const ok = await confirmAction({ title: `Remove ${r.name}?`, body: "No command is held to it any more, on any node.", confirmLabel: "Remove rule" });
     if (!ok) return;
     try {
       await ctx.api.post(`${PATH}/remove`, { name: r.name });
@@ -85,27 +97,34 @@ export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; ref
     const name = input("e.g. no-lockfiles", 40);
     const globs = input("*.lock .env* migrations/** rm", 900);
     const contains = input("e.g. git push", 200);
+    const run = input("e.g. bunx tsc --noEmit", 1000);
+    const runField = field("Check to run", run, { hint: "One line, run where his work runs after a command that matches has succeeded. If it fails, he is told at once, with what it printed." });
     let does: RuleDoes = "refuse";
     const doesControl = segmented<RuleDoes>(
       [
-        { value: "refuse", label: "Refuse the command" },
-        { value: "halt", label: "Halt the work" },
+        { value: "refuse", label: "Refuse" },
+        { value: "halt", label: "Halt" },
+        { value: "check", label: "Check after" },
       ],
       does,
-      (value) => (does = value),
+      (value) => {
+        does = value;
+        runField.hidden = value !== "check";
+      },
       { label: "What it does" },
     );
+    runField.hidden = true;
     const status = h("div");
-    const save = button("Add tripwire", { variant: "primary", type: "submit", icon: "check" });
+    const save = button("Add rule", { variant: "primary", type: "submit", icon: "check" });
     const form = h(
       "form",
       {
         class: "stack loose",
         onsubmit: (event: Event) => {
           event.preventDefault();
-          const made = ruleFromForm({ name: name.value, does, globs: globs.value, contains: contains.value });
+          const made = ruleFromForm({ name: name.value, does, globs: globs.value, contains: contains.value, run: run.value });
           if ("problem" in made) return void replace(status, callout("warn", made.problem));
-          const secret = [...made.rule.words, made.rule.contains ?? ""].map((text) => findSecrets(text)[0]).find(Boolean);
+          const secret = [...made.rule.words, made.rule.contains ?? "", made.rule.run ?? ""].map((text) => findSecrets(text)[0]).find(Boolean);
           if (secret) return void replace(status, callout("warn", `That looks like a ${secret.kind}: a rule's words reach the ledger and his conversation, so it wasn't set. A key belongs in the vault.`));
           void busy(save, async () => {
             try {
@@ -121,22 +140,29 @@ export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; ref
         },
       },
       field("Name", name, { hint: "Lowercase: letters, digits, . _ - (a rule with the same name is replaced)." }),
-      field("Words that trip it", globs, {
+      field("Words that match", globs, {
         hint: "Globs, separated by spaces, matched against each word of a command, quoted or not: * is any run of characters but /, ** any run, ? one character. *.lock is a lockfile in any folder; migrations/** is that folder and everything in it.",
       }),
       field("Text it holds (optional)", contains, { hint: "The command must hold this as well, here-documents included: git push, --force." }),
-      h("div", { class: "stack tight" }, h("div", { class: "label" }, "What it does"), doesControl.el, note("Refuse: that command isn't run, he is told which rule and why, and the work goes on. Halt: the quest or task stops, saying which rule.")),
+      h(
+        "div",
+        { class: "stack tight" },
+        h("div", { class: "label" }, "What it does"),
+        doesControl.el,
+        note("Refuse: that command isn't run, he is told which rule and why, and the work goes on. Halt: the quest or task stops, saying which rule. Check after: once the command has succeeded, yours runs, and he is told if it fails."),
+      ),
+      runField,
       status,
       formActions(button("Cancel", { onClick: () => sheet.close() }), save),
     );
-    const sheet = openSheet({ title: "Add a tripwire", description: "A rule of yours on the commands his work runs.", body: form, initialFocus: () => name });
+    const sheet = openSheet({ title: "Add a rule", description: "A rule of yours on the commands his work runs.", body: form, initialFocus: () => name });
   }
 
   const el = section(
-    "Tripwires",
+    "Tripwires and checks",
     {
-      actions: yours ? button("Add tripwire", { size: "sm", icon: "plus", onClick: () => openAdd() }) : null,
-      note: `Checked before every command of his quests and of a knight's task on his own runner, and every gate. A coding tool (OpenCode, Claude Code, Codex, Hermes) runs its own commands inside its VM, where they aren't seen.${yours ? "" : " This device can see them, not change them (no fleet:admin)."}`,
+      actions: yours ? button("Add rule", { size: "sm", icon: "plus", onClick: () => openAdd() }) : null,
+      note: `Tripwires are checked before every command of his quests and of a knight's task on his own runner, and every gate; checks run after those commands. A coding tool (OpenCode, Claude Code, Codex, Hermes) runs its own commands inside its VM, where they aren't seen.${yours ? "" : " This device can see them, not change them (no fleet:admin)."}`,
     },
     box,
   );

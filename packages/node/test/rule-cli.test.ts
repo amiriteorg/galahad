@@ -36,6 +36,11 @@ describe("what a rule says", () => {
     expect(describeRule({ on: "command", does: "refuse", words: ["git"], contains: "--force" })).toBe('refuses the command when a word matches git and it holds "--force"');
     expect(describeRule({ on: "command", does: "refuse", words: ["a", "b", "c"] })).toBe("refuses the command when a word matches a, b or c");
   });
+
+  test("a check: what it runs, and after what", () => {
+    expect(describeRule({ on: "after", does: "check", run: "bunx tsc --noEmit", words: ["*.ts", "*.tsx"] })).toBe("runs bunx tsc --noEmit after a command that succeeds, when a word matches *.ts or *.tsx");
+    expect(describeRule({ on: "after", does: "check", run: "bun test", words: [], contains: "git commit" })).toBe('runs bun test after a command that succeeds, when it holds "git commit"');
+  });
 });
 
 describe("galahad rule ls", () => {
@@ -45,6 +50,7 @@ describe("galahad rule ls", () => {
         rules: [
           view("no-locks", { on: "command", does: "halt", words: ["*.lock"] }),
           view("no-push", { on: "command", does: "refuse", words: [], contains: "git push" }, "c_phone"),
+          view("types", { on: "after", does: "check", run: "bunx tsc --noEmit", words: ["*.ts"] }),
           view("later", null),
         ],
       },
@@ -53,8 +59,10 @@ describe("galahad rule ls", () => {
     const out = printed.join("\n");
     expect(out).toContain("no-locks  halts the work when a word matches *.lock");
     expect(out).toContain('no-push   refuses the command when it holds "git push"');
+    expect(out).toContain("types     runs bunx tsc --noEmit after a command that succeeds, when a word matches *.ts");
     expect(out).toContain("later     a newer node's rule: this node doesn't understand it, and doesn't apply it");
-    expect(out).toContain("Checked before every command of Galahad's quests");
+    expect(out).toContain("Tripwires are checked before every command of Galahad's quests");
+    expect(out).toContain("checks run after those commands, never after a gate");
     expect(out).toContain("A coding tool (OpenCode, Claude Code, Codex, Hermes) runs its own commands in its VM, where they aren't seen");
     // (No word is the same as ls.)
     printed = [];
@@ -64,8 +72,8 @@ describe("galahad rule ls", () => {
 
   test("with none, says so and how to add one", async () => {
     await ruleCommand(api({ rules: { rules: [] } }), "ls", [], {});
-    expect(printed.join("\n")).toContain("No tripwires yet.");
-    expect(printed.join("\n")).toContain("galahad rule add <name> --halt|--refuse <glob>… [--contains text]");
+    expect(printed.join("\n")).toContain("No rules yet.");
+    expect(printed.join("\n")).toContain('galahad rule add <name> --halt|--refuse|--check "command" <glob>… [--contains text]');
   });
 });
 
@@ -81,11 +89,21 @@ describe("galahad rule add", () => {
     expect(push.calls).toEqual([{ name: "setRule", input: { name: "no-push", does: "refuse", words: [], contains: "git push" } }]);
   });
 
+  test('--check "command" with its globs: the command to run after one that matches is sent as written', async () => {
+    const node = api({ setRule: { rule: view("types", { on: "after", does: "check", run: "bunx tsc --noEmit", words: ["*.ts"] }) } });
+    await ruleCommand(node, "add", ["types", "*.ts"], { check: "bunx tsc --noEmit" });
+    expect(node.calls).toEqual([{ name: "setRule", input: { name: "types", does: "check", words: ["*.ts"], run: "bunx tsc --noEmit" } }]);
+    expect(printed[0]).toBe("Set types: it runs bunx tsc --noEmit after a command that succeeds, when a word matches *.ts.");
+  });
+
   test("what isn't a rule is refused before anything is sent: no name, no --halt or --refuse, both, nothing to match", async () => {
     const node = api({});
-    await expect(ruleCommand(node, "add", [], { halt: true })).rejects.toThrow("usage: galahad rule add <name> --halt|--refuse <glob>… [--contains text]");
-    await expect(ruleCommand(node, "add", ["no-locks", "*.lock"], {})).rejects.toThrow("say what it does: --halt (the work stops) or --refuse (that command isn't run)");
+    await expect(ruleCommand(node, "add", [], { halt: true })).rejects.toThrow('usage: galahad rule add <name> --halt|--refuse|--check "command" <glob>… [--contains text]');
+    await expect(ruleCommand(node, "add", ["no-locks", "*.lock"], {})).rejects.toThrow('say what it does: --halt (the work stops), --refuse (that command isn\'t run) or --check "command" (yours runs after it)');
     await expect(ruleCommand(node, "add", ["no-locks", "*.lock"], { halt: true, refuse: true })).rejects.toThrow("--halt or --refuse, not both");
+    await expect(ruleCommand(node, "add", ["types", "*.ts"], { refuse: true, check: "tsc" })).rejects.toThrow("--refuse or --check, not both");
+    await expect(ruleCommand(node, "add", ["types", "*.ts"], { check: true })).rejects.toThrow('--check takes the command to run after: --check "bunx tsc --noEmit"');
+    await expect(ruleCommand(node, "add", ["types", "*.ts"], { check: "  " })).rejects.toThrow("--check takes the command to run after");
     await expect(ruleCommand(node, "add", ["no-locks"], { refuse: true })).rejects.toThrow("give it a glob to match a command's words, or --contains text");
     expect(node.calls).toEqual([]);
   });
@@ -101,6 +119,6 @@ describe("galahad rule rm", () => {
   });
 
   test("anything else says how it is used", async () => {
-    await expect(ruleCommand(api({}), "frobnicate", [], {})).rejects.toThrow("usage: galahad rule ls | rule add <name> --halt|--refuse <glob>… [--contains text] | rule rm <name>");
+    await expect(ruleCommand(api({}), "frobnicate", [], {})).rejects.toThrow('usage: galahad rule ls | rule add <name> --halt|--refuse|--check "command" <glob>… [--contains text] | rule rm <name>');
   });
 });

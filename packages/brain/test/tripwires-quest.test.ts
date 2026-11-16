@@ -12,8 +12,11 @@ import { commandsRun, type QuestEvent, type QuestOptions, type QuestRole, runQue
 const fence = "```";
 const sh = (...commands: string[]) => `Next.\n${commands.map((c) => `${fence}sh\n${c}\n${fence}`).join("\n")}`;
 const rule = (name: string, does: "halt" | "refuse", words: string[], contains?: string): NamedRule => ({ name, on: "command", does, words, ...(contains !== undefined ? { contains } : {}) });
+/** A check of yours: `run` after a command its globs or text match. (The test sandbox fails any command that holds "fail".) */
+const check = (name: string, run: string, words: string[], contains?: string): NamedRule => ({ name, on: "after", does: "check", run, words, ...(contains !== undefined ? { contains } : {}) });
 
 type Tripped = Extract<QuestEvent, { type: "tripped" }>;
+type Checked = Extract<QuestEvent, { type: "checked" }>;
 
 function harness(script: Partial<Record<QuestRole, string[]>>, rules: NamedRule[] | (() => NamedRule[]), options: Partial<QuestOptions> = {}) {
   const queues: Record<QuestRole, string[]> = { planner: ["1. Do it."], engineer: [], reviewer: ["PASS\nIt holds up."], ...script };
@@ -43,7 +46,8 @@ function harness(script: Partial<Record<QuestRole, string[]>>, rules: NamedRule[
   );
   const engineerSaw = (turn: number) => seen.filter((s) => s.role === "engineer")[turn]!.messages.at(-1)!.content;
   const trips = () => events.filter((e): e is Tripped => e.type === "tripped");
-  return { run, seen, events, commands, told, engineerSaw, trips };
+  const checks = () => events.filter((e): e is Checked => e.type === "checked");
+  return { run, seen, events, commands, told, engineerSaw, trips, checks };
 }
 
 describe("refuse", () => {
@@ -190,5 +194,70 @@ describe("your rules, as they stand", () => {
     expect(h.commands).toEqual(["rm x"]);
     expect(outcome.status).toBe("done");
     expect("tripped" in outcome).toBe(false);
+  });
+});
+
+describe("your checks, after a command", () => {
+  test("the check runs right after a command it matches; one that fails is told to him at once, with what it printed", async () => {
+    const h = harness({ engineer: [sh("touch src/a.ts"), sh("echo fixed"), "DONE\nFixed what it found."] }, [check("types", "tsc-fail --noEmit", ["*.ts"])]);
+    const outcome = await h.run;
+    expect(h.commands).toEqual(["touch src/a.ts", "tsc-fail --noEmit", "echo fixed"]);
+    expect(h.engineerSaw(1)).toMatch(/^exit 0 · 1 ms\nran touch src\/a\.ts\n\nYour liege's check "types" ran after this, and failed:\n\$ tsc-fail --noEmit\nexit 1 · 1 ms\nran tsc-fail --noEmit\nFix what it found before you go on\./);
+    expect(h.checks()).toEqual([{ type: "checked", step: 1, rule: "types", command: "tsc-fail --noEmit", exitCode: 1, durationMs: 1, output: "exit 1 · 1 ms\nran tsc-fail --noEmit" }]);
+    // It isn't one of his commands, and spends none of them.
+    expect(outcome).toMatchObject({ status: "done", steps: 2 });
+    expect(commandsRun(outcome)).toBe(2);
+    expect(h.events.filter((e) => e.type === "command").map((e) => (e as { command: string }).command)).toEqual(["touch src/a.ts", "echo fixed"]);
+    // The reviewer sees it, after the command it followed.
+    const review = h.seen.find((s) => s.role === "reviewer")!.messages[0]!.content;
+    expect(review).toContain('1. $ touch src/a.ts\n   exit 0\n   ran touch src/a.ts\n2. $ tsc-fail --noEmit\n   exit 1\n   (your liege\'s check "types", after the command before it)\n   ran tsc-fail --noEmit\n3. $ echo fixed');
+  });
+
+  test("one that passes is a line; a command it doesn't match, one that failed, and one a tripwire refused call for none", async () => {
+    const h = harness(
+      { engineer: [sh("touch src/a.ts"), sh("cat README.md"), sh("fail src/b.ts"), sh("rm src/c.ts bun.lock"), "DONE\nDone."] },
+      [check("types", "tsc --noEmit", ["*.ts"]), rule("no-locks", "refuse", ["*.lock"])],
+    );
+    const outcome = await h.run;
+    expect(h.commands).toEqual(["touch src/a.ts", "tsc --noEmit", "cat README.md", "fail src/b.ts"]);
+    expect(h.engineerSaw(1)).toEndWith('ran touch src/a.ts\n\n(Your liege\'s check "types" ran after this, and passed: $ tsc --noEmit)');
+    for (const turn of [2, 3, 4]) expect(h.engineerSaw(turn)).not.toContain("check");
+    expect(h.checks().map((c) => [c.step, c.rule, c.exitCode])).toEqual([[1, "types", 0]]);
+    expect(outcome).toMatchObject({ status: "done", steps: 4, tripped: 1 });
+  });
+
+  test("after a parallel batch: each check it called for runs once, by name, when all of it has run", async () => {
+    const h = harness(
+      { engineer: [sh("touch a.ts", "touch b.ts", "fail c.md"), "DONE\nDone."] },
+      [check("z-lint", "lint", ["*.ts"]), check("a-types", "tsc", ["*.ts"]), check("docs", "mdlint", ["*.md"])],
+      { parallelCommands: 3 },
+    );
+    const outcome = await h.run;
+    expect(h.commands.slice(0, 3).sort()).toEqual(["fail c.md", "touch a.ts", "touch b.ts"]);
+    // (The .md command failed: its check isn't run.)
+    expect(h.commands.slice(3)).toEqual(["tsc", "lint"]);
+    const back = h.engineerSaw(1);
+    expect(back.indexOf("[3] $ fail c.md")).toBeLessThan(back.indexOf('check "a-types"'));
+    expect(back).toContain('(Your liege\'s check "a-types" ran after this, and passed: $ tsc)\n\n(Your liege\'s check "z-lint" ran after this, and passed: $ lint)');
+    expect(h.checks().map((c) => [c.step, c.rule])).toEqual([[3, "a-types"], [3, "z-lint"]]);
+    expect(commandsRun(outcome)).toBe(3);
+  });
+
+  test("a gate calls for none: it is a check of its own", async () => {
+    const h = harness({ engineer: [sh("echo work"), "DONE\nDone."] }, [check("types", "tsc", ["*.ts", "echo"])], { gates: ["bun test a.ts"] });
+    await h.run;
+    expect(h.commands).toEqual(["echo work", "tsc", "bun test a.ts"]);
+    expect(h.checks().map((c) => c.step)).toEqual([1]);
+  });
+
+  test("are your rules as they stand: one you add while the quest runs checks its next command", async () => {
+    const rules: NamedRule[] = [];
+    let read = 0;
+    const h = harness({ engineer: [sh("touch a.ts"), sh("touch b.ts"), "DONE\nok"] }, () => {
+      if (read++ === 1) rules.push(check("types", "tsc", ["*.ts"]));
+      return rules;
+    });
+    await h.run;
+    expect(h.commands).toEqual(["touch a.ts", "touch b.ts", "tsc"]);
   });
 });

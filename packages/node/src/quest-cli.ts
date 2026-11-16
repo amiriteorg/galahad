@@ -395,6 +395,10 @@ export function printQuestEvent(event: QuestEvent): void {
     case "tripped":
       console.log(`  ${bold(`Your tripwire "${event.rule}" ${event.does === "halt" ? "halted the quest" : event.gate ? "refused a gate" : "refused it"}: ${event.why}`)}\n${dim(indent(`$ ${firstLines(event.command, 2)}`, "    "))}`);
       return;
+    case "checked":
+      if (event.exitCode === 0) console.log(`  ${dim(`Your check "${event.rule}" passed · $ ${firstLines(event.command, 1)}`)}`);
+      else console.log(`  ${bold(`Your check "${event.rule}" failed`)} ${dim(`· $ ${firstLines(event.command, 1)}`)}\n${dim(indent(firstLines(event.output.split("\n").slice(1).join("\n"), 6), "    "))}`);
+      return;
     case "finished":
       return;
   }
@@ -436,6 +440,9 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       return;
     case "tripped":
       console.log(`${tag} ${bold(`tripwire ${event.rule}: ${event.does === "halt" ? "halted" : "refused"}`)} ${dim(`$ ${firstLines(event.command, 1)}`)}`);
+      return;
+    case "checked":
+      if (event.exitCode !== 0) console.log(`${tag} ${bold(`check ${event.rule}: failed`)} ${dim(`$ ${firstLines(event.command, 1)}`)}`);
       return;
     case "finished":
       console.log(`${tag} ${event.outcome.status} ${dim(`· ${commandsRun(event.outcome)} commands`)}`);

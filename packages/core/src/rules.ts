@@ -1,19 +1,22 @@
 import { z } from "zod";
 
 /*
- * Your rules (PLAN #23), and their first kind: tripwires on the commands his work runs. A rule is data you write,
- * never code and never a model's judgment: globs matched against a command's words, a piece of text it must hold,
- * and what happens to a command that trips it. Only you write them: the mind refuses one that isn't your word, from
- * a full node (rule.set, rule.removed; the last writer wins, by name), so every replica holds the same rules.
+ * Your rules (PLAN #23): tripwires on the commands his work runs, and checks after them. A rule is data you write,
+ * never a model's judgment and never code an agent wrote: globs matched against a command's words, a piece of text it
+ * must hold, and what happens to a command that matches. Only you write them: the mind refuses one that isn't your
+ * word, from a full node (rule.set, rule.removed; the last writer wins, by name), so every replica holds the same rules.
  *
- * The quest loop checks them before each command it runs, each of a parallel batch, and each gate (brain's
- * tripwires.ts). `halt`: the quest or task stops, saying which rule. `refuse`: that command isn't run, the engineer
- * is told which rule refused it and why, and the work goes on.
+ * Before a command (`on: "command"`), the quest loop checks them for each command it runs, each of a parallel batch,
+ * and each gate (brain's tripwires.ts). `halt`: the quest or task stops, saying which rule. `refuse`: that command
+ * isn't run, the engineer is told which rule refused it and why, and the work goes on. After a command (`on: "after"`),
+ * once one that matches has run and exited 0: `check` runs your command where his work runs, and he is told at once if
+ * it fails (a gate at the moment of the change, not at the end).
  */
 
 /** A rule's name: what it is known, replaced and removed by. */
 export const RuleName = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,39}$/, "lowercase letters, digits, . _ - (max 40)");
 
+/** What a tripwire does to a command, before it runs. */
 export const RULE_DOES = ["halt", "refuse"] as const;
 export type RuleDoes = (typeof RULE_DOES)[number];
 
@@ -34,14 +37,22 @@ export const RuleGlob = z.string().min(1).max(100).refine(oneLine, "a glob is on
 /** A piece of a command's text (here-documents included) that a command must hold to trip the rule. */
 export const RuleText = z.string().min(1).max(200).refine(oneLine, "one line of text");
 
-const terms = {
-  /** Where it applies: before a command runs (the one point there is yet). */
-  on: z.literal("command"),
-  does: z.enum(RULE_DOES),
+/**
+ * The command a check runs after one its rule matches: yours, one line (join several with && or ;), run where his work
+ * runs, as his own commands are.
+ */
+export const RuleCheck = z.string().trim().min(1).max(1000).refine(oneLine, "a check is one line: join commands with && or ;");
+
+const matching = {
   /** Globs: a word of the command matching one trips the rule (with `contains`: as well as holding that). */
   words: z.array(RuleGlob).max(MAX_RULE_GLOBS),
   contains: RuleText.optional(),
 };
+
+/** Before a command runs: a tripwire. */
+const before = { on: z.literal("command"), does: z.enum(RULE_DOES), ...matching };
+/** After a command that matches has run and exited 0: your check. */
+const after = { on: z.literal("after"), does: z.literal("check"), run: RuleCheck, ...matching };
 
 const matchesSomething = (rule: { words: string[]; contains?: string }): boolean => rule.words.length > 0 || rule.contains !== undefined;
 const SOMETHING = "a rule needs a glob, or a piece of text it must hold (--contains)";
@@ -51,11 +62,17 @@ const SOMETHING = "a rule needs a glob, or a piece of text it must hold (--conta
  * stands, so an older node applies a newer rule at least as strictly as written; a point or an effect it doesn't have
  * (another `on`, another `does`) is no rule here (readRule: null), and is shown as such.
  */
-export const RuleTerms = z.object(terms).refine(matchesSomething, SOMETHING);
+export const RuleTerms = z.discriminatedUnion("on", [z.object(before), z.object(after)]).refine(matchesSomething, SOMETHING);
 export type Rule = z.infer<typeof RuleTerms>;
+/** A tripwire: a rule before a command. */
+export type Tripwire = Extract<Rule, { on: "command" }>;
+/** A check: a rule after a command. */
+export type RuleAfter = Extract<Rule, { on: "after" }>;
 
 /** A rule with its name, as the quest loop checks it. */
 export type NamedRule = Rule & { name: string };
+/** A check with its name, as the quest loop runs it. */
+export type NamedCheck = RuleAfter & { name: string };
 
 /** What the log holds for a rule, read: the rule, or null when this node doesn't understand it. */
 export function readRule(value: unknown): Rule | null {
@@ -63,11 +80,21 @@ export function readRule(value: unknown): Rule | null {
   return read.success ? read.data : null;
 }
 
-/** A rule, as you set it (setRule): strict, so a field nobody knows never slips in. */
+/**
+ * A rule, as you set it (setRule): strict, so a field nobody knows never slips in. What it does says when it applies:
+ * `halt` and `refuse` before a command, `check` (with the command it runs) after one.
+ */
 export const RuleInput = z
-  .strictObject({ name: RuleName, does: terms.does, words: terms.words, contains: terms.contains })
-  .refine(matchesSomething, SOMETHING);
+  .strictObject({ name: RuleName, does: z.enum([...RULE_DOES, "check"]), words: matching.words, contains: matching.contains, run: RuleCheck.optional() })
+  .refine(matchesSomething, SOMETHING)
+  .refine((input) => (input.does === "check") === (input.run !== undefined), { message: "a check runs a command of yours after one it matches (--check \"command\"); a tripwire runs none", path: ["run"] });
 export type RuleInput = z.infer<typeof RuleInput>;
+
+/** The rule a RuleInput says, as the log holds it. */
+export function ruleOf(input: RuleInput): Rule {
+  const contains = input.contains !== undefined ? { contains: input.contains } : {};
+  return input.does === "check" ? { on: "after", does: "check", run: input.run!, words: input.words, ...contains } : { on: "command", does: input.does, words: input.words, ...contains };
+}
 
 /** A rule stopped a command of a quest's, said to the node for the ledger (ruleTripped); the node checks the rule stops it. */
 export const RuleTrippedInput = z.strictObject({

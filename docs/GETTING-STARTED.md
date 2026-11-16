@@ -369,7 +369,14 @@ bun galahad rule ls
 bun galahad rule rm no-env
 ```
 
-They're checked before every command of his quests (these, his loops', a trial's) and of a knight's task on his own runner, and before every gate, as your rules stand at that moment; each trip is a line in the ledger (`galahad ledger`), in what `galahad do` prints and on a knight's task trail. Quote your globs, or your shell expands them first, and put one that begins with a dash after `--` (`galahad rule add no-force --refuse -- --force`). A rule is data, never code: only you set one (here, or on the app's Loops page from a device of yours), never an agent. A coding agent (below) runs its own commands inside its sandbox, where they aren't seen: only its gates are checked.
+They're checked before every command of his quests (these, his loops', a trial's) and of a knight's task on his own runner, and before every gate, as your rules stand at that moment; each trip is a line in the ledger (`galahad ledger`), in what `galahad do` prints and on a knight's task trail. Quote your globs, or your shell expands them first, and put one that begins with a dash after `--` (`galahad rule add no-force --refuse -- --force`). A rule is data, never a model's judgment: only you set one (here, or on the app's Loops page from a device of yours), never an agent. A coding agent (below) runs its own commands inside its sandbox, where they aren't seen: only its gates are checked.
+
+**Say what runs after.** A check is a rule that runs a command of yours once one of his that matches has succeeded, and tells him at once if it fails, with what it printed: a type check after he touches a TypeScript file, the tests after a commit. It isn't one of his commands, and it never runs after a gate.
+
+```sh
+bun galahad rule add types --check 'bunx tsc --noEmit' '*.ts' '*.tsx'
+bun galahad rule add tests --check 'bun test' --contains 'git commit'
+```
 
 For bigger work, let a full coding agent do it. OpenCode works for up to `--minutes`, with models through the gateway (it never sees a key), and the independent review still decides:
 

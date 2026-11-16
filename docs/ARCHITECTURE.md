@@ -97,7 +97,7 @@ Event kinds today:
 | `artifact.saved` / `artifact.removed` | Work kept from a sandbox: what the files are (paths, sizes, SHA-256s); the files stay on the node that signed it, and only it records their removal |
 | `order.set` / `order.revoked` / `order.applied` | Standing orders: signed once and never changed (revoke and sign anew); which order answered which action, re-checked by every replica |
 | `companion.named` / `companion.unnamed` | Retired: the name of the dog he had in the 3D world that was removed on 14 November 2026. Nothing writes or reads them now, but a fleet's log may hold them, so they are still known and still folded as before (LWW, full nodes only): a log that holds them gives every replica the same digest |
-| `rule.set` / `rule.removed` | Your tripwires (§8⅞): a rule by its name, the last writer winning, the rule open in the log. Every replica refuses one that isn't your word (its prov's trust) or wasn't written by a full node |
+| `rule.set` / `rule.removed` | Your tripwires and checks (§8⅞): a rule by its name, the last writer winning, the rule open in the log. Every replica refuses one that isn't your word (its prov's trust) or wasn't written by a full node |
 | `skill.written` / `skill.approved` / `skill.marked` / `skill.reverted` / `skill.used` / `skill.outcome` | His skills (§9½): each version of a skill with its trust; your approval of an exact version (the first stands); a mark, the latest standing (locked, retired, stale); one step back; a use, once per quest; how that quest ended (the first word stands). Every replica applies who may revise what, and never counts an unapproved untrusted version as given to a model |
 
 Open-ended parts of an event (a loop's task, a connector's manifest, a call's arguments, what a calibration measured, a ceiling, a plan) are loosely typed in the log and strictly validated by the API and the runner, so what a newer node writes never makes an older one refuse the event.
@@ -446,7 +446,18 @@ A tripwire is a rule of yours ([PLAN](PLAN.md) #23, its first step): a name, glo
 | **What it can't see** | A vendor's coding tool (OpenCode, Claude Code, Codex, Hermes) runs its own commands inside its sandbox or VM, where the loop can't see them: only its gates are checked. Nor are the harness's own fixed commands (the tests' digests, the reviewer's evidence) or what a program does once a command runs it (`python3 -c '…'`, a script written earlier). A tripwire is your fixed line on what the work's commands say, not a sandbox: the sandbox and the oath remain that. |
 | **Said and ledgered** | Each trip is a `tripped` quest event (`galahad do` prints it, a knight's task trail says it, where a quest stands shows it) and a ledger line (`forbidden`, resource `rule`, `deny`: the rule, what it did and why, the quest, the command redacted), which the node writes only when the rule really stops that command (`ruleTripped`, the `sandbox` scope). A command a tripwire stopped never counts as one that ran (`QuestOutcome.tripped`), and the same one refused three times in a row ends the quest, as a command that fails the same way does. |
 
-Next: rules after a command (run a check, tell you), and before an answer goes out.
+### Checks: what runs after his commands ✅
+
+A check is the second kind of rule of yours (#23, its second step): the same name, globs and text, matched the same way, and a command of yours to run (`galahad rule add types --check "bunx tsc --noEmit" '*.ts'`; Tripwires and checks on the Loops page). When one of his commands that a check matches has run and exited 0, the loop runs your command where his work runs (`packages/brain/src/quest.ts` `runChecks`, `tripwires.ts` `checksAfter`). If it fails, he is told at once, in the same reply as his command's output: which check, what ran, what it printed, and to fix it before he goes on. If it passes, he gets one line. A gate at the moment of the change, not at the end, so a broken build is caught while he still has the change in mind, not by the reviewer sending the work back.
+
+| | How |
+|---|---|
+| **In the log** | `{ on: "after", does: "check", run, words, contains }` beside the tripwires' `{ on: "command", … }`, in the same `rule.set`. A node from before checks reads one as a rule it doesn't understand: kept, shown as such, never applied (it neither runs the check nor takes it for a tripwire). A check's command is one line of at most 1,000 characters, refused if it holds a key. |
+| **When** | After a command of his that ran and exited 0 (one that failed has already told him so; one a tripwire refused never ran), with your rules as they stood before that command. After a parallel batch, each check any of its commands called for runs once, by name, when all of the batch has run. Never after a gate (a gate is a check of its own), and never inside a coding tool's VM (its commands are unseen, as for tripwires). |
+| **What it costs him** | Nothing from his budget of commands: a check isn't one of his steps. It runs with a command's time limit. |
+| **Said** | A `checked` quest event (`galahad do` prints a failure, and a pass dimly; a knight's task trail says it; where a quest stands shows it), and a line in the trail the reviewer reads, after the command it followed, so a check left failing is evidence against the work. |
+
+Next: a rule that tells you when a command it matches has run, and rules before an answer goes out.
 
 ### Effort: more compute for a better answer ✅
 

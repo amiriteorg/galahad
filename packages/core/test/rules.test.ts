@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Bodies, MAX_RULE_GLOBS, readRule, RuleInput, RuleTrippedInput } from "../src/index.ts";
+import { Bodies, MAX_RULE_GLOBS, readRule, RuleInput, ruleOf, RuleTrippedInput } from "../src/index.ts";
 
 /*
  * Your rules, as the contract holds them: data you write (globs and a piece of text), never code. What the API takes is
@@ -20,6 +20,22 @@ describe("a rule, as you give it", () => {
     expect(RuleInput.safeParse({ name: "no-locks", words: ["*.lock"] }).success).toBe(false);
     // Not a regular expression, not code: a field it doesn't know is refused at the door.
     expect(RuleInput.safeParse({ name: "no-locks", does: "halt", words: ["*.lock"], run: "rm -rf /" }).success).toBe(false);
+  });
+
+  test("a check: what to run after a command it matches has run, one line of yours", () => {
+    const check = { name: "types", does: "check", words: ["*.ts"], run: "bunx tsc --noEmit" };
+    expect(RuleInput.safeParse(check).success).toBe(true);
+    expect(RuleInput.safeParse({ ...check, words: [], contains: "git commit", run: "bun test && bun run lint" }).success).toBe(true);
+    // A check runs something, and only a check does.
+    expect(RuleInput.safeParse({ ...check, run: undefined }).success).toBe(false);
+    expect(RuleInput.safeParse({ ...check, does: "refuse" }).success).toBe(false);
+    for (const run of ["", "   ", "bun test\nrm -rf /", "x".repeat(1001)]) expect(RuleInput.safeParse({ ...check, run }).success).toBe(false);
+    expect(RuleInput.safeParse({ ...check, words: [] }).success).toBe(false);
+  });
+
+  test("as the log holds it: a tripwire before a command, a check after one", () => {
+    expect(ruleOf({ name: "no-locks", does: "refuse", words: ["*.lock"], contains: "git add" })).toEqual({ on: "command", does: "refuse", words: ["*.lock"], contains: "git add" });
+    expect(ruleOf({ name: "types", does: "check", words: ["*.ts"], run: "bunx tsc --noEmit" })).toEqual({ on: "after", does: "check", run: "bunx tsc --noEmit", words: ["*.ts"] });
   });
 
   test("its name is lowercase, short, and safe to say anywhere", () => {
@@ -55,6 +71,17 @@ describe("a rule, as the log holds it", () => {
   test("this node reads what it understands; a field it doesn't know is set aside, the rest stands (never less strict)", () => {
     expect(readRule(written)).toEqual({ on: "command", does: "refuse", words: ["*.lock"], contains: "git add" });
     expect(readRule({ ...written, only: ["ada"] })).toEqual({ on: "command", does: "refuse", words: ["*.lock"], contains: "git add" });
+  });
+
+  test("a check is read after a command, with what it runs", () => {
+    const check = { on: "after" as const, does: "check" as const, run: "bunx tsc --noEmit", words: ["*.ts"] };
+    expect(readRule(check)).toEqual(check);
+    expect(readRule({ ...check, only: ["ada"] })).toEqual(check);
+    // Each point has its own effects, and a check has something to run.
+    expect(readRule({ ...check, does: "halt" })).toBeNull();
+    expect(readRule({ ...written, does: "check", run: "bun test" })).toBeNull();
+    expect(readRule({ ...check, run: undefined })).toBeNull();
+    expect(readRule({ ...check, run: "a\nb" })).toBeNull();
   });
 
   test("a rule at a point or with an effect this node doesn't have is not applied here, and says so (null)", () => {

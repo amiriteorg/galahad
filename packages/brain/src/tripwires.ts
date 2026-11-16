@@ -1,10 +1,11 @@
-import type { NamedRule, RuleDoes } from "@galahad/core";
+import type { NamedCheck, NamedRule, RuleDoes } from "@galahad/core";
 import { commandWords } from "./shell-paths.ts";
 
 /*
- * Tripwires: your rules (core's rules.ts), checked before a command runs. A rule's globs are matched against the
- * command's words (shell-paths' commandWords) and its piece of text against the whole command; the quest loop halts
- * the work or refuses the command on what this says. Deterministic: no model is asked, nothing is run.
+ * Your rules (core's rules.ts) against a command: tripwires before it runs, checks after. A rule's globs are matched
+ * against the command's words (shell-paths' commandWords) and its piece of text against the whole command; the quest
+ * loop halts the work or refuses the command, or runs your checks once it has run, on what this says. Deterministic:
+ * no model is asked, and nothing is run here.
  *
  * Globs, never regular expressions: a glob becomes a short list of steps, and a word is read once, left to right,
  * keeping every place in the glob it could have reached by then (an automaton, not backtracking). A check costs at
@@ -87,30 +88,47 @@ export interface Trip {
   why: string;
 }
 
+const byName = (a: { name: string }, b: { name: string }): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 /** Halts first, then refusals, each by name: whatever order the rules come in, a command trips the same one. */
-const first = (a: NamedRule, b: NamedRule): number => (a.does !== b.does ? (a.does === "halt" ? -1 : 1) : a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+const first = (a: NamedRule & { on: "command" }, b: NamedRule & { on: "command" }): number => (a.does !== b.does ? (a.does === "halt" ? -1 : 1) : byName(a, b));
 
 const shown = (word: string): string => (word.length > 80 ? `${word.slice(0, 79)}…` : word);
 
-/** The rule a command trips, if any. */
-export function tripOf(rules: readonly NamedRule[], command: string): Trip | null {
-  let words: string[] | null = null;
-  for (const rule of [...rules].sort(first)) {
-    if (rule.contains !== undefined && !command.includes(rule.contains)) continue;
-    let matched = "";
-    if (rule.words.length) {
-      words ??= commandWords(command);
-      const globs = rule.words.map((glob) => ({ glob, compiled: compileGlob(glob) }));
-      for (const word of words) {
-        const hit = globs.find((g) => globMatches(g.compiled, word));
-        if (!hit) continue;
-        matched = `the word \`${shown(word)}\` matches \`${hit.glob}\``;
-        break;
-      }
-      if (!matched) continue;
+/** Why a rule matches a command, in words (the word and its glob, the text it holds); null when it doesn't. `words`: the command's, read once. */
+function matchOf(rule: { words: readonly string[]; contains?: string }, command: string, words: () => string[]): string | null {
+  if (rule.contains !== undefined && !command.includes(rule.contains)) return null;
+  let matched = "";
+  if (rule.words.length) {
+    const globs = rule.words.map((glob) => ({ glob, compiled: compileGlob(glob) }));
+    for (const word of words()) {
+      const hit = globs.find((g) => globMatches(g.compiled, word));
+      if (!hit) continue;
+      matched = `the word \`${shown(word)}\` matches \`${hit.glob}\``;
+      break;
     }
-    const held = rule.contains !== undefined ? `it holds \`${rule.contains}\`` : "";
-    return { rule: rule.name, does: rule.does, why: [matched, held].filter(Boolean).join(", and ") };
+    if (!matched) return null;
+  }
+  const held = rule.contains !== undefined ? `it holds \`${rule.contains}\`` : "";
+  return [matched, held].filter(Boolean).join(", and ");
+}
+
+const wordsOf = (command: string): (() => string[]) => {
+  let words: string[] | null = null;
+  return () => (words ??= commandWords(command));
+};
+
+/** The tripwire a command trips, if any. (A check is no tripwire: it runs after a command, never stops one.) */
+export function tripOf(rules: readonly NamedRule[], command: string): Trip | null {
+  const words = wordsOf(command);
+  for (const rule of rules.filter((r): r is NamedRule & { on: "command" } => r.on === "command").sort(first)) {
+    const why = matchOf(rule, command, words);
+    if (why !== null) return { rule: rule.name, does: rule.does, why };
   }
   return null;
+}
+
+/** The checks a command calls for once it has run, by name: each is run once, whatever else matched. */
+export function checksAfter(rules: readonly NamedRule[], command: string): NamedCheck[] {
+  const words = wordsOf(command);
+  return rules.filter((r): r is NamedCheck => r.on === "after" && matchOf(r, command, words) !== null).sort(byName);
 }

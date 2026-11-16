@@ -275,7 +275,7 @@ Standing orders (your answer in advance: one tool, narrow arguments, an expiry)
   order add --from <action-id> [--arg key=pattern] [--free key]   approve it, and answer alike next time
                                   * matches anything; deletes are pinned exactly; at most a year
 
-Tripwires (your rules on the commands his work runs: data, never code, never a model's judgment)
+Tripwires and checks (your rules on the commands his work runs: data, never a model's judgment)
   rule ls | rule rm <name>
   rule add <name> --halt|--refuse <glob>… [--contains text]
                                   a command with a word that matches a glob (and that holds the text) halts the work, or
@@ -284,6 +284,9 @@ Tripwires (your rules on the commands his work runs: data, never code, never a m
                                   knight's task on his own runner, and every gate; a coding tool's own commands in its
                                   VM aren't seen. Quote globs; one that begins with - goes after --
                                   (rule add no-force --refuse -- --force)
+  rule add <name> --check "<command>" <glob>… [--contains text]
+                                  after a command that matches has run and exited 0, your command runs where his work
+                                  runs, and he is told at once if it fails (rule add types --check "bunx tsc --noEmit" '*.ts')
 
 Bank (read-only: balances and transactions of your own accounts, through Enable Banking)
   bank setup --app-id <uuid> --key /path/to/<app-id>.pem --redirect-url https://…/bank/callback
@@ -545,9 +548,10 @@ async function main(): Promise<void> {
       ask: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
-      // Tripwires: `rule add <name> --halt|--refuse <glob>… --contains text`.
+      // Tripwires and checks: `rule add <name> --halt|--refuse|--check "command" <glob>… --contains text`.
       halt: { type: "boolean" },
       refuse: { type: "boolean" },
+      check: { type: "string" },
       contains: { type: "string" },
       // Quests: gates ("done means this command passes").
       gate: { type: "string", multiple: true },

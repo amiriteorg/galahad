@@ -111,6 +111,20 @@ describe("your rules", () => {
     expect((await admin("removeRule", { name: "no-push" })).status).toBe(404);
   });
 
+  test("a check: set with the command it runs after a command it matches, and read back as one; a key in it is refused", async () => {
+    const set = await admin<{ rule: RuleView }>("setRule", { name: "types", does: "check", words: ["*.ts"], run: "bunx tsc --noEmit" });
+    expect(set.status).toBe(200);
+    expect(set.body.rule).toMatchObject({ name: "types", rule: { on: "after", does: "check", run: "bunx tsc --noEmit", words: ["*.ts"] }, setVia: null });
+    expect((await admin("setRule", { name: "types", does: "check", words: ["*.ts"] })).status).toBe(400);
+    expect((await admin("setRule", { name: "types", does: "check", words: ["*.ts"], run: "bunx tsc\nrm -rf /" })).status).toBe(400);
+    expect((await admin("setRule", { name: "keyed", does: "check", words: ["*.ts"], run: `curl -H 'x-api-key: sk-ant-api03-${"FAKE".repeat(8)}' https://example.com` })).status).toBe(422);
+    // A check stops nothing, so no trip of it is ever a line in the ledger.
+    const before = trips().length;
+    expect((await admin("ruleTripped", { quest: "q-check", rule: "types", command: "touch a.ts" })).status).toBe(400);
+    expect(trips().length).toBe(before);
+    expect((await admin("removeRule", { name: "types" })).status).toBe(200);
+  });
+
   test("checked at the door: one that would match nothing, a glob that isn't one line, a key, one too many", async () => {
     expect((await admin("setRule", { name: "empty", does: "halt", words: [] })).status).toBe(400);
     expect((await admin("setRule", { name: "lines", does: "halt", words: ["a\nb"] })).status).toBe(400);

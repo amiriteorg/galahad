@@ -86,6 +86,7 @@ import {
   MAX_RULES,
   type NamedRule,
   readRule,
+  ruleOf,
   type RuleView,
 } from "@galahad/core";
 import {
@@ -2964,12 +2965,11 @@ export function createApp(ctx: AppContext) {
     setRule: (input, p) => {
       // A rule is your word given in advance, like a standing order: only you give it, from a terminal or a device of yours.
       if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you can set a rule");
-      // (Its globs and text reach the ledger and the engineer's conversation.)
-      guardAgainstSecrets(...input.words, input.contains ?? "");
+      // (Its globs, its text and the check it runs reach the ledger and the engineer's conversation.)
+      guardAgainstSecrets(...input.words, input.contains ?? "", input.run ?? "");
       const held = ctx.store.rules();
       if (!held.some((r) => r.name === input.name) && held.length >= MAX_RULES) throw new HttpError(400, `you may keep at most ${MAX_RULES} rules: remove one first`);
-      const rule = { on: "command" as const, does: input.does, words: input.words, ...(input.contains !== undefined ? { contains: input.contains } : {}) };
-      ctx.store.emit(ctx.identity, "rule.set", { name: input.name, rule }, { trust: "owner", ...(p.kind === "client" ? { via: p.device } : {}) });
+      ctx.store.emit(ctx.identity, "rule.set", { name: input.name, rule: ruleOf(input) }, { trust: "owner", ...(p.kind === "client" ? { via: p.device } : {}) });
       return { rule: rulesView().find((r) => r.name === input.name)! };
     },
     removeRule: (input, p) => {
