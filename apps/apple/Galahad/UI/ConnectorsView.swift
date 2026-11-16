@@ -203,7 +203,8 @@ private struct ConnectorDetail: View {
     @ViewBuilder private func add(_ connector: ConnectorView) -> some View {
         Section {
             if connector.needsOrigin {
-                TextField("Its address, e.g. http://homeassistant.local:8123", text: $origin)
+                // A plain string: as a localized key, its address would be made a link drawn in the tint.
+                TextField("Its address, e.g. http://homeassistant.local:8123" as String, text: $origin)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()

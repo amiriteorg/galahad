@@ -351,7 +351,7 @@ private struct AddKeySheet: View {
                         }
                         .accessibilityIdentifier("key-provider")
                         if provider == Self.own || needsAddress {
-                            TextField(needsAddress ? "Its address, https://…" : "Only sent to, e.g. https://api.example.com", text: $address)
+                            TextField((needsAddress ? "Its address, https://…" : "Only sent to, e.g. https://api.example.com") as String, text: $address)
                                 .keyboardType(.URL)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()

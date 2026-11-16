@@ -125,7 +125,7 @@ struct KnightEditor: View {
                 }
 
                 Section {
-                    TextField("https://github.com/owner/repository", text: $repository)
+                    TextField("https://github.com/owner/repository" as String, text: $repository)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
