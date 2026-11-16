@@ -5,8 +5,8 @@
  * Docker and stand-in models. Nothing leaves this machine, and ~/.galahad is never touched.
  *
  * It seats knights at work (one running a task, one thinking, one whose task was verified, one whose task failed, one
- * paused, one with a desktop in its VM to watch and take over), has an agent ask your leave for an outward call, and has
- * Galahad ask for a key. Then it makes a client invite
+ * paused, one with a desktop in its VM to watch and take over, which proposes a task for your approval), has an agent ask
+ * your leave for an outward call, and has Galahad ask for a key. Then it makes a client invite
  * and prints its link: paste it into the app. The stand-in streams Galahad's answer a word at a time; asked to show
  * something, his answer holds everything an answer can (headings, a list, a table, code, a chart, figures, steps, a page,
  * choices).
@@ -317,13 +317,18 @@ await admin("createTeamTask", { room: own.ada, assignee: "ada", title: "Sync sur
 await until("Ada's task to start", () => adaAtWork);
 const kept = (await admin("createTeamTask", { room: own.kay, assignee: "kay", title: "The importer reads ISO dates", goal: "TASK_KEEP: make the importer read ISO 8601 dates as well as the day-first form, with tests.", dependsOn: [], gates: ["bun test importer # gate-keep"] })).task;
 await until("Kay's task to end", ended(kept.id));
-const failing = (await admin("createTeamTask", { room: own.gareth, assignee: "gareth", title: "Migrations run on a fresh database", goal: "TASK_FAIL: make every migration run on a fresh database, with a test.", dependsOn: [], gates: ["bun test db/ # gate-fail"] })).task;
-await until("Gareth's task to end", ended(failing.id));
-await admin("postTeamMessage", { room: own.percival, text: "Take your time: what do other agents do about context rot?" });
-// A room of several: Kay and Gareth, answering you there (named: what names no knight is Galahad's to answer).
+// A room of several: Kay and Gareth, answering you there (named: what names no knight is Galahad's to answer). Before
+// Gareth's task, so its failure is the latest of his work, and his row says so.
 const studio = (await admin("saveTeamRoom", { name: "Release room", members: ["kay", "gareth"], turnBudget: 6 })).room;
 await admin("postTeamMessage", { room: studio.id, text: "@kay @gareth Who takes the release notes for 0.4?" });
 await until("the room's replies", async () => (await admin("teamRoom", { id: studio.id })).messages.length >= 3);
+const failing = (await admin("createTeamTask", { room: own.gareth, assignee: "gareth", title: "Migrations run on a fresh database", goal: "TASK_FAIL: make every migration run on a fresh database, with a test.", dependsOn: [], gates: ["bun test db/ # gate-fail"] })).task;
+await until("Gareth's task to end", ended(failing.id));
+await admin("postTeamMessage", { room: own.percival, text: "Take your time: what do other agents do about context rot?" });
+// Gawain proposes work, so one knight waits for your approval.
+own.gawain = (await admin("directTeammate", { id: "gawain" })).room.id;
+await admin("postTeamMessage", { room: own.gawain, text: "Could you propose what the release needs from you?" });
+await until("Gawain's proposal", async () => (await admin("team")).tasks.some((t: { assignee: string; status: string }) => t.assignee === "gawain" && t.status === "proposed"));
 await until("Percival to start thinking", async () => (await admin("team")).deliveries.some((d: { status: string; teammate: string }) => d.teammate === "percival" && d.status === "running"));
 
 // ---------- what needs you ----------
