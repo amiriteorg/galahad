@@ -15,7 +15,7 @@ function teammateHost(opts: {
   labels?: Record<string, string>;
   missing?: boolean;
   legacyHelper?: boolean;
-  failure?: "mount" | "start" | "write" | "throw-write" | "run";
+  failure?: "mount" | "start" | "write" | "throw-write" | "run" | "grow" | "update";
   /** A remake that was cut short: the container is only there under the name it was set aside as. */
   setAside?: boolean;
   /** The workspaces' disk as the helper says it is (default: a few bytes, nothing to grow into). */
@@ -47,6 +47,7 @@ function teammateHost(opts: {
     ] }),
     grow: async (id, gib) => {
       note(`grow:${id}:${gib}`);
+      if (opts.failure === "grow") throw new Error("the workspace helper could not grow the disk");
       const image = opts.stats?.images.find((i) => i.id === id);
       if (image) image.sizeBytes = gib * 2 ** 30;
     },
@@ -92,6 +93,7 @@ function teammateHost(opts: {
       }
       if (args[0] === "update") {
         all.push("update");
+        if (opts.failure === "update") return { code: 1, stdout: "", stderr: "kata: could not hot-add" };
         held = { NanoCpus: Number(args[args.indexOf("--cpus") + 1]) * 1e9, Memory: Number.parseInt(args[args.indexOf("--memory") + 1]!, 10) * 2 ** 20 };
       }
       if (args[0] === "inspect") return { code: 0, stdout: JSON.stringify([
@@ -356,6 +358,20 @@ describe("a knight's VM grows while it runs", () => {
     expect(commands.some((c) => c[0] === "update")).toBe(false);
     expect(events.some((e) => e.startsWith("grow:"))).toBe(false);
     expect(ledger).toEqual([]);
+  });
+
+  test("a disk that can't grow leaves its threads and memory as they were: Docker is never asked, so giving them back is true", async () => {
+    const { host, commands, ledger } = teammateHost({ ...running(), failure: "grow" });
+    await expect(host.resizeTeam(ID, QUEST, { cpus: 4, memoryGb: 8, diskGb: 60, ...GROWN })).rejects.toThrow(/could not grow the disk/);
+    expect(commands.some((c) => c[0] === "update")).toBe(false);
+    expect(ledger).toEqual([]);
+  });
+
+  test("threads that can't be added after the disk grew: the disk stays grown, and the ledger and the error both say so", async () => {
+    const { host, events, ledger } = teammateHost({ ...running(), failure: "update" });
+    await expect(host.resizeTeam(ID, QUEST, { cpus: 4, memoryGb: 8, diskGb: 60, ...GROWN })).rejects.toThrow(/its disk did grow, to 60 GB/);
+    expect(events).toContain(`grow:${ID}:60`);
+    expect(ledger.at(-1)).toMatchObject({ class: "modify", detail: "grown while it runs: 1 cpu · 2 GB · 60 GB disk" });
   });
 
   test("what the node's ceiling can't hold is refused before Docker is asked", async () => {

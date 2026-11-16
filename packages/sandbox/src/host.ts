@@ -682,22 +682,30 @@ export class SandboxHost {
     const unfit = more.cpus || more.memoryGb ? (opts.fits?.(more) ?? null) : null;
     if (unfit) throw new SandboxError(unfit, 409);
     const name = containerName(id);
+    const record = (now: { cpus: number; memoryGb: number }) =>
+      this.opts.ledger({
+        class: "modify",
+        resource: "docker.container",
+        target: name,
+        // Galahad's own giving (growTeammate) is his, and says why; anything else was approved by a device of yours.
+        verdict: opts.why ? "allow" : "approved",
+        reason: opts.why ? `grown by Galahad: ${redact(opts.why).slice(0, 200)}` : `approved by ${opts.approvedBy.slice(0, 12)}`,
+        quest,
+        detail: `grown while it runs: ${now.cpus} cpu · ${now.memoryGb} GB${grows ? ` · ${opts.diskGb} GB disk` : disk !== null ? ` · ${disk} GB disk` : ""}`,
+      });
+    // The disk first: it isn't the governor's, so when it can't grow nothing the governor counts has changed, and its
+    // giving back (governed-host) is true. Threads and memory after: when they can't be added, the disk has grown, and
+    // the ledger and the error both say so.
+    if (grows) await this.opts.workspaces!.grow!(id, opts.diskGb!);
     if (more.cpus || more.memoryGb) {
       const memory = `${Math.round(memoryGb * 1024)}m`;
       const updated = await this.docker(["update", "--cpus", String(cpus), "--memory", memory, "--memory-swap", memory, name]);
-      if (updated.code !== 0) throw new SandboxError(`could not give the teammate's VM more, so it is as it was: ${redact(updated.stderr).split("\n")[0]!.slice(0, 300)}`, 424);
+      if (updated.code !== 0) {
+        if (grows) record({ cpus: sandbox.cpus, memoryGb: sandbox.memoryGb });
+        throw new SandboxError(`could not give the teammate's VM more threads or memory, so they are as they were${grows ? `; its disk did grow, to ${opts.diskGb} GB` : ""}: ${redact(updated.stderr).split("\n")[0]!.slice(0, 300)}`, 424);
+      }
     }
-    if (grows) await this.opts.workspaces!.grow!(id, opts.diskGb!);
-    this.opts.ledger({
-      class: "modify",
-      resource: "docker.container",
-      target: name,
-      // Galahad's own giving (growTeammate) is his, and says why; anything else was approved by a device of yours.
-      verdict: opts.why ? "allow" : "approved",
-      reason: opts.why ? `grown by Galahad: ${redact(opts.why).slice(0, 200)}` : `approved by ${opts.approvedBy.slice(0, 12)}`,
-      quest,
-      detail: `grown while it runs: ${cpus} cpu · ${memoryGb} GB${grows ? ` · ${opts.diskGb} GB disk` : disk !== null ? ` · ${disk} GB disk` : ""}`,
-    });
+    record({ cpus, memoryGb });
     return (await this.get(id))!;
   }
 
