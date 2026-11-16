@@ -18,7 +18,7 @@ The first one is the owner's: a Mac mini with an M5 Pro, 48 GB of memory and a 1
 - **Memory is shared three ways.** macOS, the knights' VMs and a local model all come out of the same 48 GB. The node's ceiling is half the machine unless you set another (`DEFAULT_SHARE` in `packages/core/src/compute.ts`), so 24 GB for its sandboxes: about four knights at work at once, at 4 GB each as on Ultra plus each VM's own overhead (Kata's is a thread and 2 GB; the spike measures Apple's). That leaves about 16 GB for a local model once macOS has its share: a 4-bit model of 20 to 24 billion parameters, with room for its context. Fewer VMs and a bigger model, or the reverse, is your split: *This Mac* shows it as one bar and sets the node's ceiling from it.
 - **The governor sees the model's memory** as memory not free: before it admits a VM, it checks the machine itself has room. On a Mac it had read that wrong, counting only the pages no cache holds (`os.freemem()`, 5.7 GB on a 36 GB Mac whose memory pressure said 48% free), so VMs waited for memory that was there. It now reads what macOS's memory pressure reads (`kern.memorystatus_level`), as it reads Linux's MemAvailable.
 - **Its disk:** 1 TB holds the knights' VMs (20 GB each, as on Ultra), the images (a few GB) and several local models (10 to 40 GB each), with room to spare. *This Mac* says what each takes.
-- **Always on:** it has no battery, and it has Ethernet, which the FileVault unlock over SSH wants (open question 2).
+- **Always on:** it has no battery, and it logs in by itself after a restart or a power cut (FileVault off, the owner's choice).
 - **Beside Ultra:** Ultra stays the fleet's big body (Linux, Kata, VMs that grow live). The Mac mini adds knights' VMs on Apple silicon and local models on its unified memory, and placement chooses between them for each task from the census.
 
 ## The parts
@@ -62,7 +62,7 @@ A node is only useful while it is up. Today the node counts every Mac as a perso
 | | How | What it needs |
 |---|---|---|
 | Runs when you're not there | The launchd agent, started at login | Your approval in Login Items, once |
-| Comes back after a restart | Automatic login for the account it runs under; or, with FileVault on, the disk unlocked over SSH after each restart (which macOS 26 and later allow on Apple silicon with Remote Login on; Ethernet is the safe choice, as Wi-Fi may not be up before the unlock) ([Apple](https://support.apple.com/guide/security/sec8447f5049/web)) | Your choice of the two (open question 2) |
+| Comes back after a restart | Automatic login for the account it runs under, with FileVault off (the owner's choice, 16 November: the Mac mini stays unlocked, so its disk isn't encrypted at rest). The other way, FileVault on and the disk unlocked over SSH after each restart (macOS 26 and later on Apple silicon, Remote Login on, Ethernet safest), stays documented for a Mac that needs it ([Apple](https://support.apple.com/guide/security/sec8447f5049/web)) | Automatic login turned on in System Settings → Users & Groups, once |
 | Doesn't sleep | The node holds a power assertion while it runs, as `caffeinate -s` does; the display may sleep | Nothing |
 | Starts after a power cut | System Settings → Energy → *Start up automatically after a power failure* | You, once. The app shows the setting and reads it back (`pmset -g`); it never changes it for you |
 | Reachable from anywhere | Tailscale, then `galahad expose`, as install.sh does | Tailscale signed in |
@@ -97,7 +97,8 @@ Apple silicon's unified memory runs large local models well. The node already fi
 ### 6. Shipping it
 
 - **From galahad.sh, not the Mac App Store.** A node is a server: it listens on the network, runs VMs and terminals, and keeps working with its window closed, which the App Store's sandbox doesn't allow. So it is a Developer ID-signed, notarized disk image, linked from galahad.sh beside the one-line install. TestFlight is for App Store apps only, so test builds go to a beta channel on galahad.sh instead.
-- **Updates:** Sparkle 2, from an EdDSA-signed feed on galahad.sh, which is how Mac apps outside the store update; or a small updater of our own that checks the Developer ID signature and the team before it swaps the app (open question 3).
+- **Updates:** Sparkle 2 (the owner's choice), from an EdDSA-signed feed on galahad.sh, which is how Mac apps outside the store update. Its signing key is one more secret of the owner's, kept in the Keychain and never in the repository.
+- **Its name:** *Galahad*, with the iPhone app's icon, as `org.amirite.galahad.mac` (the owner's choice).
 - **Notifications:** a Developer ID app can carry the push capability through a Developer ID provisioning profile (on macOS the entitlement is `com.apple.developer.aps-environment`). The node's Apple push sender already serves the iPhone app.
 
 ## The screens
@@ -134,9 +135,9 @@ Against the [mandate](MANDATE.md):
 - **Cost:** local models on the Mac mini answer the swift role's chores, and paid calls fall by what they took (the usage page).
 - **Reversibility:** *Stop being a node* leaves nothing running and nothing of it outside `~/.galahad`, checked by a test that lists launchd's services and the app's files before and after.
 
-## Open questions, yours to answer
+## Decided, and what is still needed
 
-1. **How it ships:** a Developer ID download from galahad.sh (recommended). It needs a *Developer ID Application* certificate on your Apple account (the certificate TestFlight builds use is not one), and notarization, which can use the App Store Connect API key the TestFlight uploads use.
-2. **A Mac mini after a power cut:** automatic login with FileVault off (simplest, but the disk isn't encrypted at rest), or FileVault on, unlocked over SSH after each restart (by you, every time). A launch daemon that runs before anyone logs in would avoid both, but needs more: it runs as root unless given an account, and `container`'s service is per user.
-3. **Updates:** Sparkle (a dependency, and well proven) or an updater of our own.
-4. **Its name and id:** *Galahad*, with the iPhone app's icon, as `org.amirite.galahad.mac`?
+The owner's answers (16 November): the Mac mini logs in by itself with FileVault off; updates come through Sparkle; the app is *Galahad*, `org.amirite.galahad.mac`.
+
+- **A Developer ID Application certificate** is still to be made: none was on the owner's MacBook (the certificate TestFlight builds use is an Apple Distribution one, not this). Only the team's Account Holder can make one (or an Admin given Apple's cloud-managed Developer ID role), at most five ([Apple](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)): in Xcode, Settings → Accounts → the team → *Manage Certificates…* → **+** → *Developer ID Application*, which makes its private key in the login keychain too; or on developer.apple.com, Certificates, IDs & Profiles → Certificates → **+** → *Developer ID Application*, with a certificate signing request from Keychain Access. Notarization can then use the App Store Connect API key the TestFlight uploads already use.
+- **Where the spike runs.** The owner asked for a macOS VM on the MacBook. A VM serves the app's own install, its service and its first run on a clean macOS. It can't serve `container`: Apple's nested virtualization is for Linux guests (M3 and later, macOS 15 and later), not macOS guests, so `container` doesn't run inside a macOS VM ([Apple Developer Forums](https://developer.apple.com/forums/thread/827663)). That part runs on the MacBook itself, with the owner's yes, or on the Mac mini. A macOS 27 VM needs about 60 GB of disk (its restore image and its own disk); on 16 November the MacBook had under 4 GB free.
