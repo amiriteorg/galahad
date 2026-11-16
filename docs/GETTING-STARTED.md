@@ -443,12 +443,15 @@ bun galahad trials                   # the Galahad Index per run and per effort 
 bun galahad trial <id|run>           # every answer next to the exact one
 ```
 
-Two more suites, and what all of it costs (details in [TRIALS](TRIALS.md)):
+Three more suites, and what all of it costs (details in [TRIALS](TRIALS.md)):
 
 ```sh
 bun galahad trial run --suite agentic            # real work in a small repository, graded by hidden tests in a fresh sandbox
 bun galahad trial run --suite agentic --level 3  # the same tasks, harder (1 to 4); or one: … slow-rollup-l1
 bun galahad trial run --suite reviewer           # a quest's evidence with a known answer, put to the reviewer
+bun galahad trial problems --suite yours         # your knights' tasks that passed review: what each took and cost when it was done
+bun galahad trial run --suite yours              # the hardest 5, each worked again from the commit it began at, graded by its own gates
+bun galahad trial run --suite yours gareth --hardest 2  # cases by task id or knight; --hardest n of them
 bun galahad price set deepseek/deepseek-v4-pro 0.5 2   # your price, $ per million tokens in and out (ollama/* 0 0 for a provider)
 bun galahad usage                                # this node's model calls: tokens by model, role, who asked and day
 bun galahad trial run --suite agentic --budget 2M       # stops cleanly when the budget is spent; says first what past runs cost
