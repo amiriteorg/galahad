@@ -18,6 +18,7 @@ import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
 import { keyAddCommand, keyElsewhereLine } from "./key-cli.ts";
 import { skillsCommand } from "./skills-cli.ts";
+import { ruleCommand } from "./rule-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
@@ -274,6 +275,15 @@ Standing orders (your answer in advance: one tool, narrow arguments, an expiry)
   order add --from <action-id> [--arg key=pattern] [--free key]   approve it, and answer alike next time
                                   * matches anything; deletes are pinned exactly; at most a year
 
+Tripwires (your rules on the commands his work runs: data, never code, never a model's judgment)
+  rule ls | rule rm <name>
+  rule add <name> --halt|--refuse <glob>… [--contains text]
+                                  a command with a word that matches a glob (and that holds the text) halts the work, or
+                                  isn't run and he is told why: * any run but /, ** any run, ? one character ('*.lock',
+                                  '.env*', 'migrations/**', rm). Checked before every command of his quests and of a
+                                  knight's task on his own runner, and every gate; a coding tool's own commands in its
+                                  VM aren't seen
+
 Bank (read-only: balances and transactions of your own accounts, through Enable Banking)
   bank setup --app-id <uuid> --key /path/to/<app-id>.pem --redirect-url https://…/bank/callback
              --aspsp "<bank>" --country <XX>
@@ -529,6 +539,10 @@ async function main(): Promise<void> {
       ask: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
+      // Tripwires: `rule add <name> --halt|--refuse <glob>… --contains text`.
+      halt: { type: "boolean" },
+      refuse: { type: "boolean" },
+      contains: { type: "string" },
       // Quests: gates ("done means this command passes").
       gate: { type: "string", multiple: true },
       "no-planner-gates": { type: "boolean" },
@@ -1633,6 +1647,10 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "order":
     case "orders":
       await orderCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "rule":
+    case "rules":
+      await ruleCommand(new Admin(home), sub, rest, flags);
       return;
     case "archive":
       await archiveCommand(new Admin(home), sub, rest, flags, { confirm, readStdin: () => Bun.stdin.text() });

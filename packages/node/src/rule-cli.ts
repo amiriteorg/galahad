@@ -1,0 +1,70 @@
+import type { Rule, RuleView } from "@galahad/core";
+import type { Api } from "./loop-cli.ts";
+
+/*
+ * `galahad rule`: your tripwires on the commands his work runs (core's rules.ts). Thin: the node checks every rule and
+ * keeps them in the mind; this shapes what you type and prints what it holds.
+ */
+
+type Flags = Record<string, string | boolean | (string | boolean)[] | undefined>;
+
+const tty = process.stdout.isTTY;
+const dim = (s: string) => (tty ? `\x1b[2m${s}\x1b[0m` : s);
+const bold = (s: string) => (tty ? `\x1b[1m${s}\x1b[0m` : s);
+
+const ADD = "galahad rule add <name> --halt|--refuse <glob>… [--contains text]";
+const USAGE = `usage: galahad rule ls | rule add <name> --halt|--refuse <glob>… [--contains text] | rule rm <name>`;
+
+/** What they cover, and what they can't see. */
+const COVERS = [
+  "Checked before every command of Galahad's quests (galahad do, his loops', a trial's) and of a knight's task on his own runner, and before every gate.",
+  "A coding tool (OpenCode, Claude Code, Codex, Hermes) runs its own commands in its VM, where they aren't seen: only its gates are checked.",
+];
+
+const either = (items: readonly string[]): string => (items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`);
+
+/** What a rule does, and when, in a line. */
+export function describeRule(rule: Rule): string {
+  const when = [rule.words.length ? `a word matches ${either(rule.words)}` : "", rule.contains !== undefined ? `it holds "${rule.contains}"` : ""].filter(Boolean).join(" and ");
+  return `${rule.does === "halt" ? "halts the work" : "refuses the command"} when ${when}`;
+}
+
+export async function ruleCommand(api: Api, sub: string | undefined, rest: string[], flags: Flags): Promise<void> {
+  switch (sub) {
+    case undefined:
+    case "ls":
+    case "list": {
+      const { rules } = await api.call<{ rules: RuleView[] }>("rules");
+      if (!rules.length) {
+        console.log(`No tripwires yet. A rule stops a command before it runs: ${ADD}`);
+        return;
+      }
+      const width = Math.max(...rules.map((r) => r.name.length));
+      for (const r of rules) console.log(`  ${bold(r.name.padEnd(width))}  ${r.rule ? describeRule(r.rule) : "a newer node's rule: this node doesn't understand it, and doesn't apply it"}`);
+      console.log(dim(`\n  ${COVERS.join("\n  ")}`));
+      return;
+    }
+    case "add":
+    case "set": {
+      const [name, ...words] = rest;
+      if (!name) throw new Error(`usage: ${ADD}`);
+      if (flags.halt && flags.refuse) throw new Error("--halt or --refuse, not both");
+      if (!flags.halt && !flags.refuse) throw new Error("say what it does: --halt (the work stops) or --refuse (that command isn't run)");
+      const contains = typeof flags.contains === "string" ? flags.contains : undefined;
+      if (!words.length && contains === undefined) throw new Error("give it a glob to match a command's words, or --contains text");
+      const { rule } = await api.call<{ rule: RuleView }>("setRule", { name, does: flags.halt ? "halt" : "refuse", words, ...(contains !== undefined ? { contains } : {}) });
+      console.log(`Set ${rule.name}: it ${rule.rule ? describeRule(rule.rule) : "is kept"}.`);
+      console.log(dim(COVERS.join("\n")));
+      return;
+    }
+    case "rm":
+    case "remove": {
+      if (!rest[0]) throw new Error("usage: galahad rule rm <name>");
+      const { removed } = await api.call<{ removed: string }>("removeRule", { name: rest[0] });
+      console.log(`Removed ${removed}: no command is held to it any more.`);
+      return;
+    }
+    default:
+      throw new Error(USAGE);
+  }
+}
