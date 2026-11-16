@@ -584,10 +584,10 @@ export const queueActions = (api: Api) => {
  * a chat begun, answered or renamed on another device, maybe while this one was hidden), read the list and
  * the chat on screen again. Asks the node only while the app is visible.
  */
+/** Which writing of the chats the last look saw ("": none yet), kept while the chat is off screen, so what changed then is read on return. */
+let seen = "";
 export function watchTurns(api: Api, signal: AbortSignal): void {
   let known = "";
-  /** Which writing of the chats the last look saw ("": none yet). */
-  let seen = "";
   const look = async (): Promise<void> => {
     if (document.hidden) return;
     try {
