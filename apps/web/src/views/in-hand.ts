@@ -5,7 +5,7 @@ import { needsYou } from "../lib/now.ts";
 import { gateOwner, gateResult, questBadge, questInHand, questWhere } from "../lib/quests.ts";
 import { duration, relativeTime } from "../lib/time.ts";
 import { stopsIn } from "../lib/turns.ts";
-import { badge, button, callout, meter, section } from "../ui/controls.ts";
+import { badge, button, callout, meter, section, spinner } from "../ui/controls.ts";
 import { openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, replace, type Scope } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
@@ -34,10 +34,10 @@ function turnRow(ctx: Ctx, t: TurnView, now: number, leave?: () => void): HTMLEl
   return h(
     "div",
     { class: "item center in-hand-turn" },
-    h("span", { class: "avatar agent" }, h("span", { class: "spinner", style: "width:12px;height:12px", "aria-hidden": "true" })),
+    h("span", { class: "avatar agent" }, spinner("sm")),
     h(
       "div",
-      { class: "grow", style: "min-width:0" },
+      { class: "grow" },
       h("div", { class: "row" }, h("span", { class: "strong small ellipsis" }, t.title ?? "A temporary chat"), t.steering ? badge(`${t.steering} on its way to him`, "info") : null),
       h("div", { class: "meta" }, h("span", { class: "ellipsis" }, t.watchable ? (t.step ?? "Starting") : "May read the bank: not shown to this device"), h("span", { class: "tnum" }, meta)),
     ),
@@ -57,7 +57,7 @@ function gateRow(g: QuestView["gates"][number], n: number): HTMLElement {
 function questCard(q: QuestView, opened: Set<string>): HTMLElement {
   const b = questBadge(q.state, q.silent);
   const state = badge(b.text, b.tone);
-  if (b.live) state.prepend(h("span", { class: "spinner", style: "width:10px;height:10px", "aria-hidden": "true" }));
+  if (b.live) state.prepend(spinner("xs"));
   const going = questInHand(q.state);
   const plan = q.plan
     ? h(
@@ -74,7 +74,7 @@ function questCard(q: QuestView, opened: Set<string>): HTMLElement {
   return h(
     "div",
     { class: "card pad stack tight in-hand-quest" },
-    h("div", { class: "row wrap" }, h("span", { class: "strong small grow", style: "min-width:0" }, q.goal), state),
+    h("div", { class: "row wrap" }, h("span", { class: "strong small grow" }, q.goal), state),
     h("div", { class: "tiny subtle tnum" }, [questWhere(q), `run by ${q.by}`, going ? `started ${relativeTime(q.startedAt)}` : `ended ${relativeTime(q.updatedAt)}`].join(" · ")),
     going ? meter(Math.min(1, q.step / Math.max(1, q.maxSteps)), undefined, `Command ${q.step} of ${q.maxSteps}`) : null,
     going && q.doing ? h("div", { class: "in-hand-doing small" }, icon("chevron-right", { size: 13 }), h("span", { class: "ellipsis", title: q.doing }, q.doing)) : null,

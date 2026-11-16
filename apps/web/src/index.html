@@ -183,6 +183,9 @@
       .muted { color: var(--text-2); }
       /* Words that report something gone wrong (a trial's false "done"), in the danger tone. */
       .danger-text { color: var(--danger); }
+      .warn-text { color: var(--warn); }
+      /* A link that reads as the words around it (the top bar's "Answering"). */
+      .plain-link { color: inherit; text-decoration: none; }
       .text-end { text-align: end; }
       /* The thing a quieter passage is about (a confirmation's memory or skill), in the text's own colour. */
       .plain { color: var(--text); }
@@ -476,6 +479,7 @@
         text-decoration: none; white-space: nowrap;
       }
       .fleet-pill:hover { border-color: var(--border-strong); color: var(--text); }
+      .activity-pill { padding-right: var(--sp-1); }
       .topbar .actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-1); }
 
       .banner {
@@ -808,6 +812,8 @@
         font: 650 clamp(20px, 6.5vw, 28px)/1 var(--font-mono); color: var(--accent); box-shadow: var(--shadow-1); font-variant-numeric: tabular-nums;
       }
       .sas span:nth-child(3) { margin-right: 8px; }
+      /* A device code to type elsewhere (signing in to a provider): large, spaced. */
+      .device-code { font-size: 1.4em; letter-spacing: 0.08em; }
       @media (max-width: 639px) { .solo-card .card { padding: var(--sp-5); } }
       .ring { --p: 1; width: 22px; height: 22px; border-radius: 50%; background: conic-gradient(var(--accent-fill) calc(var(--p) * 360deg), var(--surface-3) 0); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px)); flex: none; }
 
@@ -1276,6 +1282,10 @@
       .composer .send { width: 34px; height: 34px; padding: 0; border-radius: 10px; flex: none; }
       @media (pointer: coarse) { .composer .send { width: 40px; height: 40px; } }
       .composer-wrap .callout { margin-bottom: var(--sp-2); box-shadow: var(--shadow-2); }
+      /* "Latest", over the composer, when the thread is scrolled up (views/chat.ts). */
+      .jump-anchor { position: relative; }
+      .btn.jump { position: absolute; left: 50%; top: -40px; transform: translateX(-50%); box-shadow: var(--shadow-2); }
+      .btn.jump:active:not(:disabled) { transform: translateX(-50%) scale(0.97); }
       /* A key he asked for in this chat, sealed right here (views/chat.ts). */
       .key-asks { display: flex; flex-direction: column; gap: var(--sp-2); }
       .key-asks:not(:empty) { margin-bottom: var(--sp-2); }

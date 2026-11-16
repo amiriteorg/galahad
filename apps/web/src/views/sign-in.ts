@@ -57,7 +57,7 @@ export function signInBlock(ctx: Ctx, c: ConnectorView): HTMLElement | null {
           window.open(started.url, "_blank", "noopener,noreferrer");
           replace(status, callout("quiet", "Finish in the page that opened: choose your account and allow it. This card says when you're signed in."));
         } else {
-          const code = h("span", { class: "mono", style: "font-size:1.4em;letter-spacing:0.08em" }, started.code);
+          const code = h("span", { class: "mono device-code" }, started.code);
           const copy = button("Copy the code", { size: "sm", variant: "ghost", icon: "copy", onClick: () => void copyText(started.code, "Code copied") });
           replace(
             status,

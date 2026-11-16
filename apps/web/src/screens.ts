@@ -93,12 +93,12 @@ export function renderWelcome(root: HTMLElement, identity: BrowserIdentity | nul
         h(
           "ol",
           { class: "steps-num" },
-          h("li", {}, h("div", {}, h("span", { class: "strong", style: "color:var(--text)" }, "On any of your nodes, run"), copyField("galahad invite --client"))),
+          h("li", {}, h("div", {}, h("span", { class: "strong plain" }, "On any of your nodes, run"), copyField("galahad invite --client"))),
           h("li", {}, h("div", {}, h("span", {}, installed() ? "Copy the link it prints and paste it below. It works once and expires in ten minutes." : ["Open the link it prints ", h("strong", {}, "on this device"), ", or paste it below. It works once and expires in ten minutes."]))),
           h("li", {}, h("div", {}, h("span", {}, "Both screens show a six-digit code. Approve on the node ", h("strong", {}, "only if the codes match"), "."))),
         ),
         pasteForm,
-        identity ? h("p", { class: "tiny subtle", style: "text-align:center" }, installed() ? "This app's key " : "This browser's key ", h("span", { class: "mono" }, shortId(identity.device, 12))) : null,
+        identity ? h("p", { class: "tiny subtle centered" }, installed() ? "This app's key " : "This browser's key ", h("span", { class: "mono" }, shortId(identity.device, 12))) : null,
       ),
       trustStrip(),
       footer(),
@@ -131,7 +131,7 @@ export function renderRevoked(root: HTMLElement): void {
         { class: "card" },
         h("p", { class: "small muted" }, "To pair again, forget this browser's key, then open a fresh invite from ", h("span", { class: "mono" }, "galahad invite --client"), "."),
         h("p", { class: "tiny subtle" }, "If this browser was approved on another node only moments ago, the news may still be on its way here: try again first."),
-        h("div", { class: "row wrap", style: "justify-content:center" }, forget, button("Try again", { icon: "retry", onClick: () => location.reload() })),
+        h("div", { class: "row wrap centered" }, forget, button("Try again", { icon: "retry", onClick: () => location.reload() })),
       ),
       footer(),
     ),
@@ -162,7 +162,7 @@ export function renderUnreachable(root: HTMLElement, message: string, retry: () 
   const offline = !navigator.onLine;
   const lifetime = new AbortController();
   let left = Math.round(retryDelayMs(attempt) / 1000);
-  const status = h("p", { class: "tiny subtle tnum", style: "text-align:center;margin:0" });
+  const status = h("p", { class: "tiny subtle tnum centered" });
   const again = () => {
     if (lifetime.signal.aborted) return;
     lifetime.abort();
@@ -192,7 +192,7 @@ export function renderUnreachable(root: HTMLElement, message: string, retry: () 
         "section",
         { class: "card" },
         callout("quiet", message, { icon: offline ? "offline" : "alert" }),
-        h("div", { class: "row", style: "justify-content:center" }, button("Try again now", { variant: "primary", icon: "retry", onClick: again })),
+        h("div", { class: "row centered" }, button("Try again now", { variant: "primary", icon: "retry", onClick: again })),
         status,
       ),
       footer(),
@@ -212,7 +212,7 @@ export function renderKeyStoreUnavailable(root: HTMLElement, message: string): v
         { class: "card" },
         callout("quiet", message, { icon: "key" }),
         h("p", { class: "small muted" }, "Don't pair this browser again yet: a new pairing would replace its key. If reloading doesn't help, close the app completely and open it again."),
-        h("div", { class: "row", style: "justify-content:center" }, button("Reload", { variant: "primary", icon: "retry", onClick: () => location.reload() })),
+        h("div", { class: "row centered" }, button("Reload", { variant: "primary", icon: "retry", onClick: () => location.reload() })),
       ),
       footer(),
     ),
@@ -230,7 +230,7 @@ export function renderClockSkew(root: HTMLElement, skewMs: number, retry: () => 
         "section",
         { class: "card" },
         h("p", { class: "small muted" }, "Every request is signed with the time, and your node only accepts signatures within a minute of its own clock. Set this device's clock to update automatically, then try again. Your key is fine."),
-        h("div", { class: "row", style: "justify-content:center" }, button("Try again", { variant: "primary", icon: "retry", onClick: retry })),
+        h("div", { class: "row centered" }, button("Try again", { variant: "primary", icon: "retry", onClick: retry })),
       ),
       footer(),
     ),

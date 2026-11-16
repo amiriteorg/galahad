@@ -62,7 +62,7 @@ export function modelCost(ctx: Ctx, signal: AbortSignal): { el: HTMLElement; ref
       status,
       h(
         "div",
-        { class: "row", style: "justify-content:flex-end" },
+        { class: "row end" },
         own
           ? button("Remove price", {
               icon: "trash",
@@ -95,9 +95,9 @@ export function modelCost(ctx: Ctx, signal: AbortSignal): { el: HTMLElement; ref
       h("span", { class: "avatar" }, icon("models", { size: 14 })),
       h(
         "div",
-        { class: "grow", style: "min-width:0" },
-        h("div", { class: "row wrap", style: "gap:6px" }, h("span", { class: "mono strong small wrap-anywhere" }, row.model), ...row.roles.map((role) => badge(role, "neutral"))),
-        h("div", { class: "meta tnum" }, h("span", { style: row.price ? null : "color:var(--warn)" }, row.price ? `${priceLabel(row.price)}${row.inherited ? " (its provider's)" : ""}` : "no price: tokens only"), h("span", {}, spent)),
+        { class: "grow" },
+        h("div", { class: "row wrap" }, h("span", { class: "mono strong small wrap-anywhere" }, row.model), ...row.roles.map((role) => badge(role, "neutral"))),
+        h("div", { class: "meta tnum" }, h("span", { class: row.price ? null : "warn-text" }, row.price ? `${priceLabel(row.price)}${row.inherited ? " (its provider's)" : ""}` : "no price: tokens only"), h("span", {}, spent)),
       ),
       write ? h("div", { class: "item-actions" }, button(row.price && !row.inherited ? "Change" : "Set price", { size: "sm", icon: "edit", label: `Set the price of ${row.model}`, onClick: () => openPrice(row) })) : null,
     );

@@ -69,7 +69,7 @@ export function doctorSection(ctx: Ctx, scope: Scope): HTMLElement | null {
           "div",
           { class: "doctor-head" },
           dot(view.tone === "neutral" ? null : view.tone, { live: view.tone !== "ok" }),
-          h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "strong small", role: "status" }, view.headline), h("div", { class: "tiny subtle" }, `${view.how}, ${relativeTime(report!.at)}`)),
+          h("div", { class: "grow" }, h("div", { class: "strong small", role: "status" }, view.headline), h("div", { class: "tiny subtle" }, `${view.how}, ${relativeTime(report!.at)}`)),
         ),
         failed ? h("div", { class: "doctor-note error", role: "alert" }, failed) : null,
         first.length ? h("ul", { class: "doctor-list" }, ...first.map(attentionRow)) : null,

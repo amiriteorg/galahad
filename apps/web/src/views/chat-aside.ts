@@ -1,7 +1,7 @@
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Api, isAbort } from "../api.ts";
 import { errorMessage } from "../context.ts";
-import { button, callout } from "../ui/controls.ts";
+import { button, callout, spinner } from "../ui/controls.ts";
 import { openSheet } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
@@ -55,7 +55,7 @@ export function openAside(api: Api, about: { conversation: string } | { turn: st
     const draw = (writing: boolean): void => {
       const body = h("div", { class: "md" });
       body.append(renderMarkdown(text));
-      replace(answerBox, writing && !text ? h("div", { class: "row tiny subtle" }, h("span", { class: "spinner", style: "width:11px;height:11px", "aria-hidden": "true" }), "Answering on the side…") : body);
+      replace(answerBox, writing && !text ? h("div", { class: "row tiny subtle" }, spinner("sm"), "Answering on the side…") : body);
     };
     draw(true);
     watching = new AbortController();

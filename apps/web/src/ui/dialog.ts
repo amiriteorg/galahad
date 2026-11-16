@@ -1,4 +1,5 @@
 import { type Child, h, nextId, prefersReducedMotion, Scope } from "./dom.ts";
+import { formActions } from "./controls.ts";
 import { icon } from "./icons.ts";
 
 /*
@@ -206,7 +207,7 @@ export function confirmAction(options: ConfirmOptions): Promise<boolean> {
             typed,
           )
         : null,
-      h("div", { class: "row", style: "justify-content:flex-end;gap:8px;margin-top:4px" }, cancel, confirm),
+      formActions(cancel, confirm),
     );
     const sheet = openSheet({
       title: options.title,

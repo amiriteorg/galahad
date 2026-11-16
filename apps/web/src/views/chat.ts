@@ -13,7 +13,7 @@ import { duration, relativeTime } from "../lib/time.ts";
 import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keysAskedIn, shownAgain, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
 import { chatEnter, lastRole, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
-import { badge, button, callout, copyText, empty, skeletonRows } from "../ui/controls.ts";
+import { badge, button, callout, copyText, empty, skeletonRows, spinner } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { debounce, h, replace } from "../ui/dom.ts";
 import { workerAvatar } from "../ui/avatar.ts";
@@ -638,7 +638,7 @@ export function chatStateBadge(c: Pick<ConversationSummary, "state" | "queued" |
   if (!b) return null;
   const el = badge(b.text, b.tone);
   el.classList.add("chat-state");
-  if (b.live) el.prepend(h("span", { class: "spinner", style: "width:10px;height:10px", "aria-hidden": "true" }));
+  if (b.live) el.prepend(spinner("xs"));
   return el;
 }
 
@@ -674,7 +674,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const meta = h("span", { class: "hint ellipsis grow" });
   const jump = button("Latest", { size: "sm", icon: "arrow-down", onClick: () => scrollToEnd(true) });
   jump.hidden = true;
-  jump.style.cssText = "position:absolute;left:50%;transform:translateX(-50%);top:-40px;box-shadow:var(--shadow-2)";
+  jump.classList.add("jump");
   const nodes = new Map<number, HTMLElement>();
   // One persistent live region: says when Galahad starts, and reads the answer once it's complete.
   const announcer = h("div", { class: "sr-only", role: "status", "aria-live": "polite" });
@@ -759,7 +759,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       h(
         "summary",
         {},
-        writing ? h("span", { class: "spinner", style: "width:12px;height:12px", "aria-hidden": "true" }) : icon("chevron-right", { size: 14, class: "chev" }),
+        writing ? spinner("sm") : icon("chevron-right", { size: 14, class: "chev" }),
         h("span", { class: "ellipsis" }, summaryText),
       ),
       h(
@@ -769,7 +769,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
           h(
             "li",
             { class: "step", "data-state": s.state },
-            h("span", { class: "step-mark" }, s.state === "active" ? h("span", { class: "spinner", style: "width:11px;height:11px" }) : icon(s.state === "done" ? "check" : stepIcon(s))),
+            h("span", { class: "step-mark" }, s.state === "active" ? spinner("sm") : icon(s.state === "done" ? "check" : stepIcon(s))),
             h("span", { class: "step-text" }, s.text, s.detail ? h("div", { class: "step-detail" }, s.detail) : null),
           ),
         ),
@@ -1301,7 +1301,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
         },
       },
       h("span", { class: "avatar" }, icon(c.pinned ? "pin" : c.project ? "folder" : "chat", { size: 14 })),
-      h("div", { class: "grow", style: "min-width:0" }, h("div", { class: "strong small ellipsis" }, c.title), h("div", { class: "meta" }, meta, c.bank ? h("span", {}, " · bank") : null)),
+      h("div", { class: "grow" }, h("div", { class: "strong small ellipsis" }, c.title), h("div", { class: "meta" }, meta, c.bank ? h("span", {}, " · bank") : null)),
       // Where it stands, at a glance: working, needs you, queued, stopped or failed (nothing when it's simply done).
       chatStateBadge(c),
     );
@@ -1367,7 +1367,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       h("div", { class: "chat-head" }, back, who, computer, inbox, options.el),
       subHead,
       threadEl,
-      h("div", { class: "composer-wrap", style: "position:sticky" }, h("div", { style: "position:relative" }, jump), alerts, elsewhere, keyAsks, connectorAsks, panel.el, form),
+      h("div", { class: "composer-wrap" }, h("div", { class: "jump-anchor" }, jump), alerts, elsewhere, keyAsks, connectorAsks, panel.el, form),
     ),
   );
 
@@ -1416,14 +1416,14 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
 
 /** The shell's "answering…" pill: visible from every page while a reply streams. */
 export function chatActivityPill(): HTMLElement {
-  const pill = h("div", { class: "fleet-pill activity-pill", role: "status", hidden: true, style: "padding-right:4px" });
+  const pill = h("div", { class: "fleet-pill activity-pill", role: "status", hidden: true });
   chatActivity.watch(({ streaming, model }) => {
     pill.hidden = !streaming;
     if (!streaming) return;
     replace(
       pill,
-      h("span", { class: "spinner", style: "width:12px;height:12px", "aria-hidden": "true" }),
-      h("a", { href: "#/chat", style: "color:inherit;text-decoration:none" }, model ? `Answering · ${model.split("/").pop()}` : "Answering…"),
+      spinner("sm"),
+      h("a", { class: "plain-link", href: "#/chat" }, model ? `Answering · ${model.split("/").pop()}` : "Answering…"),
       button("Stop", { size: "sm", variant: "ghost", icon: "stop", onClick: stopChat, label: "Stop Galahad answering" }),
     );
   });
