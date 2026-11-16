@@ -55,6 +55,7 @@ bun galahad ask "Good morning, Galahad."
 | Doc | What's in it |
 |---|---|
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | The mind, the Link, pairing, vault, brain, placement, R2, growth, roadmap |
+| [PLAN](docs/PLAN.md) | What's built next, in order, why, and what was declined |
 | [ROUNDTABLE](docs/ROUNDTABLE.md) | Persistent workers, rooms and DMs, shared knowledge, VM workspaces, task supervision and current limits |
 | [OATH](docs/OATH.md) | Character, duties, limits, autonomy classes |
 | [TRIALS](docs/TRIALS.md) | How we prove quality holds and intelligence grows |

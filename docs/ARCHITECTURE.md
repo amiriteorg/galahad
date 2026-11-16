@@ -851,6 +851,8 @@ Cloudflare R2 (S3-compatible, no egress fees) is Galahad's shared storage layer.
 
 ## 13. Roadmap
 
+The milestones. What comes next, item by item, with why and what was declined, is in [PLAN](PLAN.md).
+
 | Milestone | Scope | State |
 |---|---|---|
 | **M0: One mind, many bodies** | Log, HLC, replay, sync, pairing, vault, gateway, brain + fallback, placement, oath gate, secret scanning, CLI, PWA (Chat, Memory, Vault, Models, Fleet) | ✅ done (the PWA paired and ran in headless Edge, November 2026) |
