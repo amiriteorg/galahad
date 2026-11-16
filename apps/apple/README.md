@@ -74,6 +74,13 @@ ditto -c -k --keepParent build/Build/Products/Release/Galahad.app /tmp/Galahad.z
 xcrun notarytool submit /tmp/Galahad.zip --keychain-profile galahad-notary --wait && xcrun stapler staple build/Build/Products/Release/Galahad.app
 ```
 
+A release that the installed apps update to is one command, then two steps to publish: `scripts/mac-release.sh`
+builds it (numbered by the time, UTC, so each is newer than the last), bundles and signs its node, notarizes and
+staples it, signs the zip with the owner's Sparkle key (the login keychain's account `galahad`; never printed, never
+in here), and writes `apps/site/public/mac/appcast.xml` for that release. The zip is too big for the site, so it goes
+up as the GitHub release `mac-<build>` (`gh release create`, as the script prints), and the feed goes out with the
+site when it is committed and pushed. Each app checks the feed once a day, and from **Check for Updates…**.
+
 The same binary, from a terminal (what a Mac with no screen to click is tried with):
 
 ```sh

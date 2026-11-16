@@ -210,10 +210,15 @@ struct MacNodeTests {
         #expect(!Updates(key: nil).available)
         #expect(!Updates(key: "").available)
         #expect(!Updates(key: " ").canCheck)
-        // This build's own: the feed on galahad.sh, and no key yet (the owner makes it).
+        // This build's own: the feed on galahad.sh, the owner's public key (its private half is theirs alone), and a check
+        // once a day by itself, so no one is asked whether to.
         #expect(Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String == "https://galahad.sh/mac/appcast.xml")
-        #expect(Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String == "")
+        let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String ?? ""
+        #expect(Data(base64Encoded: key)?.count == 32, "an Ed25519 public key")
+        #expect(Bundle.main.object(forInfoDictionaryKey: "SUEnableAutomaticChecks") as? Bool == true)
+        // Under test no updater starts: a run of the tests never reaches galahad.sh or opens Sparkle's windows.
         #expect(!Updates.shared.available)
+        #expect(!Updates(key: key, testing: true).available)
     }
 }
 

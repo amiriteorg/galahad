@@ -2,7 +2,7 @@
  * The gate before galahad.sh goes out, run on the built site (dist/, from `astro build`). Fails (non-zero) if it would:
  *  - run an inline script, or use an inline style or handler, that the CSP forbids (or load a script from elsewhere);
  *  - link to a page that does not exist;
- *  - leak private infrastructure (tailnet names, tailnet/private IPs, device names, emails);
+ *  - leak private infrastructure (tailnet names, tailnet/private IPs, device names, emails), the Mac app's feed included;
  *  - hand `curl … | bash` anything but scripts/install.sh as the repository has it, or show another script's SHA-256.
  */
 import { createHash } from "node:crypto";
@@ -41,7 +41,7 @@ const PRIVATE = [
 
 for (const file of files) {
   const rel = relative(root, file).replaceAll("\\", "/");
-  if (!/\.(html|css|js|txt|svg|sh)$/.test(file) && !rel.endsWith("_headers")) continue;
+  if (!/\.(html|css|js|txt|svg|sh|xml)$/.test(file) && !rel.endsWith("_headers")) continue;
   const text = readFileSync(file, "utf8");
   for (const [pattern, what] of PRIVATE) if (pattern.test(text)) problems.push(`${rel}: contains a ${what} (${text.match(pattern)![0]})`);
   if (!file.endsWith(".html")) continue;

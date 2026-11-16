@@ -106,16 +106,19 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: org.amirite.galahad.invite
             CFBundleURLSchemes: [galahad]
-        # Updates (Sparkle): the signed feed, and the public key each update is checked against. The key is the owner's to
-        # make (Sparkle's generate_keys, its private half kept in their keychain); until it is set, the updater stays off.
+        # Updates (Sparkle): the signed feed, and the public key each update is checked against. The key is the owner's
+        # (Sparkle's generate_keys, its private half in their login keychain as the account `galahad`); while it is
+        # empty, the updater stays off. scripts/mac-release.sh makes a release and its feed.
         SUFeedURL: https://galahad.sh/mac/appcast.xml
         SUPublicEDKey: $(GALAHAD_SPARKLE_PUBLIC_KEY)
+        # Checked once a day without asking first: a node's Mac is meant to keep up by itself.
+        SUEnableAutomaticChecks: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.amirite.galahad.mac
         PRODUCT_NAME: Galahad
-        # Sparkle's public EdDSA key (base64), empty until the owner has made it.
-        GALAHAD_SPARKLE_PUBLIC_KEY: ""
+        # Sparkle's public EdDSA key (base64): its private half is the owner's, made 16 November 2026, never in here.
+        GALAHAD_SPARKLE_PUBLIC_KEY: "Y5Xu5t9dRLOsVywTDzUyHtw6HhB+c8VuXel4eZvDGpE="
         PRODUCT_MODULE_NAME: Galahad
         ASSETCATALOG_COMPILER_APPICON_NAME: MacIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor

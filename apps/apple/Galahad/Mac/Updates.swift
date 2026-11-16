@@ -6,7 +6,9 @@ import Sparkle
 /// Updates through Sparkle 2 (the owner's choice), from the signed feed on galahad.sh (`SUFeedURL`). Sparkle checks each
 /// update against the public key this build carries (`SUPublicEDKey`, from the build setting GALAHAD_SPARKLE_PUBLIC_KEY):
 /// until the owner has made that key it is empty, and the updater stays off rather than run with nothing to check by.
-/// A new release restarts the node onto it once the app is back (ThisMac.restartIfNewRelease).
+/// It checks once a day by itself (`SUEnableAutomaticChecks`), and never under test: a run of the tests doesn't reach
+/// galahad.sh or open Sparkle's windows. A new release restarts the node onto it once the app is back
+/// (ThisMac.restartIfNewRelease).
 @MainActor @Observable final class Updates {
     static let shared = Updates()
 
@@ -18,8 +20,8 @@ import Sparkle
     /// Whether this build updates itself at all.
     var available: Bool { controller != nil }
 
-    init(key: String? = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String) {
-        guard let key, !key.trimmingCharacters(in: .whitespaces).isEmpty else {
+    init(key: String? = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String, testing: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil) {
+        guard let key, !key.trimmingCharacters(in: .whitespaces).isEmpty, !testing else {
             controller = nil
             return
         }
