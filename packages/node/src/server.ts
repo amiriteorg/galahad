@@ -2070,7 +2070,12 @@ export function createApp(ctx: AppContext) {
       const provider = resolveProvider(ctx.store, ctx.vault, input.id);
       if (!provider) throw new HttpError(404, `provider ${input.id} is not configured`);
       // A coding plan isn't his to call, to list its models or for anything else: the ones its preset names (offeredModels).
-      return { models: await offeredModels(provider) };
+      // One that can't say which it serves says which provider it is and why, without the key it may have echoed.
+      try {
+        return { models: await offeredModels(provider) };
+      } catch (error) {
+        throw new HttpError(502, redact(String((error as Error).message ?? error), [provider.apiKey]).slice(0, 500));
+      }
     },
     // (With the plans whose allowance is spent just now, and until when, and what each checked model was seen to do.)
     roster: () => ({

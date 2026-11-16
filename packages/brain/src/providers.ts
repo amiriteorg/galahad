@@ -462,8 +462,14 @@ export async function offeredModels(provider: ResolvedProvider, fetchImpl: typeo
 export async function listModels(provider: ResolvedProvider, fetchImpl: typeof fetch = fetch): Promise<string[]> {
   const url = provider.kind === "anthropic" ? `${provider.baseUrl}/v1/models?limit=100` : `${provider.baseUrl}/models`;
   const headers: Record<string, string> = { ...keyHeaders(provider), ...(provider.kind === "anthropic" ? { "anthropic-version": "2023-06-01" } : {}) };
-  const response = await fetchImpl(url, { headers, redirect: "manual", signal: AbortSignal.timeout(provider.local ? 1500 : 10_000) });
-  if (!response.ok) throw new Error(`${provider.id} /models → ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetchImpl(url, { headers, redirect: "manual", signal: AbortSignal.timeout(provider.local ? 1500 : 10_000) });
+  } catch (error) {
+    throw new Error(`${provider.id} /models: ${(error as Error).message}`);
+  }
+  // Why, in the provider's own words (whoever shows it takes the key out first: a provider may echo it).
+  if (!response.ok) throw new Error(`${provider.id} /models → ${response.status} ${(await response.text().catch(() => "")).slice(0, 300)}`.trim());
   const json = (await response.json()) as { data?: { id: string }[] };
   return (json.data ?? []).map((m) => m.id).sort();
 }
