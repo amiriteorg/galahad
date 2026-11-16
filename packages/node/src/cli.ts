@@ -65,7 +65,8 @@ of its own; "roundtable", "squires" and "team" are the same command)
   roundtable provision galahad       his own computer: made, made again and given more as a knight's VM is
   roundtable resize <id> [--cpus 4] [--mem 8] [--disk 40]
                                     more threads, memory or disk for its VM while it runs, nothing stopped and
-                                    its work kept; never less (a smaller size takes effect when it is made again)
+                                    its work kept; never less (a smaller size takes effect when it is made again).
+                                    On a Mac a VM pauses to take more threads or memory, and its disk can't grow
   roundtable memory <id> [text]      read or replace that knight's notes
   roundtable engram [on|off]         the VMs' notes store (Engram): say whether it is on, or turn it on or off.
                                     On, a knight's harness can search and keep notes in its own VM, where the

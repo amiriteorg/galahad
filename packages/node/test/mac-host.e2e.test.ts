@@ -107,6 +107,22 @@ describe("a node on a Mac with Apple's container", () => {
     await expect(api("createSandbox", { network: "online", desktop: true, cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 no sandbox host in this fleet can make it: mini: ${CONTAINER_CANNOT.desktop}`);
   });
 
+  test("a knight's VM is made on the Mac, and grown by pausing: the answer says it paused, and the ledger why", async () => {
+    await api("saveTeammate", { id: "ada", name: "ADA", role: "engineer" });
+    const { workspace } = await api<{ workspace: SandboxView }>("provisionTeammate", { id: "ada" });
+    expect(workspace).toMatchObject({ isolation: "vm", network: "online", ephemeral: false, cpus: 1, memoryGb: 2 });
+    expect(fake.volumes.get(`${workspace.name}-work`)!.labels["dev.galahad.retained"]).toBe("1");
+    const grown = await api<{ workspace: SandboxView; paused?: boolean }>("resizeTeammate", { id: "ada", memoryGb: 4 });
+    expect(grown).toMatchObject({ paused: true, workspace: { id: workspace.id, memoryGb: 4, status: "running" } });
+    expect(fake.vms.get(workspace.name)!.volume).toBe(`${workspace.name}-work`);
+    const { entries } = await api<{ entries: LedgerEntry[] }>("ledger");
+    expect(entries.find((e) => e.class === "modify" && e.target === workspace.name)?.detail).toBe("paused to grow (a Mac's VM can't grow while it runs): 1 cpu · 4 GB · 20 GB disk");
+    // Its disk can't grow there: refused, saying why.
+    await expect(api("resizeTeammate", { id: "ada", diskGb: 40 })).rejects.toThrow(/409 a VM's disk on a Mac keeps the size it was made with/);
+    // Nor is a desktop made there.
+    await expect(api("remakeTeammate", { id: "ada", desktop: true })).rejects.toThrow(CONTAINER_CANNOT.desktop);
+  });
+
   test("an isolated sandbox asked of it is refused with the reason, and nothing is made", async () => {
     const before = fake.vms.size;
     await expect(api("createSandbox", { on: "mini", network: "isolated", cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 ${CONTAINER_CANNOT.isolated}`);

@@ -159,11 +159,11 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     print(`VM ${result.workspace.id} on ${result.workspace.node} made again from its image as it is now · /work kept${result.workspace.image?.includes("desktop") ? " · with a desktop" : ""}${result.workspace.network ? ` · ${result.workspace.network === "online" ? "it can reach the internet" : "it reaches the model gateway only"}` : ""}`); return;
   }
   if (sub === "resize") {
-    // Bigger while it runs, nothing stopped: threads and memory hot-added, its disk grown where it is mounted.
+    // Bigger while it runs, nothing stopped: threads and memory hot-added, its disk grown where it is mounted. (On a Mac it pauses.)
     const sizes = { ...(string("cpus") ? { cpus: Number(string("cpus")) } : {}), ...(string("mem") ? { memoryGb: Number(string("mem")) } : {}), ...(string("disk") ? { diskGb: Number(string("disk")) } : {}) };
     if (!args[0] || !Object.keys(sizes).length) throw new Error("usage: galahad roundtable resize <id> [--cpus n] [--mem gb] [--disk gb]   (more only: a smaller size takes effect when its VM is made again)");
-    const { workspace } = await api.call<{ workspace: { id: string; node: string; cpus: number; memoryGb: number; disk: { limitGb: number } | null } }>("resizeTeammate", { id: args[0], ...sizes });
-    print(`VM ${workspace.id} on ${workspace.node} now has ${workspace.cpus} cpu · ${workspace.memoryGb} GB${workspace.disk ? ` · ${workspace.disk.limitGb} GB of disk` : ""}, and nothing in it stopped`); return;
+    const { workspace, paused } = await api.call<{ workspace: { id: string; node: string; cpus: number; memoryGb: number; disk: { limitGb: number } | null }; paused?: boolean }>("resizeTeammate", { id: args[0], ...sizes });
+    print(`VM ${workspace.id} on ${workspace.node} now has ${workspace.cpus} cpu · ${workspace.memoryGb} GB${workspace.disk ? ` · ${workspace.disk.limitGb} GB of disk` : ""}${paused ? ": it paused to take them (a Mac's VM can't grow while it runs), so what was running in it stopped" : ", and nothing in it stopped"}`); return;
   }
   if (sub === "provision") {
     // (Online unless you say `--network gateway`: what its VM can reach is set when it is made.)

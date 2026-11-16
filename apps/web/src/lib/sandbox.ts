@@ -76,6 +76,20 @@ export function isolationPlan(choice: IsolationChoice, network: string, host: { 
 }
 
 /**
+ * Giving a knight's VM more, said as it will be: while it runs; or, its host a Mac (Apple's container can't grow a
+ * running VM), a pause in which what runs in it stops, and no bigger disk.
+ */
+export function growWords(pauses: boolean): { intro: string; done: string; disk: boolean } {
+  return pauses
+    ? {
+        intro: "More threads or memory. Its Mac can't grow a running VM: it stops for a moment and starts again with more, its /work kept, and whatever is running in it stops. Its disk keeps the size it was made with.",
+        done: "after a pause: what was running in it stopped.",
+        disk: false,
+      }
+    : { intro: "More threads, memory or disk while it runs: nothing in it stops, and its work is kept.", done: "and nothing in it stopped.", disk: true };
+}
+
+/**
  * A sandbox's disk as people read it: "3.2 GB of 20 GB" with how full it is,
  * "20 GB limit" when the use isn't known, or "no disk limit" when its host can't
  * cap it (its workspace shares the machine's disk). Nearly full from 85%.

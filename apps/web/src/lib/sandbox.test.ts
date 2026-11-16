@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { autoIsolation, diskUse, gatewayUse, isLab, isolationPlan, makesSandboxes } from "./sandbox.ts";
+import { autoIsolation, diskUse, gatewayUse, growWords, isLab, isolationPlan, makesSandboxes } from "./sandbox.ts";
 import { gb } from "./text.ts";
 
 const ultra = { name: "ultra", vm: true };
@@ -55,6 +55,15 @@ describe("a Mac's sandboxes (Apple's container)", () => {
     expect(makesSandboxes({ docker: false, vm: { kvm: false, tools: [] }, sandbox: null })).toBe(false);
     expect(makesSandboxes({ docker: true })).toBe(true);
     expect(makesSandboxes({ vm: { kvm: true, tools: [] } })).toBe(true);
+  });
+
+  test("giving a VM more is said as it will be: while it runs, or on a Mac a pause, what runs in it stopping, its disk as it is", () => {
+    expect(growWords(false)).toEqual({ intro: "More threads, memory or disk while it runs: nothing in it stops, and its work is kept.", done: "and nothing in it stopped.", disk: true });
+    expect(growWords(true)).toEqual({
+      intro: "More threads or memory. Its Mac can't grow a running VM: it stops for a moment and starts again with more, its /work kept, and whatever is running in it stops. Its disk keeps the size it was made with.",
+      done: "after a pause: what was running in it stopped.",
+      disk: false,
+    });
   });
 });
 

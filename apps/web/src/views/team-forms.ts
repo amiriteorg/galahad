@@ -6,6 +6,7 @@ import { isAbort } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
 import { hasDesktop } from "../lib/desktop.ts";
 import { budgetFrom, gatesFrom, type Given, giveInput, givenTo } from "../lib/give.ts";
+import { growWords } from "../lib/sandbox.ts";
 import { HANDLE_PATTERN, HARNESS, knightRoleLine, knightRoles, removalPlan, takenHandles, teammateId } from "../lib/team.ts";
 import { asCaps, type RoleSpec } from "../types.ts";
 import { badge, busy, button, callout, field } from "../ui/controls.ts";
@@ -320,15 +321,20 @@ export function remakeVm(ctx: Ctx, person: Pick<Teammate, "id" | "name">, worksp
   });
 }
 
-/** More for its VM while it runs: threads and memory given as it runs, its disk grown where it is mounted. Never less. */
+/**
+ * More for its VM while it runs: threads and memory given as it runs, its disk grown where it is mounted. Never less.
+ * On a Mac (Apple's container) it pauses to take more threads or memory, and its disk can't grow: the form says so.
+ */
 export function growVm(ctx: Ctx, person: Pick<Teammate, "id" | "name">, workspace: SandboxView, done: (workspace: SandboxView) => void): void {
+  const host = (ctx.live.fleet.value?.devices ?? []).find((node) => node.id === workspace.node);
+  const words = growWords(asCaps(host?.caps ?? null)?.sandbox?.grows === false);
   const more = (now: number, max: number, step: number) => h("input", { class: "input", type: "number", min: now, max, step, value: now, required: true });
   const cpus = more(workspace.cpus, 64, 1);
   const memory = more(workspace.memoryGb, 512, 1);
-  const disk = workspace.disk ? more(workspace.disk.limitGb, 4096, 1) : null;
-  editor(ctx, `Give ${person.name}'s VM more`, "More threads, memory or disk while it runs: nothing in it stops, and its work is kept.", [
+  const disk = workspace.disk && words.disk ? more(workspace.disk.limitGb, 4096, 1) : null;
+  editor(ctx, `Give ${person.name}'s VM more`, words.intro, [
     h("div", { class: "team-form-grid" }, field("CPUs", cpus), field("Memory (GB)", memory), disk ? field("Disk (GB)", disk) : null),
-    callout("info", `More only. What it adds must fit this node's ceiling. A smaller size takes effect when the VM is made again.${disk ? "" : " Its disk has no size of its own to grow: it was made before workspaces had one."}`),
+    callout("info", `More only. What it adds must fit this node's ceiling. A smaller size takes effect when the VM is made again.${disk || !words.disk ? "" : " Its disk has no size of its own to grow: it was made before workspaces had one."}`),
   ], "Give it more", async () => {
     const asked = {
       ...(Number(cpus.value) !== workspace.cpus ? { cpus: Number(cpus.value) } : {}),
@@ -336,9 +342,9 @@ export function growVm(ctx: Ctx, person: Pick<Teammate, "id" | "name">, workspac
       ...(disk && Number(disk.value) !== workspace.disk!.limitGb ? { diskGb: Number(disk.value) } : {}),
     };
     if (!Object.keys(asked).length) return;
-    const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView }>("/api/team/resize", { id: person.id, ...asked });
+    const result = await ctx.api.post<{ teammate: Teammate; workspace: SandboxView; paused?: boolean }>("/api/team/resize", { id: person.id, ...asked });
     const now = result.workspace;
-    toast(`${person.name}'s VM has more`, { description: `${now.cpus} CPUs · ${now.memoryGb} GB memory${now.disk ? ` · ${now.disk.limitGb} GB disk` : ""}, and nothing in it stopped.` });
+    toast(`${person.name}'s VM has more`, { description: `${now.cpus} CPUs · ${now.memoryGb} GB memory${now.disk ? ` · ${now.disk.limitGb} GB disk` : ""}, ${growWords(result.paused === true).done}` });
     done(now);
   });
 }

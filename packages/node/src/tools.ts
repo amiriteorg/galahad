@@ -708,7 +708,7 @@ export const TOOLS: GalahadTool[] = [
     name: "team_grow",
     title: "Give a VM more",
     description:
-      "Give a knight's VM, or your own computer (id galahad), more threads, memory or disk while it runs, with no restart and its work kept, when its work needs it: a build killed for want of memory, a disk filling up, work held back by too few threads. Give what the work needs, not the most there is. Only more, never past the ceiling your liege set (asking past it is refused, saying why), and the ledger says it was you, and why.",
+      "Give a knight's VM, or your own computer (id galahad), more threads, memory or disk while it runs, with no restart and its work kept, when its work needs it: a build killed for want of memory, a disk filling up, work held back by too few threads. Give what the work needs, not the most there is. Only more, never past the ceiling your liege set (asking past it is refused, saying why), and the ledger says it was you, and why. A VM on a Mac can't grow while it runs: it pauses for a moment to take more threads or memory, and what was running in it stops; its disk can't grow there.",
     input: {
       id: z.string().min(1).max(32).describe("The knight's handle, or galahad for your own computer"),
       cpus: z.number().min(0.25).max(64).describe("Its threads, in all").optional(),
@@ -721,10 +721,10 @@ export const TOOLS: GalahadTool[] = [
     flow: "record",
     own: true,
     async run(api, { id, cpus, memoryGb, diskGb, why }) {
-      const { workspace } = await api.call<{ workspace: SandboxView }>("growTeammate", {
+      const { workspace, paused } = await api.call<{ workspace: SandboxView; paused?: boolean }>("growTeammate", {
         id, why, ...(cpus !== undefined ? { cpus } : {}), ...(memoryGb !== undefined ? { memoryGb } : {}), ...(diskGb !== undefined ? { diskGb } : {}),
       });
-      return `${id === TEAM_GALAHAD ? "Your computer" : `${id}'s VM`} has ${workspace.cpus} threads, ${workspace.memoryGb} GB of memory${workspace.disk ? ` and ${workspace.disk.limitGb} GB of disk` : ""} now, while it runs. The ledger says you gave it, and why.`;
+      return `${id === TEAM_GALAHAD ? "Your computer" : `${id}'s VM`} has ${workspace.cpus} threads, ${workspace.memoryGb} GB of memory${workspace.disk ? ` and ${workspace.disk.limitGb} GB of disk` : ""} now, ${paused ? "after a pause: its Mac can't grow a running VM, so it stopped and started again to take them, and what was running in it stopped (run it again)" : "while it runs"}. The ledger says you gave it, and why.`;
     },
   }),
 
