@@ -186,7 +186,8 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     h(
       "div",
       { class: "sidebar-head" },
-      homeLink("wordmark grow", icon("roundtable", { size: 28 })),
+      // The Roundtable's mark opens the Roundtable: its board, on a wide screen (a phone's home is the Roundtable already).
+      hasRoster ? h("a", { class: "wordmark grow", href: "#/team", "aria-label": "The Roundtable", title: "The Roundtable" }, icon("roundtable", { size: 28 })) : homeLink("wordmark grow", icon("roundtable", { size: 28 })),
       h(
         "button",
         { class: "search-trigger", type: "button", onclick: () => ctx.palette(), "aria-label": "Search and commands" },

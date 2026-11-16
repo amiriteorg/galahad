@@ -1133,11 +1133,29 @@
       .team-live { display: flex; flex-wrap: wrap; gap: var(--sp-3); min-height: 0; margin-bottom: var(--sp-2); color: var(--text-3); font-size: var(--fs-12); }
       .team-live:empty, .team-send-error:empty { display: none; }
       .team-send-error { margin-bottom: var(--sp-2); }
-      .team-welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-4); min-height: 100%; padding: var(--sp-8); text-align: center; }
-      .team-welcome > svg { color: var(--text-3); }
-      .team-welcome h2 { font-size: var(--fs-24); font-weight: 650; letter-spacing: -0.035em; }
-      .team-welcome p { max-width: 46ch; color: var(--text-2); line-height: 1.65; }
-      .team-welcome > .row { justify-content: center; }
+      /* The Roundtable's own page on a wide screen (views/board.ts): everyone at the table as a board of cards, or a list,
+         in your order, who leads first; then the rooms. A card is its knight's portrait in its seat (live eyes, its
+         state's ring), its name and job, its state in a word, and what it is doing now, two lines at most. */
+      .roundtable-home { max-width: 1440px; padding: var(--sp-6) var(--sp-8) var(--sp-12); }
+      .roundtable-body { position: relative; display: flex; flex-direction: column; gap: var(--page-gap); min-width: 0; }
+      .board { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); }
+      .knight-card { position: relative; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-5) var(--card-pad) var(--card-pad); color: inherit; text-decoration: none; transition: border-color var(--d-1) var(--ease-out), transform var(--d-1) var(--ease-out); }
+      a.knight-card:hover { border-color: var(--border-strong); }
+      a.knight-card:active { transform: scale(0.99); }
+      .knight-card-portrait { display: grid; place-items: center; }
+      /* Who leads wears its mark in the card's corner, clear of its portrait's ring. */
+      .knight-card > .lead-mark { position: absolute; top: var(--sp-3); left: var(--sp-3); }
+      .knight-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .knight-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .knight-card-head h3 { min-width: 0; font-size: var(--fs-15); font-weight: 650; }
+      .knight-card-head > .state-chip { margin-left: auto; flex: none; }
+      .knight-card-role { color: var(--text-3); font-size: var(--fs-12); }
+      .knight-card-line { margin-top: var(--sp-1); min-height: calc(2 * 1.45 * var(--fs-13)); color: var(--text-2); font-size: var(--fs-13); line-height: 1.45; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .knight-card-arrange { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1); margin-top: auto; padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+      .knight-card-add { align-items: center; justify-content: center; gap: var(--sp-2); min-height: 248px; border-style: dashed; box-shadow: none; background: none; color: var(--text-2); font: inherit; font-weight: 500; cursor: pointer; }
+      .knight-card-add:hover { border-color: var(--border-strong); color: var(--text); }
+      .knight-card-plus { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
+      .knight-row-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
       .team-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--sp-4); }
       .team-fieldset { border: 0; padding: 0; margin: 0; }
       .team-fieldset legend { font-size: var(--fs-13); font-weight: 600; margin-bottom: var(--sp-2); }

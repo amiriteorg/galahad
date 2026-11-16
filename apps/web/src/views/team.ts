@@ -17,11 +17,12 @@ import { icon } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
 import { workerAvatar } from "../ui/avatar.ts";
 import { toast } from "../ui/toast.ts";
+import { roundtableHome } from "./board.ts";
 import { noteSaid } from "./roster.ts";
 import { openConsole } from "./sandboxes.ts";
 import { desktopViewer, type DesktopViewer } from "./desktop.ts";
 import { liveTrail, type LiveTrail, taskCard } from "./task-card.ts";
-import { controlTeam, editKnight, editNotes, editRoom, giveTask, giveToRoundtable, growVm, provisionVm, remakeVm, removeKnight, setEngram } from "./team-forms.ts";
+import { controlTeam, editKnight, editNotes, editRoom, giveTask, growVm, provisionVm, remakeVm, removeKnight, setEngram } from "./team-forms.ts";
 import { openTerminal } from "./terminal.ts";
 
 /*
@@ -383,28 +384,14 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     );
   }
 
-  function renderWelcome(): void {
+  /** The Roundtable's own page (no conversation open): its board, drawn by itself from then on (views/board.ts). */
+  let home = false;
+  function renderHome(): void {
+    if (home) return;
+    home = true;
     replace(head);
     composerWrap.hidden = true;
-    replace(
-      content,
-      h(
-        "div",
-        { class: "team-welcome" },
-        icon("roundtable", { size: 36 }),
-        h("h2", {}, snapshot?.teammates.length ? "The Roundtable" : "Seat your first knight"),
-        h("p", {}, snapshot?.teammates.length ? "Your knights sit at one table, Galahad first among them. Give a task to the Roundtable and the knight best suited to it takes it, and says why; or talk with one directly, and bring several into a room." : "Galahad is your primary knight, and the others are his fellows, none beneath him. Give a knight a name, a lasting job and a workspace of its own."),
-        canEdit
-          ? h(
-              "div",
-              { class: "row wrap" },
-              snapshot?.teammates.length ? button("Give a task", { variant: "primary", icon: "layers", onClick: () => giveToRoundtable(ctx) }) : null,
-              button("New knight", { variant: snapshot?.teammates.length ? "default" : "primary", icon: "plus", onClick: () => void editKnight(ctx) }),
-              snapshot?.teammates.length ? button("New room", { icon: "hash", onClick: () => editRoom(ctx) }) : null,
-            )
-          : null,
-      ),
-    );
+    roundtableHome(ctx, content, scope);
   }
 
   function syncComposer(): void {
@@ -445,7 +432,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   function draw(force = false): void {
     snapshot = ctx.live.team.value;
     if (!snapshot) return;
-    if (!roomId) return renderWelcome();
+    if (!roomId) return renderHome();
     if (!room) return;
     const next = snapshot;
     if (!prices && next.tasks.some((task) => task.record)) {
