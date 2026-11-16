@@ -78,6 +78,12 @@ function prepare(asset: Asset): Prepared {
 const holds = (ifNoneMatch: string | null, etag: string): boolean =>
   Boolean(ifNoneMatch) && (ifNoneMatch!.trim() === "*" || ifNoneMatch!.split(",").some((tag) => tag.trim().replace(/^W\//, "") === etag.replace(/^W\//, "")));
 
+/** The page as it is sent: its stylesheet without the comments that explain it (they stay in the source, for whoever
+ * changes it), so a first visit doesn't download them. */
+export function servedPage(html: string): string {
+  return html.replace(/<style>([\s\S]*?)<\/style>/g, (_, css: string) => `<style>${css.replace(/[ \t]*\/\*[\s\S]*?\*\/[ \t]*\n?/g, "")}</style>`);
+}
+
 export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise<Assets> {
   const files = new Map<string, Asset>();
   const src = join(webDir, "src");
@@ -96,7 +102,7 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
     for (const output of result.outputs) {
       files.set(`/${basename(output.path)}`, { body: await output.text(), type: "text/javascript; charset=utf-8" });
     }
-    const html = readFileSync(join(src, "index.html"));
+    const html = servedPage(readFileSync(join(src, "index.html"), "utf8"));
     files.set("/", { body: html, type: "text/html; charset=utf-8" });
     files.set("/index.html", { body: html, type: "text/html; charset=utf-8" });
     // Where the bank sends you back after authorising: the app itself finishes it.

@@ -58,6 +58,19 @@ describe("the PWA bundle", () => {
     for (const icon of manifest.icons as { src: string }[]) expect(assets.has(icon.src)).toBe(true);
   });
 
+  test("the page goes without its stylesheet's comments, and with every one of its rules", async () => {
+    const source = readFileSync(join(import.meta.dir, "../../../apps/web/src/index.html"), "utf8");
+    const sent = await (await buildAssets()).serve("/").text();
+    const style = (html: string) => html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    const rules = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, "");
+    expect(style(source)).toContain("/*");
+    expect(style(sent)).not.toContain("/*");
+    expect(rules(style(sent))).toBe(rules(style(source)));
+    // Outside the stylesheet, the page is as it is written.
+    expect(sent.slice(sent.indexOf("</style>"))).toBe(source.slice(source.indexOf("</style>")));
+    expect(sent.slice(0, sent.indexOf("<style>"))).toBe(source.slice(0, source.indexOf("<style>")));
+  });
+
   test("raster icons are real PNGs, and iOS gets one", async () => {
     const assets = await buildAssets();
     const html = await assets.serve("/").text();
