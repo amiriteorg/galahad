@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { NodeCapacity } from "@galahad/core";
+import os from "node:os";
 import { CapacityError, Governor, KEPT_WORK_MS } from "../src/compute/governor.ts";
+import { liveHost, macFreeShare } from "../src/compute/service.ts";
 
 /*
  * The governor: a node's slots. Work that fits is admitted; work that doesn't waits
@@ -261,6 +263,27 @@ describe("sandbox slots", () => {
     const ticket = await g.acquire(slot, { quest: "q" });
     g.release(ticket);
     expect(changes()).toBeGreaterThanOrEqual(2);
+  });
+});
+
+/*
+ * What the governor reads of the machine before it admits a sandbox: whether it has the memory. On Linux that is
+ * MemAvailable; on a Mac, what its memory pressure calls free. What the OS calls free counts only pages no cache
+ * holds, which macOS keeps few of, so a VM waited there for memory that was there.
+ */
+describe("the machine, as it is now", () => {
+  test("what macOS's memory pressure calls free is read as a share, and nothing else is", () => {
+    expect(macFreeShare(() => "48\n")).toBe(0.48);
+    expect(macFreeShare(() => "0")).toBe(0);
+    expect(macFreeShare(() => "100")).toBe(1);
+    for (const said of [null, "", "101", "-3", "48%", "abc", "4.5"]) expect(macFreeShare(() => said)).toBeNull();
+  });
+
+  test.skipIf(process.platform !== "darwin")("on a Mac, memory free is what its memory pressure says, not only the pages no cache holds", () => {
+    const share = macFreeShare();
+    expect(share).not.toBeNull();
+    // (Read a moment apart, so within a couple of gigabytes.)
+    expect(Math.abs(liveHost().freeMemoryGb - (share! * os.totalmem()) / 2 ** 30)).toBeLessThan(2);
   });
 });
 

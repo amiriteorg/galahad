@@ -72,7 +72,24 @@ export interface ComputeDeps {
   measure: Measure | null;
 }
 
-/** The machine, live: load and memory free. On Linux, memory "available" (free plus what the cache would give back). */
+/**
+ * The share of memory macOS's memory pressure calls free (what `memory_pressure` prints as "System-wide memory free
+ * percentage"), from 0 to 1; null if it won't say.
+ */
+export function macFreeShare(read: () => string | null = () => {
+  const out = Bun.spawnSync(["sysctl", "-n", "kern.memorystatus_level"], { stdout: "pipe", stderr: "ignore" });
+  return out.exitCode === 0 ? out.stdout.toString() : null;
+}): number | null {
+  const text = read()?.trim() ?? "";
+  if (!/^\d{1,3}$/.test(text) || Number(text) > 100) return null;
+  return Number(text) / 100;
+}
+
+/**
+ * The machine, live: load and memory free. On Linux, memory "available" (free plus what the cache would give back); on
+ * a Mac, what its memory pressure calls free. What the OS calls free counts only the pages no cache holds, which macOS
+ * keeps few of: 5.7 GB of a 36 GB Mac whose memory pressure said 48% free, and a VM would wait for memory that was there.
+ */
 export function liveHost(): Omit<HostLoad, "oursRecently"> {
   let freeBytes = os.freemem();
   if (process.platform === "linux") {
@@ -82,6 +99,9 @@ export function liveHost(): Omit<HostLoad, "oursRecently"> {
     } catch {
       /* what the OS calls free, then */
     }
+  } else if (process.platform === "darwin") {
+    const share = macFreeShare();
+    if (share !== null) freeBytes = os.totalmem() * share;
   }
   return { load: process.platform === "win32" ? 0 : (os.loadavg()[0] ?? 0), cores: os.cpus().length, freeMemoryGb: freeBytes / 2 ** 30, totalMemoryGb: os.totalmem() / 2 ** 30 };
 }
