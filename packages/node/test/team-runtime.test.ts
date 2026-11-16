@@ -529,7 +529,7 @@ test("what a harness would run on: its own sign-in first, then the roster's mode
   // Not installed: Galahad never installs it, whatever else is true.
   expect(harnessReadiness(claude, { exitCode: 1, stdout: status({ installed: false, signedIn: false }) }, [opus])).toEqual({ ready: false, models: [], reason: "Install Claude Code in this knight's VM (Galahad never installs or signs in a harness)" });
   // A roster model this VM's token doesn't cover is not something it can run on, and the reason says so.
-  expect(harnessReadiness(claude, ok({ signedIn: false }), [], [opus]).reason).toBe("Sign Claude Code in in this knight's VM (claude auth login), or put an Anthropic-API model on the engineer's roster. anthropic/claude-opus-5-5 is on the roster, but this VM's gateway token covers only the providers that had a key when the VM was made");
+  expect(harnessReadiness(claude, ok({ signedIn: false }), [], [opus]).reason).toBe("Sign Claude Code in in this knight's VM (claude auth login), or put an Anthropic-API model on the engineer's roster. anthropic/claude-opus-5-5 is on the roster, but this VM's gateway token doesn't cover its provider: it covers the providers with a key when its task began");
   expect(harnessReadiness(claude, ok({ signedIn: true, method: "claude.ai" }), [], [opus])).toEqual({ ready: true, models: [OWN_SIGN_IN], on: "its own sign-in in this VM (claude.ai)" });
   // What a VM prints is data: output that isn't the bridge's own status is no sign-in.
   expect(harnessReadiness(claude, { exitCode: 0, stdout: 'signedIn: true {"signedIn":true}' }, []).ready).toBe(false);
@@ -604,7 +604,7 @@ test("a roster model this VM's gateway token doesn't cover is not run on, and th
     teammate: () => knight, models: () => [], modelsOutside: () => [{ provider: "orcarouter", model: "gpt-6.1-sol" }],
     exec: async (_m, command) => { commands.push(command); return result({ stdout: "0" }); },
   });
-  await expect(f.runtime.executeTask(knight, task, f.context)).rejects.toThrow("OpenCode can't work in this VM yet: Put a keyed OpenAI-compatible model on the engineer's roster. orcarouter/gpt-6.1-sol is on the roster, but this VM's gateway token covers only the providers that had a key when the VM was made");
+  await expect(f.runtime.executeTask(knight, task, f.context)).rejects.toThrow("OpenCode can't work in this VM yet: Put a keyed OpenAI-compatible model on the engineer's roster. orcarouter/gpt-6.1-sol is on the roster, but this VM's gateway token doesn't cover its provider: it covers the providers with a key when its task began");
   expect(commands.some((c) => c.includes("setsid"))).toBe(false);
 });
 

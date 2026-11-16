@@ -179,7 +179,7 @@ export interface HarnessReadiness {
  * (`roster`). A vendor's tool that is signed in there runs on that sign-in first, and the roster's models are its
  * fallbacks through the gateway; one that isn't runs on the roster alone. Galahad never installs a harness or signs
  * one in: with nothing to run on, the reason says what the owner can do. `outside`: roster models it could speak
- * to, on providers this VM's token doesn't cover (a VM's token covers the providers that had a key when the VM was made).
+ * to, on providers this VM's token doesn't cover (a task's token covers the providers with a key when it began).
  */
 export function harnessReadiness(driver: AgentDriver, probe: Pick<ExecResult, "exitCode" | "stdout">, roster: readonly AgentModel[], outside: readonly AgentModel[] = [], role = "engineer"): HarnessReadiness {
   const on = role === "engineer" ? "the engineer's roster" : `the ${role} role`;
@@ -189,7 +189,7 @@ export function harnessReadiness(driver: AgentDriver, probe: Pick<ExecResult, "e
   const told = driver.signIn?.read(probe.stdout);
   if (told?.signedIn) return { ready: true, models: [OWN_SIGN_IN, ...roster], on: `its own sign-in in this VM${told.method ? ` (${told.method})` : ""}${gateway ? `, then ${gateway}` : ""}` };
   if (gateway) return { ready: true, models: [...roster], on: gateway };
-  const uncovered = outside[0] ? `. ${agentModelName(outside[0])} is on the roster, but this VM's gateway token covers only the providers that had a key when the VM was made` : "";
+  const uncovered = outside[0] ? `. ${agentModelName(outside[0])} is on the roster, but this VM's gateway token doesn't cover its provider: it covers the providers with a key when its task began` : "";
   if (driver.signIn) return { ready: false, models: [], reason: `Sign ${driver.title} in in this knight's VM (${driver.signIn.login}), or put ${driver.signIn.roster} on ${on}${uncovered}` };
   return { ready: false, models: [], reason: `Put a keyed ${driver.kind === "anthropic" ? "Anthropic-API" : "OpenAI-compatible"} model on ${on}${uncovered}` };
 }

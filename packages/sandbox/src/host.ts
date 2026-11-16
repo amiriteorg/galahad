@@ -539,7 +539,12 @@ export class SandboxHost {
   }
 
   /** Owner/controller only. Resume the exact existing VM and give this run bounded model access. */
-  async prepareTeam(id: string, quest: string, git?: { connector: string; owner: string; repo: string }): Promise<SandboxView> {
+  /**
+   * A knight's VM, ready for a task: started if it isn't, and given a fresh lease. `providers`: what the lease covers,
+   * the providers with a key now (the controller says), so a key added since the VM was made reaches it; absent, what
+   * the VM was made with.
+   */
+  async prepareTeam(id: string, quest: string, git?: { connector: string; owner: string; repo: string }, providers?: readonly string[]): Promise<SandboxView> {
     const sandbox = await this.get(id);
     if (!sandbox) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
     if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
@@ -559,10 +564,11 @@ export class SandboxHost {
     // Revocation and request caps remain real: this is a new lease, not an indefinitely extended token.
     const previous = this.tokenStore.take(id);
     if (previous) this.opts.tokens.revoke(previous);
-    const scopes = [...sandbox.providers, ...(git ? [`git:${git.connector}:${git.owner}:${git.repo}`] : [])];
+    const covered = providers ? [...providers] : sandbox.providers;
+    const scopes = [...covered, ...(git ? [`git:${git.connector}:${git.owner}:${git.repo}`] : [])];
     const minted = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: scopes, ttlMinutes: 30, maxRequests: 500 });
     this.tokenStore.put(id, minted.info.hash);
-    const env = gatewayEnv(minted.token, sandbox.providers);
+    const env = gatewayEnv(minted.token, covered);
     if (git) env.GALAHAD_REPO_URL = repositoryUrl(env.GALAHAD_GATEWAY!, git);
     if (!(await this.writeLease(id, env))) {
       this.opts.tokens.revoke(minted.info.hash);

@@ -311,7 +311,14 @@ export const routes = {
   teamDesktopOn: { method: "POST", path: "/api/team/desktop-workspace", scope: "sandbox", input: z.strictObject({ id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, action: DesktopAction }) },
   prepareTeamWorkspace: {
     method: "POST", path: "/api/team/prepare-workspace", scope: "fleet:admin",
-    input: z.strictObject({ id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, repository: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/?$/).optional() }),
+    input: z.strictObject({
+      id: SandboxId,
+      on: NodeRef.optional(),
+      quest: TeamWorkspaceQuest,
+      repository: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/?$/).optional(),
+      /** What the task's lease covers: the providers with a key now (absent: what the VM was made with). */
+      providers: z.array(z.string().min(1).max(64)).max(16).optional(),
+    }),
   },
   whoami: { method: "GET", path: "/api/whoami", scope: null, input: null },
   fleet: { method: "GET", path: "/api/fleet", scope: "mind:read", input: null },

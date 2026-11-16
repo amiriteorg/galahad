@@ -1588,7 +1588,7 @@ export function createApp(ctx: AppContext) {
   };
   const noVm = (id: string) => (id === TEAM_GALAHAD ? "Galahad has no computer yet: Computer in his chat makes one, or galahad roundtable provision galahad" : `this knight has no VM yet: galahad roundtable provision ${id} makes one`);
   const vmProvisioning = new Map<string, Promise<SandboxView>>();
-  /** The providers each knight's VM token covers, as its host last said: those that had a key when the VM was made. */
+  /** The providers each knight's VM token covers now: those with a key when its current task began (prepareTeam). */
   const leased = new Map<string, readonly string[]>();
   /** What tools' calls through this node's gateway cost lately, by caller: a knight's task counts its VM's in its budget. */
   const toolSpend = new GatewaySpend();
@@ -1648,15 +1648,19 @@ export function createApp(ctx: AppContext) {
     if (!current.workspace) throw new HttpError(424, "this knight has no VM yet");
     return inProcess(teammatePrincipal(member.id), signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: current.workspace.node, id: current.workspace.id, cmd: ["bash", "-lc", command], timeoutSec: timeout });
   }
+  /** The providers with a key now: what a knight's task lease covers when the task starts, and a VM made (again) with. */
+  const keyedProviders = (): string[] => providerViews(ctx.store, ctx.vault).filter((v) => v.hasKey).map((v) => v.id).slice(0, 16);
   async function prepareTeam(member: Teammate, signal: AbortSignal) {
     const workspace = await provisionTeam(member.id, {}, signal);
-    leased.set(member.id, workspace.providers);
+    // Its lease covers the providers with a key now: one you added since the VM was made reaches it, unmade.
+    const providers = keyedProviders();
+    leased.set(member.id, providers);
     member = teamMember(member.id);
     // A controller crash can leave the old harness running. Stop that exact process
     // before replacing its lease or allowing any new writer into this VM.
     if (workspace.status === "running") await stopTeamWorker(member);
     if (signal.aborted) throw new HttpError(409, "knight stopped");
-    await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(member.id)), ...(member.repository ? { repository: member.repository } : {}) });
+    await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(member.id)), ...(member.repository ? { repository: member.repository } : {}), providers });
     if (member.repository) {
       // No key in command text or git config. The leased token is read inside the VM; the remote is reset to its public URL.
       const script = `import json,os,subprocess,sys\nd=json.load(open('/work/.galahad-gateway.json'))\np='/work/repo'\nif os.path.exists(p):\n sys.exit(0 if os.path.isdir(p+'/.git') else 1)\nr=subprocess.run(['git','-c','http.extraHeader=Authorization: Bearer '+d['GALAHAD_TOKEN'],'clone','--quiet',d['GALAHAD_REPO_URL'],p],capture_output=True)\nif r.returncode: print('Repository clone failed through the read-only gateway'); sys.exit(r.returncode)\nsubprocess.run(['git','-C',p,'remote','set-url','origin',sys.argv[1]],check=True)`;
@@ -1677,7 +1681,7 @@ export function createApp(ctx: AppContext) {
     }
     if (vmProvisioning.has(member.id)) throw new HttpError(409, "this knight's VM is being made; have it made again when that has finished");
     const work = (async () => {
-      const providers = providerViews(ctx.store, ctx.vault).filter((v) => v.hasKey).map((v) => v.id).slice(0, 16);
+      const providers = keyedProviders();
       const { sandbox } = await inProcess(p, signal).call<{ sandbox: SandboxView }>("remakeTeamWorkspace", { on: member.workspace!.node, id: existing.id, quest: armQuest(teammateLabel(member.id)), providers, ...(network ? { network } : {}), ...(desktop !== undefined ? { desktop } : {}) });
       leased.set(member.id, sandbox.providers);
       return sandbox;
@@ -1687,7 +1691,7 @@ export function createApp(ctx: AppContext) {
   }
   /**
    * A VM's eyes (a knight's, or his own computer's): the roster's first `eyes` model on a provider this VM's gateway
-   * token covers (a VM's token covers the providers that had a key when it was made). The VM itself asks it, through the gateway.
+   * token covers (a task's token covers the providers with a key when it starts). The VM itself asks it, through the gateway.
    */
   function eyesFor(id: string): string | null {
     const covered = leased.get(id) ?? [];
@@ -1810,8 +1814,8 @@ export function createApp(ctx: AppContext) {
       exec: execTeam, prepare: prepareTeam, teammate: teamMember,
       dependencies: (task) => task.dependsOn.map((id) => ctx.team!.store.task(id)).filter((t): t is NonNullable<typeof t> => !!t && t.status === "done" && t.verified).map(({ id, title, output }) => ({ id, title, output })),
       stopWorker: stopTeamWorker,
-      // A knight's eyes: the roster's first `eyes` model on a provider this VM's gateway token covers (a VM's token
-      // covers the providers that had a key when it was made). The VM itself asks it, through the gateway.
+      // A knight's eyes: the roster's first `eyes` model on a provider this VM's gateway token covers (a task's token
+      // covers the providers with a key when it starts). The VM itself asks it, through the gateway.
       eyes: (member) => eyesFor(member.id),
       // What a task changed in its repository, kept on the VM's host as any sandbox's work is (the controller asks; a knight can't).
       keep: async (member, path, label) => {
@@ -1850,8 +1854,8 @@ export function createApp(ctx: AppContext) {
           () => [],
         );
       },
-      models: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).models,
-      modelsOutside: (member) => harnessModels(member.harness, workRole(member.role), leased.get(member.id)).outside,
+      models: (member) => harnessModels(member.harness, workRole(member.role), keyedProviders()).models,
+      modelsOutside: (member) => harnessModels(member.harness, workRole(member.role), keyedProviders()).outside,
       engram: () => ctx.team!.store.engram(),
       memories: (query) => memoryContext(query) ?? "",
       roundtable: () => teamOf().overview().workers,
@@ -2002,7 +2006,8 @@ export function createApp(ctx: AppContext) {
           harnesses.push({ id, ready: false, reason: busy ? "Readiness is checked when this knight is idle" : "Install this harness in the knight's VM" });
           continue;
         }
-        const usable = harnessModels(id, role, workspace.providers);
+        // (What its next task's lease will cover: the providers with a key now.)
+        const usable = harnessModels(id, role, keyedProviders());
         const { ready, on, reason } = harnessReadiness(driver, await execTeam(member, driver.check, 30, req.signal), usable.models, usable.outside, role);
         harnesses.push({ id, ready, ...(on ? { on } : {}), ...(reason ? { reason } : {}) });
       }
@@ -2022,7 +2027,7 @@ export function createApp(ctx: AppContext) {
         if (!installedConnector(ctx.store, connector)) throw new HttpError(424, "add the GitHub connector before using a repository workspace");
         git = { connector, ...repo };
       }
-      return longRunning(onNode(p, input.on, routes.prepareTeamWorkspace.path, input, () => ctx.sandbox!.prepareTeam(input.id, input.quest, git), { sandbox: input.id }));
+      return longRunning(onNode(p, input.on, routes.prepareTeamWorkspace.path, input, () => ctx.sandbox!.prepareTeam(input.id, input.quest, git, input.providers), { sandbox: input.id }));
     },
     checkoutRepository: (input, p) => {
       if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only you put a repository in a sandbox");

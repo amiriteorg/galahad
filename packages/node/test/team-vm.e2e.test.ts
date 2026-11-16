@@ -247,16 +247,16 @@ test("harness readiness says what each would run on: a vendor's tool on its own 
     const forged = await readiness();
     expect(forged.claude!.ready).toBe(false);
     expect(JSON.stringify(forged)).not.toContain("example.invalid");
-    // An Anthropic-API model is keyed and put on the roster now, after this VM was made: the VM's gateway token doesn't
-    // cover its provider, so it is not something this VM can run on, and readiness says that and never "ready".
+    // An Anthropic-API model is keyed and put on the roster now, after this VM was made: its next task's lease covers the
+    // providers with a key then, so the VM can run on it without being made again, and readiness says so.
     await api("setSecret", { name: "claude-api", value: "fake-anthropic-api-key-for-tests-0000", provider: "claude-api", baseUrl: "https://claude-api.example.test" });
     await api("setProvider", { id: "claude-api", kind: "anthropic", baseUrl: "https://claude-api.example.test", secret: "claude-api" });
     await api("setRoster", { role: "engineer", models: ["stand-in/engineer", "claude-api/claude-opus-5-5"] });
     toolStatus.set("claude", { code: 0, stdout: told({ installed: true, signedIn: false }) });
-    expect((await readiness()).claude).toEqual({ id: "claude", ready: false, reason: "Sign Claude Code in in this knight's VM (claude auth login), or put an Anthropic-API model on the engineer's roster. claude-api/claude-opus-5-5 is on the roster, but this VM's gateway token covers only the providers that had a key when the VM was made" });
-    // Signed in, it runs on its sign-in all the same.
+    expect((await readiness()).claude).toEqual({ id: "claude", ready: true, on: "claude-api/claude-opus-5-5 through the gateway" });
+    // Signed in, it runs on its sign-in first, with that model through the gateway after it.
     toolStatus.set("claude", { code: 0, stdout: told({ installed: true, signedIn: true, method: "claude.ai" }) });
-    expect((await readiness()).claude).toEqual({ id: "claude", ready: true, on: "its own sign-in in this VM (claude.ai)" });
+    expect((await readiness()).claude).toEqual({ id: "claude", ready: true, on: "its own sign-in in this VM (claude.ai), then claude-api/claude-opus-5-5 through the gateway" });
     // (An Anthropic-API model is not one Codex can speak to, covered or not.)
     toolStatus.set("codex", { code: 0, stdout: told({ installed: true, signedIn: false }) });
     expect((await readiness()).codex!.reason).toBe("Sign Codex in in this knight's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster");

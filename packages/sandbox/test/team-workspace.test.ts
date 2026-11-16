@@ -137,6 +137,15 @@ describe("persistent teammate workspaces", () => {
     expect(f.ledger).toEqual([expect.objectContaining({ resource: "sandbox.team-ready", quest: QUEST, verdict: "allow" })]);
   });
 
+  test("each task's lease covers the providers it is given now: a key added since the VM was made reaches it, without making it again", async () => {
+    const f = teammateHost({ status: "running" });
+    await f.host.prepareTeam(ID, QUEST, undefined, ["openai", "zai-coding"]);
+    expect(f.minted).toEqual([{ label: `sandbox:${ID}`, providers: ["openai", "zai-coding"], ttlMinutes: 30, maxRequests: 500 }]);
+    // Given none, it covers what the VM was made with, as it did.
+    await f.host.prepareTeam(ID, QUEST);
+    expect(f.minted.at(-1)!.providers).toEqual(["openai"]);
+  });
+
   test("renewal revokes the persisted prior lease and then each superseded lease", async () => {
     const f = teammateHost({ status: "running" });
     await f.host.prepareTeam(ID, QUEST);
