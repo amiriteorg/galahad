@@ -191,14 +191,15 @@ export class ConnectorService {
     return { status: "done", class: request.class, target: request.target, result, ...(manifest.private ? { private: true as const } : {}) };
   }
 
+  /** One that signs in keeps a rotated sign-in sealed and pinned as before. */
+  private readonly keepRotated = (name: string, value: string): void => {
+    const info = this.o.vault.info(name);
+    this.o.vault.set(name, value, { ...(info?.origin ? { origin: info.origin } : {}), ...(info?.provider ? { provider: info.provider } : {}), ...(info?.label ? { label: info.label } : {}) });
+  };
+
   private async send(manifest: ConnectorManifest, request: ConnectorRequest): Promise<ConnectorResult> {
     try {
-      // One that signs in keeps a rotated sign-in sealed and pinned as before.
-      const keepRotated = (name: string, value: string) => {
-        const info = this.o.vault.info(name);
-        this.o.vault.set(name, value, { ...(info?.origin ? { origin: info.origin } : {}), ...(info?.provider ? { provider: info.provider } : {}), ...(info?.label ? { label: info.label } : {}) });
-      };
-      const ctx = { vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}), oauth: { save: keepRotated, ...(this.o.oauthEndpoints ? { endpoints: this.o.oauthEndpoints } : {}) } };
+      const ctx = { vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}), oauth: { save: this.keepRotated, ...(this.o.oauthEndpoints ? { endpoints: this.o.oauthEndpoints } : {}) } };
       if (request.kind === "native") {
         const native = this.o.natives?.[request.native];
         if (!native) throw new ConnectorCallError(501, `${request.native} isn't available on this node`);
@@ -413,12 +414,12 @@ export class ConnectorService {
       url: string;
       label?: string;
       description?: string;
-      auth?: "none" | "bearer" | "header";
+      auth?: "none" | "bearer" | "header" | "oauth";
       header?: string;
       only?: string[];
       classes?: Record<string, ConnectorManifest["tools"][string]["class"]>;
     },
-  ): Promise<{ server: string | null; tools: number; needsKey: boolean } & MergeReport> {
+  ): Promise<{ server: string | null; tools: number; needsKey: boolean; needsSignIn?: boolean } & MergeReport> {
     let url: URL;
     try {
       url = new URL(input.url);
@@ -434,9 +435,12 @@ export class ConnectorService {
     const auth =
       input.auth === "none"
         ? undefined
-        : input.auth
-          ? { secret: id, scheme: input.auth, ...(input.auth === "header" ? { header: input.header ?? "x-api-key" } : {}) }
-          : previous?.auth;
+        : input.auth === "oauth"
+          ? // You sign in to it as yourself: its own sign-in, found from the server (brain mcp-oauth.ts).
+            { secret: id, scheme: "oauth" as const, oauth: { provider: "mcp" as const, scopes: [] } }
+          : input.auth
+            ? { secret: id, scheme: input.auth, ...(input.auth === "header" ? { header: input.header ?? "x-api-key" } : {}) }
+            : previous?.auth;
     const only = input.only ?? previous?.mcp?.only;
     const draft = {
       id,
@@ -452,7 +456,13 @@ export class ConnectorService {
     const base = ConnectorManifest.safeParse(draft);
     if (!base.success) throw new ConnectorCallError(400, base.error.issues.map((i) => `${i.path.join(".") || "connector"}: ${i.message}`).join("; "));
 
-    if (keyState(this.o.vault, base.data) === "missing") {
+    const state = keyState(this.o.vault, base.data);
+    if (auth?.scheme === "oauth" && state !== "ready") {
+      // Listing tools needs you signed in: install what we have; its tools are listed once you've signed in.
+      this.o.store.emit(this.o.identity, "connector.set", { id, manifest: base.data as unknown as Record<string, unknown> });
+      return { server: null, tools: Object.keys(base.data.tools).length, needsKey: false, needsSignIn: true, added: [], changed: [], removed: [], skipped: 0 };
+    }
+    if (state === "missing") {
       // Listing tools usually needs the key too: install what we have, ask for the key.
       this.o.store.emit(this.o.identity, "connector.set", { id, manifest: base.data as unknown as Record<string, unknown> });
       if (!this.o.vault.requests().some((r) => r.name === auth!.secret)) {
@@ -467,7 +477,7 @@ export class ConnectorService {
 
     let discovered: Awaited<ReturnType<typeof discoverMcpTools>>;
     try {
-      discovered = await discoverMcpTools({ vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}) }, base.data);
+      discovered = await discoverMcpTools({ vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}), oauth: { save: this.keepRotated } }, base.data);
     } catch (error) {
       if (error instanceof ConnectorError) {
         const hint = !auth && /401/.test(error.message) ? " It needs a key: install it again saying how the key is sent (bearer or a header), then add the key." : "";

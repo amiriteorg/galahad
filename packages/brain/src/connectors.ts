@@ -50,7 +50,8 @@ export function keyState(vault: Vault, manifest: ConnectorManifest): KeyState {
   if (info.origin !== new URL(manifest.origin).origin || info.provider !== manifest.id) return "wrong-origin";
   if (manifest.auth.scheme !== "oauth") return "ready";
   const keep = vault.unlocked() ? readKeep(vault.reveal(manifest.auth.secret)) : null;
-  return !keep ? "missing" : keep.refresh ? "ready" : "signed-out";
+  // (An MCP server's sign-in may be an access token alone, good until it lapses.)
+  return !keep ? "missing" : keep.refresh || (keep.access && (keep.expires ?? Number.POSITIVE_INFINITY) > Date.now()) ? "ready" : "signed-out";
 }
 
 export interface ConnectorResult {

@@ -78,7 +78,13 @@ function classFlags(flags: Flags): Record<string, string> | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
-function printDiscovered(connector: ConnectorView, d: { server: string | null; tools: number; needsKey: boolean; added: string[]; changed: string[]; removed: string[]; skipped: number }): void {
+function printDiscovered(connector: ConnectorView, d: { server: string | null; tools: number; needsKey: boolean; needsSignIn?: boolean; added: string[]; changed: string[]; removed: string[]; skipped: number }): void {
+  if (d.needsSignIn) {
+    // Its own sign-in: no app of yours, no key; its tools are listed once you've signed in.
+    console.log(`Installed ${connector.label} (${connector.url}) without tools yet: sign in to it as you, and they are listed then.`);
+    console.log(`  galahad connector signin ${connector.id} --redirect <your app's address>/oauth/callback   (or Sign in on its card in Connectors, in the app)`);
+    return;
+  }
   if (d.needsKey) {
     console.log(`Installed ${connector.label} (${connector.url}) without tools yet: it needs its key first.`);
     console.log(`  galahad secret set ${connector.secret} --connector ${connector.id}   then   galahad connector refresh ${connector.id}`);

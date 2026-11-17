@@ -134,12 +134,17 @@ export const ConnectorAuth = z.strictObject({
   header: HeaderName.optional(),
   /** Call without a key when none is set (public APIs with a lower rate limit). */
   optional: z.boolean().optional(),
-  /** scheme oauth: whose sign-in, and what it asks you to allow. */
+  /**
+   * scheme oauth: whose sign-in, and what it asks you to allow. mcp: an MCP server's own (its authorization server found
+   * from the server, Galahad registered there as a client of its own: brain mcp-oauth.ts), asking what it names when
+   * no scopes are given here.
+   */
   oauth: z
     .strictObject({
-      provider: z.enum(["google", "microsoft"]),
-      scopes: z.array(z.string().min(1).max(200).regex(/^[A-Za-z0-9.:/_-]+$/)).min(1).max(16),
+      provider: z.enum(["google", "microsoft", "mcp"]),
+      scopes: z.array(z.string().min(1).max(200).regex(/^[A-Za-z0-9.:/_-]+$/)).max(16),
     })
+    .refine((o) => o.provider === "mcp" || o.scopes.length > 0, "a Google or Microsoft sign-in names what it asks you to allow")
     .optional(),
 });
 

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { endpointsOf, forgetAccess, OAuthError, type OAuthEndpoints, type OAuthKeep, readKeep, tokenRequest, writeKeep } from "@galahad/brain";
+import { endpointsOf, finishMcpSignIn, forgetAccess, type McpPending, OAuthError, type OAuthEndpoints, type OAuthKeep, readKeep, startMcpSignIn, tokenRequest, writeKeep } from "@galahad/brain";
 import type { ConnectorManifest } from "@galahad/core";
 import type { Vault } from "@galahad/mind";
 
@@ -29,6 +29,8 @@ export interface SignInDeps {
   endpoints?: Partial<OAuthEndpoints>;
   log(message: string): void;
   now?: () => number;
+  /** A sign-in just kept (an MCP server's tools are listed then). */
+  signedIn?(connector: string): void;
   /** The wait between asks, ended early when the sign-in is stopped (tests: none). */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
@@ -72,7 +74,7 @@ export function callbackOf(redirect: string): string {
 }
 
 export class SignIns {
-  private readonly waiting = new Map<string, { connector: string; verifier: string; redirect: string; until: number }>();
+  private readonly waiting = new Map<string, { connector: string; verifier: string; redirect: string; until: number; mcp?: McpPending }>();
   private readonly polls = new Map<string, AbortController>();
   private readonly now: () => number;
 
@@ -80,7 +82,7 @@ export class SignIns {
     this.now = d.now ?? Date.now;
   }
 
-  private oauthOf(id: string): { manifest: ConnectorManifest; provider: "google" | "microsoft"; scopes: string[] } {
+  private oauthOf(id: string): { manifest: ConnectorManifest; provider: "google" | "microsoft" | "mcp"; scopes: string[] } {
     const manifest = this.d.manifest(id);
     if (!manifest) throw new SignInError(404, `${id} isn't installed`);
     if (manifest.auth?.scheme !== "oauth" || !manifest.auth.oauth) throw new SignInError(400, `${manifest.label} doesn't sign in: it takes a key`);
@@ -102,6 +104,7 @@ export class SignIns {
   /** The app you registered: its client id (and for Google its secret). A new client id ends the sign-in it had. */
   setApp(id: string, client: string, secret?: string): void {
     const { manifest, provider } = this.oauthOf(id);
+    if (provider === "mcp") throw new SignInError(400, `${manifest.label} needs no app of yours: Galahad registers itself when you sign in`);
     if (provider === "google" && !secret) throw new SignInError(400, "Google's web app has a client secret too: give both");
     const before = this.keep(manifest);
     const same = before?.client === client;
@@ -110,6 +113,7 @@ export class SignIns {
 
   async start(id: string, redirect: string | undefined): Promise<Started> {
     const { manifest, provider, scopes } = this.oauthOf(id);
+    if (provider === "mcp") return this.startMcp(manifest, scopes, redirect);
     const keep = this.keep(manifest);
     if (!keep) throw new SignInError(424, `${manifest.label} needs the app you registered first: its client id${provider === "google" ? " and secret" : ""}`);
     const ends = endpointsOf(provider, this.d.endpoints);
@@ -151,18 +155,40 @@ export class SignIns {
     return { flow: "device", code: device.user_code, url: typeof device.verification_uri === "string" ? device.verification_uri : "https://microsoft.com/devicelogin", expires: this.now() + lasts };
   }
 
-  /** Google's return to /oauth/callback: the code traded for a sign-in, kept in the vault. What the page says. */
+  /**
+   * An MCP server's sign-in (brain mcp-oauth.ts): its authorization server found from it, Galahad registered there, and
+   * your browser sent to allow it, back to your app's /oauth/callback, as a Google sign-in is.
+   */
+  private async startMcp(manifest: ConnectorManifest, scopes: string[], redirect: string | undefined): Promise<Started> {
+    if (!redirect) throw new SignInError(400, "give the address the sign-in returns to: your app's /oauth/callback");
+    const back = callbackOf(redirect);
+    for (const [state, w] of this.waiting) if (w.until <= this.now()) this.waiting.delete(state);
+    const state = b64u(randomBytes(32));
+    let started: Awaited<ReturnType<typeof startMcpSignIn>>;
+    try {
+      started = await startMcpSignIn({ server: `${manifest.origin}${manifest.mcp?.path ?? ""}`, redirect: back, state, scopes, ...(this.d.fetch ? { fetch: this.d.fetch } : {}) });
+    } catch (error) {
+      throw new SignInError(502, `${manifest.label}'s sign-in couldn't start: ${error instanceof OAuthError ? error.message : String((error as Error)?.message ?? error).slice(0, 200)}`);
+    }
+    this.waiting.set(state, { connector: manifest.id, verifier: started.verifier, redirect: back, until: this.now() + WAIT_MS, mcp: started.pending });
+    return { flow: "code", url: started.url };
+  }
+
+  /** The return to /oauth/callback (Google's, or an MCP server's): the code traded for a sign-in, kept in the vault. What the page says. */
   async callback(params: URLSearchParams): Promise<{ ok: boolean; message: string }> {
     const state = params.get("state") ?? "";
     const waited = this.waiting.get(state);
     this.waiting.delete(state);
     if (!waited || waited.until <= this.now()) return { ok: false, message: "This sign-in has expired or was already used. Start it again from Galahad." };
     const error = params.get("error");
-    if (error) return { ok: false, message: `Google said ${error.slice(0, 80)}. Nothing was kept.` };
+    const who = waited.mcp ? (this.d.manifest(waited.connector)?.label ?? waited.connector) : "Google";
+    if (error) return { ok: false, message: `${who} said ${error.slice(0, 80)}. Nothing was kept.` };
+    if (waited.mcp) return this.finishMcp(waited.connector, waited.mcp, params.get("code"), waited.verifier, waited.redirect);
     const code = params.get("code");
     const { manifest, provider } = this.oauthOf(waited.connector);
     const keep = this.keep(manifest);
-    if (!code || !keep) return { ok: false, message: "Nothing came back to sign in with. Start it again from Galahad." };
+    // (Changed into an MCP server's between the start and now: that sign-in is its own.)
+    if (!code || !keep || provider === "mcp") return { ok: false, message: "Nothing came back to sign in with. Start it again from Galahad." };
     try {
       const answer = await tokenRequest({ vault: this.d.vault, ...(this.d.fetch ? { fetch: this.d.fetch } : {}) }, endpointsOf(provider, this.d.endpoints).token, {
         grant_type: "authorization_code",
@@ -179,6 +205,20 @@ export class SignIns {
       return { ok: true, message: `Signed in to ${manifest.label}${account ? ` as ${account}` : ""}. You can close this page and go back to Galahad.` };
     } catch (e) {
       return { ok: false, message: `Google didn't take the sign-in (${e instanceof OAuthError ? e.message : "it couldn't be reached"}). Nothing was kept.` };
+    }
+  }
+
+  private async finishMcp(id: string, pending: McpPending, code: string | null, verifier: string, redirect: string): Promise<{ ok: boolean; message: string }> {
+    const { manifest } = this.oauthOf(id);
+    if (!code) return { ok: false, message: "Nothing came back to sign in with. Start it again from Galahad." };
+    try {
+      const keep = await finishMcpSignIn(pending, { code, verifier, redirect, now: this.now(), ...(this.d.fetch ? { fetch: this.d.fetch } : {}) });
+      this.seal(manifest, keep);
+      this.d.log(`signed in to ${manifest.id}`);
+      this.d.signedIn?.(manifest.id);
+      return { ok: true, message: `Signed in to ${manifest.label}. Its tools are being listed now: you can close this page and go back to Galahad.` };
+    } catch (e) {
+      return { ok: false, message: `${manifest.label} didn't take the sign-in (${e instanceof OAuthError ? e.message : String((e as Error)?.message ?? e).slice(0, 160)}). Nothing was kept.` };
     }
   }
 

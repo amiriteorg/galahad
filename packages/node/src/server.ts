@@ -1053,6 +1053,12 @@ export function createApp(ctx: AppContext) {
     ...(ctx.fetch ? { fetch: ctx.fetch } : {}),
     ...(ctx.oauthEndpoints ? { endpoints: ctx.oauthEndpoints } : {}),
     log: ctx.log,
+    // Signed in to an MCP server: its tools are listed now, as installing it with its key would have.
+    signedIn: (id) => {
+      const manifest = installedConnector(ctx.store, id);
+      if (!manifest?.mcp) return;
+      void ctx.connectors.installMcp(id, { url: `${manifest.origin}${manifest.mcp.path}` }).catch((error: Error) => ctx.log(`couldn't list ${id}'s tools after its sign-in: ${redact(String(error.message ?? error)).slice(0, 200)}`));
+    },
   });
   ctx.shutdown?.addEventListener("abort", () => signIns.stop());
   async function signInErrors<T>(work: () => T | Promise<T>): Promise<T> {

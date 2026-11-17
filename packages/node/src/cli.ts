@@ -276,7 +276,8 @@ Connectors (manifests, not code: keys stay in the vault; outward and delete ask 
   connector ls | connector tools <id> | connector rm <id>
   connector add github|cloudflare|home-assistant [--origin url] | connector add --manifest file.json
   connector add github --owner <org>                    one more GitHub owner with its own token (github-<org>)
-  connector add <id> --mcp <url> [--auth bearer|header:<name>] [--only a,b] [--class tool=read …]
+  connector add <id> --mcp <url> [--auth bearer|header:<name>|oauth] [--only a,b] [--class tool=read …]
+                                                         oauth: you sign in to it as you (its own sign-in, no app of yours)
                                   a remote MCP server: its tools are listed once; you choose their classes
   connector refresh <id> [--class tool=class …]   list an MCP server's tools again (your classes stay)
   connector call <id>.<tool> [--arg key=value …] [--why "…"]

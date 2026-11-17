@@ -15,7 +15,8 @@ import {
   sha256B64u,
 } from "@galahad/core";
 import type { Vault } from "@galahad/mind";
-import { authFor, type ConnectorResult, MAX_RESPONSE_BYTES } from "./connectors.ts";
+import { authFor, type ConnectorResult, keyState, MAX_RESPONSE_BYTES } from "./connectors.ts";
+import { accessToken, type OAuthContext } from "./oauth.ts";
 
 /*
  * Remote MCP servers as connectors. The node is the MCP client: it connects for one
@@ -33,6 +34,17 @@ export interface McpContext {
   fetch?: typeof fetch;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** For a server you sign in to (mcp-oauth.ts): how a rotated sign-in is kept. */
+  oauth?: Omit<OAuthContext, "vault" | "fetch">;
+}
+
+/** A server you signed in to: a short-lived access token for this one job, never the sign-in itself. */
+async function signedIn(ctx: McpContext, manifest: ConnectorManifest): Promise<{ headers: Record<string, string>; key: string }> {
+  if (keyState(ctx.vault, manifest) === "wrong-origin") throw new ConnectorError(`the secret "${manifest.auth!.secret}" is pinned to another origin; it is never sent to ${manifest.origin}`);
+  const key = await accessToken({ vault: ctx.vault, ...(ctx.fetch ? { fetch: ctx.fetch } : {}), ...ctx.oauth }, manifest).catch((error: Error) => {
+    throw new ConnectorError(error.message);
+  });
+  return { headers: { authorization: `Bearer ${key}` }, key };
 }
 
 export interface DiscoveredTool {
@@ -76,7 +88,7 @@ function guardedFetch(manifest: ConnectorManifest, base: typeof fetch, signal?: 
 
 async function withMcp<T>(ctx: McpContext, manifest: ConnectorManifest, work: (client: Client, timeout: number) => Promise<T>): Promise<{ value: T; key: string | null }> {
   if (!manifest.mcp) throw new ConnectorError(`${manifest.id} is not an MCP server`);
-  const { headers, key } = authFor(ctx.vault, manifest);
+  const { headers, key } = manifest.auth?.scheme === "oauth" ? await signedIn(ctx, manifest) : authFor(ctx.vault, manifest);
   const transport = new StreamableHTTPClientTransport(new URL(`${manifest.origin}${manifest.mcp.path}`), {
     fetch: guardedFetch(manifest, ctx.fetch ?? fetch, ctx.signal),
     requestInit: { headers: { "user-agent": "galahad/0.1 (+https://galahad.bot)", ...(manifest.headers ?? {}), ...headers } },

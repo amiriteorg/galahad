@@ -873,7 +873,8 @@ export const routes = {
           label: z.string().min(1).max(64).optional(),
           description: z.string().max(500).optional(),
           /** How the key is sent, if it needs one: bearer (Authorization) or a header of the server's choosing. */
-          auth: z.enum(["none", "bearer", "header"]).optional(),
+          /** How its key is sent; oauth: you sign in to it as yourself (its own sign-in, found from the server). */
+          auth: z.enum(["none", "bearer", "header", "oauth"]).optional(),
           header: z.string().regex(/^[A-Za-z0-9-]{1,64}$/).optional(),
           /** Install only these tools (the server's names). */
           only: z.array(z.string().min(1).max(128)).max(128).optional(),
@@ -1512,7 +1513,8 @@ export interface ConnectorView {
   /** Galahad's alone (and the agents you allowed, by label), when it isn't every agent's. */
   access: { only: "galahad"; allowed: string[] } | null;
   /** One that signs in as you: whose sign-in, and whose account it's signed in to (null until then). */
-  oauth: { provider: "google" | "microsoft"; account: string | null } | null;
+  /** A connector you sign in to: whose sign-in (an MCP server's own: `mcp`, no app of yours needed), and whose account, once said. */
+  oauth: { provider: "google" | "microsoft" | "mcp"; account: string | null } | null;
   /** What it reads stays in the answer that read it (mail), as the bank's data does. */
   private: boolean;
 }

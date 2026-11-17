@@ -46,6 +46,12 @@ export interface OAuthKeep {
   refresh?: string;
   /** Whose account it is (an email address), to say so. */
   account?: string;
+  /** An MCP server's sign-in (mcp-oauth.ts): where it is renewed, pinned when you signed in, and the server it is for. */
+  token?: string;
+  resource?: string;
+  /** An MCP server's access token when it gave no lasting sign-in, and when it lapses (ms since the epoch). */
+  access?: string;
+  expires?: number;
 }
 
 export function readKeep(value: string): OAuthKeep | null {
@@ -54,10 +60,11 @@ export function readKeep(value: string): OAuthKeep | null {
     if (typeof keep.client !== "string" || !keep.client) return null;
     const text = (v: unknown) => (typeof v === "string" && v ? v : undefined);
     const out: OAuthKeep = { client: keep.client };
-    for (const field of ["secret", "refresh", "account"] as const) {
+    for (const field of ["secret", "refresh", "account", "token", "resource", "access"] as const) {
       const v = text(keep[field]);
       if (v) out[field] = v;
     }
+    if (typeof keep.expires === "number" && Number.isFinite(keep.expires)) out.expires = keep.expires;
     return out;
   } catch {
     return null;
@@ -115,19 +122,27 @@ export async function accessToken(ctx: OAuthContext, manifest: ConnectorManifest
   const auth = manifest.auth;
   if (auth?.scheme !== "oauth" || !auth.oauth) throw new OAuthError(`${manifest.label} doesn't sign in`);
   const keep = ctx.vault.has(auth.secret) ? readKeep(ctx.vault.reveal(auth.secret)) : null;
-  if (!keep) throw new OAuthError(`${manifest.label} needs the app you registered: its client id`);
-  if (!keep.refresh) throw new OAuthError(`${manifest.label} isn't signed in yet: sign in from its card in Connectors`);
+  if (!keep) throw new OAuthError(`${manifest.label} ${auth.oauth.provider === "mcp" ? "isn't signed in yet: sign in from its card in Connectors" : "needs the app you registered: its client id"}`);
   const now = (ctx.now ?? Date.now)();
+  // An MCP server that gave no lasting sign-in: its access token, while it's good.
+  if (auth.oauth.provider === "mcp" && !keep.refresh && keep.access) {
+    if ((keep.expires ?? Number.POSITIVE_INFINITY) > now) return keep.access;
+    throw new OAuthError(`${manifest.label}'s sign-in has ended: sign in again from its card in Connectors`);
+  }
+  if (!keep.refresh) throw new OAuthError(`${manifest.label} isn't signed in yet: sign in from its card in Connectors`);
   const key = `${manifest.id}\n${keep.refresh.slice(-16)}`;
   const kept = held.get(key);
   if (kept && kept.until > now) return kept.token;
   const provider = auth.oauth.provider;
-  const answer = await tokenRequest(ctx, endpointsOf(provider, ctx.endpoints).token, {
+  // (An MCP server's sign-in is renewed only where it was pinned when you signed in, for that server alone.)
+  if (provider === "mcp" && !keep.token) throw new OAuthError(`${manifest.label}'s sign-in has no address to be renewed at: sign in again from its card in Connectors`);
+  const answer = await tokenRequest(ctx, provider === "mcp" ? keep.token! : endpointsOf(provider, ctx.endpoints).token, {
     grant_type: "refresh_token",
     refresh_token: keep.refresh,
     client_id: keep.client,
     ...(keep.secret ? { client_secret: keep.secret } : {}),
     ...(provider === "microsoft" ? { scope: auth.oauth.scopes.join(" ") } : {}),
+    ...(provider === "mcp" && keep.resource ? { resource: keep.resource } : {}),
   }).catch((error: Error) => {
     // Revoked, or expired after months unused: say so plainly, so you sign in again.
     throw new OAuthError(error.message === "invalid_grant" ? `${manifest.label}'s sign-in has ended: sign in again from its card in Connectors` : `${manifest.label}'s sign-in couldn't be renewed (${error.message})`);
