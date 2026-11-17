@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamTask, Teammate } from "@galahad/core/team";
 import { TeamHarness } from "@galahad/core/team";
-import { engramLine, HANDLE_PATTERN, HARNESS, harnessNote, knightRoleLine, knightRoles, landingHash, removalPlan, takenHandles, taskDependencies, teamHash, teamLocation, teamSpeaker, teammateId, teammateMaker, teammateState } from "./team.ts";
+import { engramLine, HANDLE_PATTERN, HARNESS, harnessNote, KNIGHT_MODELS_MAX, knightModelChoices, knightModelLabel, knightModelsLine, knightRoleLine, knightWorksOn, knightRoles, landingHash, removalPlan, takenHandles, taskDependencies, teamHash, teamLocation, teamSpeaker, teammateId, teammateMaker, teammateState, toggleKnightModel } from "./team.ts";
 
 describe("the role a knight works on", () => {
   test("offered: the roles for knights, engineer first, and the one it has now; never the reviewer or a tool's", () => {
@@ -17,6 +17,36 @@ describe("the role a knight works on", () => {
     expect(knightRoleLine("swift", { models: [] })).toBe("swift has no model yet: put one on it on the Models page");
     expect(knightRoleLine("made-up", undefined)).toBe("made-up isn't on your roster: the engineer's models do its work");
     expect(knightRoleLine("reviewer", { models: ["a/r"], forKnights: false })).toBe("It talks on the reviewer's models; its tasks' work runs on the engineer's, since the reviewer never does the work it checks");
+  });
+});
+
+describe("a knight's own models", () => {
+  const choices = [{ ref: "deepseek/deepseek-v4-pro", on: [] }, { ref: "ollama/mimo-v2.6:9b", on: ["mini"] }, { ref: "ollama/qwen3.8:27b", on: ["mini", "ultra"] }];
+
+  test("offered as toggles: the ones it works on first, in their order, then the rest; one the node no longer offers can still be turned off", () => {
+    expect(knightModelChoices(choices).map((c) => c.ref)).toEqual(["deepseek/deepseek-v4-pro", "ollama/mimo-v2.6:9b", "ollama/qwen3.8:27b"]);
+    expect(knightModelChoices(choices, ["ollama/qwen3.8:27b", "gone/model"]).map((c) => c.ref)).toEqual(["ollama/qwen3.8:27b", "gone/model", "deepseek/deepseek-v4-pro", "ollama/mimo-v2.6:9b"]);
+    expect(knightModelLabel(choices[2]!)).toBe("ollama/qwen3.8:27b · on mini, ultra");
+    expect(knightModelLabel(choices[0]!)).toBe("deepseek/deepseek-v4-pro");
+  });
+
+  test("turned on, it goes last (tried after the others), eight at most; turned off, it goes", () => {
+    expect(toggleKnightModel(["a/1"], "a/2", true)).toEqual(["a/1", "a/2"]);
+    expect(toggleKnightModel(["a/1", "a/2"], "a/1", false)).toEqual(["a/2"]);
+    expect(toggleKnightModel(["a/1"], "a/1", true)).toEqual(["a/1"]);
+    const full = Array.from({ length: KNIGHT_MODELS_MAX }, (_, i) => `a/${i}`);
+    expect(toggleKnightModel(full, "a/9", true)).toEqual(full);
+  });
+
+  test("what it works on, in a word or two, where its name is shown: its role, and its own first model", () => {
+    expect(knightWorksOn({ role: "engineer" })).toBe("engineer");
+    expect(knightWorksOn({ role: "engineer", models: ["ollama/mimo-v2.6:9b"] })).toBe("engineer · on mimo-v2.6:9b");
+    expect(knightWorksOn({ role: "planner", models: ["orcarouter/anthropic/claude-opus-5.5", "ollama/qwen3.8:27b"] })).toBe("planner · on anthropic/claude-opus-5.5 +1");
+  });
+
+  test("what it works on, in a line: its own, or its role's when none are chosen", () => {
+    expect(knightModelsLine(["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"], "engineer", { models: ["a/e"] })).toBe("Its work runs on ollama/mimo-v2.6:9b (then 1 more, in the order you turned them on), in place of its role's; its plan and the independent review stay the planner's and the reviewer's");
+    expect(knightModelsLine([], "engineer", { models: ["a/e"] })).toBe("None chosen: it works on its role's models. Its work runs on a/e; its plan and the independent review stay the planner's and the reviewer's");
   });
 });
 

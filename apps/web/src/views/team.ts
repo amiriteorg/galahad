@@ -10,7 +10,7 @@ import { GALAHAD } from "../lib/arrange.ts";
 import { hasDesktop } from "../lib/desktop.ts";
 import { besideChip } from "../lib/knight-state.ts";
 import { type TaskAction, taskBadge } from "../lib/task-card.ts";
-import { activeTeamWork, engramLine, HARNESS, harnessNote, taskDependencies, teamSpeaker, teammateMaker, type HarnessStatus } from "../lib/team.ts";
+import { activeTeamWork, engramLine, HARNESS, harnessNote, knightWorksOn, taskDependencies, teamSpeaker, teammateMaker, type HarnessStatus } from "../lib/team.ts";
 import { giveAgain, timeline, timelineTasks } from "../lib/timeline.ts";
 import { relativeTime } from "../lib/time.ts";
 import { knightPanelShown, setKnightPanelShown } from "../prefs.ts";
@@ -167,7 +167,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
           "div",
           { class: "grow" },
           h("div", { class: "team-head-title" }, h("h2", { class: "ellipsis" }, person?.name ?? current.name), leads ? leadMark(person!.name) : null, person ? stateChip(seated?.state) : null),
-          h("p", { class: "meta ellipsis" }, person ? [person.role, madeBy(person)].filter(Boolean).join(" · ") : [...(current.direct ? [] : ["Galahad"]), ...current.members.map(nameOf)].join(" · ")),
+          h("p", { class: "meta ellipsis" }, person ? [knightWorksOn(person), madeBy(person)].filter(Boolean).join(" · ") : [...(current.direct ? [] : ["Galahad"]), ...current.members.map(nameOf)].join(" · ")),
         ),
         current.paused ? badge("Paused", "warn") : null,
         person ? sideToggle : null,
@@ -326,7 +326,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
           { class: "team-side-who" },
           seated ? seatFace(seated, 88) : avatar(person, true, 88),
           h("div", { class: "team-side-name" }, h("h2", { class: "ellipsis" }, person.name), leads ? leadMark(person.name) : null, stateChip(seated?.state)),
-          h("p", { class: "meta" }, [person.role, madeBy(person)].filter(Boolean).join(" · ")),
+          h("p", { class: "meta" }, [knightWorksOn(person), madeBy(person)].filter(Boolean).join(" · ")),
           seated ? h("p", { class: "team-side-line" }, besideChip(seated.line, seated.state)) : null,
           canEdit
             ? h(
@@ -393,7 +393,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
             { class: "grow" },
             h("strong", {}, person.name),
             h("p", { class: "small muted" }, person.instructions || "No instructions yet."),
-            h("div", { class: "meta" }, [HARNESS[person.harness], person.role, `${person.turnsToday}/${person.dailyTurns} turns/jobs today`, madeBy(person)].filter(Boolean).join(" · ")),
+            h("div", { class: "meta" }, [HARNESS[person.harness], knightWorksOn(person), `${person.turnsToday}/${person.dailyTurns} turns/jobs today`, madeBy(person)].filter(Boolean).join(" · ")),
             person.repository ? h("a", { class: "tiny mono", href: person.repository, target: "_blank", rel: "noopener noreferrer" }, person.repository.replace("https://github.com/", "")) : null,
           ),
           canEdit ? button("Edit", { size: "sm", icon: "edit", onClick: () => void editKnight(ctx, person) }) : null,

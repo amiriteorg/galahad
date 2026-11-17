@@ -45,6 +45,47 @@ export function knightRoleLine(role: string, spec: KnightRoleSpec | undefined): 
   return `Its work runs on ${first}${models.length > 1 ? ` (then ${models.length - 1} more)` : ""}; its plan and the independent review stay the planner's and the reviewer's`;
 }
 
+/** A model you may set a knight to work on (core's TeamModelChoice): its ref, and the nodes that serve it, when a local runtime does. */
+export interface KnightModelChoice {
+  ref: string;
+  on: string[];
+}
+
+/** The most models of its own a knight works on (core's TeammateModels). */
+export const KNIGHT_MODELS_MAX = 8;
+
+/**
+ * The models offered in a knight's editor, as toggles: the ones it works on now first, in their order (any the node no
+ * longer offers included, so turning one off is possible), then the rest as the node lists them.
+ */
+export function knightModelChoices(choices: KnightModelChoice[], own: readonly string[] = []): KnightModelChoice[] {
+  const byRef = new Map(choices.map((c) => [c.ref, c]));
+  return [...own.map((ref) => byRef.get(ref) ?? { ref, on: [] }), ...choices.filter((c) => !own.includes(c.ref))];
+}
+
+/** A knight's own models with one turned on (last, as it is tried after the others; eight at most) or off. */
+export function toggleKnightModel(own: readonly string[], ref: string, on: boolean): string[] {
+  if (!on) return own.filter((m) => m !== ref);
+  return own.includes(ref) || own.length >= KNIGHT_MODELS_MAX ? [...own] : [...own, ref];
+}
+
+/** What a knight works on, in a word or two: its role, and its own first model when it has some ("engineer · on mimo-v2.6:9b +1"). */
+export function knightWorksOn(person: Pick<Teammate, "role" | "models">): string {
+  const own = person.models ?? [];
+  if (!own.length) return person.role;
+  return `${person.role} · on ${own[0]!.slice(own[0]!.indexOf("/") + 1)}${own.length > 1 ? ` +${own.length - 1}` : ""}`;
+}
+
+/** One toggle's words: the model, and where it runs when a node of yours serves it. */
+export const knightModelLabel = (choice: KnightModelChoice): string => (choice.on.length ? `${choice.ref} · on ${choice.on.join(", ")}` : choice.ref);
+
+/** What a knight with models of its own works on, in a line; none: its role's, as `knightRoleLine` says. */
+export function knightModelsLine(own: readonly string[], role: string, spec: KnightRoleSpec | undefined): string {
+  const first = own[0];
+  if (!first) return `None chosen: it works on its role's models. ${knightRoleLine(role, spec)}`;
+  return `Its work runs on ${first}${own.length > 1 ? ` (then ${own.length - 1} more, in the order you turned them on)` : ""}, in place of its role's; its plan and the independent review stay the planner's and the reviewer's`;
+}
+
 /**
  * The notes store (Engram) in a knight's Workspace, in a line: the node's switch, and whether this VM has the
  * pinned binary. A store that isn't in the VM is never called on for it. Null: the node says nothing of one.

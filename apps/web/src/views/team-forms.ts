@@ -7,7 +7,7 @@ import { type Ctx, errorMessage } from "../context.ts";
 import { hasDesktop } from "../lib/desktop.ts";
 import { budgetFrom, gatesFrom, type Given, giveInput, givenTo } from "../lib/give.ts";
 import { growWords } from "../lib/sandbox.ts";
-import { HANDLE_PATTERN, HARNESS, knightRoleLine, knightRoles, removalPlan, takenHandles, teammateId } from "../lib/team.ts";
+import { HANDLE_PATTERN, HARNESS, type KnightModelChoice, knightModelChoices, knightModelsLine, knightRoleLine, knightRoles, removalPlan, takenHandles, teammateId, toggleKnightModel } from "../lib/team.ts";
 import { asCaps, type RoleSpec } from "../types.ts";
 import { badge, busy, button, callout, field } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -53,8 +53,14 @@ async function roles(ctx: Ctx): Promise<Record<string, RoleSpec>> {
   return roster ?? {};
 }
 
+/** The models a knight may be set to work on: the roster's, and each local one a node of the fleet serves, and where. */
+async function modelChoices(ctx: Ctx): Promise<KnightModelChoice[]> {
+  if (!ctx.can("mind:read")) return [];
+  return ctx.api.get<{ models: KnightModelChoice[] }>("/api/team/models").then((result) => result.models, () => []);
+}
+
 export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
-  const known = await roles(ctx);
+  const [known, offered] = await Promise.all([roles(ctx), modelChoices(ctx)]);
   const snapshot = ctx.live.team.value;
   const name = h("input", { class: "input", required: true, maxlength: 80, value: existing?.name ?? "", placeholder: "e.g. Ada", autocomplete: "off" });
   const id = h("input", { class: "input mono", required: true, maxlength: 32, pattern: HANDLE_PATTERN, value: existing?.id ?? "", readonly: Boolean(existing), autocomplete: "off", autocorrect: "off", spellcheck: "false" });
@@ -69,6 +75,21 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
   // What the chosen role's models are, under it, as it changes.
   const roleHint = h("span", {}, knightRoleLine(existing?.role ?? "engineer", known[existing?.role ?? "engineer"]));
   role.addEventListener("change", () => { roleHint.textContent = knightRoleLine(role.value, known[role.value]); });
+  // Models of its own, in place of its role's: toggled on in the order they are to be tried, a local one where it runs.
+  let own = [...(existing?.models ?? [])];
+  const modelsHint = h("span", {}, knightModelsLine(own, existing?.role ?? "engineer", known[existing?.role ?? "engineer"]));
+  const sayModels = () => { modelsHint.textContent = knightModelsLine(own, role.value, known[role.value]); };
+  role.addEventListener("change", sayModels);
+  const modelList = h("div", { class: "scope-list" }, ...knightModelChoices(offered, own).map((choice) => {
+    const box = h("input", { type: "checkbox", checked: own.includes(choice.ref) });
+    box.addEventListener("change", () => {
+      own = toggleKnightModel(own, choice.ref, box.checked);
+      // (Past eight it stays off.)
+      box.checked = own.includes(choice.ref);
+      sayModels();
+    });
+    return h("label", { class: "scope" }, box, h("span", {}, h("div", { class: "scope-name mono" }, choice.ref), h("div", { class: "tiny subtle" }, choice.on.length ? `Runs on ${choice.on.join(", ")}` : "Through its provider")));
+  }));
   const dailyTurns = h("input", { class: "input", type: "number", min: 0, max: 1000, step: 1, required: true, value: existing?.dailyTurns ?? 40 });
   const enabled = h("input", { type: "checkbox", checked: existing?.enabled ?? true });
   const appearance = avatarEditor({ id: () => id.value, name: () => name.value, profile: existing?.avatar });
@@ -83,11 +104,12 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
     field("Job and instructions", instructions, { hint: "No keys or passwords. Those belong in the vault." }),
     field("Repository (optional)", repository, { hint: "An HTTPS GitHub repository. Tasks get their own worktrees in the VM." }),
     h("div", { class: "team-form-grid" }, field("Coding harness", harness, { hint: "Selecting a harness doesn't install it or sign it in: that is yours to do, in the knight's VM. Workspace checks show what's ready." }), field("Model role", role, { hint: roleHint })),
+    offered.length || own.length ? h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Models"), modelList, h("p", { class: "tiny subtle" }, modelsHint, ". A local model runs on the node that serves it, for a knight on Galahad's own harness: a vendor's coding tool can't use one.")) : null,
     field("Daily turn and job budget", dailyTurns, { hint: "Maximum reply turns and jobs per day, not a money limit. Zero holds new work." }),
     h("label", { class: "row" }, enabled, h("span", {}, "Enabled")),
   ], existing ? "Save knight" : "Create knight", async () => {
     if (findSecrets(instructions.value).length) throw new Error("Instructions contain something that looks like a secret. Keep it in the vault.");
-    await ctx.api.post("/api/team/teammates", { id: id.value, name: name.value.trim(), avatar: appearance.value(), instructions: instructions.value, repository: repository.value.trim() || null, harness: harness.value, role: role.value, enabled: enabled.checked, dailyTurns: Number(dailyTurns.value) });
+    await ctx.api.post("/api/team/teammates", { id: id.value, name: name.value.trim(), avatar: appearance.value(), instructions: instructions.value, repository: repository.value.trim() || null, harness: harness.value, role: role.value, models: own.length ? own : null, enabled: enabled.checked, dailyTurns: Number(dailyTurns.value) });
     toast(existing ? "Knight saved" : "Knight created");
   });
 }
