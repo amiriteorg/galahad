@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { CONTAINER_UNMADE, type DockerRunner, probeContainer } from "../src/index.ts";
+import { CONTAINER_UNMADE, type DockerRunner, probeContainer, startContainerService } from "../src/index.ts";
+import { fakeContainer } from "./fake-container.ts";
 
 /*
  * How a Mac finds Apple's container: its binary, then `container system version --format json`, whose API server row
@@ -59,5 +60,28 @@ describe("finding Apple's container on a Mac", () => {
     const two = JSON.stringify([{ appName: "container", version: "2.0.0" }, { appName: "container-apiserver", version: "container-apiserver version 2.0.0" }]);
     expect(await probeContainer(answering({ version: two }).runner)).toEqual({ container: { version: "2.0.0", running: true }, sandbox: null });
     expect(await probeContainer(answering({ version: "garbled" }).runner)).toEqual({ container: { version: null, running: false }, sandbox: null });
+  });
+});
+
+describe("container's service, as a node on a Mac starts", () => {
+  test("stopped (it doesn't start itself at boot): started, never with a kernel installed for it; running: left alone", async () => {
+    const fake = fakeContainer();
+    fake.service = false;
+    expect(await startContainerService(fake.runner)).toBe("started");
+    expect(fake.calls.filter((c) => c[0] === "system" && c[1] === "start")).toEqual([["system", "start", "--disable-kernel-install", "--timeout", "60"]]);
+    expect(await startContainerService(fake.runner)).toBe("running");
+    expect(fake.calls.filter((c) => c[1] === "start")).toHaveLength(1);
+  });
+
+  test("one that won't start says so, and nothing more is tried", async () => {
+    const fake = fakeContainer();
+    fake.service = false;
+    fake.startable = false;
+    expect(await startContainerService(fake.runner)).toBe("failed");
+    expect(fake.service).toBe(false);
+  });
+
+  test("no container here: nothing at all", async () => {
+    expect(await startContainerService(undefined, "no-such-container-binary-here")).toBeNull();
   });
 });

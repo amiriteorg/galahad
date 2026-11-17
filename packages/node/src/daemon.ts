@@ -9,7 +9,7 @@ import { cloudflareNatives } from "./cloudflare.ts";
 import { gmailNatives, outlookNatives } from "./mail.ts";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
-import { type DockerRunner, type LedgerEntryInput, type MacFirewallState, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, type SpawnTerminal, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
+import { type DockerRunner, type LedgerEntryInput, type MacFirewallState, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, type SpawnTerminal, startContainerService, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
 import type { HostLoad } from "@galahad/core";
 import { calibrate, spawnBench } from "./compute/calibrate.ts";
 import { GovernedSandboxHost } from "./compute/governed-host.ts";
@@ -215,6 +215,12 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const awake = config.keepAwake ? keepAwake() : null;
   if (config.keepAwake && !awake) log("keep-awake is on, but only a Mac with caffeinate can be kept awake: this machine isn't");
   const withAwake = (c: Capabilities): Capabilities => (awake ? { ...c, awake: true } : c);
+  // A Mac's container doesn't start its service at boot: the node starts it as it starts, as the doctor would have you.
+  if (!opts.capabilities && process.platform === "darwin") {
+    const service = await startContainerService().catch(() => "failed" as const);
+    if (service === "started") log("started Apple's container: its service doesn't start by itself at boot");
+    else if (service === "failed") log("Apple's container is installed, but its service wouldn't start: container system start says why");
+  }
   let caps = opts.capabilities ?? withAwake(await probeCapabilities());
   const advertise = env.GALAHAD_ADVERTISE ?? config.advertise ?? caps.tailscale?.ip ?? "127.0.0.1";
   const endpoint = `http://${advertise}:${port}`;

@@ -1358,15 +1358,7 @@ export interface ContainerHostCaps {
  */
 export async function probeContainer(runner?: DockerRunner, bin = "container"): Promise<{ container: { version: string | null; running: boolean }; sandbox: ContainerHostCaps | null } | null> {
   if (!runner && !Bun.which(bin)) return null;
-  const run: DockerRunner =
-    runner ??
-    (async (args, timeoutMs) => {
-      const proc = Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
-      const timer = setTimeout(() => proc.kill(), timeoutMs);
-      const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-      clearTimeout(timer);
-      return { code, stdout, stderr: "" };
-    });
+  const run = runner ?? runnerOf(bin);
   let version: ReturnType<typeof parseContainerVersion> = null;
   try {
     version = parseContainerVersion((await run(containerVersionArgs(), 8000)).stdout);
@@ -1377,6 +1369,31 @@ export async function probeContainer(runner?: DockerRunner, bin = "container"): 
   if (!version?.running || version.major !== CONTAINER_MAJOR) return { container, sandbox: null };
   const [image, gw, net] = await Promise.all([run(containerImageInspectArgs(DEFAULT_IMAGE), 8000), run(containerNetworkInspectArgs("gateway"), 8000), run(containerNetworkInspectArgs("online"), 8000)]);
   return { container, sandbox: { image: image.code === 0, networks: gw.code === 0 && net.code === 0, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false } };
+}
+
+/** The binary's commands, spawned: what each prints, and its exit code. */
+const runnerOf =
+  (bin: string): DockerRunner =>
+  async (args, timeoutMs) => {
+    const proc = Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+    const timer = setTimeout(() => proc.kill(), timeoutMs);
+    const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    clearTimeout(timer);
+    return { code, stdout, stderr: "" };
+  };
+
+/**
+ * On a Mac: container's service started, when it is installed and stopped. It doesn't start itself at boot (the Mac
+ * mini found it stopped after macOS updated itself and restarted, 17 November 2026), and a node there hosts nothing
+ * until it runs. It never installs a kernel (the app's first run does, with the owner): without one it stays stopped,
+ * and the doctor says how. "running": it was; "started"; "failed"; null: no container here.
+ */
+export async function startContainerService(runner?: DockerRunner, bin = "container"): Promise<"running" | "started" | "failed" | null> {
+  const found = await probeContainer(runner, bin);
+  if (!found) return null;
+  if (found.container.running) return "running";
+  const started = await (runner ?? runnerOf(bin))(["system", "start", "--disable-kernel-install", "--timeout", "60"], 90_000);
+  return started.code === 0 && (await probeContainer(runner, bin))?.container.running ? "started" : "failed";
 }
 
 const LEDGER_DETAIL_LIMIT = 400;

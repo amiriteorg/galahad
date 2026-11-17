@@ -39,6 +39,8 @@ export interface FakeContainer {
   images: Set<string>;
   /** Whether container's service answers (its API server's row in `system version`). */
   service: boolean;
+  /** Whether `system start` brings its service up (false: as when it has no kernel and may not install one). */
+  startable?: boolean;
   version: string;
   /** Every `container exec`, as the sandbox ran it: who as, and its command after the in-VM deadline. */
   execs: { name: string; user: string | null; cmd: string[] }[];
@@ -77,6 +79,11 @@ export function fakeContainer(): FakeContainer {
       const [command, ...rest] = args;
       switch (command) {
         case "system":
+          if (rest[0] === "start") {
+            if (fake.startable === false) return no("Error: no default kernel is installed, and installing one was disabled");
+            fake.service = true;
+            return ok("Launching container-apiserver...");
+          }
           if (rest[0] !== "version") return no(`fake container doesn't know system ${rest[0]}`);
           return ok(JSON.stringify([{ appName: "container", buildType: "release", commit: "abcdef1", version: fake.version }, ...(fake.service ? [{ appName: "container-apiserver", buildType: "release", commit: "1234abcdef", version: `container-apiserver version ${fake.version} (build: release, commit: 1234abc)` }] : [])]));
         case "image":
