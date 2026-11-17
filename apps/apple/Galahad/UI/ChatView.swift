@@ -224,6 +224,10 @@ struct Composer: View {
             chat.attach(files, with: client)
             return !files.isEmpty
         }
+        #if os(macOS)
+        // And pasted (⌘V): files copied in the Finder, or a picture copied alone.
+        .modifier(PasteFiles(chat: chat, client: client, composing: composing))
+        #endif
     }
 
     private var field: some View {

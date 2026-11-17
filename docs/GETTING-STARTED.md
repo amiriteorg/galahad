@@ -612,7 +612,7 @@ bun galahad chat <id>                            # read it; galahad chat rm <id>
 bun galahad ask --attach shot.png --attach test.log "Why does this fail?"   # files with your message
 ```
 
-A message can carry pictures (PNG, JPEG, WebP, GIF) and text files (a log, notes, code), eight at most: in the web app, the paperclip, or paste or drop them on the message box; in the iPhone and Mac apps, the paperclip (Photos or Files), or drop them. A model that sees is shown the pictures; one that can't is told they're there. The apps draw a photo again before it goes, smaller and without its metadata (where it was taken); a file attached in Terminal goes as it is. They're kept on the node with the chat, and go when you delete it.
+A message can carry pictures (PNG, JPEG, WebP, GIF) and text files (a log, notes, code), eight at most: in the web app, the paperclip, or paste or drop them on the message box; in the iPhone and Mac apps, the paperclip (Photos or Files), or drop them; on a Mac, ⌘V pastes a picture copied alone (a screenshot) or files copied in the Finder. A model that sees is shown the pictures; one that can't is told they're there. The apps draw a photo again before it goes, smaller and without its metadata (where it was taken); a file attached in Terminal goes as it is. They're kept on the node with the chat, and go when you delete it.
 
 A turn runs on the node, so it goes on if the terminal (or the app's page) goes away; the answer is in the chat. While he's working in a chat you can tell him something now, or leave it for after:
 

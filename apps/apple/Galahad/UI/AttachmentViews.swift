@@ -221,3 +221,57 @@ struct AttachButton: View {
         }
     }
 }
+
+#if os(macOS)
+import AppKit
+
+/// What a paste in the message box sends with the message, as the PWA takes a paste: files copied in the Finder (read
+/// whole, as dropped ones are), or a picture copied alone (a screenshot), as a PNG. Nil when there is neither, or when
+/// the picture comes with text (a page copied): that is pasted as its text.
+@MainActor enum Pasted {
+    /// The pasteboard ⌘V reads: the general one (a test sets one of its own, so your clipboard is never touched).
+    static var board = NSPasteboard.general
+
+    static func files(from board: NSPasteboard, refused: (String) -> Void) -> [(name: String, data: Data)]? {
+        if let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+            return AttachButton.read(urls, refused: refused)
+        }
+        guard board.string(forType: .string) == nil else { return nil }
+        if let png = board.data(forType: .png) { return [(name: "Pasted picture.png", data: png)] }
+        if let tiff = board.data(forType: .tiff), let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            return [(name: "Pasted picture.png", data: png)]
+        }
+        return nil
+    }
+}
+
+/// ⌘V in the message box with files or a picture to paste (`Pasted`): they go with the message. The field's own editor
+/// takes ⌘V before SwiftUI sees it, and pastes nothing for a picture, so the keys are watched for while the box has them.
+struct PasteFiles: ViewModifier {
+    let chat: ChatModel
+    let client: NodeClient
+    let composing: FocusState<Bool>.Binding
+    @State private var monitor: Any?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                guard monitor == nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command, event.charactersIgnoringModifiers == "v" else { return event }
+                    let taken = MainActor.assumeIsolated { () -> Bool in
+                        guard composing.wrappedValue, let files = Pasted.files(from: Pasted.board, refused: { chat.attachProblem = $0 }), !files.isEmpty else { return false }
+                        chat.attach(files, with: client)
+                        return true
+                    }
+                    return taken ? nil : event
+                }
+            }
+            .onDisappear {
+                if let monitor { NSEvent.removeMonitor(monitor) }
+                monitor = nil
+            }
+    }
+}
+#endif
+

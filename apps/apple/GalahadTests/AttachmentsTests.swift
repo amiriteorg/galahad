@@ -96,3 +96,49 @@ struct AttachmentsTests {
         #expect(thread.turns.first?.attachments == [shot])
     }
 }
+
+#if os(macOS)
+import AppKit
+
+/// A paste in the Mac's message box (`Pasted`), on a pasteboard of the test's own.
+extension AttachmentsTests {
+    @MainActor static func pasted(_ fill: (NSPasteboard) -> Void) -> [(name: String, data: Data)]? {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        fill(board)
+        return Pasted.files(from: board, refused: { _ in })
+    }
+
+    @MainActor @Test func aPictureCopiedAloneGoesWithTheMessageAndTextIsPastedAsText() throws {
+        let png = try Self.picture(width: 40, height: 30, type: .png)
+        let alone = try #require(Self.pasted { $0.setData(png, forType: .png) })
+        #expect(alone.map { $0.name } == ["Pasted picture.png"] && alone.first?.data == png)
+        // A picture some apps copy as a TIFF alone: it goes as a PNG.
+        let tiff = try Self.picture(width: 40, height: 30, type: .tiff)
+        let converted = try #require(Self.pasted { $0.setData(tiff, forType: .tiff) })
+        #expect(Attachments.pictureType(try #require(converted.first).data) == "image/png")
+        // With text (a page copied), or text alone, or nothing: pasted as ever, so nothing here.
+        let page = NSPasteboardItem()
+        page.setString("a page", forType: .string)
+        page.setData(png, forType: .png)
+        #expect(Self.pasted { $0.writeObjects([page]) } == nil)
+        #expect(Self.pasted { $0.setString("hello", forType: .string) } == nil)
+        #expect(Self.pasted { _ in } == nil)
+    }
+
+    @MainActor @Test func filesCopiedInTheFinderGoAsThemselvesNotAsTheirNames() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "galahad-paste-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let log = dir.appending(path: "test.log")
+        try Data("FAIL db.test.ts\n".utf8).write(to: log)
+        // The Finder copies a file as its address and its name as text: the file goes.
+        let copied = NSPasteboardItem()
+        copied.setString(log.absoluteString, forType: .fileURL)
+        copied.setString("test.log", forType: .string)
+        let files = try #require(Self.pasted { $0.writeObjects([copied]) })
+        #expect(files.map { $0.name } == ["test.log"] && files.first?.data == Data("FAIL db.test.ts\n".utf8))
+    }
+}
+#endif

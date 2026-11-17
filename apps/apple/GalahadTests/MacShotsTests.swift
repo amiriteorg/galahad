@@ -178,6 +178,21 @@ struct MacShots {
         try await Task.sleep(for: .seconds(2))
         #expect(!MacApp.shared.composerWanted, "the new chat's message box didn't take the keys")
         try await snap(main, "main-new-chat-light")
+        // ⌘V there, with a picture copied alone (on a pasteboard of the test's own: this Mac's clipboard is untouched).
+        let board = NSPasteboard.withUniqueName()
+        defer {
+            Pasted.board = .general
+            board.releaseGlobally()
+        }
+        board.clearContents()
+        board.setData(try AttachmentsTests.picture(width: 1200, height: 750, type: .png), forType: .png)
+        Pasted.board = board
+        let paste = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: main.windowNumber, context: nil, characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9))
+        NSApp.postEvent(paste, atStart: false)
+        try await until(30) { session.chat.waiting.count == 1 && session.chat.waiting.allSatisfy { $0.state == .up } }
+        #expect(session.chat.waiting.map(\.name) == ["Pasted picture.png"])
+        try await Task.sleep(for: .seconds(1.5))
+        try await snap(main, "main-new-chat-pasted-light")
     }
 
     /// Pairs as you would with the dev node's invite: asks, compares the node's code with this Mac's, then approves.
