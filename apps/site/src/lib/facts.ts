@@ -76,7 +76,7 @@ export const COMPARE = {
   date: "16 November 2026",
   columns: ["Runs on", "Each agent's work", "Done when", "On an iPhone", "Chat apps"],
   rows: [
-    { name: "Galahad", ours: true, cells: ["Your machines only", "A KVM microVM per knight", "Its gates pass, then a reviewer who didn't do it accepts", "Native, in testing", "None yet"] },
+    { name: "Galahad", ours: true, cells: ["Your machines only", "A microVM per knight: KVM, or a Mac's own", "Its gates pass, then a reviewer who didn't do it accepts", "Native, in testing", "None yet"] },
     { name: "Hermes Agent 0.23", ours: false, cells: ["Your machine, or Hermes Cloud", "On the host by default; sandboxes optional", "No enforced gate found", "None official", "About 30"] },
     { name: "Rakazo 0.11", ours: false, cells: ["Your server, or hosted", "A Docker computer per bot; a VM per bot on Apple-silicon Macs", "No enforced gate found", "App Store", "Six"] },
     { name: "OpenMausBot 0.1", ours: false, cells: ["Your machine, a VPS, or its cloud", "Full access by default; a container if you choose", "No gate found", "App Store", "Slack, through its cloud"] },
@@ -98,7 +98,7 @@ export const PHASING = {
     { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, or run a check after one; next, before an answer." },
     { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing; next, the test written first." },
     { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
-    { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; next, knights' VMs on the Mac." },
+    { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; knights' VMs on a Mac run behind its firewall; next, set up from the app." },
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Lean context", line: "Output a later run or edit made stale becomes a line; next, errors since fixed." },
     { state: "next", what: "Checkpoint, rewind and fork", line: "A quest paused, moved, rewound to a step, or forked at a doubt." },
