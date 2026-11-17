@@ -418,12 +418,15 @@ describe("each fault gives its own line and advice", () => {
   });
 
   test("a Mac's sandbox firewall: on, not installed, off for a moment, off", () => {
-    const mac = (wall: { on: boolean; installed: boolean; soon: boolean; why: string | null }) => {
+    const mac = (wall: { on: boolean; installed: boolean; soon: boolean; why: string | null; release?: "current" | "other" | "none" }) => {
       const f = healthy();
       f.sandbox.host = { ...f.sandbox.host!, engine: "container", kvm: false, firewall: null, macFirewall: wall, start: null };
       return byId(diagnose(f), "sandbox.firewall");
     };
     expect(mac({ on: true, installed: true, soon: false, why: null })).toMatchObject({ state: "ok", line: expect.stringContaining("never this Mac or your networks") });
+    // On, and this release's (or not looked at): ok. On with another release's rules: put this release's in place.
+    expect(mac({ on: true, installed: true, soon: false, why: null, release: "current" }).state).toBe("ok");
+    expect(mac({ on: true, installed: true, soon: false, why: null, release: "other" })).toMatchObject({ state: "needs-you", line: "this Mac's sandbox firewall is on, with another release's rules", fix: expect.stringContaining("galahad sandbox setup") });
     const missing = mac({ on: false, installed: false, soon: false, why: "isn't installed" });
     expect(missing).toMatchObject({ state: "needs-you", line: expect.stringContaining("makes no sandboxes"), fix: "galahad sandbox setup, or This Mac in the app (it asks for your password once)." });
     expect(missing.finding?.severity).toBe("info");

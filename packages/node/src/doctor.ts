@@ -84,7 +84,7 @@ export interface DoctorFacts {
       /** The firewall unit that keeps sandboxes to the one gateway port (null: can't be asked here). */
       firewall: "active" | "inactive" | "missing" | null;
       /** A Mac's sandbox firewall (pf, from a helper of root's: galahad firewall), as the node reads it; absent on Linux. */
-      macFirewall?: { on: boolean; installed: boolean; soon: boolean; why: string | null };
+      macFirewall?: { on: boolean; installed: boolean; soon: boolean; why: string | null; release?: "current" | "other" | "none" };
       /** A sandbox started, ran one command and was removed: each kind tried. "busy": no slot was free. null: not tried. */
       start: { kind: "container" | "vm"; ok: boolean; ms: number; error: string | null }[] | "busy" | null;
     } | null;
@@ -419,7 +419,9 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       });
     }
     const wall = host.macFirewall;
-    if (wall?.on) add("sandbox", "sandbox.firewall", "ok", "this Mac's sandbox firewall is on: a gateway sandbox reaches the gateway alone, an online one the internet, never this Mac or your networks; no sandbox reaches another");
+    // (On, but installed by another release: its rules are that release's, until this one's are put in their place.)
+    if (wall?.on && wall.release === "other") add("sandbox", "sandbox.firewall", "needs-you", "this Mac's sandbox firewall is on, with another release's rules", "galahad sandbox setup puts this release's in place (it asks for your password once).");
+    else if (wall?.on) add("sandbox", "sandbox.firewall", "ok", "this Mac's sandbox firewall is on: a gateway sandbox reaches the gateway alone, an online one the internet, never this Mac or your networks; no sandbox reaches another");
     else if (wall && !wall.installed) {
       add("sandbox", "sandbox.firewall", "needs-you", "this Mac has no sandbox firewall, so it makes no sandboxes: its knights work on your other nodes", "galahad sandbox setup, or This Mac in the app (it asks for your password once).", {
         finding: { severity: "info", title: `${self} has no sandbox firewall`, body: "A Mac makes no sandboxes until its firewall is installed. On that Mac: galahad sandbox setup." },

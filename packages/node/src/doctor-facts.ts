@@ -1,10 +1,10 @@
-import { readdirSync, statSync, statfsSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, statfsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type DoctorReport, freeSlots, type NodeCapacity, type NodeIdentity, nextRun, type PeerStatus, redact } from "@galahad/core";
 import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, planOf, resolveProvider, roster, windowsOf } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
-import { containerKernel, type SandboxHost } from "@galahad/sandbox";
+import { containerKernel, macFirewallInstalled, type SandboxHost } from "@galahad/sandbox";
 import type { ArchiveService } from "./archive/service.ts";
 import type { Assets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, servedOriginFrom } from "./capabilities.ts";
@@ -42,6 +42,11 @@ export interface DoctorSystem {
   backups(dir: string): { exists: boolean; newestAt: number | null; files: number } | null;
   /** Another node's clock minus this one's, in ms, from the Date of its answer to a request that carries nothing. */
   peerClock(endpoint: string): Promise<number | null>;
+  /**
+   * A Mac's sandbox firewall as it is in root's places (its helper and launchd job, which anyone may read): this
+   * release's, another's, or none. null: not looked at (off a Mac).
+   */
+  macFirewallFiles(): "current" | "other" | "none" | null;
 }
 
 async function runCommand(cmd: string[], timeoutMs = 3000): Promise<{ code: number; stdout: string } | null> {
@@ -113,6 +118,16 @@ export const realSystem: DoctorSystem = {
       return null;
     }
   },
+  macFirewallFiles() {
+    if (process.platform !== "darwin") return null;
+    return macFirewallInstalled((path) => {
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return null;
+      }
+    });
+  },
 };
 
 /** Asks the machine nothing (tests that pass their own capabilities): every such fact is "not known". */
@@ -124,6 +139,7 @@ export const noSystem: DoctorSystem = {
   disk: () => null,
   backups: () => null,
   peerClock: async () => null,
+  macFirewallFiles: () => null,
 };
 
 /* ---------- the node's own log, as far as it reads like trouble ---------- */
@@ -356,7 +372,8 @@ async function sandboxOf(deps: DoctorDeps, deep: boolean): Promise<DoctorFacts["
   }
   // A Mac's own, as the node reads it (its helper's status and the bridges): no sandbox is made there while it is off.
   const wall = await host.firewallState().catch(() => null);
-  const macFirewall = wall ? { macFirewall: { on: wall.on, installed: wall.on || wall.installed, soon: !wall.on && wall.soon, why: wall.on ? null : wall.why } } : {};
+  const files = wall ? deps.system.macFirewallFiles() : null;
+  const macFirewall = wall ? { macFirewall: { on: wall.on, installed: wall.on || wall.installed, soon: !wall.on && wall.soon, why: wall.on ? null : wall.why, ...(files ? { release: files } : {}) } } : {};
   // Never when the image is missing: creating a sandbox would rebuild it, and the doctor changes nothing.
   // (Nor on a Mac whose firewall is off: it refuses to, by design, and its own line says so.)
   const start = deep && status.docker && status.image && (!wall || wall.on) ? await startSandboxes(host, deps.governor, () => deps.compute.selfCapacity()).catch(() => null) : null;

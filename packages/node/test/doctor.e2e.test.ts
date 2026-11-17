@@ -105,6 +105,7 @@ const system: DoctorSystem = {
   disk: () => machine.disk,
   backups: (dir) => (dir.endsWith(join("node", "backups")) ? { exists: true, newestAt: Date.now() - machine.backupAge, files: 9 } : { exists: false, newestAt: null, files: 0 }),
   peerClock: async () => null,
+  macFirewallFiles: () => null,
 };
 
 const measure: Measure = async (reason, body, limit): Promise<Calibration> => {
