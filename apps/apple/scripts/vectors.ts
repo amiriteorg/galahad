@@ -22,6 +22,7 @@ import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web
 import { desktopAddress, screenPoint, shotSource } from "../../web/src/lib/desktop.ts";
 import { ART, CANVAS, SHOWN } from "../../web/src/lib/knight-eyes.ts";
 import { connectorState } from "../../web/src/lib/connector-state.ts";
+import { noticeFrom } from "../../web/src/lib/notices.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
@@ -714,6 +715,9 @@ const timelines = {
   cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), kept: keptChanges(t)?.text ?? null, proposed: proposedLine(t, t.proposedBy === "ada" ? "Ada" : null) })),
 };
 
+// ---- where a notice came from, in words (the PWA's lib/notices.ts) ----------------------------------------------------
+const notices = ["rule:pushes", "loop:morning", "heartbeat", "ci", "compute", "rule:a:b", "rule:", ":x", "constructor:x", "something-new"].map((source) => ({ source, from: noticeFrom(source) }));
+
 // ---- the file ----------------------------------------------------------------------------------------------------------
 const vectors = {
   about: "Made by apps/apple/scripts/vectors.ts from packages/core (and the PWA's roster). Every key here is a fake made for these tests.",
@@ -736,6 +740,7 @@ const vectors = {
   markdown,
   blocks,
   timelines,
+  notices,
 };
 const text = `${JSON.stringify(vectors, null, 2)}\n`;
 if (Bun.argv.includes("--check")) {

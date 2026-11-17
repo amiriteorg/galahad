@@ -1,7 +1,8 @@
 import Foundation
 
 /// The node's notices as the PWA's Inbox shows them (apps/web/src/views/inbox.ts): those you haven't dismissed, in the
-/// node's order (alerts first, then the newest), each by how much it matters and where it came from.
+/// node's order (alerts first, then the newest), each by how much it matters and where it came from (in the words of the
+/// PWA's lib/notices.ts, held to them by the vectors).
 enum Notices {
     /// Those still open.
     static func open(_ all: [NoticeView]) -> [NoticeView] { all.filter { !$0.dismissed } }

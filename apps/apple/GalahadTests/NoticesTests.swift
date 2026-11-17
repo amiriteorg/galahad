@@ -25,10 +25,10 @@ struct NoticesTests {
         let notices = try JSONDecoder().decode(Listed.self, from: Data(Self.listed.utf8)).notices
         #expect(Notices.symbol(notices[0]) == "bell.fill")
         #expect(Notices.symbol(notices[1]) == "exclamationmark.triangle.fill")
-        #expect(Notices.from("rule:pushes") == "Your rule pushes")
-        #expect(Notices.from("loop:morning") == "The loop morning")
-        #expect(Notices.from("heartbeat") == "The heartbeat")
-        #expect(Notices.from("rule:") == "rule:")
-        #expect(Notices.from("something-new") == "something-new")
+        // Where it came from, in the PWA's own words (its lib/notices.ts, by the vectors).
+        #expect(!Vectors.shared.notices.isEmpty)
+        for vector in Vectors.shared.notices {
+            #expect(Notices.from(vector.source) == vector.from, "\(vector.source)")
+        }
     }
 }

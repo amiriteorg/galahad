@@ -8910,5 +8910,47 @@
         "proposed": "Proposed by Ada"
       }
     ]
-  }
+  },
+  "notices": [
+    {
+      "source": "rule:pushes",
+      "from": "Your rule pushes"
+    },
+    {
+      "source": "loop:morning",
+      "from": "The loop morning"
+    },
+    {
+      "source": "heartbeat",
+      "from": "The heartbeat"
+    },
+    {
+      "source": "ci",
+      "from": "CI"
+    },
+    {
+      "source": "compute",
+      "from": "His compute"
+    },
+    {
+      "source": "rule:a:b",
+      "from": "Your rule a:b"
+    },
+    {
+      "source": "rule:",
+      "from": "rule:"
+    },
+    {
+      "source": ":x",
+      "from": ":x"
+    },
+    {
+      "source": "constructor:x",
+      "from": "constructor:x"
+    },
+    {
+      "source": "something-new",
+      "from": "something-new"
+    }
+  ]
 }

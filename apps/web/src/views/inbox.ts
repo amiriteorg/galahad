@@ -1,6 +1,7 @@
 import type { ActionView, LoopDraftView, NoticeView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
+import { noticeFrom } from "../lib/notices.ts";
 import { callerName, defaultLabel, deleteName, rowsFromCall } from "../lib/orders.ts";
 import { hlcMs, relativeTime } from "../lib/time.ts";
 import type { ActionClass } from "../types.ts";
@@ -291,8 +292,9 @@ export const inboxView: View = (root, ctx, { scope }) => {
         ...list.map((n) =>
           findingRow(
             ctx,
-            n,
-            [h("span", {}, n.source), h("span", { title: new Date(n.at).toLocaleString() }, relativeTime(n.at))],
+            // What a rule of yours told you leads with a bell, as in the iPhone and Mac apps.
+            n.severity === "info" && n.source.startsWith("rule:") ? { ...n, icon: "bell" } : n,
+            [h("span", {}, noticeFrom(n.source)), h("span", { title: new Date(n.at).toLocaleString() }, relativeTime(n.at))],
             write ? button("Dismiss", { size: "sm", variant: "ghost", icon: "x", label: `Dismiss: ${n.title}`, onClick: (event) => void dismiss(n, event.currentTarget as HTMLButtonElement) }) : null,
           ),
         ),

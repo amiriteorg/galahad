@@ -147,6 +147,11 @@ struct Vectors: Decodable {
         let steps: [Step]
     }
 
+    struct NoticeFrom: Decodable {
+        let source: String
+        let from: String
+    }
+
     struct ConnectorState: Decodable {
         struct State: Decodable { let label: String; let tone: String }
         let key: String
@@ -312,6 +317,8 @@ struct Vectors: Decodable {
     let markdown: [MarkdownCase]
     let blocks: BlockCases
     let timelines: Timelines
+    /// Where a notice came from, in words (the PWA's lib/notices.ts).
+    let notices: [NoticeFrom]
 
     static let shared: Vectors = {
         guard let url = Bundle(for: BundleToken.self).url(forResource: "core-vectors", withExtension: "json") else {

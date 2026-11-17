@@ -77,10 +77,11 @@ export function describeTask(task: LoopTask | null): string {
 }
 
 /** A heartbeat finding or a notice: what, how serious, about which machine. */
-export function findingRow(ctx: Ctx, f: { severity: FindingView["severity"]; title: string; body: string; node?: string | null }, meta: Child = null, actions: Child = null): HTMLElement {
+/** A finding or a notice in a row. `icon`: one of its own in place of its severity's (a rule's notice, a bell). */
+export function findingRow(ctx: Ctx, f: { severity: FindingView["severity"]; title: string; body: string; node?: string | null; icon?: IconName }, meta: Child = null, actions: Child = null): HTMLElement {
   const sev = SEVERITY[f.severity] ?? SEVERITY.info;
   return listRow({
-    lead: h("span", { class: "avatar", "data-tone": sev.tone }, icon(sev.icon, { size: 16, label: sev.label })),
+    lead: h("span", { class: "avatar", "data-tone": sev.tone }, icon(f.icon ?? sev.icon, { size: 16, label: sev.label })),
     top: true,
     title: f.title,
     sub: f.body || null,
