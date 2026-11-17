@@ -13,6 +13,8 @@ export interface TeamRuntimeDeps {
   prepare(teammate: Teammate, signal: AbortSignal): Promise<void>;
   /** Keeps a knight's lease while its task runs (asked every TEAM_LEASE_RENEW_MINUTES as the work goes on): whether it was. */
   renew?(teammate: Teammate, signal: AbortSignal): Promise<boolean>;
+  /** (Tests: how long a model call may say nothing before it is ended, in milliseconds; TEAM_CALL_QUIET_MINUTES otherwise.) */
+  callQuietMs?: number;
   tools(teammate: Teammate, signal: AbortSignal): ChatTools;
   /** Your prices (models without one are counted, not priced): what a task's budget is measured in. */
   prices?(): Prices;
@@ -166,6 +168,8 @@ print(open(kept).read() if os.path.exists(kept) else subprocess.check_output(['g
 export const TEAM_COMMAND_SECONDS = 900;
 /** How often a task's lease (thirty minutes) is renewed while it runs: two renewals can be missed before it lapses. */
 export const TEAM_LEASE_RENEW_MINUTES = 10;
+/** A knight's model call that says nothing for this long is ended, and asked again as any failed call is: its task has no clock that would. */
+export const TEAM_CALL_QUIET_MINUTES = 15;
 
 /** What a harness would run on in a knight's VM, or why it can't work there yet. */
 export interface HarnessReadiness {
@@ -223,6 +227,7 @@ export function progress(event: QuestEvent): string {
     case "budget": return event.out ? `Budget · spent ($${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)}): the work stops` : `Budget · $${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)} spent: wrapping up`;
     case "tripped": return `Tripwire · ${event.rule} ${event.does === "halt" ? "halted the task" : event.gate ? "refused a gate" : "refused a command"}: ${event.why}\n$ ${event.command}`;
     case "checked": return `Check · ${event.rule} ${event.exitCode === 0 ? "passed" : "failed"} · ${event.command}${event.exitCode === 0 ? "" : `\n${event.output}`}`;
+    case "retry": return `Retry · the ${event.role}'s call failed (${event.error.split("\n")[0]}): asked again in ${Math.round(event.waitMs / 1000)} s`;
     // An independent audit while the work runs (QuestOptions.audit): what it found, and what it told the knight or why it stopped it.
     case "audit": return `Audit · ${{ on: "on its task, and closer to done", steer: "steered", stop: "stopped the work", unread: "no answer that could be read: the work goes on" }[event.verdict]}${event.note ? `\n${event.note}` : ""}`;
     default: return event.type;
@@ -253,21 +258,33 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
   };
   const ask = async (teammate: Teammate, role: string, messages: ChatMessage[], signal: AbortSignal, context?: string, spent?: (model: string, usage: Usage | null) => void, loop?: boolean) => {
     const leave = await deps.enter(signal);
+    // A call that says nothing for so long is ended, and asked again as any failed call is: a task has no clock that would end it.
+    const quietMs = deps.callQuietMs ?? TEAM_CALL_QUIET_MINUTES * 60_000;
+    const quiet = new AbortController();
+    let timer = setTimeout(() => quiet.abort(), quietMs);
+    const silent = () => new Error(`its model said nothing for ${quietMs % 60_000 === 0 ? `${quietMs / 60_000} minutes` : `${quietMs / 1000} seconds`}`);
     try {
       let text = "", model = "";
       // The role's models that couldn't answer before one did: the task says so (once each), never passes it over.
       const skipped: { model: string; error: string }[] = [];
-      // (A knight's task is coding work: a coding plan on the role may do it. A turn of its work loop is held to its format.)
-      for await (const event of chat(deps.brain(teammate), { role, messages, signal, context, coding: true, ...(loop ? { loop: true } : {}) })) {
-        if (event.type === "text") text += event.text;
-        else if (event.type === "model") model = event.ref;
-        else if (event.type === "fallback") skipped.push({ model: event.from, error: event.error });
-        else if (event.type === "usage") spent?.(event.ref, event.usage);
-        else if (event.type === "error") throw new Error(event.error);
+      try {
+        // (A knight's task is coding work: a coding plan on the role may do it. A turn of its work loop is held to its format.)
+        for await (const event of chat(deps.brain(teammate), { role, messages, signal: AbortSignal.any([signal, quiet.signal]), context, coding: true, ...(loop ? { loop: true } : {}) })) {
+          clearTimeout(timer);
+          timer = setTimeout(() => quiet.abort(), quietMs);
+          if (event.type === "text") text += event.text;
+          else if (event.type === "model") model = event.ref;
+          else if (event.type === "fallback") skipped.push({ model: event.from, error: event.error });
+          else if (event.type === "usage") spent?.(event.ref, event.usage);
+          else if (event.type === "error") throw new Error(event.error);
+        }
+      } catch (error) {
+        throw quiet.signal.aborted && !signal.aborted ? silent() : error;
       }
       if (signal.aborted) throw new Error("Stopped");
+      if (quiet.signal.aborted) throw silent();
       return { text, model, ...(skipped.length ? { skipped } : {}) };
-    } finally { leave(); }
+    } finally { clearTimeout(timer); leave(); }
   };
 
   /** Rooms whose story is being told anew now: a second knight waits for it rather than telling it again. */

@@ -13,6 +13,8 @@ const room: TeamRoom = { id: "forge", name: "Forge", members: ["ada"], direct: f
 const task: TeamTask = { id: "task-abcdefghijkl", room: room.id, assignee: member.id, title: "Build", goal: "Build and verify the change.", dependsOn: [], gates: ["bun test required-check"], status: "running", verified: false, progress: "", output: "", error: null, chainId: "chain-test", createdAt: 1, updatedAt: 1 };
 const result = (over: Partial<ExecResult> = {}): ExecResult => ({ stdout: "ok", stderr: "", exitCode: 0, durationMs: 1, truncated: false, ...over });
 const say = (text: string) => ({ content: text });
+/** A model call that answers nothing at all, until it is ended. */
+const HANG = { hang: true };
 const call = (name: string, input: unknown) => ({ tool_calls: [{ index: 0, id: name, function: { name, arguments: JSON.stringify(input) } }] });
 
 function fixture(script: object[], overrides: Partial<TeamRuntimeDeps> = {}, usage?: object) {
@@ -27,6 +29,7 @@ function fixture(script: object[], overrides: Partial<TeamRuntimeDeps> = {}, usa
   const brain = { store, vault, fetch: (async (_url: unknown, init?: RequestInit) => {
     bodies.push(JSON.parse(String(init?.body)));
     const delta = script.shift() ?? say("GIVE UP\nUnexpected model call.");
+    if (delta === HANG) return new Response(new ReadableStream({ start: (c) => init?.signal?.addEventListener("abort", () => c.error(new Error("aborted")), { once: true }) }), { headers: { "content-type": "text/event-stream" } });
     // (`usage`: what a provider counts for the call, in the stream's last chunk; left out, it says nothing.)
     return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n${usage ? `data: ${JSON.stringify({ choices: [], usage })}\n\n` : ""}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
   }) as typeof fetch };
@@ -237,6 +240,17 @@ test("a task's lease is kept as its work goes on, every ten minutes however long
   // Thirty-six minutes of work, renewed at twelve, twenty-four and thirty-six: never left to lapse at thirty.
   expect(renewals).toEqual([true, false, false]);
   expect(told.filter((line) => line.startsWith("Lease ·"))).toEqual(["Lease · its model access couldn't be kept (it had lapsed or was revoked): what goes through the gateway in its VM may be refused until its next task"]);
+});
+
+test("a model call that says nothing is ended after a while and asked again: a task has no clock that would end it", async () => {
+  const told: string[] = [];
+  const stop = new AbortController();
+  const f = fixture([HANG], { callQuietMs: 50 });
+  // (Asked again only after a pause of fifteen seconds: the task is stopped once the retry is said.)
+  const context: TeamRunContext = { ...f.context, signal: stop.signal, emit: (line) => { told.push(line); if (line.startsWith("Retry ·")) setTimeout(() => stop.abort(), 0); } };
+  await f.runtime.executeTask(member, task, context).catch(() => {});
+  expect(told.filter((line) => line.startsWith("Retry ·"))).toEqual(["Retry · the planner's call failed (its model said nothing for 0.05 seconds): asked again in 15 s"]);
+  expect(f.held()).toBe(0);
 });
 
 test("every turn of a task is sent the same beginning: the knight's notes are fenced once for the task, not anew on each call", async () => {
