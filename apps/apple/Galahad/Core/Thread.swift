@@ -37,6 +37,8 @@ struct StoredMessage: Decodable, Sendable, Equatable {
     /// user · assistant
     let role: String
     let content: String
+    /// Your files with it (a message of yours), as the node keeps them.
+    let attachments: [AttachmentRef]?
     let model: String?
     let steps: [Step]
     /// done · error · stopped · steered · streaming
@@ -74,6 +76,8 @@ struct ChatThread: Equatable, Sendable {
         var steps: [Step]
         var status: Status
         var error: String?
+        /// Your files with it (your messages).
+        var attachments: [AttachmentRef]? = nil
     }
 
     private(set) var turns: [Turn] = []
@@ -98,13 +102,13 @@ struct ChatThread: Equatable, Sendable {
     /// Turns kept from what was on screen (a send the node never took), after the kept chat: as they were, with ids of this thread.
     mutating func keep(_ kept: [Turn]) {
         for turn in kept {
-            turns.append(Turn(id: take(), sid: turn.sid, role: turn.role, content: turn.content, answeredAs: turn.answeredAs, model: turn.model, steps: turn.steps, status: turn.status, error: turn.error))
+            turns.append(Turn(id: take(), sid: turn.sid, role: turn.role, content: turn.content, answeredAs: turn.answeredAs, model: turn.model, steps: turn.steps, status: turn.status, error: turn.error, attachments: turn.attachments))
         }
     }
 
     /// You send a message: it, and the answer to come (what the stream then writes), join the thread.
-    mutating func begin(question: String, role: String) {
-        turns.append(Turn(id: take(), role: .user, content: question, steps: [], status: .done))
+    mutating func begin(question: String, role: String, attachments: [AttachmentRef] = []) {
+        turns.append(Turn(id: take(), role: .user, content: question, steps: [], status: .done, attachments: attachments.isEmpty ? nil : attachments))
         base = turns.count
         let answer = blank(answeredAs: role, model: nil)
         step(answer, Step(text: "Asked as \(role)", state: .done))
@@ -212,7 +216,8 @@ struct ChatThread: Equatable, Sendable {
             model: message.model,
             steps: assistant ? steps(of: message, role: role) : [],
             status: Turn.Status(rawValue: message.status) ?? .done,
-            error: message.error.flatMap { $0.isEmpty ? nil : $0 }
+            error: message.error.flatMap { $0.isEmpty ? nil : $0 },
+            attachments: message.attachments.flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 

@@ -52,6 +52,11 @@ struct NodeClient: Sendable {
         return try decode(T.self, from: data)
     }
 
+    /// A POST answered with bytes (a file of yours kept on the node): the bytes as they are.
+    func bytes(_ path: String, _ body: some Encodable) async throws -> Data {
+        try await send(request("POST", path, body: JSONEncoder().encode(body)))
+    }
+
     /// A POST answered with server-sent events (Galahad's chat): each event as it arrives. Ending the stream (its
     /// consumer goes away) ends the watching and nothing else: a turn the node owns runs on to its end.
     func events(_ path: String, _ body: some Encodable) -> AsyncThrowingStream<ChatEvent, any Error> {

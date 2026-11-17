@@ -3,7 +3,12 @@ import Observation
 
 /// What `POST /api/chat` takes, as far as this app asks: a role, and either a new kept chat or the one it continues.
 struct ChatRequest: Encodable, Sendable {
-    struct Message: Encodable, Sendable { let role: String; let content: String }
+    struct Message: Encodable, Sendable {
+        let role: String
+        let content: String
+        /// Your files with it, kept on the node first (an absent field when there are none).
+        var attachments: [AttachmentRef]?
+    }
     let role: String
     /// A new conversation, kept in your history from its first message.
     var save: Bool?
@@ -33,6 +38,11 @@ struct ChatRequest: Encodable, Sendable {
     /// Why the chat couldn't be read.
     private(set) var problem: String?
     var draft = ""
+    /// Files waiting to go with your next message, in the order you added them.
+    private(set) var waiting: [Waiting] = []
+    private var waitingKey = 0
+    /// Why a file you added wasn't taken (said once, then cleared).
+    var attachProblem: String?
     /// How many messages this chat screen has sent: the message box is made anew with each one (see `Composer`).
     private(set) var sent = 0
     private var live: Task<Void, Never>?
@@ -42,6 +52,62 @@ struct ChatRequest: Encodable, Sendable {
     private var opened = false
 
     var answering: Bool { live != nil }
+    /// What your next message carries: the files that are up.
+    var carried: [AttachmentRef] { waiting.compactMap(\.ref) }
+    /// There is something to send (words, or a file that is up), and no file is still going up.
+    var sendable: Bool { (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !carried.isEmpty) && !waiting.contains { $0.state == .going } }
+
+    /// A file waiting to go with your next message: going up to the node, up (what the message carries), or not taken.
+    struct Waiting: Identifiable, Equatable {
+        enum State: Equatable { case going, up, failed(String) }
+        let id: Int
+        var name: String
+        var size: Int
+        /// A picture's bytes, to show it (nil: a text, or not read yet).
+        var look: Data?
+        var state: State
+        var ref: AttachmentRef?
+    }
+
+    /// Files added (from Photos or Files, or dropped): each made ready (a picture drawn again, smaller and without its
+    /// metadata), then sent up to the node; the message then names them.
+    func attach(_ files: [(name: String, data: Data)], with client: NodeClient) {
+        let room = Attachments.perMessage - waiting.count
+        if files.count > room { attachProblem = "\(Attachments.perMessage) files go with a message at most." }
+        for (name, data) in files.prefix(max(0, room)) {
+            waitingKey += 1
+            let key = waitingKey
+            waiting.append(Waiting(id: key, name: name, size: data.count, state: .going))
+            Task {
+                do {
+                    let ready = try await Task.detached(priority: .userInitiated) { try Attachments.prepare(name: name, data: data) }.value
+                    change(key) { ($0.name, $0.size, $0.look) = (ready.name, ready.data.count, ready.type == "text/plain" ? nil : ready.data) }
+                    struct Upload: Encodable { let name: String; let type: String; let data: String }
+                    struct Uploaded: Decodable { let attachment: AttachmentRef }
+                    let ref = try await client.post("/api/uploads", Upload(name: ready.name, type: ready.type, data: ready.data.base64EncodedString()), as: Uploaded.self).attachment
+                    if ref.isPicture { AttachmentLooks.shared.know(ref.id, ready.data) }
+                    change(key) { ($0.ref, $0.state) = (ref, .up) }
+                } catch {
+                    // One that wasn't taken leaves the box, and why is said; one the node refused stays, to remove.
+                    if let refused = error as? Attachments.Refused {
+                        waiting.removeAll { $0.id == key }
+                        attachProblem = refused.errorDescription
+                    } else {
+                        change(key) { $0.state = .failed(error.localizedDescription) }
+                    }
+                }
+            }
+        }
+    }
+
+    func detach(_ id: Int) {
+        waiting.removeAll { $0.id == id }
+    }
+
+    private func change(_ key: Int, _ edit: (inout Waiting) -> Void) {
+        guard let at = waiting.firstIndex(where: { $0.id == key }) else { return }
+        edit(&waiting[at])
+    }
     /// What his answer is at: its last step (nil when he has only just started).
     var step: String? { thread.turns.last { $0.role == .assistant }?.steps.last?.text }
 
@@ -75,11 +141,14 @@ struct ChatRequest: Encodable, Sendable {
 
     func send(with client: NodeClient) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard live == nil, !text.isEmpty else { return }
+        let files = carried
+        guard live == nil, sendable else { return }
         draft = ""
+        // Sent with the message: the box is clear of them (one not taken stays, to remove).
+        waiting.removeAll { $0.state == .up }
         sent += 1
-        thread.begin(question: text, role: role)
-        let request = ChatRequest(role: role, save: conversation == nil ? true : nil, conversation: conversation, messages: [.init(role: "user", content: text)])
+        thread.begin(question: text, role: role, attachments: files)
+        let request = ChatRequest(role: role, save: conversation == nil ? true : nil, conversation: conversation, messages: [.init(role: "user", content: text, attachments: files.isEmpty ? nil : files)])
         watch(client.events("/api/chat", request))
     }
 

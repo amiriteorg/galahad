@@ -1,0 +1,98 @@
+import CoreGraphics
+import Foundation
+import ImageIO
+import Testing
+import UniformTypeIdentifiers
+@testable import Galahad
+
+/// Files with a message, on this side (Core/Attachments.swift): what a file is by its bytes, as the node reads it; a
+/// photo drawn again smaller with none of its metadata (where it was taken); and the message as the node takes it.
+struct AttachmentsTests {
+    /// A picture made here, `width` by `height`, as `type`, with a place it was taken when `gps` (as a phone writes it).
+    static func picture(width: Int, height: Int, type: UTType, gps: Bool = false) throws -> Data {
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width / 2, height: height))
+        let image = try #require(context.makeImage())
+        let out = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(out, type.identifier as CFString, 1, nil))
+        let properties: [CFString: Any] = gps
+            ? [kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 55.6761, kCGImagePropertyGPSLatitudeRef: "N", kCGImagePropertyGPSLongitude: 12.5683, kCGImagePropertyGPSLongitudeRef: "E"],
+               kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFModel: "iPhone 17 Pro"]]
+            : [:]
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+        return out as Data
+    }
+
+    static func properties(_ data: Data) throws -> [CFString: Any] {
+        let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+        return try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+    }
+
+    @Test func whatAFileIsIsReadFromItsBytesAsTheNodeReadsIt() throws {
+        #expect(Attachments.pictureType(try Self.picture(width: 4, height: 4, type: .png)) == "image/png")
+        #expect(Attachments.pictureType(try Self.picture(width: 4, height: 4, type: .jpeg)) == "image/jpeg")
+        #expect(Attachments.pictureType(Data("GIF89a\u{1}\u{0}".utf8)) == "image/gif")
+        #expect(Attachments.pictureType(Data("RIFF\u{10}\u{0}\u{0}\u{0}WEBPVP8 ".utf8)) == "image/webp")
+        #expect(Attachments.pictureType(Data("<svg/>".utf8)) == nil)
+        #expect(Attachments.isText(Data("héllo\nwörld".utf8)))
+        #expect(!Attachments.isText(Data([0x68, 0x69, 0x00])))
+        #expect(!Attachments.isText(Data([0xC3, 0x28])))
+        #expect(Attachments.name("/private/var/mobile/../IMG_1234.HEIC") == "IMG_1234.HEIC")
+        #expect(Attachments.name("bad\u{0}name\u{7}.txt") == "badname.txt")
+        #expect(Attachments.name("  ") == "file")
+    }
+
+    @Test func aPhotoIsDrawnAgainSmallerWithNoneOfItsMetadata() throws {
+        let photo = try Self.picture(width: 4032, height: 3024, type: .jpeg, gps: true)
+        #expect(try Self.properties(photo)[kCGImagePropertyGPSDictionary] != nil)
+        let ready = try Attachments.prepare(name: "IMG_1234.JPG", data: photo)
+        #expect(ready.type == "image/jpeg")
+        #expect(ready.name == "IMG_1234.jpg")
+        let after = try Self.properties(ready.data)
+        // Where it was taken, and the camera: gone. Its long side: Claude's, at most.
+        #expect(after[kCGImagePropertyGPSDictionary] == nil)
+        #expect((after[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFModel] == nil)
+        #expect(after[kCGImagePropertyPixelWidth] as? Int == Attachments.side)
+        #expect(after[kCGImagePropertyPixelHeight] as? Int == 1176)
+    }
+
+    @Test func aScreenshotStaysAPNGAndAGIFGoesAsItIs() throws {
+        let shot = try Self.picture(width: 800, height: 500, type: .png)
+        let ready = try Attachments.prepare(name: "Screenshot.png", data: shot)
+        #expect(ready.type == "image/png" && ready.name == "Screenshot.png")
+        let gif = Data("GIF89a\u{1}\u{0}\u{1}\u{0}".utf8)
+        #expect(try Attachments.prepare(name: "spinner.gif", data: gif) == .init(name: "spinner.gif", type: "image/gif", data: gif))
+    }
+
+    @Test func textGoesAsItIsAndAnythingElseIsRefusedWithWhy() throws {
+        let log = Data("FAIL db.test.ts\n".utf8)
+        #expect(try Attachments.prepare(name: "test.log", data: log) == .init(name: "test.log", type: "text/plain", data: log))
+        #expect(throws: Attachments.Refused(errorDescription: "core.dump isn't a picture or text: only those go with a message.")) {
+            try Attachments.prepare(name: "core.dump", data: Data([0x7F, 0x45, 0x4C, 0x46, 0x00, 0x01]))
+        }
+        #expect(throws: Attachments.Refused(errorDescription: "huge.log is too big: a text goes with a message up to 256 KB.")) {
+            try Attachments.prepare(name: "huge.log", data: Data(repeating: 0x61, count: Attachments.textBytes + 1))
+        }
+        #expect(Attachments.refusal(name: "empty.txt", type: "text/plain", size: 0) == "empty.txt is empty.")
+    }
+
+    @Test func aMessageCarriesItsFilesAsTheNodeTakesThem() throws {
+        let shot = AttachmentRef(id: String(repeating: "a", count: 64), name: "shot.png", type: "image/png", bytes: 1200)
+        let request = ChatRequest(role: "planner", save: true, conversation: nil, messages: [.init(role: "user", content: "", attachments: [shot])])
+        let sent = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
+        let message = try #require((sent["messages"] as? [[String: Any]])?.first)
+        #expect(message["content"] as? String == "")
+        #expect((message["attachments"] as? [[String: Any]])?.first?["name"] as? String == "shot.png")
+        // A message with none has no such field at all (core's ChatMessage is strict).
+        let plain = try JSONEncoder().encode(ChatRequest.Message(role: "user", content: "Hello"))
+        #expect(!String(decoding: plain, as: UTF8.self).contains("attachments"))
+        // Kept, and read back: the turn carries them; one sent from here does too.
+        let kept = try JSONDecoder().decode(StoredMessage.self, from: Data(#"{"id":7,"role":"user","content":"Why?","attachments":[{"id":"\#(shot.id)","name":"shot.png","type":"image/png","bytes":1200}],"model":null,"steps":[],"status":"done","error":null}"#.utf8))
+        #expect(ChatThread(kept: [kept], role: "planner").turns.first?.attachments == [shot])
+        var thread = ChatThread()
+        thread.begin(question: "", role: "planner", attachments: [shot])
+        #expect(thread.turns.first?.attachments == [shot])
+    }
+}

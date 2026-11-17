@@ -110,10 +110,27 @@ struct MacShots {
         let session = try await pair(tag: tag)
         try await until(30) { session.team != nil && session.inboxLoaded }
 
+        // Files with a message, sent up to the node as the paperclip sends them: the owner's drawing of Kay, and a log.
+        try await openSettings().close()
+        main.makeKeyAndOrderFront(nil)
+        MacApp.shared.place = .galahad
+        NSApp.appearance = NSAppearance(named: .aqua)
+        let drawing = try Data(contentsOf: try #require(Bundle.main.url(forResource: "kay", withExtension: "webp", subdirectory: "knights")))
+        session.chat.attach([(name: "kay.webp", data: drawing), (name: "test.log", data: Data("FAIL db.test.ts\n  connect ECONNREFUSED 127.0.0.1:5432\n".utf8))], with: session.client)
+        try await until(30) { session.chat.waiting.count == 2 && session.chat.waiting.allSatisfy { $0.state == .up } }
+        session.chat.draft = "Why does this fail?"
+        try await Task.sleep(for: .seconds(1.5))
+        try await snap(main, "main-chat-attaching-light")
+        session.chat.send(with: session.client)
+        try await until(60) { !session.chat.answering && session.chat.thread.turns.count >= 2 }
+        try await Task.sleep(for: .seconds(1.5))
+        try await snap(main, "main-chat-attached-light")
+        NSApp.appearance = nil
+
         // Galahad asked to show what he found: the stand-in's answer holds everything an answer can.
         session.chat.draft = "Show me where the release stands"
         session.chat.send(with: session.client)
-        try await until(60) { !session.chat.answering && session.chat.thread.turns.count >= 2 }
+        try await until(60) { !session.chat.answering && session.chat.thread.turns.count >= 4 }
         // In front, as you would see it (a window behind another is drawn dimmed). macOS doesn't let an app put itself in
         // front, but Settings opened from its menu comes in front, and the app with it.
         try await openSettings().close()

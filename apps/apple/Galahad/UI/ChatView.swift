@@ -37,7 +37,7 @@ struct ChatView: View {
                         .foregroundStyle(Color.siege)
                 }
                 ForEach(chat.thread.turns) { turn in
-                    MessageRow(turn: turn)
+                    MessageRow(turn: turn, client: session.client)
                         .environment(\.answerLive, turn.status == .streaming)
                         // Choices he offered are yours to tap on his latest finished answer only.
                         .environment(\.choose, turn.id == latestAnswer && turn.status == .done && !chat.answering ? { text in chat.reply(text, with: session.client) } : nil)
@@ -130,17 +130,25 @@ struct ChatView: View {
 /// One message: yours on the right in the ink, his on the left beside his drawing, with what he did above it.
 struct MessageRow: View {
     let turn: ChatThread.Turn
+    /// Where a picture you attached is read from, to show it (nil: shown only once it is known here).
+    var client: NodeClient? = nil
 
     var body: some View {
         switch turn.role {
         case .user:
-            HStack {
-                Spacer(minLength: Metrics.yoursInset)
-                Text(turn.content)
-                    .foregroundStyle(Color.onAccent)
-                    .padding(Metrics.bubblePadding)
-                    .background(Color.ink, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
-                    .textSelection(.enabled)
+            VStack(alignment: .trailing, spacing: Space.s2) {
+                // What it carried, above its words (a message may be files alone).
+                if let refs = turn.attachments, !refs.isEmpty { AttachedView(refs: refs, client: client) }
+                if !turn.content.isEmpty {
+                    HStack {
+                        Spacer(minLength: Metrics.yoursInset)
+                        Text(turn.content)
+                            .foregroundStyle(Color.onAccent)
+                            .padding(Metrics.bubblePadding)
+                            .background(Color.ink, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
+                            .textSelection(.enabled)
+                    }
+                }
             }
         case .assistant:
             HStack(alignment: .top, spacing: Space.s2) {
@@ -193,8 +201,35 @@ struct Composer: View {
     var composing: FocusState<Bool>.Binding
 
     var body: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            if let problem = chat.attachProblem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.siege)
+                    .onTapGesture { chat.attachProblem = nil }
+                    .task(id: problem) {
+                        try? await Task.sleep(for: .seconds(6))
+                        if chat.attachProblem == problem { chat.attachProblem = nil }
+                    }
+            }
+            if !chat.waiting.isEmpty { WaitingFiles(chat: chat) }
+            field
+        }
+        .padding(.horizontal, Metrics.margin)
+        .padding(.vertical, Space.s2)
+        .readingWidth()
+        // Files dropped on the message box go with the message (Files, the Finder, another app's file).
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = AttachButton.read(urls.filter(\.isFileURL), refused: { chat.attachProblem = $0 })
+            chat.attach(files, with: client)
+            return !files.isEmpty
+        }
+    }
+
+    private var field: some View {
         GlassEffectContainer(spacing: 10) {
             HStack(alignment: .bottom, spacing: Space.s2) {
+                AttachButton(chat: chat, client: client)
                 // Made anew with each message sent: clearing a focused multi-line field can leave what was sent on
                 // screen, or let the keyboard put back what it still held (a word it was correcting, a dictation
                 // finishing). A new one is empty, and nothing late reaches it.
@@ -218,7 +253,7 @@ struct Composer: View {
                     .buttonBorderShape(.circle)
                     .accessibilityLabel("Stop Galahad answering")
                 } else {
-                    let empty = chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    let empty = !chat.sendable
                     Button {
                         let typing = composing.wrappedValue
                         chat.send(with: client)
@@ -235,8 +270,5 @@ struct Composer: View {
                 }
             }
         }
-        .padding(.horizontal, Metrics.margin)
-        .padding(.vertical, Space.s2)
-        .readingWidth()
     }
 }
