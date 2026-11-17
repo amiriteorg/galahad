@@ -21,8 +21,8 @@ The Mac's build is signed to run on this Mac only: no team, no account, and no n
 
 `scripts/dev-node.ts` starts a node the way `apps/web/measure/first-load.ts` does: a temp home, the file keystore, a
 stand-in Docker and stand-in models, on loopback only (never `~/.galahad`). It seats a few knights in every state the
-Roundtable shows (at work, waiting for your approval, failed, paused, at rest), has an agent ask your leave and Galahad
-ask for a key, and prints a client invite. The simulator reaches it on 127.0.0.1.
+Roundtable shows (at work, waiting for your approval, failed, paused, at rest), has an agent ask your leave, Galahad
+ask for a key and a rule of yours tell you of a command he ran (a notice in the Inbox), and prints a client invite. The simulator reaches it on 127.0.0.1.
 
 ```sh
 bun apps/apple/scripts/dev-node.ts --dir /tmp/galahad-dev    # from the repository's root; prints the invite link
@@ -97,7 +97,8 @@ Galahad.app/Contents/MacOS/Galahad --this-mac                       # what This 
 `generate_keys`, the private half kept in their keychain, never here).
 
 `MacShots` pictures the Mac app as it looks, light and dark, against a dev node: the first run's three steps, joining,
-the main window (This Mac among its places), Settings, the app menu with Check for Updates, and the menu bar. It pairs as
+the main window (This Mac among its places, and the Inbox down to what was noticed), Settings, the app menu with Check
+for Updates, and the menu bar. It pairs as
 you would, the codes compared before it approves, and pictures the app's own windows (an app may picture its own windows
 without being let record the screen). This Mac's node is shown as given (`ThisMac.show`), since a build here carries none
 and this Mac is never made one; the first run is pictured in a window of the test's, as if the build carried the node.

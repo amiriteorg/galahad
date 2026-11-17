@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Everything that needs you, in one place (the PWA's Inbox): devices asking to join, calls Galahad's oath made him ask
-/// your leave for, and keys he asked for. Nothing here happens without your say.
+/// your leave for, keys he asked for, facts he noticed about you, and what the node noticed for you. Nothing here happens
+/// without your say.
 struct InboxView: View {
     let session: Session
     @State private var open: ActionView?
@@ -53,12 +54,23 @@ struct InboxView: View {
                     Text("Each goes with every answer of his once you keep it, in your words if you like. Until then it is only his note.")
                 }
             }
+            if !session.notices.isEmpty {
+                Section {
+                    ForEach(session.notices) { notice in
+                        NoticeRow(session: session, notice: notice)
+                    }
+                } header: {
+                    Text("Noticed")
+                } footer: {
+                    Text("The heartbeat's findings, and what your rules tell you. One you dismiss stays quiet until it changes.")
+                }
+            }
         }
         .overlay {
             if !session.inboxLoaded {
                 ProgressView()
             } else if session.inboxCount == 0 {
-                ContentUnavailableView("Nothing needs you", systemImage: "checkmark.circle", description: Text("Approvals, keys Galahad asks for, facts he noticed about you and devices asking to join wait here."))
+                ContentUnavailableView("Nothing needs you", systemImage: "checkmark.circle", description: Text("Approvals, keys Galahad asks for, facts he noticed about you, what your rules tell you and devices asking to join wait here."))
             }
         }
         .navigationTitle("Inbox")
@@ -346,6 +358,56 @@ struct FactRow: View {
     private func act(_ work: () async throws -> Void) async {
         do {
             try await work()
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
+/// Something the node noticed for you: what it is, in the node's words (a command as written), where it came from and
+/// when; yours to dismiss.
+struct NoticeRow: View {
+    let session: Session
+    let notice: NoticeView
+    @State private var dismissing = false
+    @State private var problem: String?
+
+    var body: some View {
+        InboxRow(symbol: Notices.symbol(notice)) {
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text(notice.title).font(.headline)
+                ForEach(Array(notice.body.split(separator: "\n").enumerated()), id: \.offset) { _, line in
+                    if line.hasPrefix("$ ") {
+                        Text(line).font(.footnote.monospaced()).textSelection(.enabled)
+                    } else {
+                        Text(line).font(.subheadline)
+                    }
+                }
+                Text("\(Notices.from(notice.source)) · \(Text(Date(timeIntervalSince1970: notice.at / 1000), style: .relative)) ago")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            if session.can("fleet:admin") {
+                Button("Dismiss") {
+                    Task { await dismiss() }
+                }
+                .buttonStyle(.glass)
+                .disabled(dismissing)
+                .accessibilityLabel("Dismiss: \(notice.title)")
+            }
+            if let problem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
+            }
+        }
+    }
+
+    private func dismiss() async {
+        dismissing = true
+        defer { dismissing = false }
+        do {
+            try await session.dismiss(notice)
             problem = nil
         } catch {
             problem = error.localizedDescription

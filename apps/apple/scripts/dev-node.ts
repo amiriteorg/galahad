@@ -6,7 +6,7 @@
  *
  * It seats knights at work (one running a task, one thinking, one whose task was verified, one whose task failed, one
  * paused, one with a desktop in its VM to watch and take over, which proposes a task for your approval), has an agent ask
- * your leave for an outward call, and has Galahad ask for a key. Then it makes a client invite
+ * your leave for an outward call, has Galahad ask for a key, and has a rule of yours tell you of a command he ran. Then it makes a client invite
  * and prints its link: paste it into the app. The stand-in streams Galahad's answer a word at a time; asked to show
  * something, his answer holds everything an answer can (headings, a list, a table, code, a chart, figures, steps, a page,
  * choices).
@@ -345,6 +345,9 @@ const { token: bot } = await admin("mintArm", { label: "release-bot", scopes: ["
 const asked = await call(bot, "callConnector", { connector: "forge", tool: "post", args: { text: "Galahad 0.4: sync survives a dropped connection." }, why: "Announce the release once its checks pass." });
 if (asked.status !== "asked") throw new Error(`the agent's call wasn't held for you: ${JSON.stringify(asked)}`);
 await admin("requestSecret", { name: "github-token", purpose: "To open the pull request for the sync fix." });
+// A rule of yours that tells you, and a command of one of his quests it matched: a notice in the Inbox.
+await admin("setRule", { name: "pushes", does: "tell", words: ["git"], contains: "push" });
+await admin("ruleTold", { quest: "q-release", rule: "pushes", command: "git push origin release/0.4", exitCode: 0 });
 
 // ---------- pairing ----------
 const origin = `http://127.0.0.1:${proxyPort}`;

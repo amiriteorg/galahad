@@ -163,6 +163,24 @@ struct SecretRequestView: Decodable, Sendable, Identifiable, Equatable {
     var id: String { name }
 }
 
+/// `GET /api/notices`: something the node noticed for you (a heartbeat's finding, a rule of yours that told you), kept
+/// until you dismiss it. Its title and body are the node's own words.
+struct NoticeView: Decodable, Sendable, Identifiable, Equatable {
+    let key: String
+    /// alert · warn · info
+    let severity: String
+    let title: String
+    let body: String
+    /// What raised it: `heartbeat`, `loop:<name>`, `rule:<name>`, `ci`, `compute`.
+    let source: String
+    /// The node it is about, when it is about one.
+    let node: String?
+    /// When, in milliseconds.
+    let at: Double
+    let dismissed: Bool
+    var id: String { key }
+}
+
 /// `GET /api/pairings`: a device asking to join, with the code it shows.
 /// `GET /api/about-you`: a fact about you, as a memory of the mind. Yours (`owner`) goes with every answer of his; his
 /// (an agent's) is only proposed, and waits for you to keep it.

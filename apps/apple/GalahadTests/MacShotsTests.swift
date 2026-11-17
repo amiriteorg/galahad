@@ -11,12 +11,12 @@ private let shotsAsked = ProcessInfo.processInfo.environment["GALAHAD_DEV_NODE"]
 
 /**
  * The Mac app as it looks, in pictures, as the PWA's `measure/first-load.ts --shots` takes its own: the first run's three
- * steps, the main window at the Roundtable, a knight, Galahad's chat and This Mac, Settings, the app menu with Check for
- * Updates, and the Roundtable in the menu bar, in light and dark. Run only when asked, against a fresh throwaway node
- * (`scripts/dev-node.ts`, which lets one app in): it pairs as you would, the two codes compared before it approves, then
- * pictures the app's own windows as the window server draws them (an app may picture its own windows without being let
- * record the screen). This Mac's node is shown as given (`ThisMac.show`): a build here carries none, and this Mac is never
- * made one. It leaves no key behind.
+ * steps, the main window at the Roundtable, a knight, Galahad's chat, the Inbox (and at its end, what was noticed) and
+ * This Mac, Settings, the app menu with Check for Updates, and the Roundtable in the menu bar, in light and dark. Run
+ * only when asked, against a fresh throwaway node (`scripts/dev-node.ts`, which lets one app in): it pairs as you would,
+ * the two codes compared before it approves, then pictures the app's own windows as the window server draws them (an app
+ * may picture its own windows without being let record the screen). This Mac's node is shown as given (`ThisMac.show`):
+ * a build here carries none, and this Mac is never made one. It leaves no key behind.
  *
  *   bun apps/apple/scripts/dev-node.ts --dir /tmp/galahad-mac-shots
  *   TEST_RUNNER_GALAHAD_DEV_NODE=/tmp/galahad-mac-shots TEST_RUNNER_GALAHAD_SHOTS=/tmp/shots \
@@ -142,6 +142,12 @@ struct MacShots {
                 MacApp.shared.place = place
                 try await Task.sleep(for: .seconds(3))
                 try await snap(main, "main-\(name)-\(look)")
+                if place == .inbox {
+                    // What was noticed for you, below the fold: the Inbox at its end, as a wheel would bring it.
+                    try scrollToEnd(main)
+                    try await Task.sleep(for: .seconds(1.5))
+                    try await snap(main, "main-inbox-end-\(look)")
+                }
             }
             // ⌘K: a task for the Roundtable.
             MacApp.shared.giving = true
@@ -283,6 +289,19 @@ struct MacShots {
         let found = NSApp.windows.first(where: which)
         let among = NSApp.windows.map { "\($0.className) \($0.identifier?.rawValue ?? "-")" }
         return try #require(found, "no such window among \(among)")
+    }
+
+    /// The window's largest scrolling view (its detail, not the sidebar), scrolled to its end.
+    private func scrollToEnd(_ window: NSWindow) throws {
+        func scrollers(in view: NSView) -> [NSScrollView] {
+            view.subviews.flatMap { scrollers(in: $0) } + [view as? NSScrollView].compactMap { $0 }
+        }
+        let content = try #require(window.contentView)
+        let scroll = try #require(scrollers(in: content).max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+        let document = try #require(scroll.documentView)
+        let end = document.isFlipped ? max(0, document.frame.height - scroll.contentView.bounds.height) : 0
+        scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: end))
+        scroll.reflectScrolledClipView(scroll.contentView)
     }
 
     private func statusButton(in view: NSView) -> NSStatusBarButton? {
