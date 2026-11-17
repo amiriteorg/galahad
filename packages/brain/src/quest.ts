@@ -257,6 +257,43 @@ export type Action =
 // (A fence wrapped in stray angle brackets, `<```sh>` … `` ```> ``, is read as the fence it plainly is: a model
 // sent that three times running on 14 November 2026, and a task ended with nothing run.)
 const FENCE = /<?```[ \t]*(?:sh|bash|shell|zsh)?[ \t]*>?[ \t]*\r?\n([\s\S]*?)```>?/g;
+// (A command dressed as a tool call, `<sh command="…"></sh>` or `<sh>…</sh>`, is read as the command it plainly is, and so
+// is a fence closed with a tag of the model's own in place of its ``` (`</TURD>`): a model sent each three times running
+// on 17 November 2026, and a trial ended with nothing run. A fence the output limit cut off is not: no part of a command
+// is ever run.)
+const TAG = /<(sh|bash|shell|zsh)((?:\s+[\w-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(?:\/>|>(?:([\s\S]*?)<\/\1\s*>)?)/gi;
+const OPEN = /<?```[ \t]*(?:sh|bash|shell|zsh)?[ \t]*>?[ \t]*\r?\n/g;
+const STRAY_CLOSE = /<\/[A-Za-z][\w-]{0,40}>$/;
+/** More tags than this in one reply is no command: counting first keeps reading a reply linear, whatever it holds. */
+const MAX_TAGS = 16;
+
+/** What a tag's attribute or text says, its XML escapes read (a command's own `&&` is no escape and stays). */
+const unescaped = (text: string): string =>
+  text.replace(/&(quot|#34|apos|#39|lt|gt|amp);/g, (_, e: string) => ({ quot: '"', "#34": '"', apos: "'", "#39": "'", lt: "<", gt: ">", amp: "&" })[e]!);
+
+/**
+ * The commands in a reply's tags (each tag's `command` attribute, or the text between it and its closing tag), and what
+ * the reply says besides them. Read only below MAX_TAGS, so a reply of thousands is read at once, as none.
+ */
+function taggedCommands(reply: string): { commands: string[]; thought: string } {
+  if ((reply.match(/<\/?(?:sh|bash|shell|zsh)\b/gi)?.length ?? 0) > MAX_TAGS) return { commands: [], thought: reply.trim() };
+  const commands = [...reply.matchAll(TAG)].flatMap((m) => {
+    const attribute = /(?:^|\s)command\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(m[2] ?? "");
+    const command = unescaped((attribute ? (attribute[1] ?? attribute[2]) : m[3]) ?? "").trim();
+    return command ? [command] : [];
+  });
+  return { commands, thought: commands.length ? reply.replace(TAG, "").trim() : reply.trim() };
+}
+
+/** A reply's one fence that was never closed with ``` but ends with a tag in its place: what is between, and before. */
+function fenceClosedByATag(reply: string): { command: string; thought: string } | null {
+  const opens = [...reply.matchAll(OPEN)];
+  const close = STRAY_CLOSE.exec(reply.trimEnd());
+  if (opens.length !== 1 || !close) return null;
+  const at = opens[0]!.index! + opens[0]![0].length;
+  const command = reply.slice(at, close.index).trim();
+  return command ? { command, thought: reply.slice(0, opens[0]!.index!).trim() } : null;
+}
 
 /**
  * Read the engineer's reply: one fenced shell command, or DONE / GIVE UP on the first line. With
@@ -267,9 +304,14 @@ export function parseAction(reply: string, parallel = 1): Action {
   const rest = reply.trim().slice(firstLine.length).trim();
   if (/^DONE\b/i.test(firstLine)) return { kind: "done", summary: rest || firstLine.replace(/^DONE\W*/i, "") || "(no summary)" };
   if (/^GIVE UP\b/i.test(firstLine)) return { kind: "give-up", reason: rest || firstLine.replace(/^GIVE UP\W*/i, "") || "(no reason given)" };
-  const blocks = [...reply.matchAll(FENCE)].map((m) => m[1]!.trim()).filter(Boolean);
-  if (blocks.length === 1) return { kind: "command", command: blocks[0]!, thought: reply.replace(FENCE, "").trim() };
-  if (blocks.length > 1 && blocks.length <= parallel) return { kind: "commands", commands: blocks, thought: reply.replace(FENCE, "").trim() };
+  const fenced = [...reply.matchAll(FENCE)].map((m) => m[1]!.trim()).filter(Boolean);
+  const { commands: blocks, thought } = fenced.length ? { commands: fenced, thought: reply.replace(FENCE, "").trim() } : taggedCommands(reply);
+  if (!blocks.length) {
+    const closed = fenceClosedByATag(reply);
+    if (closed) return { kind: "command", ...closed };
+  }
+  if (blocks.length === 1) return { kind: "command", command: blocks[0]!, thought };
+  if (blocks.length > 1 && blocks.length <= parallel) return { kind: "commands", commands: blocks, thought };
   if (blocks.length > 1) return { kind: "invalid", problem: parallel > 1 ? `Your reply had ${blocks.length} command blocks; send at most ${parallel}.` : `Your reply had ${blocks.length} command blocks; send exactly one.` };
   return { kind: "invalid", problem: "Your reply had no command block. Send one ```sh block, or start with DONE or GIVE UP." };
 }

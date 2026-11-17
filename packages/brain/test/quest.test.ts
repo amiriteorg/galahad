@@ -222,6 +222,28 @@ describe("quests", () => {
     expect(parseAction("```sh\ntest 1 -lt 2 && echo \"a > b\"\n```")).toMatchObject({ kind: "command", command: 'test 1 -lt 2 && echo "a > b"' });
   });
 
+  test("a command dressed as a tool call, or a fence closed with a tag of the model's own, is still a command", () => {
+    // Seen on ultra, 17 November 2026, each three times in a row, and the trial stopped with nothing run: deepseek-v4-pro
+    // put its command in a tag's attribute, and closed a fence with a tag in place of its ```.
+    expect(parseAction('<sh command="cd /work/repo && pwd && git status --short && cat REFACTOR.md"></sh>')).toEqual({ kind: "command", command: "cd /work/repo && pwd && git status --short && cat REFACTOR.md", thought: "" });
+    expect(parseAction("Reading it first.\n<sh command=\"bun test 2>&1 | tail -5 &amp;&amp; echo &quot;ok&quot;\"/>")).toEqual({ kind: "command", command: 'bun test 2>&1 | tail -5 && echo "ok"', thought: "Reading it first." });
+    expect(parseAction("<bash>\nls -la\n</bash>")).toMatchObject({ kind: "command", command: "ls -la" });
+    const closedWithATag = "```sh\ncd /work/repo && cat > src/rollup.js <<'EOF'\nexport const x = 1;\nEOF\nbun test; echo \"exit=$?\"</TURD>";
+    expect(parseAction(closedWithATag)).toEqual({ kind: "command", command: "cd /work/repo && cat > src/rollup.js <<'EOF'\nexport const x = 1;\nEOF\nbun test; echo \"exit=$?\"", thought: "" });
+    // A fence the output limit cut off is no command: a part of one is never run.
+    expect(parseAction("```sh\ncat > a.js <<'EOF'\nexport const").kind).toBe("invalid");
+    // Two are still two (one at a time, unless he may send two), and a tag named in passing is none.
+    expect(parseAction('<sh command="a"></sh>\n<sh command="b"></sh>').kind).toBe("invalid");
+    expect(parseAction('<sh command="a"></sh>\n<sh command="b"></sh>', 2)).toEqual({ kind: "commands", commands: ["a", "b"], thought: "" });
+    expect(parseAction("I'd use the <sh> tag here, but first a thought.").kind).toBe("invalid");
+    expect(parseAction('<sh command=""></sh>').kind).toBe("invalid");
+    // A reply built to make reading it slow is read at once, and is no command.
+    const started = performance.now();
+    expect(parseAction("<sh>".repeat(30_000)).kind).toBe("invalid");
+    expect(parseAction(`\`\`\`sh\n${"</a".repeat(30_000)}`).kind).toBe("invalid");
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   test("the step budget is a hard limit", async () => {
     const h = harness({ engineer: [sh("a"), sh("b"), sh("c"), sh("d")] }, { maxSteps: 3 });
     const outcome = await h.run;
