@@ -485,6 +485,14 @@ const num = (x: number | null) => (x === null ? "—" : Number(x.toPrecision(6))
 /** A hidden test or a reviewer's verdict is a check that passed or didn't; an engineering answer is a number. */
 const isCheck = (a: TrialView["answers"][number]): boolean => a.units === "pass";
 
+/**
+ * A role's model that couldn't answer, said as it happened (once a run): that one answer was the other model's, measured
+ * and paid as its own, and the next is asked of the role's models in order again, so the run is not that model's.
+ */
+export function describeFallback(over: PassedOver): string {
+  return `${bold(`! ${over.model} couldn't answer as ${over.role}`)}: ${over.error.split("\n")[0]}. ${over.answered} answered in its place, and that answer is measured and paid as its own; the next is asked of the role's models in order again (said once a run).`;
+}
+
 export function describeTrial(t: TrialView, detail = false, prices?: Prices): string {
   const passed = t.answers.filter((a) => a.ok).length;
   const mark = t.status === "crashed" ? "!" : t.score === 1 ? "✓" : t.score > 0 ? "△" : "✗";
@@ -595,7 +603,7 @@ export async function trialRunFromCli(node: NodeClient, options: Omit<TrialRunOp
         } else if (event.type === "budget") {
           console.log(dim(`[budget ${budgetLabel(event.budget)}${event.byDefault ? " (the default: --budget to set your own)" : ""} · ${estimateLabel(event.estimate)}]\n`));
         } else if (event.type === "start") console.log(dim(`… ${event.problem.id} (seed ${event.seed})`));
-        else if (event.type === "fallback") console.log(`${bold(`! ${event.model} couldn't answer as ${event.role}`)}: ${event.error.split("\n")[0]}. ${event.answered} answers instead: what this run measures and pays for is that model.`);
+        else if (event.type === "fallback") console.log(describeFallback(event));
         else if (event.type === "done") console.log(describeTrial(event.trial));
         else if (event.type === "spent") {
           console.log(`\n${bold("■ Stopped at the budget:")} ${event.why}. ${event.finished} trial(s) finished and recorded${event.stopped ? `, ${event.stopped} stopped mid-way (not recorded)` : ""}${event.notStarted ? `, ${event.notStarted} not started` : ""}.`);

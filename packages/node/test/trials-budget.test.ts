@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, type RouteName, routes, spendTotal, TrialRecord, type TrialRunsView, type TrialView, type Usage, VARIANTS } from "@galahad/core";
 import { ENGINEERING_SUITE, pose, type TrialProblem } from "@galahad/brain";
-import { DEFAULT_TOKENS_PER_ATTEMPT, describeCost, describeDone, describeTrial, estimateLabel, estimateRun, runTrials, type TrialUnit } from "../src/trial-cli.ts";
+import { DEFAULT_TOKENS_PER_ATTEMPT, describeCost, describeDone, describeFallback, describeTrial, estimateLabel, estimateRun, runTrials, type TrialUnit } from "../src/trial-cli.ts";
 import { parseBudget, parsePins, parseTokens } from "../src/trial-commands.ts";
 
 /*
@@ -142,6 +142,13 @@ describe("a model that couldn't answer is never passed over in silence", () => {
     expect(trials.map((t) => t.models.includes("fake/engineer"))).toEqual([true, true]);
     // Four engineer turns over two trials: one notice.
     expect(said.filter((e) => e.type === "fallback")).toEqual([{ type: "fallback", role: "engineer", model: "plan/first", error: "plan → 400 MissingSessionID", answered: "fake/engineer" }]);
+  });
+
+  test("said as it is: that answer was the other model's, and the next is asked of the role's models in order again", () => {
+    // (Not "what this run measures": a turn the first model answers again is that model's, measured and paid as such.)
+    expect(describeFallback({ role: "engineer", model: "plan/first", error: "plan → 400 MissingSessionID\nmore of it", answered: "fake/engineer" })).toBe(
+      "! plan/first couldn't answer as engineer: plan → 400 MissingSessionID. fake/engineer answered in its place, and that answer is measured and paid as its own; the next is asked of the role's models in order again (said once a run).",
+    );
   });
 });
 
