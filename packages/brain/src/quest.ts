@@ -2,7 +2,7 @@ import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, typ
 import { type AgentDriver, type AgentModel, agentModelName, runAgent } from "./agents.ts";
 import { engramBriefing, engramProject } from "./engram.ts";
 import { readOf, testFilesOf, writesOf } from "./shell-paths.ts";
-import { checksAfter, type Trip, tripOf } from "./tripwires.ts";
+import { checksAfter, tellsAfter, type Trip, tripOf } from "./tripwires.ts";
 
 /*
  * A quest: plan → work → independent review, in a sandbox.
@@ -47,6 +47,8 @@ export interface QuestDeps {
   rules?(): readonly NamedRule[] | Promise<readonly NamedRule[]>;
   /** A tripwire stopped a command (`gate`: one of the gates), for the ledger. What it did stands whatever this does. */
   tripped?(trip: Trip & { command: string; gate?: boolean }): void | Promise<void>;
+  /** A command a rule of yours that tells matched has run (one of the work's, never a gate): you are told. The work never waits on it. */
+  told?(told: { rule: string; command: string; exitCode: number }): void | Promise<void>;
 }
 
 export interface QuestOptions {
@@ -688,6 +690,16 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       throw new Unread(redact(String((error as Error).message ?? error)).slice(0, 300));
     }
   };
+  /** A command your rules tell you of, run: handed on to tell you, never held up for it. */
+  const tell = (rules: readonly NamedRule[], command: string, exitCode: number): void => {
+    for (const rule of tellsAfter(rules, command)) {
+      void Promise.resolve()
+        .then(() => deps.told?.({ rule: rule.name, command, exitCode }))
+        .catch(() => {
+          /* you couldn't be told: the work goes on all the same */
+        });
+    }
+  };
   /** A command a tripwire stopped: said as an event and handed to the ledger. */
   const trip = async (found: Trip, command: string, step: number, gate = false): Promise<void> => {
     emit({ type: "tripped", step, command, rule: found.rule, does: found.does, why: found.why, ...(gate ? { gate: true } : {}) });
@@ -1100,6 +1112,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           if (result) emit({ type: "observation", step: first + i, exitCode: result.exitCode, durationMs: result.durationMs, output: seen[i]! });
           trail.push({ command: trailCommand(command), exitCode: result ? result.exitCode : -1, excerpt: result ? clip(seen[i]!.split("\n").slice(1).join("\n"), 600, 300) : seen[i]! });
         }
+        // What your rules tell you of: each command of the batch that ran, however it ended.
+        for (const [i, command] of batch.entries()) if (results[i]) tell(rules, command, results[i]!.exitCode);
         const stuck = notes.findIndex((n) => n.stop);
         if (stuck >= 0) return looped(batch[stuck]!, seen[stuck]!);
         // Your checks, once the whole batch has run: each that a command of it called for (one that ran and exited 0), once.
@@ -1149,6 +1163,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         const seen = observation(result);
         emit({ type: "observation", step: steps, exitCode: result.exitCode, durationMs: result.durationMs, output: seen });
         trail.push({ command: trailCommand(action.command), exitCode: result.exitCode, excerpt: clip(seen.split("\n").slice(1).join("\n"), 600, 300) });
+        tell(rules, action.command, result.exitCode);
         const again = repeated(action.command, steps, result, seen);
         if (again.stop) return looped(action.command, seen);
         // Your checks after it, if it ran clean and one matches it.

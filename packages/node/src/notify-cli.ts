@@ -7,7 +7,7 @@ import { alertReserve, CLOCK, NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY_PER_DAY, ty
  *   galahad notify                          the devices he can reach, what he tells you, quiet hours, the day's
  *                                           limit, and what was sent today
  *   galahad notify test [device]            one test notification: to every device, or the one named
- *   galahad notify kinds [<kind> on|off …]  what he tells you (needs-you, approval, finished, question)
+ *   galahad notify kinds [<kind> on|off …]  what he tells you (needs-you, approval, finished, question, told)
  *   galahad notify quiet [on | off | HH:MM-HH:MM] [--tz Europe/Copenhagen]
  *   galahad notify limit <n>                at most n a day
  *   galahad notify off <device>             remove a device's subscription

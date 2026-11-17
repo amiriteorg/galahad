@@ -49,6 +49,13 @@ describe("a tripwire typed into the app", () => {
     expect(RuleInput.safeParse({ name: "r", does: "check", words: ["x"], run: "x".repeat(MAX_CHECK_LENGTH + 1) }).success).toBe(false);
   });
 
+  test("a rule that tells you: what it matches, and nothing to run", () => {
+    const made = ruleFromForm({ name: "pushes", does: "tell", globs: "", contains: " git push ", run: "bun test" });
+    expect(made).toEqual({ rule: { name: "pushes", does: "tell", words: [], contains: "git push" } });
+    expect("rule" in made && RuleInput.safeParse(made.rule).success).toBe(true);
+    expect(ruleFromForm({ name: "pushes", does: "tell", globs: "", contains: "" })).toEqual({ problem: "Give it a glob to match a command's words, or a piece of text it must hold." });
+  });
+
   test("the app's limits are the contract's", () => {
     expect(MAX_RULE_GLOBS).toBe(CONTRACT_GLOBS);
     const rule = (words: string[], contains?: string) => RuleInput.safeParse({ name: "r", does: "halt", words, ...(contains ? { contains } : {}) }).success;
@@ -69,6 +76,7 @@ describe("a tripwire in words", () => {
     expect(ruleWhen({ does: "refuse", words: ["a", "b", "c"] })).toBe("refuses the command when a word matches a, b or c");
     expect(ruleWhen({ does: "check", run: "bunx tsc --noEmit", words: ["*.ts"] })).toBe("runs bunx tsc --noEmit after a command that succeeds, when a word matches *.ts");
     expect(ruleWhen({ does: "check", run: "bun test", words: [], contains: "git commit" })).toBe('runs bun test after a command that succeeds, when it holds "git commit"');
+    expect(ruleWhen({ does: "tell", words: ["migrations/**"] })).toBe("tells you when a command has run, when a word matches migrations/**");
   });
 
   test("in parts, so what it matches is shown as written: each glob, and its text", () => {

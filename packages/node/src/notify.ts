@@ -8,6 +8,7 @@ import {
   limitMessage,
   limitReached,
   noticeItem,
+  toldItem,
   notifyDay,
   type NotifyDeviceView,
   type NotifyItem,
@@ -244,7 +245,7 @@ export class NotifyService {
         return [];
       }
     };
-    for (const notice of safely("notices", () => this.o.sources.notices())) out.push(noticeItem(notice));
+    for (const notice of safely("notices", () => this.o.sources.notices())) out.push(noticeItem(notice), toldItem(notice));
     for (const action of safely("approvals", () => this.o.sources.actions())) out.push(actionItem({ id: action.id, connector: action.connector, tool: action.tool, state: action.state, requestedMs: hlcMs(action.requestedAt), expires: action.expires }, now));
     for (const name of safely("key requests", () => this.o.sources.secretRequests())) out.push(secretItem(name));
     for (const id of safely("connector requests", () => this.o.sources.connectorRequests())) out.push(connectorItem(id));

@@ -1,5 +1,6 @@
 /*
- * Your rules as the app takes and shows them (core's rules.ts): tripwires before a command, checks after one. The
+ * Your rules as the app takes and shows them (core's rules.ts): tripwires before a command, checks after one, and rules
+ * that tell you one has run. The
  * globs typed into a field, the rule a form says, and what a rule does in words. Pure functions (no DOM), unit-tested.
  * The limits are the contract's, restated here so the app doesn't carry the schema library for them; a test holds the
  * two together.
@@ -12,8 +13,8 @@ export const MAX_CHECK_LENGTH = 1000;
 const NAME = /^[a-z0-9][a-z0-9._-]{0,39}$/;
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
-/** Halt and refuse: a tripwire, before a command. Check: yours, run after one. */
-export type RuleDoes = "halt" | "refuse" | "check";
+/** Halt and refuse: a tripwire, before a command. Check: yours, run after one. Tell: you are told one has run. */
+export type RuleDoes = "halt" | "refuse" | "check" | "tell";
 
 /** A rule as the node takes it (POST /api/rules). */
 export interface RuleSent {
@@ -60,7 +61,9 @@ export function ruleParts(rule: { does: RuleDoes; words: readonly string[]; cont
   const parts: RulePart[] =
     rule.does === "check"
       ? [{ kind: "words", text: "runs " }, { kind: "command", text: rule.run ?? "" }, { kind: "words", text: " after a command that succeeds, when " }]
-      : [{ kind: "words", text: rule.does === "halt" ? "halts the work when " : "refuses the command when " }];
+      : rule.does === "tell"
+        ? [{ kind: "words", text: "tells you when a command has run, when " }]
+        : [{ kind: "words", text: rule.does === "halt" ? "halts the work when " : "refuses the command when " }];
   if (rule.words.length) {
     parts.push({ kind: "words", text: "a word matches " });
     rule.words.forEach((glob, i) => {

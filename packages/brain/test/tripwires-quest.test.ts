@@ -24,6 +24,7 @@ function harness(script: Partial<Record<QuestRole, string[]>>, rules: NamedRule[
   const events: QuestEvent[] = [];
   const commands: string[] = [];
   const told: { rule: string; does: string; why: string; command: string; gate?: boolean }[] = [];
+  const toldYou: { rule: string; command: string; exitCode: number }[] = [];
   const run = runQuest(
     { goal: "make it so", environment: "a test sandbox", ...options },
     {
@@ -40,6 +41,7 @@ function harness(script: Partial<Record<QuestRole, string[]>>, rules: NamedRule[
       },
       rules: () => (typeof rules === "function" ? rules() : rules),
       tripped: async (trip) => void told.push(trip),
+      told: async (t) => void toldYou.push(t),
       emit: (event) => events.push(event),
       sleep: async () => {},
     },
@@ -47,8 +49,38 @@ function harness(script: Partial<Record<QuestRole, string[]>>, rules: NamedRule[
   const engineerSaw = (turn: number) => seen.filter((s) => s.role === "engineer")[turn]!.messages.at(-1)!.content;
   const trips = () => events.filter((e): e is Tripped => e.type === "tripped");
   const checks = () => events.filter((e): e is Checked => e.type === "checked");
-  return { run, seen, events, commands, told, engineerSaw, trips, checks };
+  return { run, seen, events, commands, told, toldYou, engineerSaw, trips, checks };
 }
+
+const tellRule = (name: string, words: string[], contains?: string): NamedRule => ({ name, on: "after", does: "tell", words, ...(contains !== undefined ? { contains } : {}) });
+
+describe("tell", () => {
+  test("each command a rule that tells matches is told of once it has run, however it ended, a batch's each; never a gate", async () => {
+    const pushes = tellRule("pushes", ["git"], "push");
+    const h = harness({ engineer: [sh("git push origin main"), sh("echo a", "git push --force fail"), "DONE\nPushed."] }, [pushes], { parallelCommands: 2, gates: ["git push --dry-run"] });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+    await Bun.sleep(5);
+    expect(h.toldYou).toEqual([
+      { rule: "pushes", command: "git push origin main", exitCode: 0 },
+      { rule: "pushes", command: "git push --force fail", exitCode: 1 },
+    ]);
+    // What tells you neither stops nor slows the work: every command ran, and the engineer was told nothing of it.
+    expect(h.commands.filter((c) => c.startsWith("git push")).length).toBeGreaterThanOrEqual(3);
+    expect(h.engineerSaw(1)).not.toContain("pushes");
+  });
+
+  test("a command that ran is told of even when it ends the quest (the same failure again), alone or in a batch", async () => {
+    const pushes = tellRule("pushes", ["git"], "push");
+    const alone = harness({ engineer: [sh("git push fail"), sh("git push fail"), sh("git push fail"), sh("echo never")] }, [pushes]);
+    expect((await alone.run).status).toBe("stopped");
+    const batch = harness({ engineer: [sh("echo a", "git push fail"), sh("echo b", "git push fail"), sh("echo c", "git push fail"), sh("echo never")] }, [pushes], { parallelCommands: 2 });
+    expect((await batch.run).status).toBe("stopped");
+    await Bun.sleep(5);
+    expect(alone.toldYou.map((t) => t.exitCode)).toEqual([1, 1, 1]);
+    expect(batch.toldYou.map((t) => t.exitCode)).toEqual([1, 1, 1]);
+  });
+});
 
 describe("refuse", () => {
   test("the command isn't run; the engineer is told which rule refused it and why; the work goes on", async () => {

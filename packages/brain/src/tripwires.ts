@@ -1,4 +1,4 @@
-import type { NamedCheck, NamedRule, RuleDoes } from "@galahad/core";
+import type { NamedCheck, NamedRule, NamedTell, RuleDoes } from "@galahad/core";
 import { commandWords, readOf } from "./shell-paths.ts";
 
 /*
@@ -134,5 +134,14 @@ export function tripOf(rules: readonly NamedRule[], command: string): Trip | nul
 export function checksAfter(rules: readonly NamedRule[], command: string): NamedCheck[] {
   if (readOf(command) !== null) return [];
   const words = wordsOf(command);
-  return rules.filter((r): r is NamedCheck => r.on === "after" && matchOf(r, command, words) !== null).sort(byName);
+  return rules.filter((r): r is NamedCheck => r.on === "after" && r.does === "check" && matchOf(r, command, words) !== null).sort(byName);
+}
+
+/**
+ * The rules that tell you a command has run, by name, however it ended: what you asked to hear of, the moment it runs.
+ * Unlike a check, a command that only shows a file is told of too (you may want to know what was read).
+ */
+export function tellsAfter(rules: readonly NamedRule[], command: string): NamedTell[] {
+  const words = wordsOf(command);
+  return rules.filter((r): r is NamedTell => r.on === "after" && r.does === "tell" && matchOf(r, command, words) !== null).sort(byName);
 }

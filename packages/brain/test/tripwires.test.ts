@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { NamedCheck, NamedRule } from "@galahad/core";
+import type { NamedCheck, NamedRule, NamedTell } from "@galahad/core";
 import { commandWords } from "../src/shell-paths.ts";
-import { checksAfter, compileGlob, globMatches, tripOf } from "../src/tripwires.ts";
+import { checksAfter, compileGlob, globMatches, tellsAfter, tripOf } from "../src/tripwires.ts";
 
 /*
  * Tripwires: your rules, checked before a command runs. A rule's globs are matched against the command's words as
@@ -175,5 +175,20 @@ describe("a check, against a command", () => {
     expect(checksAfter([...rules].reverse(), "touch src/a.ts").map((r) => r.name)).toEqual(["a-types", "z-lint"]);
     expect(tripOf(rules, "touch src/a.ts")?.rule).toBe("no-locks");
     expect(tripOf(rules.filter((r) => r.on === "after"), "touch src/a.ts")).toBeNull();
+  });
+});
+
+describe("a rule that tells you, against a command", () => {
+  const tell = (name: string, words: string[], contains?: string): NamedTell => ({ name, on: "after", does: "tell", words, ...(contains !== undefined ? { contains } : {}) });
+
+  test("a command it matches is told of, a command that only shows a file too; it is never a check, nor a check one", () => {
+    const pushes = tell("pushes", ["git"], "push");
+    const reads = tell("reads", [".env*"]);
+    const types = check("types", "bunx tsc --noEmit", ["*.ts"]);
+    expect(tellsAfter([pushes, types], "git push origin main")).toEqual([pushes]);
+    expect(tellsAfter([pushes], "git pull")).toEqual([]);
+    expect(tellsAfter([reads], "cat .env.local")).toEqual([reads]);
+    expect(checksAfter([pushes, reads, types], "git push origin main && cat .env && echo 1 > a.ts")).toEqual([types]);
+    expect(tellsAfter([tell("b", ["git"]), tell("a", ["git"])], "git status").map((r) => r.name)).toEqual(["a", "b"]);
   });
 });

@@ -131,6 +131,7 @@ import {
   Steering,
   clip,
   type Trip,
+  tellsAfter,
   tripOf,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
@@ -900,6 +901,22 @@ export function createApp(ctx: AppContext) {
   const rulesView = (): RuleView[] => ctx.store.rules().map((r) => ({ name: r.name, rule: readRule(r.rule), setAt: decodeHlc(r.hlc).ms, setVia: r.via }));
   /** The tripwires the quests this node runs or serves are held to, as they stand now. */
   const rulesInForce = (): NamedRule[] => rulesView().flatMap((r) => (r.rule ? [{ name: r.name, ...r.rule }] : []));
+  /**
+   * A command a rule of yours that tells matched has run: a notice in your Inbox, once for each rule and task (keyed by
+   * both), saying where, the command (its first line, redacted) and how it ended. Only the first is written: the log
+   * holds one event for it however often the task runs such a command, and one you dismissed stays dismissed. Its
+   * notification is its own kind, once for each notice (core's toldItem).
+   */
+  function tellYou(rule: string, quest: string, command: string, exitCode: number, about?: string): void {
+    const key = `rule:${rule}:${quest}`.replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 160);
+    if (ctx.store.lww(`notice:${key}`)) return;
+    // (Below its title, which names the rule: where it ran, how it ended, and the command.)
+    const where = about ?? `one of his quests (${quest.slice(0, 64)})`;
+    const ended = exitCode === 0 ? "and it succeeded" : `and it ended with ${exitCode}`;
+    const body = `In ${where}, ${ended}:\n$ ${clip(redact(command.split("\n")[0] ?? ""), 300, 100)}`;
+    ctx.store.emit(ctx.identity, "notice.raised", { key, severity: "info", title: `Your rule ${rule}: a command it matches has run`, body: body.slice(0, 2000), source: `rule:${rule}`, at: Date.now() });
+  }
+
   /**
    * A command a tripwire stopped, as a line in the ledger: the rule, what it did and why, the quest, the command (redacted,
    * its middle cut when long), and what it was part of (`about`: a knight's task).
@@ -1899,6 +1916,7 @@ export function createApp(ctx: AppContext) {
       // holds them now; each trip a line in the ledger under its VM's quest.
       rules: rulesInForce,
       tripped: (member, given, trip) => ledgerTrip(armQuest(teammateLabel(member.id)), trip, trip.command, trip.gate === true, `task ${given.id}`),
+      told: (member, given, t) => tellYou(t.rule, `${armQuest(teammateLabel(member.id))}.${given.id}`, t.command, t.exitCode, `${member.name}'s task ${given.id}`),
       tools: (member, signal) => {
         const p = teammatePrincipal(member.id);
         const allowed = new Set(["recall", "remember", "skills", "skill_read", "connectors", "connector_call", "connector_request", "archive_search", "archive_read", "fleet", "compute", "ledger", "notices"]);
@@ -3085,6 +3103,14 @@ export function createApp(ctx: AppContext) {
       if (!ctx.store.rules().some((r) => r.name === input.name)) throw new HttpError(404, `no rule "${input.name}"`);
       ctx.store.emit(ctx.identity, "rule.removed", { name: input.name }, { trust: "owner", ...(p.kind === "client" ? { via: p.device } : {}) });
       return { removed: input.name };
+    },
+    ruleTold: (input, p) => {
+      const rule = rulesInForce().find((r) => r.name === input.rule);
+      if (!rule) throw new HttpError(404, `no rule "${input.rule}" in force`);
+      // Only what the rule really asks to be told of: a notice it doesn't support is never raised.
+      if (!tellsAfter([rule], input.command).length) throw new HttpError(400, `"${input.rule}" doesn't tell of that command`);
+      tellYou(input.rule, questRef(p, input.quest), input.command, input.exitCode);
+      return { ok: true };
     },
     ruleTripped: (input, p) => {
       const rule = rulesInForce().find((r) => r.name === input.rule);

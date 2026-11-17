@@ -13,7 +13,8 @@ import { deviceName } from "./activity.ts";
  * Tripwires and checks, on the Loops page: your rules on the commands his work runs (core's rules.ts). Before each
  * command of his quests (yours from a terminal, his loops', a trial's) and of a knight's task on his own runner, and
  * before each gate, a tripwire halts the work or refuses that command, and he is told which and why. After such a
- * command has succeeded, a check runs a command of yours, and he is told at once if it fails. Data you write, never a
+ * command has succeeded, a check runs a command of yours, and he is told at once if it fails; a rule that tells you
+ * puts a notice in your Inbox once such a command has run (and a notification of its own kind). Data you write, never a
  * model's judgment; yours alone to set (fleet:admin). A coding tool's own commands inside its VM aren't seen, and the
  * section says so.
  */
@@ -27,10 +28,11 @@ const sentence = (rule: NonNullable<RuleView["rule"]>): HTMLElement =>
   h("span", {}, ...ruleParts(rule).map((part, i) => (part.kind === "words" ? (i ? part.text : capital(part.text)) : h("span", { class: "mono" }, part.text))), ".");
 
 /** How a rule's row leads: what it does, at a glance. */
-const LEAD: Record<RuleDoes, { icon: "ban" | "shield" | "shield-check"; tone: "danger" | "warn" | "info" }> = {
+const LEAD: Record<RuleDoes, { icon: "ban" | "shield" | "shield-check" | "bell"; tone: "danger" | "warn" | "info" }> = {
   halt: { icon: "ban", tone: "danger" },
   refuse: { icon: "shield", tone: "warn" },
   check: { icon: "shield-check", tone: "info" },
+  tell: { icon: "bell", tone: "info" },
 };
 
 /** The Tripwires section, and how to bring it up to date (the page asks now and then). */
@@ -60,7 +62,7 @@ export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; ref
         empty: {
           icon: "shield",
           title: "No tripwires or checks",
-          body: "A tripwire halts the work, or refuses a command, whose words match a glob of yours: *.lock, .env*, migrations/**, rm. A check runs a command of yours after one that matches: bunx tsc --noEmit after *.ts.",
+          body: "A tripwire halts the work, or refuses a command, whose words match a glob of yours: *.lock, .env*, migrations/**, rm. A check runs a command of yours after one that matches: bunx tsc --noEmit after *.ts. A rule can also just tell you when one has run: git with the text push.",
         },
       }),
     );
@@ -105,6 +107,7 @@ export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; ref
         { value: "refuse", label: "Refuse" },
         { value: "halt", label: "Halt" },
         { value: "check", label: "Check after" },
+        { value: "tell", label: "Tell me" },
       ],
       does,
       (value) => {
@@ -149,7 +152,7 @@ export function tripwiresSection(ctx: Ctx, scope: Scope): { el: HTMLElement; ref
         { class: "stack tight" },
         h("div", { class: "label" }, "What it does"),
         doesControl.el,
-        note("Refuse: that command isn't run, he is told which rule and why, and the work goes on. Halt: the quest or task stops, saying which rule. Check after: once the command has succeeded, yours runs, and he is told if it fails."),
+        note("Refuse: that command isn't run, he is told which rule and why, and the work goes on. Halt: the quest or task stops, saying which rule. Check after: once the command has succeeded, yours runs, and he is told if it fails. Tell me: once it has run, however it ended, a notice in your Inbox and a notification, once for each task."),
       ),
       runField,
       status,

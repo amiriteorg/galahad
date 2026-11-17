@@ -13,6 +13,7 @@ import {
   NOTIFY_GAP_MS,
   NOTIFY_TITLE_MAX,
   noticeItem,
+  toldItem,
   notifyDay,
   type NotifyItem,
   notifyLine,
@@ -156,6 +157,19 @@ describe("when he speaks, and when he stays silent", () => {
     const worse = { ...disk, alert: true };
     expect(plan([worse], { told: new Map([["notice:disk", { alert: false }]]) }).send).toEqual([worse]);
     expect(plan([worse], { told: new Map([["notice:disk", { alert: true }]]) }).send).toEqual([]);
+  });
+
+  test("a rule of yours told of a command: its own kind, the rule's name and fixed words, never the command (a model's words)", () => {
+    const pushes = { key: "rule:pushes:q-1", severity: "info", source: "rule:pushes", dismissed: false };
+    expect(toldItem(pushes)).toEqual({ key: "notice:rule:pushes:q-1", kind: "told", alert: false, title: "Galahad: your rule pushes", body: "A command it matches has run. The Inbox says which, where and how it ended.", open: "inbox", needs: ["mind:read"] });
+    // Not a rule's notice, a dismissed one, or a finding: none of this kind (a finding is needs-you's).
+    expect([toldItem({ ...pushes, source: "heartbeat" }), toldItem({ ...pushes, dismissed: true }), toldItem({ ...pushes, severity: "warn" })]).toEqual([null, null, null]);
+    expect(noticeItem({ ...pushes, title: "Your rule pushes: a command it matches has run" })).toBeNull();
+    // Off, it says nothing (the notice stays in the Inbox).
+    const prefs: NotifyPrefs = { ...NOTIFY_DEFAULTS, kinds: { ...NOTIFY_DEFAULTS.kinds, told: false } };
+    const told = toldItem(pushes)!;
+    expect(plan([told], { prefs }).send).toEqual([]);
+    expect(plan([told]).send).toEqual([told]);
   });
 
   test("a kind that's switched off says nothing; neither does a kind this version no longer has", () => {

@@ -26,6 +26,7 @@ export const NOTIFY_KIND_INFO: Record<NotifyKind, { label: string; hint: string;
   approval: { label: "An approval is waiting", hint: "Something he or an agent wants to send or delete, filed for your answer.", on: true },
   finished: { label: "He has finished", hint: "A chat turn nobody was watching, or a quest you started: done, unverified, gave up or failed, said as it is.", on: true },
   question: { label: "He has a question", hint: "An answer that ends by asking you, or a key or connector he needs.", on: true },
+  told: { label: "Your rules tell you", hint: "A command a rule of yours matches has run (galahad rule add … --tell): once for each rule and task.", on: true },
 };
 
 export interface QuietHours {
@@ -47,7 +48,7 @@ export interface NotifyPrefs {
 export const NOTIFY_PER_DAY = { min: 1, max: 50, default: 12 } as const;
 /** Quiet hours are read in the node's own time zone until you set one (readNotifyPrefs' `zone`); UTC where it has none. */
 export const NOTIFY_DEFAULTS: NotifyPrefs = {
-  kinds: { "needs-you": true, approval: true, finished: true, question: true },
+  kinds: { "needs-you": true, approval: true, finished: true, question: true, told: true },
   quiet: { on: true, from: "22:00", to: "07:00", tz: "UTC" },
   perDay: NOTIFY_PER_DAY.default,
 };
@@ -138,6 +139,19 @@ export function noticeItem(n: { key: string; severity: string; title: string; so
   const bank = n.key.startsWith("bank") || n.source === "bank" || ABOUT_BANK.test(n.title);
   const line = !bank && TITLED_SOURCES.test(n.source) ? notifyLine(n.title) : null;
   return { key: `notice:${n.key}`, kind: "needs-you", alert, title: alert ? "Galahad: alert" : "Galahad: this needs you", body: line ?? INBOX_NEEDS_YOU, open: "inbox", needs: ["mind:read"] };
+}
+
+/** A notice a rule of yours that tells raises (its source `rule:<name>`): the rule's name is yours, never a model's words. */
+const RULE_SOURCE = /^rule:([a-z0-9][a-z0-9._-]{0,39})$/;
+
+/**
+ * A command a rule of yours matches has run: once for each rule and task (the notice is one per pair, its count kept in
+ * the Inbox). Only the rule's name and fixed words: the command itself is the model's words, and stays in the Inbox.
+ */
+export function toldItem(n: { key: string; severity: string; source: string; dismissed: boolean }): NotifyItem | null {
+  const rule = RULE_SOURCE.exec(n.source)?.[1];
+  if (!rule || n.dismissed || n.severity !== "info") return null;
+  return { key: `notice:${n.key}`, kind: "told", alert: false, title: `Galahad: your rule ${rule}`, body: "A command it matches has run. The Inbox says which, where and how it ended.", open: "inbox", needs: ["mind:read"] };
 }
 
 /** How long an action must have waited before it's told: one that a standing order answers at once never is. */
@@ -287,6 +301,7 @@ export function notifyMessage(items: readonly NotifyItem[], salt = ""): NotifyPa
     count("approval") ? counted(count("approval"), "1 approval is waiting", "% approvals are waiting") : null,
     count("question") ? counted(count("question"), "he has a question", "he has % questions") : null,
     count("finished") ? counted(count("finished"), "he finished 1 piece of work", "he finished % pieces of work") : null,
+    count("told") ? counted(count("told"), "a rule of yours told you of a command", "rules of yours told you of % commands") : null,
   ].filter((part): part is string => part !== null);
   const body = parts.join(", ");
   // One place when they all open the same one; otherwise the Inbox, where what needs you is.

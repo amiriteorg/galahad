@@ -366,7 +366,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
     { actions: go("Memory", "memory"), note: "Each goes with every answer of his once you keep it, in your words if you like. Until then it is only his note." },
     aboutYouBox,
   );
-  const noticesSection = section("Noticed by the heartbeat", { actions: go("Loops", "loops") }, noticesBox);
+  const noticesSection = section("Noticed", { actions: go("Loops", "loops") }, noticesBox);
   // Kept across re-renders so it stays open while the outbox changes.
   const history = disclosure(historySummary, { flush: true, hidden: true }, historyRows);
 

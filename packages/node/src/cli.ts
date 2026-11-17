@@ -260,7 +260,7 @@ Notifications (he comes to you: Web Push to your own paired devices, encrypted t
                                   what was sent today. A device is turned on from that device: the app's
                                   Settings → Notifications (on an iPhone, from the Home Screen app)
   notify test [device]            one test notification, to every device or the one named
-  notify kinds [<kind> on|off …]  what he tells you: needs-you, approval, finished, question (all on)
+  notify kinds [<kind> on|off …]  what he tells you: needs-you, approval, finished, question, told (all on)
   notify quiet [on|off|HH:MM-HH:MM] [--tz Europe/Copenhagen]
                                   quiet hours (22:00-07:00, the node's own time zone until you give one): everything but an alert waits,
                                   then one message says what waited
@@ -301,6 +301,9 @@ Tripwires and checks (your rules on the commands his work runs: data, never a mo
   rule add <name> --check "<command>" <glob>… [--contains text]
                                   after a command that matches has run and exited 0, your command runs where his work
                                   runs, and he is told at once if it fails (rule add types --check "bunx tsc --noEmit" '*.ts')
+  rule add <name> --tell <glob>… [--contains text]
+                                  after a command that matches has run, however it ended, you are told: a notice in your
+                                  Inbox and a notification, once for each task (rule add pushes --tell git --contains push)
 
 Bank (read-only: balances and transactions of your own accounts, through Enable Banking)
   bank setup --app-id <uuid> --key /path/to/<app-id>.pem --redirect-url https://…/bank/callback
@@ -572,10 +575,11 @@ async function main(): Promise<void> {
       ask: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       help: { type: "boolean", short: "h" },
-      // Tripwires and checks: `rule add <name> --halt|--refuse|--check "command" <glob>… --contains text`.
+      // Tripwires, checks and rules that tell you: `rule add <name> --halt|--refuse|--check "command"|--tell <glob>… --contains text`.
       halt: { type: "boolean" },
       refuse: { type: "boolean" },
       check: { type: "string" },
+      tell: { type: "boolean" },
       contains: { type: "string" },
       // Quests: gates ("done means this command passes").
       gate: { type: "string", multiple: true },

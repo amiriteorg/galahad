@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { avatarExpression, bodyFingerprint, ceilingThreads, clientIdFromKey, KERNEL, type LedgerEntry, REFERENCE_SINGLE, routes, type Scope, signRequest, teamArmLabel, type RouteName, type SandboxView, type TeamEngramStatus, type TeamSnapshot, type TeamTask, utf8 } from "@galahad/core";
+import { avatarExpression, bodyFingerprint, ceilingThreads, clientIdFromKey, KERNEL, type LedgerEntry, type NoticeView, REFERENCE_SINGLE, routes, type Scope, signRequest, teamArmLabel, type RouteName, type SandboxView, type TeamEngramStatus, type TeamSnapshot, type TeamTask, utf8 } from "@galahad/core";
 import { requestPairing, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { NETWORKS } from "@galahad/sandbox";
@@ -363,6 +363,31 @@ test("a knight's task on the node is held to your tripwires: a refused command n
     });
   } finally {
     await api("removeRule", { name: "no-beta-writes" });
+  }
+});
+
+test("a rule that tells you hears of a knight's task: once for each task, saying whose and how it ended; never of a gate", async () => {
+  await api("setRule", { name: "result-writes", does: "tell", words: ["result.txt"], contains: "printf" });
+  await api("setRule", { name: "gate-runs", does: "tell", words: [], contains: "# gate-" });
+  try {
+    const name = (await snapshot()).teammates.find((member) => member.id === "ada")!.name;
+    const told = async (rule: string) => (await api<{ notices: NoticeView[] }>("notices")).notices.filter((n) => n.source === `rule:${rule}`);
+    const done = [];
+    for (const tag of ["ALPHA", "GAMMA"]) {
+      const made = (await create("ada", tag)).task;
+      await until(async () => !["queued", "running"].includes((await task(made.id)).status));
+      done.push({ id: made.id, tag });
+    }
+    const notices = await told("result-writes");
+    expect(notices).toHaveLength(2);
+    for (const { id, tag } of done) {
+      expect(notices.some((n) => n.body === `In ${name}'s task ${id}, and it succeeded:\n$ printf '%s' ${tag} > result.txt # write-${tag.toLowerCase()}`)).toBe(true);
+    }
+    // A gate is a check of its own: never told of.
+    expect(await told("gate-runs")).toEqual([]);
+  } finally {
+    await api("removeRule", { name: "result-writes" });
+    await api("removeRule", { name: "gate-runs" });
   }
 });
 

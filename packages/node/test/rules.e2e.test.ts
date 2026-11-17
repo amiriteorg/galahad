@@ -185,3 +185,36 @@ describe("a trip", () => {
     expect(trips().length).toBe(before);
   });
 });
+
+describe("a rule that tells you", () => {
+  const notice = (key: string) => daemon.store.lww<{ severity: string; title: string; body: string; source: string; dismissed: boolean } | null>(`notice:${key}`)?.value ?? null;
+
+  test("set with --tell (no command of its own); a command it matches has run: a notice in your Inbox, once for each task", async () => {
+    expect((await admin("setRule", { name: "pushes", does: "tell", words: ["git"], contains: "push" })).status).toBe(200);
+    expect((await rulesNow()).find((r) => r.name === "pushes")?.rule).toEqual({ on: "after", does: "tell", words: ["git"], contains: "push" });
+    expect((await admin("setRule", { name: "bad-tell", does: "tell", words: ["git"], run: "echo hi" })).status).toBe(400);
+    expect((await admin("ruleTold", { quest: "q-tell1", rule: "pushes", command: `git push origin main && echo sk-ant-api03-${"FAKE".repeat(8)}`, exitCode: 0 })).status).toBe(200);
+    expect(notice("rule:pushes:q-tell1")).toMatchObject({ severity: "info", source: "rule:pushes", title: "Your rule pushes: a command it matches has run", dismissed: false });
+    // What its title says isn't said again: where it ran, how it ended, and the command.
+    expect(notice("rule:pushes:q-tell1")!.body).toStartWith("In one of his quests (q-tell1), and it succeeded:\n$ git push origin main && echo ");
+    expect(notice("rule:pushes:q-tell1")!.body).not.toContain("FAKEFAKE");
+    const said = notice("rule:pushes:q-tell1")!.body;
+    // Again in the same task, as many times as it runs: nothing more is written (the notice says the first; the log
+    // holds one event for it, however busy the task).
+    const events = daemon.store.eventCount();
+    for (const exitCode of [1, 0, 0]) expect((await admin("ruleTold", { quest: "q-tell1", rule: "pushes", command: "git push --force", exitCode })).status).toBe(200);
+    expect(daemon.store.eventCount()).toBe(events);
+    expect(notice("rule:pushes:q-tell1")!.body).toBe(said);
+  });
+
+  test("one you dismissed stays quiet for that task; another task is told again; what it doesn't match, or no such rule: nothing", async () => {
+    daemon.store.emit(daemon.identity, "notice.dismissed", { key: "rule:pushes:q-tell1" });
+    expect((await admin("ruleTold", { quest: "q-tell1", rule: "pushes", command: "git push", exitCode: 0 })).status).toBe(200);
+    expect(notice("rule:pushes:q-tell1")).toMatchObject({ dismissed: true });
+    expect((await arm("ruleTold", { quest: "q-agent2", rule: "pushes", command: "git push", exitCode: 0 })).status).toBe(200);
+    expect(notice("rule:pushes:arm.test-arm.q-agent2")).toMatchObject({ dismissed: false, source: "rule:pushes" });
+    expect((await admin("ruleTold", { quest: "q-tell3", rule: "pushes", command: "git pull", exitCode: 0 })).status).toBe(400);
+    expect((await admin("ruleTold", { quest: "q-tell3", rule: "nobody", command: "git push", exitCode: 0 })).status).toBe(404);
+    expect(notice("rule:pushes:q-tell3")).toBeNull();
+  });
+});

@@ -4,7 +4,7 @@
  * worker reads it at its boundary and should carry nothing else.
  */
 
-export const NOTIFY_KINDS = ["needs-you", "approval", "finished", "question"] as const;
+export const NOTIFY_KINDS = ["needs-you", "approval", "finished", "question", "told"] as const;
 export type NotifyKind = (typeof NOTIFY_KINDS)[number];
 
 /** Where a notification opens the app. A fixed list: a payload can't name anything else. */

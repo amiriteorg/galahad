@@ -173,6 +173,15 @@ const tellTrip =
       () => {},
     );
 
+/** A command a rule of yours that tells matched has run, told to the node (which checks the rule matches it, then tells you). Never holds the quest up. */
+const tellTold =
+  (node: NodeClient, quest: string) =>
+  (told: { rule: string; command: string; exitCode: number }): Promise<void> =>
+    node.call("ruleTold", { quest, rule: told.rule, command: told.command.slice(0, 100_000), exitCode: told.exitCode }).then(
+      () => {},
+      () => {},
+    );
+
 /** A quest's gates in a line, for its memory and the terminal: how many passed, and which didn't. */
 export function gatesLine(gates: readonly GateResult[]): string {
   const failed = gates.filter((g) => g.exitCode !== 0);
@@ -656,6 +665,7 @@ async function workIn(
       // Your tripwires, as the node holds them before each command; each trip a line in its ledger, under this sandbox's quest.
       rules: () => rulesOf(node),
       tripped: tellTrip(node, shop.quest),
+      told: tellTold(node, shop.quest),
     },
   );
   // A repository's changes are kept as a patch (new files included) to read, and as a
@@ -1066,6 +1076,7 @@ export async function runNodeInvestigation(
         signal: hooks.signal,
         rules: () => rulesOf(node),
         tripped: tellTrip(node, quest),
+        told: tellTold(node, quest),
       },
     );
     const read = await exec("cat /work/out/results.json 2>/dev/null | head -c 200000", 60).catch(() => null);

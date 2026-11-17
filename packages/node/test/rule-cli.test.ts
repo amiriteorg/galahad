@@ -41,6 +41,10 @@ describe("what a rule says", () => {
     expect(describeRule({ on: "after", does: "check", run: "bunx tsc --noEmit", words: ["*.ts", "*.tsx"] })).toBe("runs bunx tsc --noEmit after a command that succeeds, when a word matches *.ts or *.tsx");
     expect(describeRule({ on: "after", does: "check", run: "bun test", words: [], contains: "git commit" })).toBe('runs bun test after a command that succeeds, when it holds "git commit"');
   });
+
+  test("a rule that tells you: of a command that has run, however it ended", () => {
+    expect(describeRule({ on: "after", does: "tell", words: ["git"], contains: "push" })).toBe('tells you when a command has run, when a word matches git and it holds "push"');
+  });
 });
 
 describe("galahad rule ls", () => {
@@ -73,7 +77,7 @@ describe("galahad rule ls", () => {
   test("with none, says so and how to add one", async () => {
     await ruleCommand(api({ rules: { rules: [] } }), "ls", [], {});
     expect(printed.join("\n")).toContain("No rules yet.");
-    expect(printed.join("\n")).toContain('galahad rule add <name> --halt|--refuse|--check "command" <glob>… [--contains text]');
+    expect(printed.join("\n")).toContain('galahad rule add <name> --halt|--refuse|--check "command"|--tell <glob>… [--contains text]');
   });
 });
 
@@ -96,10 +100,18 @@ describe("galahad rule add", () => {
     expect(printed[0]).toBe("Set types: it runs bunx tsc --noEmit after a command that succeeds, when a word matches *.ts.");
   });
 
+  test("--tell with its globs and text: a rule that tells you, with no command of its own", async () => {
+    const node = api({ setRule: { rule: view("pushes", { on: "after", does: "tell", words: ["git"], contains: "push" }) } });
+    await ruleCommand(node, "add", ["pushes", "git"], { tell: true, contains: "push" });
+    expect(node.calls).toEqual([{ name: "setRule", input: { name: "pushes", does: "tell", words: ["git"], contains: "push" } }]);
+    expect(printed[0]).toBe('Set pushes: it tells you when a command has run, when a word matches git and it holds "push".');
+    await expect(ruleCommand(api({}), "add", ["both", "git"], { tell: true, halt: true })).rejects.toThrow("--halt or --tell, not both");
+  });
+
   test("what isn't a rule is refused before anything is sent: no name, no --halt or --refuse, both, nothing to match", async () => {
     const node = api({});
-    await expect(ruleCommand(node, "add", [], { halt: true })).rejects.toThrow('usage: galahad rule add <name> --halt|--refuse|--check "command" <glob>… [--contains text]');
-    await expect(ruleCommand(node, "add", ["no-locks", "*.lock"], {})).rejects.toThrow('say what it does: --halt (the work stops), --refuse (that command isn\'t run) or --check "command" (yours runs after it)');
+    await expect(ruleCommand(node, "add", [], { halt: true })).rejects.toThrow('usage: galahad rule add <name> --halt|--refuse|--check "command"|--tell <glob>… [--contains text]');
+    await expect(ruleCommand(node, "add", ["no-locks", "*.lock"], {})).rejects.toThrow('say what it does: --halt (the work stops), --refuse (that command isn\'t run), --check "command" (yours runs after it) or --tell (you are told it ran)');
     await expect(ruleCommand(node, "add", ["no-locks", "*.lock"], { halt: true, refuse: true })).rejects.toThrow("--halt or --refuse, not both");
     await expect(ruleCommand(node, "add", ["types", "*.ts"], { refuse: true, check: "tsc" })).rejects.toThrow("--refuse or --check, not both");
     await expect(ruleCommand(node, "add", ["types", "*.ts"], { check: true })).rejects.toThrow('--check takes the command to run after: --check "bunx tsc --noEmit"');
@@ -119,6 +131,6 @@ describe("galahad rule rm", () => {
   });
 
   test("anything else says how it is used", async () => {
-    await expect(ruleCommand(api({}), "frobnicate", [], {})).rejects.toThrow('usage: galahad rule ls | rule add <name> --halt|--refuse|--check "command" <glob>… [--contains text] | rule rm <name>');
+    await expect(ruleCommand(api({}), "frobnicate", [], {})).rejects.toThrow('usage: galahad rule ls | rule add <name> --halt|--refuse|--check "command"|--tell <glob>… [--contains text] | rule rm <name>');
   });
 });

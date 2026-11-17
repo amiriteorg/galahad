@@ -59,6 +59,8 @@ export interface TeamRuntimeDeps {
   rules?(): readonly NamedRule[];
   /** A command of a task's that a tripwire stopped: the ledger is told. */
   tripped?(teammate: Teammate, task: TeamTask, trip: Trip & { command: string; gate?: boolean }): void;
+  /** A command of a task's that a rule of yours that tells matched has run: you are told. */
+  told?(teammate: Teammate, task: TeamTask, told: { rule: string; command: string; exitCode: number }): void;
 }
 
 export const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -466,6 +468,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         // Your tripwires, as the mind holds them before each command; each trip told to the ledger.
         ...(deps.rules ? { rules: deps.rules } : {}),
         tripped: (trip) => deps.tripped?.(teammate, task, trip),
+        told: (t) => deps.told?.(teammate, task, t),
         // What this task's calls have cost so far, at your prices: its own, and its coding tool's through the gateway.
         spentUsd: async () => {
           const cost = costOf(mergeSpend(spent, await deps.toolSpent?.(teammate, startedAt)), deps.prices?.() ?? {});

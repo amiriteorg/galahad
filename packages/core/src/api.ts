@@ -4,7 +4,7 @@ import { AgentLabel, ConnectorArgs, ToolName } from "./connectors.ts";
 import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
-import { RuleInput, RuleName, RuleTrippedInput } from "./rules.ts";
+import { RuleInput, RuleName, RuleToldInput, RuleTrippedInput } from "./rules.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 import { TrialRecord, TrialRunId, type TrialRunSettings } from "./trials.ts";
 import { HarnessOptions, TrialPins, VariantName } from "./trials.ts";
@@ -1024,6 +1024,8 @@ export const routes = {
   removeRule: { method: "POST", path: "/api/rules/remove", scope: "fleet:admin", input: z.strictObject({ name: RuleName }) },
   /** A rule stopped a quest's command: the ledger says so. Whoever runs the quest's sandbox says it, and the node checks the rule stops it. */
   ruleTripped: { method: "POST", path: "/api/rules/tripped", scope: "sandbox", input: RuleTrippedInput },
+  /** A command a rule of yours that tells matched has run (a quest's, said by its loop): the node tells you. */
+  ruleTold: { method: "POST", path: "/api/rules/told", scope: "sandbox", input: RuleToldInput },
   arms: { method: "GET", path: "/api/arms", scope: "fleet:admin", input: null },
   mintArm: {
     method: "POST",

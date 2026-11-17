@@ -413,7 +413,7 @@ describe("what he sends", () => {
   test("a kind that's switched off says nothing", async () => {
     const before = phone.browser.received.length;
     const { prefs } = await json<{ prefs: NotifyView["prefs"] }>(phone.call("setNotify", { kinds: { "needs-you": false } }));
-    expect(prefs.kinds).toEqual({ "needs-you": false, approval: true, finished: true, question: true });
+    expect(prefs.kinds).toEqual({ "needs-you": false, approval: true, finished: true, question: true, told: true });
     raise("loop:ci", "warn", "Loop ci failed", "loop:ci");
     await look();
     expect(phone.browser.received).toHaveLength(before);

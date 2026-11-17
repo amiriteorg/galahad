@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Bodies, MAX_RULE_GLOBS, readRule, RuleInput, ruleOf, RuleTrippedInput } from "../src/index.ts";
+import { Bodies, MAX_RULE_GLOBS, readRule, RuleInput, ruleOf, RuleToldInput, RuleTrippedInput } from "../src/index.ts";
 
 /*
  * Your rules, as the contract holds them: data you write (globs and a piece of text), never code. What the API takes is
@@ -33,9 +33,19 @@ describe("a rule, as you give it", () => {
     expect(RuleInput.safeParse({ ...check, words: [] }).success).toBe(false);
   });
 
-  test("as the log holds it: a tripwire before a command, a check after one", () => {
+  test("a rule that tells you: globs or a piece of text, and nothing to run", () => {
+    const tell = { name: "migrations", does: "tell", words: ["migrations/**"] };
+    expect(RuleInput.safeParse(tell).success).toBe(true);
+    expect(RuleInput.safeParse({ ...tell, words: [], contains: "git push" }).success).toBe(true);
+    // Only a check runs something; a rule that tells you still has to match something.
+    expect(RuleInput.safeParse({ ...tell, run: "bun test" }).success).toBe(false);
+    expect(RuleInput.safeParse({ ...tell, words: [] }).success).toBe(false);
+  });
+
+  test("as the log holds it: a tripwire before a command, a check or a tell after one", () => {
     expect(ruleOf({ name: "no-locks", does: "refuse", words: ["*.lock"], contains: "git add" })).toEqual({ on: "command", does: "refuse", words: ["*.lock"], contains: "git add" });
     expect(ruleOf({ name: "types", does: "check", words: ["*.ts"], run: "bunx tsc --noEmit" })).toEqual({ on: "after", does: "check", run: "bunx tsc --noEmit", words: ["*.ts"] });
+    expect(ruleOf({ name: "pushes", does: "tell", words: [], contains: "git push" })).toEqual({ on: "after", does: "tell", words: [], contains: "git push" });
   });
 
   test("its name is lowercase, short, and safe to say anywhere", () => {
@@ -84,12 +94,28 @@ describe("a rule, as the log holds it", () => {
     expect(readRule({ ...check, run: "a\nb" })).toBeNull();
   });
 
+  test("a tell is read after a command, and only there", () => {
+    const tell = { on: "after" as const, does: "tell" as const, words: ["migrations/**"] };
+    expect(readRule(tell)).toEqual(tell);
+    expect(readRule({ ...tell, only: ["ada"] })).toEqual(tell);
+    expect(readRule({ ...written, does: "tell" })).toBeNull();
+    expect(readRule({ ...tell, words: [] })).toBeNull();
+  });
+
   test("a rule at a point or with an effect this node doesn't have is not applied here, and says so (null)", () => {
     expect(readRule({ ...written, on: "answer" })).toBeNull();
     expect(readRule({ ...written, does: "ask" })).toBeNull();
     expect(readRule({ on: "command", does: "halt", words: [] })).toBeNull();
     for (const junk of [null, "rm", 3, [], { words: ["*.lock"] }]) expect(readRule(junk)).toBeNull();
   });
+});
+
+test("a tell is said to the node with the quest, the command, whole, and how it ended", () => {
+  expect(RuleToldInput.safeParse({ quest: "q-m1abc", rule: "pushes", command: "git push origin main", exitCode: 0 }).success).toBe(true);
+  expect(RuleToldInput.safeParse({ quest: "q-m1abc", rule: "pushes", command: "git push origin main", exitCode: 128 }).success).toBe(true);
+  expect(RuleToldInput.safeParse({ quest: "q-m1abc", rule: "pushes", command: "git push origin main" }).success).toBe(false);
+  expect(RuleToldInput.safeParse({ quest: "q-m1abc", rule: "pushes", command: "git push", exitCode: 0.5 }).success).toBe(false);
+  expect(RuleToldInput.safeParse({ quest: "q-m1abc", rule: "pushes", command: "git push", exitCode: 0, body: "x" }).success).toBe(false);
 });
 
 test("a trip is said to the node with the quest it stopped and the command, whole", () => {
