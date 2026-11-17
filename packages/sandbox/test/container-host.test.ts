@@ -149,7 +149,8 @@ describe("a sandbox on a Mac", () => {
 
   test("one that won't start leaves nothing behind: its VM, its volume and its lease go, and the error says why", async () => {
     const m = macHost();
-    m.fake.failRun = () => "Error: failed to boot the VM (test-only-token-1)";
+    // (Its own start fails; the one-off that hands its volume on has gone through.)
+    m.fake.failRun = (args) => (args.includes("--rm") ? null : "Error: failed to boot the VM (test-only-token-1)");
     await expect(m.host.create({ ...ASK, providers: ["deepseek"] })).rejects.toThrow(/could not start sandbox: Error: failed to boot the VM/);
     expect(m.fake.vms.size).toBe(0);
     expect(m.fake.volumes.size).toBe(0);
@@ -223,5 +224,21 @@ describe("its workspaces: container's volumes", () => {
     // Mounting is container's own: the VM that names a volume has it.
     await volumes.mount("0123456789");
     await expect(volumes.create("not-an-id", 20)).rejects.toThrow(/bad workspace request/);
+  });
+
+  test("a new volume's root is handed to the sandbox's user by a one-off container of the node's own, as root: container leaves it root's", async () => {
+    const fake = fakeContainer();
+    const volumes = new ContainerVolumes(fake.runner, () => ({ totalBytes: 100 * GIB, freeBytes: 60 * GIB }));
+    await volumes.create("0123456789", 20);
+    expect(fake.oneOffs).toEqual([["run", "--rm", "--user", "0:0", "--entrypoint", "chown", "--network", NETWORKS.gateway.name, "--no-dns", "--mount", "type=volume,source=galahad-sbx-0123456789-work,target=/work", "galahad/sandbox:1", "1000:1000", "/work"]]);
+    expect(fake.volumes.get("galahad-sbx-0123456789-work")!.owner).toBe("1000:1000");
+  });
+
+  test("a volume that can't be handed on isn't kept: it is removed, and the workspace fails saying why", async () => {
+    const fake = fakeContainer();
+    fake.failRun = (args) => (args.includes("--rm") ? "Error: the init image is missing" : null);
+    const volumes = new ContainerVolumes(fake.runner, () => ({ totalBytes: 100 * GIB, freeBytes: 60 * GIB }));
+    await expect(volumes.create("0123456789", 20)).rejects.toThrow(/couldn't give the workspace to the sandbox's user: Error: the init image is missing/);
+    expect(fake.volumes.size).toBe(0);
   });
 });

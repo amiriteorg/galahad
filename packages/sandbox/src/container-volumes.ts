@@ -1,7 +1,7 @@
 import { statfsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { containerVolumeCreateArgs, containerVolumeDeleteArgs, containerVolumeListArgs, parseContainerVolumes } from "./container.ts";
-import { LABEL, volumeName } from "./spec.ts";
+import { containerVolumeCreateArgs, containerVolumeDeleteArgs, containerVolumeListArgs, containerVolumeOwnArgs, parseContainerVolumes } from "./container.ts";
+import { DEFAULT_IMAGE, LABEL, volumeName } from "./spec.ts";
 import { MAX_WORKSPACE_GB, WorkspaceError, type Workspaces, type WorkspaceStats } from "./workspaces.ts";
 
 /*
@@ -33,6 +33,8 @@ export class ContainerVolumes implements Workspaces {
   constructor(
     private readonly run: ContainerRun,
     private readonly disk: () => { totalBytes: number; freeBytes: number } = homeDisk,
+    /** The image whose one-off container hands a new volume to the sandbox's user (containerVolumeOwnArgs). */
+    private readonly image: string = DEFAULT_IMAGE,
   ) {}
 
   /** A volume is container's own: there whenever container is. */
@@ -45,6 +47,12 @@ export class ContainerVolumes implements Workspaces {
     if (!/^[0-9a-f]{10}$/.test(id) || !Number.isInteger(gib) || gib < 1 || gib > MAX_WORKSPACE_GB) throw new WorkspaceError("bad workspace request");
     const made = await this.run(containerVolumeCreateArgs(id, gib, opts.retain === true), 60_000);
     if (made.code !== 0) throw new WorkspaceError(made.stderr.trim().slice(0, 300) || "container couldn't make the volume");
+    // Its root is root's as it is made: handed to the sandbox's user, or the volume goes and the workspace fails.
+    const owned = await this.run(containerVolumeOwnArgs(id, this.image), 120_000);
+    if (owned.code !== 0) {
+      await this.run(containerVolumeDeleteArgs(id), 60_000).catch(() => {});
+      throw new WorkspaceError(`couldn't give the workspace to the sandbox's user: ${owned.stderr.trim().slice(0, 300) || `exit ${owned.code}`}`);
+    }
     return volumeName(id);
   }
 

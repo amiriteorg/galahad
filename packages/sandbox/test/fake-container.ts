@@ -25,6 +25,8 @@ export interface FakeVolume {
   name: string;
   labels: Record<string, string>;
   sizeBytes: number;
+  /** Who owns its root: root's as it is made (as on the Mac mini, 17 November 2026), until a one-off container hands it on. */
+  owner: string;
 }
 
 export interface FakeContainer {
@@ -45,6 +47,8 @@ export interface FakeContainer {
   failRun?: (args: string[]) => string | null;
   /** Something that happens as a `run` is asked for, before it is done (awaited). */
   onRun?: (args: string[]) => Promise<void>;
+  /** Every one-off `run --rm` (no name: it is gone when it ends), each with all its arguments. */
+  oneOffs: string[][];
 }
 
 const after = (args: string[], flag: string) => args.filter((_, i) => args[i - 1] === flag);
@@ -58,6 +62,7 @@ export function fakeContainer(): FakeContainer {
   });
   const fake: FakeContainer = {
     calls: [],
+    oneOffs: [],
     vms: new Map(),
     volumes: new Map(),
     networks: new Set(["default"]),
@@ -94,7 +99,7 @@ export function fakeContainer(): FakeContainer {
             if (fake.volumes.has(name)) return no(`volume ${name} already exists`);
             const size = rest[rest.indexOf("-s") + 1]!;
             const labels = Object.fromEntries(after(rest, "--label").map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
-            fake.volumes.set(name, { name, labels, sizeBytes: Number.parseInt(size, 10) * 2 ** 30 });
+            fake.volumes.set(name, { name, labels, sizeBytes: Number.parseInt(size, 10) * 2 ** 30, owner: "0:0" });
             return ok(name);
           }
           if (rest[0] === "delete") {
@@ -107,13 +112,23 @@ export function fakeContainer(): FakeContainer {
         }
         case "run": {
           await fake.onRun?.(args);
+          if (rest.includes("--rm") && !rest.includes("--name")) {
+            // A one-off: what it does to a volume is all that is kept of it (a chown as root, of the volume at /work).
+            const failedOnce = fake.failRun?.(args) ?? null;
+            if (failedOnce) return { code: 1, stdout: "", stderr: failedOnce };
+            fake.oneOffs.push(args);
+            const mounted = after(rest, "--mount").map((m) => /type=volume,source=([^,]+),target=\/work/.exec(m)?.[1]).find(Boolean);
+            const chown = after(rest, "--entrypoint")[0] === "chown" && after(rest, "--user")[0] === "0:0";
+            if (mounted && chown && fake.volumes.has(mounted)) fake.volumes.get(mounted)!.owner = rest[rest.length - 2]!;
+            return ok();
+          }
           const name = rest[rest.indexOf("--name") + 1]!;
           if (fake.vms.has(name)) return no(`container ${name} already exists`);
           const failed = fake.failRun?.(args) ?? null;
           if (failed) return { code: 1, stdout: "", stderr: failed };
           const labels = Object.fromEntries(after(rest, "--label").map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
           const volume = after(rest, "--mount").map((m) => /type=volume,source=([^,]+)/.exec(m)?.[1]).find(Boolean) ?? null;
-          if (volume && !fake.volumes.has(volume)) fake.volumes.set(volume, { name: volume, labels: {}, sizeBytes: 512 * 2 ** 30 });
+          if (volume && !fake.volumes.has(volume)) fake.volumes.set(volume, { name: volume, labels: {}, sizeBytes: 512 * 2 ** 30, owner: "0:0" });
           fake.vms.set(name, {
             name,
             image: rest[rest.length - 3]!,

@@ -216,6 +216,29 @@ export const containerNetworkInspectArgs = (): string[] => ["network", "inspect"
 /** Galahad's images on a Mac: Apple silicon's, their base pulled afresh. */
 export const containerBuildArgs = (image: string, contextDir: string): string[] => ["build", "--pull", "--platform", "linux/arm64", "--tag", image, contextDir];
 /** A workspace: a volume whose size is fixed as it is made, labelled as its sandbox's (and kept for good: a knight's). */
+/**
+ * A new volume's /work handed to the sandbox's user (uid 1000). container makes a volume's root root's and, unlike Docker,
+ * doesn't copy the image's ownership into it (seen on the Mac mini, 17 November 2026, under Galahad's own image), and a
+ * sandbox can't take it itself: every capability is dropped. So a one-off container of the node's own does, as root,
+ * from the local image (built before any workspace is made), on the gateway network, and is gone when it ends.
+ */
+export const containerVolumeOwnArgs = (id: string, image: string): string[] => [
+  "run",
+  "--rm",
+  "--user",
+  "0:0",
+  "--entrypoint",
+  "chown",
+  "--network",
+  NETWORKS.gateway.name,
+  "--no-dns",
+  "--mount",
+  `type=volume,source=${volumeName(id)},target=/work`,
+  image,
+  "1000:1000",
+  "/work",
+];
+
 export const containerVolumeCreateArgs = (id: string, gib: number, retained: boolean): string[] => [
   "volume",
   "create",
