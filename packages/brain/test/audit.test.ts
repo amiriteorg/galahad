@@ -48,6 +48,10 @@ describe("an audit's answer", () => {
     expect(readAudit("**STEER** — stop reinstalling packages\nWrite the test first.")).toEqual({ verdict: "steer", note: "stop reinstalling packages\nWrite the test first." });
     expect(readAudit("Stop: the network is off.")).toEqual({ verdict: "stop", note: "the network is off." });
     expect(readAudit("ONLY partly.")).toBeNull();
+    // A sentence that begins with one of the words is not its word.
+    expect(readAudit("On second thought, it seems fine.")).toBeNull();
+    expect(readAudit("Stop and think: is it closer?")).toBeNull();
+    expect(readAudit("steer\nWrite the test.")).toEqual({ verdict: "steer", note: "Write the test." });
     expect(readAudit("It seems fine to me.")).toBeNull();
   });
 

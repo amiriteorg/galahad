@@ -560,13 +560,19 @@ STEER if it has drifted from its task, or is going round in circles: then, on th
 STOP if it isn't getting closer and a word won't change that (it is stuck, or the task can't be done where it is): then say why.`;
 }
 
-/** An audit's answer: its word and what follows it; null when its first line begins with none of the three. */
+/**
+ * An audit's answer: its word and what follows it. The word is the first line's, alone, with a mark after it ("Stop:
+ * \u2026", "STEER \u2014 \u2026") or in capitals: never the first word of a sentence ("On second thought"). Null: no word.
+ */
 export function readAudit(text: string): { verdict: Exclude<AuditVerdict, "unread">; note: string } | null {
   const lines = text.trim().split("\n");
-  const first = /^[\s*_#>`-]*(ON|STEER|STOP)\b[\s*_`.:,\u2013\u2014-]*(.*)$/i.exec(lines[0] ?? "");
-  if (!first) return null;
-  const note = [first[2]!.trim(), ...lines.slice(1)].join("\n").trim();
-  return { verdict: first[1]!.toLowerCase() as "on" | "steer" | "stop", note: clip(note, 1200, 300) };
+  const line = (lines[0] ?? "").replace(/^[\s*_#>`-]+/, "");
+  const word = /^(ON|STEER|STOP)\b/i.exec(line)?.[1];
+  if (!word) return null;
+  const after = line.slice(word.length);
+  if (!/^[\s*_`.]*$/.test(after) && !/^[\s*_`]*[:.,\u2013\u2014-]/.test(after) && word !== word.toUpperCase()) return null;
+  const note = [after.replace(/^[\s*_`.:,\u2013\u2014-]+/, "").trim(), ...lines.slice(1)].join("\n").trim();
+  return { verdict: word.toLowerCase() as "on" | "steer" | "stop", note: clip(note, 1200, 300) };
 }
 
 /** What whoever does the work is told of its audits as it begins (QuestOptions.audit). */
