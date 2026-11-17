@@ -949,14 +949,15 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   const auditDue = (): boolean => o.audit && (steps - audits.step >= AUDIT_EVERY.steps || clock() - audits.at >= AUDIT_EVERY.minutes * 60_000);
   /**
    * An audit of the work since the last (o.audit), by the reviewer's models: the goal, the plan, the gates, what was run
-   * since, and what the evidence commands print now. A steer after a steer is a stop: the word didn't bring the work
-   * closer. What it found is said, whatever it was.
+   * since, and what the evidence commands print now (`look`; never while a coding agent works, as they could take its
+   * repository's lock from under it). A steer after a steer is a stop: the word didn't bring the work closer. What it
+   * found is said, whatever it was.
    */
-  const audit = async (since: Step[]): Promise<{ verdict: AuditVerdict; note: string }> => {
+  const audit = async (since: Step[], look = true): Promise<{ verdict: AuditVerdict; note: string }> => {
     audits.at = clock();
     audits.step = steps;
     let evidence = "";
-    for (const command of o.evidence) {
+    for (const command of look ? o.evidence : []) {
       check();
       try {
         evidence += `$ ${command}\n${clip(observation(await deps.exec(command, Math.min(o.commandTimeoutSec, 60))), 3000, 600)}\n\n`;
@@ -1013,7 +1014,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     const auditNow = async (): Promise<boolean> => {
       await deps.alive?.();
       if (!auditDue()) return false;
-      const found = await audit(trail.slice(auditedAt));
+      const found = await audit(trail.slice(auditedAt), false);
       auditedAt = trail.length;
       if (found.verdict !== "stop" && !(found.verdict === "steer" && (live ?? session))) return false;
       audited = found;

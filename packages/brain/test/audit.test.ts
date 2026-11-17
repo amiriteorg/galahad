@@ -122,6 +122,8 @@ function agentAtWork(reviewer: string[], options: Partial<QuestOptions> = {}, po
   let looked = 0;
   let stopped = 0;
   let now = 1_000_000;
+  /** Every command asked of the sandbox, as it was asked. */
+  const ran: string[] = [];
   const run = runQuest(
     { goal: "write the parser", environment: "a test sandbox", audit: true, agent: { driver, models: [{ provider: "p", model: "m" }], ...(minutes !== null ? { minutes } : {}), workdir: "/work" }, ...options },
     {
@@ -131,6 +133,7 @@ function agentAtWork(reviewer: string[], options: Partial<QuestOptions> = {}, po
         return { text, model: `test/${role}` };
       },
       exec: async (command) => {
+        ran.push(command);
         const prompt = /printf %s '([A-Za-z0-9+/=]+)' \| base64 -d > \/work\/\.agent\/prompt\.md/.exec(command)?.[1];
         if (prompt) {
           prompts.push(Buffer.from(prompt, "base64").toString("utf8"));
@@ -152,7 +155,7 @@ function agentAtWork(reviewer: string[], options: Partial<QuestOptions> = {}, po
     },
   );
   const audits = () => events.filter((e): e is Extract<QuestEvent, { type: "audit" }> => e.type === "audit");
-  return { run, audits, prompts, stopped: () => stopped };
+  return { run, audits, prompts, ran, stopped: () => stopped };
 }
 
 describe("a coding agent's run, audited", () => {
@@ -185,6 +188,13 @@ describe("work with no count and no clock, audited instead", () => {
     const q = engineer({ engineer: [...commands(2 * AUDIT_EVERY.steps + 5), "DONE\nWritten."], reviewer: ["ON\nOn its task.", "ON\nCloser.", "PASS\nIt holds."] }, { audit: true, maxSteps: Infinity });
     expect(await q.run).toMatchObject({ status: "done", steps: 2 * AUDIT_EVERY.steps + 5 });
     expect(q.told()[0]).toContain(`Your commands have no fixed number. An independent audit looks at your work every ${AUDIT_EVERY.steps} commands or ${AUDIT_EVERY.minutes} minutes: it may tell you what to do next, and it stops work that isn't getting closer to done.`);
+  });
+
+  test("an audit of a coding agent's run reads no evidence while it works (its commands could take the repository's lock from under it): its review still does", async () => {
+    const q = agentAtWork(["ON\nOn its task.", "ON\nCloser.", "ON\nNearly there.", "PASS\nIt holds."], { evidence: ["git add -A -N . && git diff --stat"] });
+    expect((await q.run).status).toBe("done");
+    expect(q.audits()).toHaveLength(3);
+    expect(q.ran.filter((command) => command.startsWith("git add -A -N"))).toHaveLength(1);
   });
 
   test("a coding agent given no minutes has no deadline: told so, it works an hour and more, audited, until it ends of itself", async () => {
