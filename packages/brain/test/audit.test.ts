@@ -1,0 +1,181 @@
+import { describe, expect, test } from "bun:test";
+import type { ChatMessage, ExecResult } from "@galahad/core";
+import type { AgentDriver, AgentEvent } from "../src/agents.ts";
+import { AUDIT_EVERY, auditQuestion, type QuestEvent, type QuestOptions, type QuestRole, readAudit, runQuest } from "../src/quest.ts";
+
+/*
+ * Work audited while it runs, in place of a limit (QuestOptions.audit): every AUDIT_EVERY, the reviewer's models, who
+ * don't do the work, say whether it is still on its task and closer to done. A steer is said to whoever does the work;
+ * a stop, or a second steer in a row, ends it as at a limit. Stand-ins play the models and the sandbox.
+ */
+
+const sh = (command: string) => `Next.\n\`\`\`sh\n${command}\n\`\`\``;
+const ok = (stdout = "ok\n"): ExecResult => ({ exitCode: 0, stdout, stderr: "", durationMs: 1, truncated: false });
+const commands = (n: number, from = 1) => Array.from({ length: n }, (_, i) => sh(`echo step ${from + i}`));
+
+/** The engineer's own loop, with a script for each role; `minutesPerCommand` moves the quest's clock at each command. */
+function engineer(script: { engineer: string[]; reviewer: string[] }, options: Partial<QuestOptions>, minutesPerCommand = 0) {
+  const queues: Record<QuestRole, string[]> = { planner: ["1. Write the parser.\nDone when: its test passes."], engineer: [...script.engineer], reviewer: [...script.reviewer] };
+  const seen: { role: QuestRole; messages: ChatMessage[] }[] = [];
+  const events: QuestEvent[] = [];
+  let now = 1_000_000;
+  const run = runQuest(
+    { goal: "write the parser", environment: "a test sandbox", maxSteps: 200, ...options },
+    {
+      ask: async (role, messages) => {
+        seen.push({ role, messages });
+        const text = queues[role].shift();
+        if (text === undefined) throw new Error(`the ${role} ran out of script`);
+        return { text, model: `test/${role}` };
+      },
+      exec: async (command) => {
+        if (command.startsWith("echo step")) now += minutesPerCommand * 60_000;
+        return ok(command.startsWith("git status") ? " M parser.ts\n" : "ok\n");
+      },
+      emit: (event) => events.push(event),
+      now: () => now,
+    },
+  );
+  const audits = () => events.filter((e): e is Extract<QuestEvent, { type: "audit" }> => e.type === "audit");
+  const asked = () => seen.filter((s) => s.role === "reviewer").map((s) => s.messages.at(-1)!.content);
+  const told = () => seen.filter((s) => s.role === "engineer").map((s) => s.messages.at(-1)!.content);
+  return { run, audits, asked, told };
+}
+
+describe("an audit's answer", () => {
+  test("its word on the first line, however it is dressed, and what follows it", () => {
+    expect(readAudit("ON\nIt is writing the parser.")).toEqual({ verdict: "on", note: "It is writing the parser." });
+    expect(readAudit("**STEER** — stop reinstalling packages\nWrite the test first.")).toEqual({ verdict: "steer", note: "stop reinstalling packages\nWrite the test first." });
+    expect(readAudit("Stop: the network is off.")).toEqual({ verdict: "stop", note: "the network is off." });
+    expect(readAudit("ONLY partly.")).toBeNull();
+    expect(readAudit("It seems fine to me.")).toBeNull();
+  });
+
+  test("the question: the task, the plan, the gates, what was run since, what the evidence prints, and the last audit's word", () => {
+    const asked = auditQuestion({ goal: "write the parser", plan: "1. Write it.", gates: ["bun test parser"], steps: [{ command: "bun add left-pad", exitCode: 1, excerpt: "network down" }], evidence: "$ git status --short\n M parser.ts", last: { verdict: "steer", note: "Write the test first." } });
+    for (const part of ["Its task: write the parser", "1. Write it.", "1. bun test parser", "$ bun add left-pad", "exit 1", "network down", "M parser.ts", "At the last audit: STEER: Write the test first.", "since the last audit"]) expect(asked).toContain(part);
+    expect(auditQuestion({ goal: "g", plan: "p", gates: [], steps: [] })).toContain("What it has run since it began");
+  });
+});
+
+describe("the engineer's own loop, audited", () => {
+  test(`every ${AUDIT_EVERY.steps} commands it is looked at: on its task and closer, the work goes on`, async () => {
+    const q = engineer({ engineer: [...commands(25), "DONE\nThe parser is written and tested."], reviewer: ["ON\nIt is writing the parser.", "PASS\nIt holds."] }, { audit: true, gates: ["true"], evidence: ["git status --short"] });
+    const outcome = await q.run;
+    expect(outcome.status).toBe("done");
+    expect(q.audits()).toEqual([{ type: "audit", step: AUDIT_EVERY.steps, verdict: "on", note: "It is writing the parser.", model: "test/reviewer" }]);
+    const asked = q.asked()[0]!;
+    for (const part of ["Its task: write the parser", "Done when: its test passes.", "1. true", "$ echo step 1", `$ echo step ${AUDIT_EVERY.steps}`, "M parser.ts"]) expect(asked).toContain(part);
+    expect(asked).not.toContain(`echo step ${AUDIT_EVERY.steps + 1}`);
+  });
+
+  test("a steer is said to him with what he is told next; a steer after a steer stops the work, and what it left is judged", async () => {
+    const q = engineer({ engineer: commands(60), reviewer: ["STEER\nStop reinstalling; write the test.", "STEER\nStill reinstalling.", "PASS\nIt holds."] }, { audit: true, submitAtLimit: true });
+    const outcome = await q.run;
+    expect(q.audits().map((a) => [a.step, a.verdict])).toEqual([[AUDIT_EVERY.steps, "steer"], [2 * AUDIT_EVERY.steps, "stop"]]);
+    expect(q.told()[AUDIT_EVERY.steps]).toContain("An independent audit of the work so far says: Stop reinstalling; write the test.");
+    expect(q.audits()[1]!.note).toBe("It was steered at the last audit and is still not closer. Still reinstalling.");
+    // The second audit is told what the first said, and sees only what was run since.
+    expect(q.asked()[1]).toContain("At the last audit: STEER: Stop reinstalling; write the test.");
+    expect(q.asked()[1]).not.toContain("$ echo step 20\n");
+    expect(outcome).toMatchObject({ status: "done", steps: 2 * AUDIT_EVERY.steps, summary: "An independent audit stopped the work before he said he was done. The work as it stood was put to the reviewer, who accepted it." });
+  });
+
+  test("an on between two steers gives him another chance; a stop ends it at once, saying why", async () => {
+    const q = engineer({ engineer: commands(5 * AUDIT_EVERY.steps), reviewer: ["STEER\nWrite the test.", "ON\nBetter.", "STEER\nDrifting again.", "STOP\nThe package it needs can't be installed offline."] }, { audit: true });
+    const outcome = await q.run;
+    expect(q.audits().map((a) => a.verdict)).toEqual(["steer", "on", "steer", "stop"]);
+    expect(outcome).toMatchObject({ status: "stopped", summary: "Stopped by an independent audit: The package it needs can't be installed offline." });
+  });
+
+  test("an answer that can't be read, or none at all, never stops the work: it is said, and the next audit asks again", async () => {
+    const q = engineer({ engineer: [...commands(45), "DONE\nWritten."], reviewer: ["Hard to say, really.", "ON\nIt is closer.", "PASS\nIt holds."] }, { audit: true });
+    const outcome = await q.run;
+    expect(q.audits().map((a) => a.verdict)).toEqual(["unread", "on"]);
+    expect(q.audits()[0]!.note).toBe("Its answer couldn't be read; it began: Hard to say, really.");
+    expect(outcome.status).toBe("done");
+  });
+
+  test(`by time too: ${AUDIT_EVERY.minutes} minutes of slow commands is an audit, however few they were`, async () => {
+    const q = engineer({ engineer: [...commands(3), "DONE\nWritten."], reviewer: ["ON\nSlow, but on its task.", "PASS\nIt holds."] }, { audit: true }, 8);
+    expect((await q.run).status).toBe("done");
+    expect(q.audits().map((a) => a.step)).toEqual([2]);
+  });
+
+  test("off unless asked for: a quest is what it was, its reviewer asked only to review", async () => {
+    const q = engineer({ engineer: [...commands(45), "DONE\nWritten."], reviewer: ["PASS\nIt holds."] }, {}, 8);
+    expect((await q.run).status).toBe("done");
+    expect(q.audits()).toEqual([]);
+    expect(q.asked()).toHaveLength(1);
+  });
+});
+
+/**
+ * A coding agent at work: each look at it shows one more tool call (its session in the first), and moves the quest's
+ * clock six minutes; it ends of itself at its `polls`th look. The reviewer's answers are the audits' and the review's.
+ */
+function agentAtWork(reviewer: string[], options: Partial<QuestOptions> = {}, polls = 10) {
+  const driver: AgentDriver = { name: "stub", title: "Stub", kind: "openai", check: "true", files: () => ({}), command: () => "stub-agent", read: (line) => JSON.parse(line) as AgentEvent[] };
+  const queues: Record<QuestRole, string[]> = { planner: ["1. Write the parser.\nDone when: its test passes."], engineer: [], reviewer: [...reviewer] };
+  const events: QuestEvent[] = [];
+  const prompts: string[] = [];
+  let looked = 0;
+  let stopped = 0;
+  let now = 1_000_000;
+  const run = runQuest(
+    { goal: "write the parser", environment: "a test sandbox", audit: true, agent: { driver, models: [{ provider: "p", model: "m" }], minutes: 600, workdir: "/work" }, ...options },
+    {
+      ask: async (role) => {
+        const text = queues[role].shift();
+        if (text === undefined) throw new Error(`the ${role} ran out of script`);
+        return { text, model: `test/${role}` };
+      },
+      exec: async (command) => {
+        const prompt = /printf %s '([A-Za-z0-9+/=]+)' \| base64 -d > \/work\/\.agent\/prompt\.md/.exec(command)?.[1];
+        if (prompt) {
+          prompts.push(Buffer.from(prompt, "base64").toString("utf8"));
+          return ok("");
+        }
+        if (command.startsWith("stat -c")) return ok("0\n");
+        if (command.startsWith("python3 -c") && command.includes("d, off =")) {
+          looked += 1;
+          now += 6 * 60_000;
+          const lines = [JSON.stringify([...(looked === 1 ? [{ type: "session", id: "ses_1" }] : []), { type: "tool", tool: "bash", input: `step ${looked}`, output: "ok", ok: true }])];
+          return ok(JSON.stringify({ alive: looked < polls, exit: looked < polls ? null : 0, next: looked * 10, lines }));
+        }
+        return ok("");
+      },
+      stopAgent: async () => void (stopped += 1),
+      emit: (event) => events.push(event),
+      sleep: async () => {},
+      now: () => now,
+    },
+  );
+  const audits = () => events.filter((e): e is Extract<QuestEvent, { type: "audit" }> => e.type === "audit");
+  return { run, audits, prompts, stopped: () => stopped };
+}
+
+describe("a coding agent's run, audited", () => {
+  test("a steer ends its run and its own session is told; on, it works on to the end and its work is reviewed", async () => {
+    const q = agentAtWork(["STEER\nWrite the parser's test first.", "ON\nIt is writing the test.", "ON\nThe parser takes shape.", "PASS\nIt holds."]);
+    const outcome = await q.run;
+    expect(q.audits().map((a) => a.verdict)).toEqual(["steer", "on", "on"]);
+    expect(q.stopped()).toBe(1);
+    expect(q.prompts).toHaveLength(2);
+    expect(q.prompts[1]).toContain("An independent audit of the work so far says: Write the parser's test first.");
+    expect(outcome.status).toBe("done");
+  });
+
+  test("a stop ends it, and what it left goes to the gates and the reviewer (submitAtLimit)", async () => {
+    const q = agentAtWork(["STOP\nIt keeps rewriting the same file.", "PASS\nIt holds after all."], { submitAtLimit: true });
+    const outcome = await q.run;
+    expect(q.stopped()).toBe(1);
+    expect(outcome).toMatchObject({ status: "done", summary: "An independent audit stopped the work before he said he was done. The work as it stood was put to the reviewer, who accepted it." });
+  });
+
+  test("without submitAtLimit a stop ends it, saying the audit's why", async () => {
+    const q = agentAtWork(["STOP\nIt keeps rewriting the same file."]);
+    const outcome = await q.run;
+    expect(outcome).toMatchObject({ status: "stopped", summary: "Stopped by an independent audit: It keeps rewriting the same file." });
+  });
+});

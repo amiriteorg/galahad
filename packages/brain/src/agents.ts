@@ -172,8 +172,8 @@ export interface AgentRunDeps {
 }
 
 export interface AgentRun {
-  /** `spent`: its budget was spent, and it was stopped as at its deadline. */
-  status: "finished" | "failed" | "timeout" | "stopped" | "spent";
+  /** `spent`: its budget was spent, and it was stopped as at its deadline. `audited`: its audit ended this run (`input.audit`). */
+  status: "finished" | "failed" | "timeout" | "stopped" | "spent" | "audited";
   /** The agent's last words: its own account of what it did. */
   summary: string;
   /** Tool calls it made. */
@@ -219,7 +219,7 @@ print(json.dumps({"alive": alive, "exit": exit_code, "next": nxt, "lines": lines
  */
 export async function runAgent(
   driver: AgentDriver,
-  input: { model: AgentModel; prompt: string; session: string | null; deadline: number; workdir: string; pollMs?: number; spent?: () => boolean | Promise<boolean> },
+  input: { model: AgentModel; prompt: string; session: string | null; deadline: number; workdir: string; pollMs?: number; spent?: () => boolean | Promise<boolean>; audit?: () => Promise<boolean> },
   deps: AgentRunDeps,
 ): Promise<AgentRun> {
   const now = deps.now ?? Date.now;
@@ -302,6 +302,11 @@ export async function runAgent(
       if (await input.spent?.()) {
         await stop();
         return { ...run, status: "spent", error: "its budget was spent" };
+      }
+      // An audit, when one is due, may end this run (QuestOptions.audit): the caller says what comes of it.
+      if (await input.audit?.()) {
+        await stop();
+        return { ...run, status: "audited", error: "its audit ended this run" };
       }
       if (now() > input.deadline) {
         await stop();

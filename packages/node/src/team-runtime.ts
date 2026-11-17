@@ -220,6 +220,8 @@ export function progress(event: QuestEvent): string {
     case "budget": return event.out ? `Budget · spent ($${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)}): the work stops` : `Budget · $${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)} spent: wrapping up`;
     case "tripped": return `Tripwire · ${event.rule} ${event.does === "halt" ? "halted the task" : event.gate ? "refused a gate" : "refused a command"}: ${event.why}\n$ ${event.command}`;
     case "checked": return `Check · ${event.rule} ${event.exitCode === 0 ? "passed" : "failed"} · ${event.command}${event.exitCode === 0 ? "" : `\n${event.output}`}`;
+    // An independent audit while the work runs (QuestOptions.audit): what it found, and what it told the knight or why it stopped it.
+    case "audit": return `Audit · ${{ on: "on its task, and closer to done", steer: "steered", stop: "stopped the work", unread: "no answer that could be read: the work goes on" }[event.verdict]}${event.note ? `\n${event.note}` : ""}`;
     default: return event.type;
   }
 }

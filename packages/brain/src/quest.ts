@@ -38,6 +38,8 @@ export interface QuestDeps {
   signal?: AbortSignal;
   /** How to wait before asking a model again (tests pass one that doesn't). */
   sleep?(ms: number): Promise<void>;
+  /** What time it is, for when an audit is due (QuestOptions.audit; tests pass their own clock). */
+  now?(): number;
   /**
    * Your rules (core's rules.ts) as they stand now: read before each command, each parallel batch and each run of the
    * gates, so a tripwire you add while the quest runs stops its next command. Absent: none. If they can't be read, the
@@ -122,6 +124,14 @@ export interface QuestOptions {
    * (`remind`) measures it before anything turns it on.
    */
   remind?: boolean;
+  /**
+   * Audited while it runs, in place of a limit (a knight's task): every AUDIT_EVERY, the reviewer's models, who don't do
+   * the work, are asked whether it is still on its task and closer to finishing it than at the last audit. A steer is
+   * said to whoever does the work (a coding agent's run is ended and its own session told); a stop, or a second steer
+   * in a row, ends the work as at a limit, and `submitAtLimit` decides whether what is there is judged. Default off: a
+   * quest is what it was.
+   */
+  audit?: boolean;
   /**
    * The sandbox's notes store (engram.ts), by the project its notes are kept under, when the caller found the
    * store there. Whoever does the engineer's part is told how far to trust a note and how to reach the store:
@@ -219,6 +229,12 @@ export type QuestEvent =
    * 0: `command` is the check's, and `output` what it printed, as the engineer was told it.
    */
   | { type: "checked"; step: number; rule: string; command: string; exitCode: number; durationMs: number; output: string }
+  /**
+   * An audit of the work while it runs (audit), at the step it had reached: on its task and closer (`on`), drifting or
+   * going round (`steer`: `note` is what it was told), not getting closer (`stop`: `note` says why), or no answer that
+   * could be read (`unread`: the work goes on, and the next audit asks again).
+   */
+  | { type: "audit"; step: number; verdict: AuditVerdict; note: string; model: string }
   | { type: "finished"; outcome: QuestOutcome };
 
 export const QUEST_DEFAULTS = { maxSteps: 30, maxRevisions: 2, commandTimeoutSec: 300 } as const;
@@ -509,6 +525,48 @@ export function reviewQuestion(input: { goal: string; plan: string; steps: { com
   return reviewPrompt({ goal: input.goal }, input.plan, input.steps, input.summary) + (input.gated ? `\n\n${input.gated}` : "") + (input.evidence?.trim() ? `\n\nWhat these commands print now, in the sandbox:\n${input.evidence.trim()}` : "");
 }
 
+/**
+ * How often audited work (QuestOptions.audit) is looked at: after this many more of its commands (a coding agent's tool
+ * calls count), or this many minutes, whichever comes first.
+ */
+export const AUDIT_EVERY = { steps: 20, minutes: 15 } as const;
+
+export type AuditVerdict = "on" | "steer" | "stop" | "unread";
+
+/**
+ * The question an audit asks (QuestOptions.audit), whole: not whether the work is done (its gates and its reviewer say
+ * that), but whether it is still on its task and closer to finishing it than when it was last looked at.
+ */
+export function auditQuestion(input: { goal: string; plan: string; gates: string[]; steps: Step[]; evidence?: string; last?: { verdict: AuditVerdict; note: string } | null }): string {
+  const since = input.last ? "the last audit" : "it began";
+  return `You audit work that is still going on, independently: whether it is finished is for its gates and its reviewer to say later. Say only whether it is still working on its task, and closer to finishing it than ${input.last ? "at the last audit" : "when it began"}.
+
+Its task: ${input.goal}
+
+Its plan:
+${input.plan}
+${input.gates.length ? `\nIts gates, commands that must pass when it is done:\n${input.gates.map((g, i) => `${i + 1}. ${g}`).join("\n")}\n` : ""}
+What it has run since ${since} (exit code and an excerpt of the output, latest last):
+${input.steps.map((s, i) => `${i + 1}. $ ${s.command}\n   exit ${s.exitCode}\n${s.excerpt.replace(/^/gm, "   ")}`).join("\n") || "(nothing)"}
+${input.evidence?.trim() ? `\nWhat these commands print now, where it works:\n${input.evidence.trim()}\n` : ""}${input.last ? `\nAt the last audit: ${input.last.verdict.toUpperCase()}${input.last.note ? `: ${input.last.note}` : ""}\n` : ""}
+Reply with one word on the first line:
+ON if it is working on its task and is closer to finishing it.
+STEER if it has drifted from its task, or is going round in circles: then, on the next lines, tell it in a sentence or two what to do next.
+STOP if it isn't getting closer and a word won't change that (it is stuck, or the task can't be done where it is): then say why.`;
+}
+
+/** An audit's answer: its word and what follows it; null when its first line begins with none of the three. */
+export function readAudit(text: string): { verdict: Exclude<AuditVerdict, "unread">; note: string } | null {
+  const lines = text.trim().split("\n");
+  const first = /^[\s*_#>`-]*(ON|STEER|STOP)\b[\s*_`.:,\u2013\u2014-]*(.*)$/i.exec(lines[0] ?? "");
+  if (!first) return null;
+  const note = [first[2]!.trim(), ...lines.slice(1)].join("\n").trim();
+  return { verdict: first[1]!.toLowerCase() as "on" | "steer" | "stop", note: clip(note, 1200, 300) };
+}
+
+/** What whoever does the work is told of an audit's steer (QuestOptions.audit). */
+const steered = (note: string): string => `An independent audit of the work so far says: ${note}\nTake that up from where you are.`;
+
 /* ---------- the loop ---------- */
 
 class Stopped extends Error {}
@@ -656,6 +714,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     submitAtLimit: Boolean(options.submitAtLimit),
     escalate: Boolean(options.escalate),
     remind: Boolean(options.remind),
+    audit: Boolean(options.audit),
     ...(options.plan !== undefined ? { plan: options.plan } : {}),
     ...(options.review ? { review: options.review } : {}),
     ...(options.agent ? { agent: options.agent } : {}),
@@ -664,6 +723,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     ...(options.engram !== undefined ? { engram: engramProject(options.engram) } : {}),
   };
   const emit = (event: QuestEvent): void => deps.emit?.(event);
+  const clock = deps.now ?? (() => Date.now());
   const check = (): void => {
     if (deps.signal?.aborted) throw new Stopped();
   };
@@ -874,6 +934,46 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     return verdict;
   };
 
+  /** The audits so far (o.audit): when and at which step the last was, what it said, and whether it steered. */
+  const audits = { at: clock(), step: 0, last: null as { verdict: AuditVerdict; note: string } | null, steered: false };
+  /** Whether an audit is due (o.audit): AUDIT_EVERY's commands since the last, or its minutes. */
+  const auditDue = (): boolean => o.audit && (steps - audits.step >= AUDIT_EVERY.steps || clock() - audits.at >= AUDIT_EVERY.minutes * 60_000);
+  /**
+   * An audit of the work since the last (o.audit), by the reviewer's models: the goal, the plan, the gates, what was run
+   * since, and what the evidence commands print now. A steer after a steer is a stop: the word didn't bring the work
+   * closer. What it found is said, whatever it was.
+   */
+  const audit = async (since: Step[]): Promise<{ verdict: AuditVerdict; note: string }> => {
+    audits.at = clock();
+    audits.step = steps;
+    let evidence = "";
+    for (const command of o.evidence) {
+      check();
+      try {
+        evidence += `$ ${command}\n${clip(observation(await deps.exec(command, Math.min(o.commandTimeoutSec, 60))), 3000, 600)}\n\n`;
+      } catch (error) {
+        evidence += `$ ${command}\n(could not run: ${(error as Error).message})\n\n`;
+      }
+    }
+    let found: { verdict: AuditVerdict; note: string };
+    let model = "";
+    try {
+      const reply = await ask("reviewer", [{ role: "user", content: auditQuestion({ goal: o.goal, plan, gates: gates.map((g) => g.command), steps: since.slice(-2 * AUDIT_EVERY.steps), evidence, last: audits.last }) }]);
+      model = reply.model;
+      found = readAudit(reply.text) ?? { verdict: "unread", note: `Its answer couldn't be read; it began: ${clip(redact(reply.text.trim()), 200, 0)}` };
+    } catch (error) {
+      if (error instanceof Stopped || deps.signal?.aborted) throw error;
+      found = { verdict: "unread", note: `It couldn't be asked: ${redact(String((error as Error).message ?? error)).slice(0, 200)}` };
+    }
+    if (found.verdict === "steer" && audits.steered) found = { verdict: "stop", note: `It was steered at the last audit and is still not closer. ${found.note}`.trim() };
+    if (found.verdict !== "unread") {
+      audits.steered = found.verdict === "steer";
+      audits.last = found;
+    }
+    emit({ type: "audit", step: steps, verdict: found.verdict, note: found.note, model });
+    return found;
+  };
+
   /** The budget's state now (null: no budget, or no way to tell what is spent). */
   const money = async (): Promise<{ usd: number; complete: boolean; budget: number } | null> => {
     if (o.budgetUsd === undefined || !deps.spentUsd) return null;
@@ -882,12 +982,32 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   const usd = (n: number) => `$${n.toFixed(2)}`;
   /** How a quest whose budget was spent before he said he was done ends, when nothing judged what was there. */
   const spentSummary = (): string => `Stopped: its budget (${usd(o.budgetUsd!)}) was spent before he finished.`;
+  /** How a quest an audit stopped ends, when nothing judged what was there (`why`: the audit's word). */
+  const auditSummary = (why: string): string => `Stopped by an independent audit: ${why}`;
 
   /** A coding agent does the work; each review it doesn't pass continues its session. */
   const agentWork = async (agent: NonNullable<Resolved["agent"]>): Promise<QuestOutcome> => {
     const deadline = Date.now() + agent.minutes * 60_000;
     const trail: Step[] = [];
     let warned = false;
+    audits.at = clock();
+    audits.step = steps;
+    /** Where the trail stood at the last audit; the audit that ended a run, until it is acted on; its session as it began. */
+    let auditedAt = 0;
+    let audited: { verdict: AuditVerdict; note: string } | null = null;
+    let live: string | null = null;
+    /**
+     * At each look at the agent, an audit when one is due (o.audit). Whether it ends this run: a stop does, and a steer
+     * does when its session can be told (it is taken up there); one without a session works on, its steer said.
+     */
+    const auditNow = async (): Promise<boolean> => {
+      if (!auditDue()) return false;
+      const found = await audit(trail.slice(auditedAt));
+      auditedAt = trail.length;
+      if (found.verdict !== "stop" && !(found.verdict === "steer" && (live ?? session))) return false;
+      audited = found;
+      return true;
+    };
     /**
      * Its budget, at each look at the agent: its own calls through the gateway count as it makes them (deps.spentUsd).
      * Past four fifths it is said once; spent, it is said and the agent is stopped. It can't be told to wrap up mid-run.
@@ -934,11 +1054,14 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       const model = agent.models[current]!;
       const run = await runAgent(
         agent.driver,
-        { model, prompt, session, deadline, workdir: agent.workdir, spent: spentNow },
+        { model, prompt, session, deadline, workdir: agent.workdir, spent: spentNow, ...(o.audit ? { audit: auditNow } : {}) },
         {
           exec: deps.exec,
           stopAgent: deps.stopAgent,
-          session: deps.agentSession,
+          session: async (id) => {
+            live = id;
+            await deps.agentSession?.(id);
+          },
           signal: deps.signal,
           sleep: pause,
           event: (event) => {
@@ -955,6 +1078,17 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       );
       session = run.session ?? session;
       if (run.status === "stopped") return finish({ status: "stopped", summary: "Stopped at your request." });
+      // Ended by its audit: a steer is taken up in its own session; a stop ends the work as at a limit (submitAtLimit).
+      if (run.status === "audited" && audited) {
+        const found: { verdict: AuditVerdict; note: string } = audited;
+        audited = null;
+        if (found.verdict === "steer") {
+          prompt = `${steered(found.note)} Then end with a short summary and the evidence.`;
+          continue;
+        }
+        if (!o.submitAtLimit || !trail.length) return finish({ status: "stopped", summary: auditSummary(found.note) });
+        return await asItStands("An independent audit stopped the work before he said he was done: this is the work as it stands.", "An independent audit stopped the work", { status: "stopped", summary: auditSummary(found.note) });
+      }
       // Spent: what it left is judged as it stands (submitAtLimit), as when the engineer's budget runs out.
       if (run.status === "spent") {
         if (!o.submitAtLimit || !trail.length) return finish({ status: "stopped", summary: spentSummary() });
@@ -1088,12 +1222,31 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     const looped = (command: string, seen: string) =>
       finish({ status: "stopped", summary: `Stopped: the same command failed the same way ${LOOP_STOP} times in a row, so running it again would only spend more.\n$ ${command.split("\n")[0]}\n${clip(seen, 600, 300)}` });
 
+    /** Where the trail stood at the last audit (o.audit), and an audit's stop: the work ends as at a limit, with why. */
+    let auditedAt = 0;
+    let auditStop: string | null = null;
+    audits.at = clock();
+    audits.step = steps;
     while (steps < o.maxSteps) {
       const now = await money();
       if (now && now.usd >= now.budget) {
         spentOut = true;
         emit({ type: "budget", spentUsd: now.usd, budgetUsd: now.budget, out: true });
         break;
+      }
+      if (auditDue()) {
+        const found = await audit(trail.slice(auditedAt));
+        auditedAt = trail.length;
+        if (found.verdict === "stop") {
+          auditStop = found.note;
+          break;
+        }
+        // A steer is said with what he is told next: his latest message, not sent yet.
+        if (found.verdict === "steer") {
+          const last = messages.at(-1);
+          if (last?.role === "user") last.content += `\n\n${steered(found.note)}`;
+          else messages.push({ role: "user", content: steered(found.note) });
+        }
       }
       steps += 1;
       excerpted = excerptedNow(messages, excerpted);
@@ -1238,7 +1391,9 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       messages.push({ role: "user", content: `${sentBack(verdict, "verify, then reply DONE again.")}${stuck}${cut}` });
     }
     const ran = steps - malformed;
-    const stopped = spentOut
+    const stopped = auditStop !== null
+      ? auditSummary(auditStop)
+      : spentOut
       ? spentSummary()
       : malformed
         ? `Stopped after ${o.maxSteps} turns without finishing: ${ran} command${ran === 1 ? "" : "s"} ran, and ${malformed} ${malformed === 1 ? "reply" : "replies"} had no command to run.`
@@ -1246,11 +1401,11 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     // Out of commands with work done: the gates and the reviewer still decide (submitAtLimit). He may have finished
     // and gone on checking; what they pass is done, whoever said so.
     if (o.submitAtLimit && ran > 0) {
-      const verdict = await submit(`${spentOut ? "His budget was spent" : "He ran out of commands"} before he said he was done: this is the work as it stands.`, trail);
+      const verdict = await submit(`${auditStop !== null ? "An independent audit stopped the work" : spentOut ? "His budget was spent" : "He ran out of commands"} before he said he was done: this is the work as it stands.`, trail);
       if (verdict.verdict === "pass") {
         return finish({
           status: "done",
-          summary: `${spentOut ? `Its budget (${usd(o.budgetUsd!)}) was spent` : `He ran out of commands (${o.maxSteps})`} before he said he was done. The work as it stood was put to ${gates.length ? "the gates and " : ""}the reviewer, who accepted it.`,
+          summary: `${auditStop !== null ? "An independent audit stopped the work" : spentOut ? `Its budget (${usd(o.budgetUsd!)}) was spent` : `He ran out of commands (${o.maxSteps})`} before he said he was done. The work as it stood was put to ${gates.length ? "the gates and " : ""}the reviewer, who accepted it.`,
           review: verdict.notes || undefined,
           ...(verdict.conclusion ? { conclusion: verdict.conclusion } : {}),
         });
