@@ -255,21 +255,20 @@ Each of Docker's flags on a Mac (`DOCKER_ON_A_MAC` in `container.ts`, and a test
 12. **Online.** The internet and names, its default route through its own network's gateway: held (on `galahad-net` now, as on `default` then).
 13. **Sandboxes reach each other.** They did, on either network. **Fixed** by the firewall.
 14. **The deadline.** 137 after 2 s: held.
-15. **A terminal.** Not run yet.
+15. **A terminal.** `galahad terminal <knight>` gives a login shell in its VM on a real terminal: uid 1000, `xterm-256color`, on `/dev/pts/0`, closed by `exit`: held (a resize not tried).
 16. **Copying out.** A tar byte for byte the same (its digest): held.
 17. **Stop, start, delete.** Held.
 18. **The image.** Built for arm64; OpenCode 2.2.6, Engram 3.7.2, Bun 1.4.4, aarch64: held.
 19. **A VM's own cost.** An idle 1 GB VM takes about 0.42 GB of the Mac: under the 2 GB the governor holds for it, as for Kata.
-20. **Its start.** Not run yet.
+20. **Its start.** The node's calibration measured a VM ready in 8.3 s, beside Kata's 1.7 s on Ultra.
 21. **Its use.** `container stats` as read: held.
-22. **The node, end to end.** Not run yet.
+22. **The node, end to end.** A node from a checkout, in a home of its own: the doctor's sandbox lines all ok, its own VM started through the firewall and removed; `sandbox run` made a VM on each network, each reaching what the firewall allows and nothing else, and no sandbox reached another on either network; an isolated one was refused, saying why; two knights' VMs made there, one grown by pausing (it said so), its `/work` kept, a smaller or bigger disk refused with the reason, and one made again gateway-only. Found: `roundtable provision <id> --network gateway` made an online VM, the CLI never having declared `--network` (fixed, on every platform, and a test now holds each option a command reads to a declaration).
 23. **Limits on commands.** `ulimit -n` 8192 in a command: held (the image's `sh` has no `ulimit -u`).
 
-And what no check had asked: **IPv6** reached the Mac's SSH and the sandbox beside it by their link-local addresses, past rules for IPv4 (fixed: every VM boots without it); **two networks' bridges collided** after VMs came and went, cutting both off until container's networking restarted (apple/container#2051; fixed by the keepers and the helpers' restarts, red then green on the Mac mini); and pf never saw traffic between two VMs on one bridge, nor matched the Mac's own addresses through `(self)`, which is why the firewall sets each bridge's member filter and names what isn't the internet. Under the installed firewall, from sandboxes made as the driver makes them: the gateway sandbox reached the gateway and nothing else (not the Mac's SSH by any of its addresses, its LAN, its tailnet, another sandbox or the internet); the online one reached the gateway, its resolver and the internet and nothing else; neither had IPv6.
+And what no check had asked: **macOS updated itself** (27.0 to 27.2.1) and restarted the Mac mini mid-run; the firewall's helper was running again at boot, but **container's service doesn't start by itself at boot**, so the node now starts it as it starts (`container system start --disable-kernel-install`: it never installs a kernel), and the networks' keepers came back up with their helpers restarted. **IPv6** reached the Mac's SSH and the sandbox beside it by their link-local addresses, past rules for IPv4 (fixed: every VM boots without it); **two networks' bridges collided** after VMs came and went, cutting both off until container's networking restarted (apple/container#2051; fixed by the keepers and the helpers' restarts, red then green on the Mac mini); and pf never saw traffic between two VMs on one bridge, nor matched the Mac's own addresses through `(self)`, which is why the firewall sets each bridge's member filter and names what isn't the internet. Under the installed firewall, from sandboxes made as the driver makes them: the gateway sandbox reached the gateway and nothing else (not the Mac's SSH by any of its addresses, its LAN, its tailnet, another sandbox or the internet); the online one reached the gateway, its resolver and the internet and nothing else; neither had IPv6.
 
 **Open, and next.**
 
-- Checks 15, 20 and 22 on the Mac mini: a terminal, `galahad compute calibrate`, and a node there end to end.
 - The app's step 3, *Give its knights VMs*: `container` found or installed, its service started, the images built, and the firewall installed (it asks for the password once). Until then, `galahad firewall install` in Terminal.
 - The knight told in words when its VM paused mid-task; today it reads the failure of the command that was running.
 - Its disk grown: container has no way to grow a volume, so it would be a new, bigger volume and a copy.
