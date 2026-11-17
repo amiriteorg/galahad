@@ -385,6 +385,12 @@ bun galahad rule add types --check 'bunx tsc --noEmit' '*.ts' '*.tsx'
 bun galahad rule add tests --check 'bun test' --contains 'git commit'
 ```
 
+**Hear of what ran.** A rule that tells you puts a notice in your Inbox once one of his commands that it matches has run, however it ended: where it ran, how it ended, and the command. It comes as a notification too, once for each task however often the task runs such a command, and it changes nothing about the work. `galahad notify kinds told off` keeps it to the Inbox.
+
+```sh
+bun galahad rule add pushes --tell git --contains push
+```
+
 For bigger work, let a full coding agent do it. OpenCode works for up to `--minutes`, with models through the gateway (it never sees a key), and the independent review still decides:
 
 ```sh

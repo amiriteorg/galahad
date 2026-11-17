@@ -96,7 +96,7 @@ export const PHASING = {
     { state: "built", what: "Roles you make", line: "Choose the models each knight works on; the reviewer stays independent." },
     { state: "built", what: "A budget per task", line: "A task sees what it has spent and stops when it is, a coding tool's own calls included." },
     { state: "built", what: "Photos and files in chat", line: "Send him a screenshot, a log or a file of code, from any app or the terminal." },
-    { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, or run a check after one; next, before an answer." },
+    { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, run a check after one, or tell you it ran; next, before an answer." },
     { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing; next, the test written first." },
     { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
     { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; it gives a Mac its knights' VMs, behind its firewall, with one password." },
