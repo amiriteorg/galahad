@@ -5,7 +5,7 @@ import { needsYou } from "../lib/now.ts";
 import { gateOwner, gateResult, questBadge, questInHand, questWhere } from "../lib/quests.ts";
 import { duration, relativeTime } from "../lib/time.ts";
 import { stopsIn } from "../lib/turns.ts";
-import { badge, button, callout, meter, section, spinner } from "../ui/controls.ts";
+import { badge, button, callout, dot, meter, section } from "../ui/controls.ts";
 import { openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, replace, type Scope } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
@@ -34,7 +34,7 @@ function turnRow(ctx: Ctx, t: TurnView, now: number, leave?: () => void): HTMLEl
   return h(
     "div",
     { class: "item center in-hand-turn" },
-    h("span", { class: "avatar agent" }, spinner("sm")),
+    h("span", { class: "avatar agent" }, icon("chat", { size: 16 })),
     h(
       "div",
       { class: "grow" },
@@ -57,7 +57,7 @@ function gateRow(g: QuestView["gates"][number], n: number): HTMLElement {
 function questCard(q: QuestView, opened: Set<string>): HTMLElement {
   const b = questBadge(q.state, q.silent);
   const state = badge(b.text, b.tone);
-  if (b.live) state.prepend(spinner("xs"));
+  if (b.live) state.prepend(dot(b.tone, { live: true }));
   const going = questInHand(q.state);
   const plan = q.plan
     ? h(

@@ -1241,28 +1241,15 @@
       .seat:not([data-state="resting"]) { --ring-w: 2px; }
       .seat.seat-m:not([data-state="resting"]) { --ring-w: 2.5px; }
       .seat.seat-l:not([data-state="resting"]) { --ring-w: 3px; }
-      .seat[data-state="working"] { --ring: var(--accent); box-shadow: inset 0 0 0 1px var(--border-strong); }
+      /* Every state's ring stands still (the owner's word: nothing at the table spins or pulses): its colour says it. */
+      .seat[data-state="working"] { --ring: var(--accent); }
       .seat[data-state="needs"] { --ring: var(--oxblood); }
       .seat[data-state="failed"] { --ring: var(--danger); }
       .seat[data-state="verified"] { --ring: var(--ok); }
       .seat[data-state="queued"] { --ring: var(--text-3); }
       .seat[data-state="paused"]::before { box-shadow: none; border: var(--ring-w) dashed var(--text-3); }
-      .seat[data-state="working"]::before {
-        box-shadow: none; background: conic-gradient(from 0turn, transparent 0.08turn, var(--accent) 0.82turn);
-        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000 calc(100% - var(--ring-w) + 0.5px));
-        mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000 calc(100% - var(--ring-w) + 0.5px));
-        animation: seat-turn 1.6s linear infinite; will-change: transform;
-      }
-      .seat[data-state="needs"]::after {
-        content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 var(--ring-w) var(--oxblood); opacity: 0; pointer-events: none;
-        animation: seat-call 2.8s var(--ease-out) infinite;
-      }
-      @keyframes seat-turn { to { transform: rotate(1turn); } }
-      @keyframes seat-call { 0% { opacity: 0.6; transform: scale(1); } 55%, 100% { opacity: 0; transform: scale(1.16); } }
-      :root[data-motion="reduce"] .seat::before, :root[data-motion="reduce"] .seat::after { animation: none; }
-      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .seat::before, :root:not([data-motion="full"]) .seat::after { animation: none; } }
-      /* A knight's state in words (ui/avatar.ts stateChip()): a badge in its tone; working's carries a live dot. */
-      .state-chip .dot { width: 6px; height: 6px; }
+      /* A state in words in a badge (ui/avatar.ts stateChip(), a chat's, a quest's, a loop's): working's carries a still dot. */
+      .badge .dot { width: 6px; height: 6px; }
       /* The one who leads the Roundtable (ui/avatar.ts leadMark()): beside its name, small, in ink, in words. */
       .lead-mark {
         display: inline-flex; align-items: center; flex: none; height: 18px; padding: 0 6px; border-radius: var(--r-full); border: 1px solid var(--accent-border);

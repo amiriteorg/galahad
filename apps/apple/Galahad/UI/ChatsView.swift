@@ -142,8 +142,8 @@ struct ChatRow: View {
                 }
                 if !words.isEmpty {
                     HStack(spacing: Space.s2) {
-                        // The words say it; the spinner is for the eye, so the row stays a button to VoiceOver.
-                        if chat.state == "working" { ProgressView().controlSize(.mini).accessibilityHidden(true) }
+                        // The words say it; the dot is for the eye, so the row stays a button to VoiceOver.
+                        if chat.state == "working" { LiveDot() }
                         Text(words).lineLimit(2)
                     }
                     .font(.subheadline)

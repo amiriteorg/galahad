@@ -92,7 +92,7 @@ private struct ConnectorRow: View {
 struct StateBadge: View {
     let text: String
     let tone: String
-    /// Work in hand: a spinner before the words.
+    /// Work in hand: a still dot before the words (nothing in a state spins).
     var busy = false
     /// On the row an iPad shows selected, in the list's tint: white, as the row's words are, whatever its tone.
     var selected = false
@@ -103,7 +103,7 @@ struct StateBadge: View {
             .foregroundStyle(color)
             .padding(.leading, busy ? Space.s4 : 0)
             .overlay(alignment: .leading) {
-                if busy { ProgressView().controlSize(.mini).accessibilityHidden(true) }
+                if busy { LiveDot(color: color) }
             }
             .padding(.horizontal, Space.s2)
             .padding(.vertical, Space.s1)

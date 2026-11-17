@@ -448,26 +448,12 @@ struct StandingRing: View {
     let kind: Standing
     let width: CGFloat
     var selected = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         switch kind {
         case .working:
-            let ink = selected ? Color.white : .ink
-            ZStack {
-                Circle().strokeBorder(ink.opacity(reduceMotion ? 1 : 0.25), lineWidth: width)
-                if !reduceMotion {
-                    Circle()
-                        .inset(by: width / 2)
-                        .trim(from: 0, to: 0.3)
-                        .stroke(ink, style: StrokeStyle(lineWidth: width, lineCap: .round))
-                        .keyframeAnimator(initialValue: 0.0) { arc, turn in
-                            arc.rotationEffect(.degrees(turn))
-                        } keyframes: { _ in
-                            LinearKeyframe(360, duration: 2.4)
-                        }
-                }
-            }
+            // Still, as every state's ring is (the owner's word: nothing at the table spins): the ink says it.
+            Circle().strokeBorder(selected ? Color.white : .ink, lineWidth: width)
         case .needs, .failed:
             Circle().strokeBorder(selected ? Color.white : .siege, lineWidth: width)
         case .verified:

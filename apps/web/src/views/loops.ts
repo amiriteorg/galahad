@@ -6,7 +6,7 @@ import { describeSchedule, scheduleProblem } from "../lib/schedule.ts";
 import { shortId } from "../lib/text.ts";
 import { absoluteTime, duration, relativeTime } from "../lib/time.ts";
 import type { NetworkMode } from "../types.ts";
-import { badge, busy, button, callout, card, empty, errorState, field, formActions, list, listRow, note, pageBody, pageHead, rows, section, segmented, skeletonBlock, skeletonRows, spinner, switchControl, type Tone } from "../ui/controls.ts";
+import { badge, busy, button, callout, card, dot, empty, errorState, field, formActions, list, listRow, note, pageBody, pageHead, rows, section, segmented, skeletonBlock, skeletonRows, switchControl, type Tone } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { type Child, h, keepPlace, nextId, replace } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -483,7 +483,7 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
   }
 
   function stateBadge(loop: LoopView, running: boolean): HTMLElement | null {
-    if (running) return h("span", { class: "badge", "data-tone": "info" }, spinner("xs"), "running");
+    if (running) return h("span", { class: "badge", "data-tone": "info" }, dot("info", { live: true }), "running");
     if (!loop.enabled) return badge("paused", "neutral");
     return null;
   }

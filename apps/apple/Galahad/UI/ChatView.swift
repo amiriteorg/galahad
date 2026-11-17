@@ -173,7 +173,7 @@ struct MessageRow: View {
         switch turn.status {
         case .streaming:
             HStack(spacing: Space.s2) {
-                ProgressView().controlSize(.mini)
+                LiveDot(color: .secondary)
                 Text(turn.steps.last?.text ?? "Starting")
             }
             .font(.caption)

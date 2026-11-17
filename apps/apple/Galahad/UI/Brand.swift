@@ -255,3 +255,18 @@ struct NeedsMark: View {
         Circle().fill(Color.siege).frame(width: 10, height: 10).accessibilityLabel("Needs you")
     }
 }
+
+/// Something at work, said without motion (the owner's word: nothing in a state spins): a small dot in its colour with
+/// a soft halo, the PWA's still "live" dot. The words beside it say what is going on.
+struct LiveDot: View {
+    var color: Color = .ink
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 6, height: 6)
+            .padding(Space.line)
+            .background(color.opacity(0.22), in: .circle)
+            .accessibilityHidden(true)
+    }
+}

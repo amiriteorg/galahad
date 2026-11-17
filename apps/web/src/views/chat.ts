@@ -16,7 +16,7 @@ import { duration, relativeTime } from "../lib/time.ts";
 import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keysAskedIn, shownAgain, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
 import { chatEnter, lastRole, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
-import { badge, button, callout, copyText, empty, skeletonRows, spinner } from "../ui/controls.ts";
+import { badge, button, callout, copyText, dot, empty, skeletonRows, spinner } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { debounce, h, replace } from "../ui/dom.ts";
 import { workerAvatar } from "../ui/avatar.ts";
@@ -654,13 +654,13 @@ export function watchTurns(api: Api, signal: AbortSignal): void {
   void look();
 }
 
-/** A chat's state as its badge in a list (a spinner while he's working in it). */
+/** A chat's state as its badge in a list (a still dot while he's working in it: nothing in a state spins). */
 export function chatStateBadge(c: Pick<ConversationSummary, "state" | "queued" | "held" | "needs">): HTMLElement | null {
   const b = stateBadge(c);
   if (!b) return null;
   const el = badge(b.text, b.tone);
   el.classList.add("chat-state");
-  if (b.live) el.prepend(spinner("xs"));
+  if (b.live) el.prepend(dot(b.tone, { live: true }));
   return el;
 }
 
@@ -1575,7 +1575,7 @@ export function chatActivityPill(): HTMLElement {
     if (!streaming) return;
     replace(
       pill,
-      spinner("sm"),
+      dot("accent", { live: true }),
       h("a", { class: "plain-link", href: "#/chat" }, model ? `Answering · ${model.split("/").pop()}` : "Answering…"),
       button("Stop", { size: "sm", variant: "ghost", icon: "stop", onClick: stopChat, label: "Stop Galahad answering" }),
     );

@@ -46,7 +46,7 @@ struct WritingLine: View {
 
     var body: some View {
         HStack(spacing: Space.s2) {
-            ProgressView().controlSize(.mini)
+            LiveDot(color: .secondary)
             Text(words)
         }
         .font(.caption)
