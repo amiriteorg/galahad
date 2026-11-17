@@ -61,7 +61,7 @@ Galahad declined a model screening risky actions on purpose: what needs you stay
 
 **Leads.** Each knight's work is in a VM of its own, on hardware you own. Work counts as done only through gates and an independent reviewer, and only Galahad publishes numbers for it. Keys are sealed and pinned, and no model or VM ever holds one. Pairing is signed per request. It is small enough to read: about 85,000 lines against Hermes Agent's 1.2 million (the [site](https://galahad.sh/#scale) draws them to scale). Any model or coding plan serves any role.
 
-**Trails.** No chat apps yet, and nothing but schedules starts work. The iPhone app is in testing, not in the App Store, and there is no Android app of its own, and the Mac app is its only desktop one (17 November). Files with a message (pictures, text) go from the PWA and the terminal; the iPhone and Mac apps can't attach them yet. The trials say how well Galahad does on its own suite; nothing yet measures it against the others on the same tasks. What comes next is in the [PLAN](PLAN.md).
+**Trails.** No chat apps yet, and nothing but schedules starts work. The iPhone app is in testing, not in the App Store, and there is no Android app of its own, and the Mac app is its only desktop one (17 November). The trials say how well Galahad does on its own suite; nothing yet measures it against the others on the same tasks. What comes next is in the [PLAN](PLAN.md).
 
 ## Sources
 
