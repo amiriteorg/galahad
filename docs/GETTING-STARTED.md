@@ -328,10 +328,11 @@ bun galahad do --lab "Find the first three natural frequencies of a 2 m steel ca
 
 On a server with KVM, the deploy also installs Kata Containers, and **online sandboxes run in their own microVM**: the same sandbox inside a lightweight virtual machine with its own kernel, ready in about two seconds. `--vm` asks for a microVM for any sandbox or quest (`galahad do --vm …`), and `--container` for a plain container; `galahad sandbox ls` shows which each one is.
 
-On a Mac with Apple's `container` (macOS 26 or later, Apple silicon), **every sandbox is a VM of its own**, on two networks of Galahad's own. Before the first, install the Mac's sandbox firewall, once (it asks for your password): a gateway sandbox then reaches the gateway alone, an online one the internet, never the Mac or your network, and no sandbox reaches another. Without it a Mac makes no sandboxes, and the doctor says so.
+On a Mac (macOS 26 or later, Apple silicon), **every sandbox is a VM of its own**, made with Apple's `container`, on two networks of Galahad's own, behind the Mac's sandbox firewall: a gateway sandbox reaches the gateway alone, an online one the internet, never the Mac or your network, and no sandbox reaches another. Without the firewall a Mac makes no sandboxes, and the doctor says so. One command gives a Mac all it needs (the app's *Set Up* runs the same): Apple's `container` from its signed release, checked, when it has none; the firewall; container's service and kernel; the node restarted to host VMs; the image; and a VM made to be sure. It asks for your password once, and leaves what holds as it is.
 
 ```sh
-bun galahad firewall install     # once; `bun galahad firewall` says whether it is on, `rules` what it lets through
+bun galahad sandbox setup          # `sandbox setup status` says what holds, changing nothing
+bun galahad firewall               # whether the firewall is on; `firewall rules`, what it lets through
 ```
 
 Each sandbox's `/work` is its own disk of `--disk` GB (20 by default), so a runaway job fills its workspace and never the server's disk. Limits need the small root helper that `deploy.sh --sudo` installs; without it, workspaces are unlimited and the heartbeat warns you. The node also keeps the image in use, so cleanup tools that prune unused images (Coolify's nightly cleanup) leave it alone, and it rebuilds the image if it's gone anyway.

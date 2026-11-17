@@ -98,7 +98,7 @@ export const PHASING = {
     { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, or run a check after one; next, before an answer." },
     { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing; next, the test written first." },
     { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
-    { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; knights' VMs on a Mac run behind its firewall; next, set up from the app." },
+    { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; it gives a Mac its knights' VMs, behind its firewall, with one password." },
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Lean context", line: "Output a later run or edit made stale becomes a line; next, errors since fixed." },
     { state: "next", what: "Checkpoint, rewind and fork", line: "A quest paused, moved, rewound to a step, or forked at a doubt." },
