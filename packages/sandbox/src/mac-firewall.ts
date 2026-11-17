@@ -144,6 +144,16 @@ export function macFirewallPlist(): string {
 `;
 }
 
+/**
+ * What is in root's places now, read as anyone may read them (the helper is 0755, its job 0644): this release's
+ * helper and job ("current"), another's or changed ("other": installed again, they are this release's), or none.
+ */
+export function macFirewallInstalled(read: (path: string) => string | null): "current" | "other" | "none" {
+  const [helper, plist] = [read(MAC_FIREWALL.helper), read(MAC_FIREWALL.plist)];
+  if (helper === null && plist === null) return "none";
+  return helper === macFirewallHelper() && plist === macFirewallPlist() ? "current" : "other";
+}
+
 /** Each interface `ifconfig -a` prints: its IPv4 addresses, and a bridge's filter flags (null: it has none). */
 export function interfacesOf(text: string): { name: string; inet: string[]; filter: number | null }[] {
   const found: { name: string; inet: string[]; filter: number | null }[] = [];

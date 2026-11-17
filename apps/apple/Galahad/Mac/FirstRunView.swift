@@ -33,6 +33,8 @@ struct FirstRunView: View {
             }
         }
         .task(id: run.step) {
+            // What its knights' VMs need is read as the step opens (each read asks container and the node).
+            if run.step == .vms { await mac.vmSetup.status() }
             // Staying on is read again every few seconds while it is shown, as you change what it reads.
             guard run.step == .stayOn else { return }
             while !Task.isCancelled {
@@ -109,11 +111,16 @@ struct FirstRunView: View {
 
     @ViewBuilder private var vmsStep: some View {
         Section {
-            ContainerLine()
-            Text("This release of Galahad doesn't make knights' VMs on a Mac yet: an update brings them. Until then, knights work on your other nodes.")
-                .foregroundStyle(.secondary)
+            VMSetupRows(setup: mac.vmSetup)
         } header: {
-            StepHead(title: FirstRun.Step.vms.title, line: "Each knight works in a VM of its own. On a Mac they are made with Apple's container, which runs each one in a lightweight VM on this Mac's own silicon.")
+            StepHead(title: FirstRun.Step.vms.title, line: "Each knight works in a VM of its own. On a Mac they are made with Apple's container, which runs each one in a lightweight VM on this Mac's own silicon, behind a firewall that keeps it to what it may reach.")
+        } footer: {
+            Text(mac.vmSetup.holds ? "Knights' VMs are made on this Mac now." : VMSetupRows.footer)
+        }
+        if let problem = mac.vmSetup.problem {
+            Section {
+                Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
         }
     }
 
@@ -166,10 +173,17 @@ struct FirstRunView: View {
                     .disabled(run.step != .node)
             }
             Spacer()
+            // Not now is fine: knights work on your other nodes until then.
+            if run.step == .vms, !mac.vmSetup.holds {
+                Button("Not Now") { run.next() }
+                    .controlSize(.large)
+                    .disabled(mac.vmSetup.running)
+            }
             Button {
                 switch run.step {
                 case .node: run.go(app: mac.app)
-                case .stayOn, .vms: run.next()
+                case .stayOn: run.next()
+                case .vms: if mac.vmSetup.holds { run.next() } else { mac.vmSetup.setUp() }
                 }
             } label: {
                 Text(primary)
@@ -190,14 +204,15 @@ struct FirstRunView: View {
         switch run.step {
         case .node: run.way == .start ? "Start the Fleet" : run.way == .join ? "Join the Fleet" : "Continue"
         case .stayOn: "Continue"
-        case .vms: "Done"
+        case .vms: mac.vmSetup.holds ? "Done" : mac.vmSetup.running ? "Setting Up…" : mac.vmSetup.failed ? "Try Again" : "Set Up"
         }
     }
 
     private var canContinue: Bool {
         switch run.step {
         case .node: run.canGo && (run.way == .client || unready == nil)
-        case .stayOn, .vms: !run.working
+        case .stayOn: !run.working
+        case .vms: !run.working && !mac.vmSetup.running && mac.vmSetup.read
         }
     }
 }
@@ -295,32 +310,6 @@ struct StayingOnAction: View {
         case .openTailscale?: Button("Open Tailscale") { NSWorkspace.shared.open(Tailscale.app) }
         case .getTailscale?: Button("Get Tailscale") { NSWorkspace.shared.open(Tailscale.download) }
         case .runAtLogin?, nil: EmptyView()
-        }
-    }
-}
-
-/// Apple's `container` on this Mac: installed (and its version), or not.
-private struct ContainerLine: View {
-    @State private var version: String?
-    @State private var looked = false
-    private static let command = URL(filePath: "/usr/local/bin/container")
-
-    var body: some View {
-        HStack(spacing: Space.s3) {
-            Image(systemName: version != nil ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(version != nil ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
-            VStack(alignment: .leading, spacing: Space.line) {
-                Text("Apple's container")
-                Text(version ?? (looked ? "Not installed. It comes from Apple's releases on GitHub, and Galahad will offer to install it." : "Looking…"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .task {
-            if FileManager.default.isExecutableFile(atPath: Self.command.path), let ran = try? await Command.run(Self.command, ["--version"]), ran.succeeded {
-                version = "Installed: \(ran.lastLine)"
-            }
-            looked = true
         }
     }
 }

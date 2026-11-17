@@ -15,6 +15,32 @@ import { containerName, LABEL, labels, NETWORKS, type SandboxSpec, volumeName } 
 export const CONTAINER_MAJOR = 1;
 
 /**
+ * Apple's container as a Mac is given it when it has none (`galahad sandbox setup`, the app's step 3): Apple's signed
+ * installer at the release this driver was checked against on the Mac mini, pinned to the SHA-256 GitHub records for
+ * it (signed "Developer ID Installer: Apple Inc. - Containerization" and notarized, as pkgutil read it, 17 November
+ * 2026). It installs to /usr/local. A Mac that has container already keeps the one it has.
+ */
+export const CONTAINER_RELEASE = {
+  version: "1.7.1",
+  url: "https://github.com/apple/container/releases/download/1.7.1/container-1.7.1-installer-signed.pkg",
+  sha256: "b6739caf3d47ca53a78f1a7edf32521420a75c7941838c3cefa75f30b80f5a97",
+  bytes: 169_630_704,
+  command: "/usr/local/bin/container",
+} as const;
+
+/**
+ * Where container keeps its default kernel for this Mac's VMs, under its own data (its default app root): there once
+ * `container system start --enable-kernel-install` or `container system kernel set --recommended` has fetched it.
+ */
+export const containerKernel = (home: string): string => `${home}/Library/Application Support/com.apple.container/kernels/default.kernel-arm64`;
+
+/**
+ * container's service started: with `kernel`, its recommended kernel fetched too when there is none (container checks
+ * it against the digest its configuration names). Started again while it runs, it changes nothing.
+ */
+export const containerSystemStartArgs = (kernel: boolean): string[] => ["system", "start", kernel ? "--enable-kernel-install" : "--disable-kernel-install", "--timeout", "60"];
+
+/**
  * The network `container system start` makes, which its builder joins (`container build`). No sandbox is put on it: an
  * online sandbox's way out is Galahad's own galahad-net, as on Docker, so the Mac's firewall knows every address.
  */

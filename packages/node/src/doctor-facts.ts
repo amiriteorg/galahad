@@ -1,9 +1,10 @@
 import { readdirSync, statSync, statfsSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type DoctorReport, freeSlots, type NodeCapacity, type NodeIdentity, nextRun, type PeerStatus, redact } from "@galahad/core";
 import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, planOf, resolveProvider, roster, windowsOf } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
-import type { SandboxHost } from "@galahad/sandbox";
+import { containerKernel, type SandboxHost } from "@galahad/sandbox";
 import type { ArchiveService } from "./archive/service.ts";
 import type { Assets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, servedOriginFrom } from "./capabilities.ts";
@@ -341,8 +342,9 @@ async function sandboxOf(deps: DoctorDeps, deep: boolean): Promise<DoctorFacts["
       return { name: d.name, online: !!status?.online, image: !!(d.profile?.caps as Partial<Capabilities>).sandbox?.image };
     });
   const host = deps.sandbox;
-  // (A Mac's Apple's container, where it has one: running or not, it is what the Mac hosts through.)
-  const container = caps?.container ? { container: caps.container } : {};
+  // (A Mac's Apple's container, where it has one: running or not, it is what the Mac hosts through; and whether it has
+  // the kernel its VMs boot, which it keeps under your home.)
+  const container = caps?.container ? { container: { ...caps.container, kernel: !!deps.system.file(containerKernel(homedir()))?.exists } } : {};
   if (!host) return { host: null, others, ...container };
   const [status, diskLimited] = await Promise.all([host.status().catch(() => ({ docker: false, image: false, networks: { gateway: false, online: false } })), host.diskLimited().catch(() => false)]);
   const microVMs = !!caps?.sandbox?.vm;

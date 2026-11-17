@@ -90,8 +90,8 @@ export interface DoctorFacts {
     } | null;
     /** The fleet's other sandbox hosts, as they last published themselves. */
     others: { name: string; online: boolean; image: boolean }[];
-    /** Apple's container, where this Mac has it: its version, and whether its service answers. */
-    container?: { version: string | null; running: boolean } | null;
+    /** Apple's container, where this Mac has it: its version, whether its service answers, and whether it has a kernel for its VMs. */
+    container?: { version: string | null; running: boolean; kernel?: boolean } | null;
   };
   /** null: compute isn't known here. */
   compute: { canMeasure: boolean; lastAt: number | null; due: "joined" | "changed" | null; slots: number | null; inUse: number; waiting: number } | null;
@@ -380,13 +380,14 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     const hosts = f.sandbox.others;
     // (A Mac with Apple's container that isn't running is told how to start it: it hosts through nothing else.)
     const container = f.sandbox.container;
-    const here = container && !container.running ? `start Apple's container here (container system start${container.version ? `; ${container.version} is installed` : ""}) and restart the node` : "install Docker on this one and restart the node";
+    const here = container && !container.running ? `run galahad sandbox setup here: it starts Apple's container${container.version ? ` (${container.version} is installed)` : ""} and restarts the node` : "install Docker on this one and restart the node";
     if (!hosts.length) add("sandbox", "sandbox.host", "needs-you", "no node in the fleet hosts sandboxes, so quests and trials can't run", `Enrol a machine with Docker (galahad join there), or ${here}.`);
     else add("sandbox", "sandbox.host", "ok", `${self} hosts no sandboxes (no Docker here); they run on ${hosts.map((h) => h.name).join(", ")}`);
   } else {
     const mac = host.engine === "container";
-    if (!host.docker) add("sandbox", "sandbox.docker", "broken", mac ? "Apple's container isn't answering on this Mac" : "Docker isn't answering on this machine", mac ? "container system start (its service, at a 1.x release), then restart the node." : "systemctl status docker, and check that the node's user is in the docker group.");
+    if (!host.docker) add("sandbox", "sandbox.docker", "broken", mac ? "Apple's container isn't answering on this Mac" : "Docker isn't answering on this machine", mac ? "galahad sandbox setup starts its service (container system start, at a 1.x release) and restarts the node, saying what fails." : "systemctl status docker, and check that the node's user is in the docker group.");
     else add("sandbox", "sandbox.docker", "ok", mac ? "Apple's container answers: every sandbox here is a VM of its own" : "Docker answers");
+    if (mac && host.docker && f.sandbox.container?.kernel === false) add("sandbox", "sandbox.kernel", "needs-you", "Apple's container has no kernel for its VMs yet, so none starts here", "galahad sandbox setup fetches Apple's recommended one (container checks its digest).");
     if (host.docker) {
       if (!host.image) add("sandbox", "sandbox.image", "needs-you", "the sandbox image is missing (another tool's cleanup may have pruned it)", "galahad sandbox build. He also rebuilds it himself when a sandbox is next needed, which makes that quest wait.");
       else add("sandbox", "sandbox.image", "ok", "the sandbox image is built and kept in use");
@@ -420,8 +421,8 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     const wall = host.macFirewall;
     if (wall?.on) add("sandbox", "sandbox.firewall", "ok", "this Mac's sandbox firewall is on: a gateway sandbox reaches the gateway alone, an online one the internet, never this Mac or your networks; no sandbox reaches another");
     else if (wall && !wall.installed) {
-      add("sandbox", "sandbox.firewall", "needs-you", "this Mac has no sandbox firewall, so it makes no sandboxes: its knights work on your other nodes", "galahad firewall install (it asks for your password once).", {
-        finding: { severity: "info", title: `${self} has no sandbox firewall`, body: "A Mac makes no sandboxes until its firewall is installed. On that Mac: galahad firewall install." },
+      add("sandbox", "sandbox.firewall", "needs-you", "this Mac has no sandbox firewall, so it makes no sandboxes: its knights work on your other nodes", "galahad sandbox setup, or This Mac in the app (it asks for your password once).", {
+        finding: { severity: "info", title: `${self} has no sandbox firewall`, body: "A Mac makes no sandboxes until its firewall is installed. On that Mac: galahad sandbox setup." },
       });
     } else if (wall) {
       add("sandbox", "sandbox.firewall", wall.soon ? "needs-you" : "broken", `this Mac's sandbox firewall isn't on, so it makes no sandboxes: ${wall.why ?? "no reason given"}`, wall.soon ? "Its helper puts it right within seconds of the networks coming up: galahad firewall status." : "galahad firewall status says why; galahad firewall install puts it back.", {

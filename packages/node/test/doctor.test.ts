@@ -401,14 +401,20 @@ describe("each fault gives its own line and advice", () => {
     expect(byId(checks, "sandbox.networks").line).toBe("both sandbox networks are there, each held up by a VM of the node's own");
     const down = healthy();
     down.sandbox.host = { ...down.sandbox.host!, engine: "container", docker: false, kvm: false, firewall: null, start: null };
-    expect(byId(diagnose(down), "sandbox.docker")).toMatchObject({ state: "broken", line: "Apple's container isn't answering on this Mac", fix: expect.stringContaining("container system start") });
+    expect(byId(diagnose(down), "sandbox.docker")).toMatchObject({ state: "broken", line: "Apple's container isn't answering on this Mac", fix: expect.stringContaining("galahad sandbox setup starts its service") });
     const failed = healthy();
     failed.sandbox.host = { ...failed.sandbox.host!, engine: "container", kvm: false, firewall: null, start: [{ kind: "vm", ok: false, ms: 3000, error: "Error: failed to boot" }] };
     expect(byId(diagnose(failed), "sandbox.start.vm").fix).toContain("container system logs");
     // A Mac with container found but not running hosts nothing: the line says why, and how.
     const stopped = healthy();
     stopped.sandbox = { host: null, others: [], container: { version: "1.7.1", running: false } };
-    expect(byId(diagnose(stopped), "sandbox.host")).toMatchObject({ state: "needs-you", fix: expect.stringContaining("container system start") });
+    expect(byId(diagnose(stopped), "sandbox.host")).toMatchObject({ state: "needs-you", fix: expect.stringContaining("run galahad sandbox setup here: it starts Apple's container (1.7.1 is installed)") });
+    // Running with no kernel, no VM starts: said, and how to fetch it. With one, nothing is said of it.
+    const bare = healthy();
+    bare.sandbox = { ...bare.sandbox, host: { ...bare.sandbox.host!, engine: "container", kvm: false, firewall: null, start: null }, container: { version: "1.7.1", running: true, kernel: false } };
+    expect(byId(diagnose(bare), "sandbox.kernel")).toMatchObject({ state: "needs-you", line: "Apple's container has no kernel for its VMs yet, so none starts here", fix: expect.stringContaining("galahad sandbox setup") });
+    bare.sandbox.container!.kernel = true;
+    expect(diagnose(bare).some((c) => c.id === "sandbox.kernel")).toBe(false);
   });
 
   test("a Mac's sandbox firewall: on, not installed, off for a moment, off", () => {
@@ -419,7 +425,7 @@ describe("each fault gives its own line and advice", () => {
     };
     expect(mac({ on: true, installed: true, soon: false, why: null })).toMatchObject({ state: "ok", line: expect.stringContaining("never this Mac or your networks") });
     const missing = mac({ on: false, installed: false, soon: false, why: "isn't installed" });
-    expect(missing).toMatchObject({ state: "needs-you", line: expect.stringContaining("makes no sandboxes"), fix: "galahad firewall install (it asks for your password once)." });
+    expect(missing).toMatchObject({ state: "needs-you", line: expect.stringContaining("makes no sandboxes"), fix: "galahad sandbox setup, or This Mac in the app (it asks for your password once)." });
     expect(missing.finding?.severity).toBe("info");
     expect(mac({ on: false, installed: true, soon: true, why: "the galahad-gw network has no bridge on this Mac yet" })).toMatchObject({ state: "needs-you", line: expect.stringContaining("no bridge on this Mac yet") });
     const off = mac({ on: false, installed: true, soon: false, why: "pf isn't on, so the sandbox firewall's rules hold nothing" });

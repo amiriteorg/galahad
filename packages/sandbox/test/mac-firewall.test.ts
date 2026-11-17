@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { interfacesOf, MAC_FIREWALL, macFirewall, macFirewallHelper, macFirewallPlist, macFirewallRules, type MacFirewallDeps, NETWORKS, SANDBOX_GATEWAY_PORT } from "../src/index.ts";
+import { interfacesOf, MAC_FIREWALL, macFirewall, macFirewallHelper, macFirewallInstalled, macFirewallPlist, macFirewallRules, type MacFirewallDeps, NETWORKS, SANDBOX_GATEWAY_PORT } from "../src/index.ts";
 
 /*
  * The Mac's sandbox firewall (mac-firewall.ts): its rules, the helper root runs and its launchd job, and how the node
@@ -70,6 +70,16 @@ describe("its helper and launchd job", () => {
     expect(plist).toContain("<key>RunAtLoad</key>\n  <true/>");
     expect(MAC_FIREWALL.helper.startsWith("/Library/PrivilegedHelperTools/")).toBe(true);
     expect(MAC_FIREWALL.plist.startsWith("/Library/LaunchDaemons/")).toBe(true);
+  });
+});
+
+describe("what is installed", () => {
+  test("this release's helper and job, another's, or none: read as anyone may read them", () => {
+    const files = (helper: string | null, plist: string | null) => (path: string) => (path === MAC_FIREWALL.helper ? helper : path === MAC_FIREWALL.plist ? plist : null);
+    expect(macFirewallInstalled(files(macFirewallHelper(), macFirewallPlist()))).toBe("current");
+    expect(macFirewallInstalled(files(macFirewallHelper().replace("every", "each"), macFirewallPlist()))).toBe("other");
+    expect(macFirewallInstalled(files(macFirewallHelper(), null))).toBe("other");
+    expect(macFirewallInstalled(files(null, null))).toBe("none");
   });
 });
 

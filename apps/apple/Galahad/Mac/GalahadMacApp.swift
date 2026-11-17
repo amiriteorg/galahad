@@ -80,6 +80,8 @@ enum MacWindow: Hashable, Codable {
     let firstRun = FirstRun()
     /// This Mac as a node.
     let thisMac = ThisMac()
+    /// What its knights' VMs need (`galahad sandbox setup`): the first run's step 3, and This Mac's.
+    let vmSetup = VMSetup()
     var place: MacPlace = MacApp.keptPlace() {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(place), forKey: Self.placeKey) }
     }

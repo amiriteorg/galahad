@@ -31,6 +31,7 @@ import { streamedError } from "./server.ts";
 import { priceCommand, trialCommand, usageCommand, UsageError } from "./trial-commands.ts";
 import { doctorCommand, stoppedReport } from "./doctor-cli.ts";
 import { firewallCommand, systemFirewallDeps } from "./firewall-cli.ts";
+import { sandboxSetup, type SetupNode, setupWords, systemSetupDeps } from "./sandbox-setup.ts";
 import { notifyCommand } from "./notify-cli.ts";
 import { teamCommand } from "./team-cli.ts";
 import { terminalCommand, ttyScreen } from "./terminal-cli.ts";
@@ -205,6 +206,11 @@ Work
   sandbox save <id> [/work/dir] [--label …]   keep a sandbox's work (default /work/out) after it's gone
   sandbox build [--on ultra] [--lab|--gazebo|--desktop]
                                   build the sandbox image (or the Lab, Gazebo, or the knights' desktop) on a host
+  sandbox setup [status] [--json]
+                                  a Mac given its knights' VMs: Apple's container (its signed installer, checked, when
+                                  it has none), its service and kernel, the sandbox firewall, the node restarted to host
+                                  VMs, the image, and a VM made to be sure. It asks for your password once, and leaves
+                                  what holds as it is. status changes nothing: it says what holds and what doesn't
   terminal <knight|sandbox>       a shell in that knight's VM (or that sandbox) on a real terminal: what a vendor's
                                   sign-in or a coding tool's screen needs. Ctrl-] leaves and closes it; so does exit
   terminal ls | terminal attach <terminal> | terminal close <terminal>
@@ -1406,6 +1412,14 @@ Evidence: galahad artifact ${i!.artifact}`));
     }
 
     case "sandbox": {
+      if (sub === "setup") {
+        // A Mac given what its knights' VMs need (sandbox-setup.ts); a node of its own isn't needed for its first steps.
+        const json = !!flags.json;
+        const node = (): SetupNode | null => (home.exists() ? { name: home.readConfig().name, call: (route, input) => new Admin(home).call(route, input) } : null);
+        if (rest[0] && rest[0] !== "status") fail("usage: galahad sandbox setup [status] [--json]");
+        process.exitCode = await sandboxSetup(systemSetupDeps({ node, say: (line) => console.log(json ? JSON.stringify(line) : setupWords(line)) }), { check: rest[0] === "status" });
+        return;
+      }
       const admin = new Admin(home);
       const on = str("on");
       const printResult = (r: { exitCode: number; stdout: string; stderr: string; durationMs: number; truncated: boolean }) => {
@@ -1492,7 +1506,7 @@ Evidence: galahad artifact ${i!.artifact}`));
         }
         process.exit(code);
       }
-      fail("usage: galahad sandbox run|ls|exec|save|rm|build — see `galahad help`");
+      fail("usage: galahad sandbox run|ls|exec|save|rm|build|setup — see `galahad help`");
     }
 
     case "artifacts":

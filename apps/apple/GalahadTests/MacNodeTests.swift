@@ -163,6 +163,35 @@ struct MacNodeTests {
         #expect(NodeSetup.code(in: "  Approve on the inviting node if it shows the same code. Waiting…") == nil)
     }
 
+    @Test func setUpsLinesAreReadAsTheCLIPrintsThem() {
+        // `galahad sandbox setup --json`, a line of it as sandbox-setup.ts prints it (JSON.stringify of a SetupLine).
+        #expect(VMSetup.line(#"{"step":"container","state":"done","said":"1.7.1 is installed"}"#) == VMSetup.Line(step: .container, state: .done, said: "1.7.1 is installed"))
+        #expect(VMSetup.line(#"{"step":"firewall","state":"working","said":"installing it (macOS asks for your password)…"}"#)?.words == "Installing it (macOS asks for your password)…")
+        #expect(VMSetup.Step.allCases.map(\.rawValue) == ["container", "firewall", "service", "node", "image", "vm"])
+        // Anything else it prints isn't a line, nor is a step or state this app doesn't know.
+        #expect(VMSetup.line("Galahad needs your password to install the sandbox firewall, for its knights' VMs.") == nil)
+        #expect(VMSetup.line(#"{"step":"gpu","state":"done","said":"a later release's step"}"#) == nil)
+        #expect(VMSetup.line(#"{"step":"vm","state":"maybe","said":""}"#) == nil)
+    }
+
+    @Test @MainActor func setUpHoldsOnlyWhenEveryStepIsDone() {
+        let setup = VMSetup(bundle: NodeBundle(app: URL(filePath: "/nonexistent/Galahad.app")))
+        let lines = { (state: (VMSetup.Step) -> VMSetup.State) in VMSetup.Step.allCases.map { VMSetup.Line(step: $0, state: state($0), said: "") } }
+        setup.show(lines { _ in .done })
+        #expect(setup.holds && !setup.failed)
+        setup.show(lines { $0 == .vm ? .todo : .done })
+        #expect(!setup.holds && !setup.failed)
+        setup.show(lines { $0 == .image ? .failed : $0 == .vm ? .skipped : .done })
+        #expect(!setup.holds && setup.failed)
+    }
+
+    @Test @MainActor func aBuildWithoutTheNodeRunsNoSetUp() async {
+        let setup = VMSetup(bundle: NodeBundle(app: URL(filePath: "/nonexistent/Galahad.app")))
+        await setup.status()
+        setup.setUp()
+        #expect(!setup.running && !setup.read && setup.lines.isEmpty)
+    }
+
     @Test func thisMacIsNamedForItsShortHostName() {
         #expect(NodeSetup.defaultName(host: "Owners-Mac-mini.local") == "Owners-Mac-mini")
         #expect(NodeSetup.defaultName(host: "mini") == "mini")

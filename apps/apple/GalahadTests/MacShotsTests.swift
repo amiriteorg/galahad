@@ -51,6 +51,24 @@ struct MacShots {
                                    log: "[galahad] node mini up · fleet camelot · http://127.0.0.1:7777 · vault unlocked · 1 loop(s) here of 1\n[galahad] compute: Measured this node for the first time\n[galahad] node mini up · fleet camelot · http://127.0.0.1:7777 · vault unlocked · 1 loop(s) here of 1")
         // In front, as you would see it: Settings opened from the app's menu brings the app in front.
         try await openSettings().close()
+        // Its knights' VMs as `galahad sandbox setup status` said them on the Mac mini made fresh, then once set up.
+        let fresh: [VMSetup.Line] = [
+            .init(step: .container, state: .todo, said: "not installed: Apple's signed installer (1.7.1, 170 MB) is fetched from its releases on GitHub, checked against the one Apple published, and installed"),
+            .init(step: .firewall, state: .todo, said: "not installed: it keeps each sandbox here from this Mac, your network and the other sandboxes"),
+            .init(step: .service, state: .todo, said: "not running: it is started, and container fetches its recommended Linux kernel, once"),
+            .init(step: .node, state: .todo, said: "it doesn't host VMs yet: it is restarted, and finds container as it starts"),
+            .init(step: .image, state: .todo, said: "not built yet: the node builds it (a few minutes, the first time)"),
+            .init(step: .vm, state: .todo, said: "not tried yet: one is made through the firewall, a command run in it, and it is removed"),
+        ]
+        let setUp: [VMSetup.Line] = [
+            .init(step: .container, state: .done, said: "1.7.1 is installed"),
+            .init(step: .firewall, state: .done, said: "on: a gateway sandbox reaches the gateway alone, an online one its resolver and the internet, and no sandbox another"),
+            .init(step: .service, state: .done, said: "running, with its kernel"),
+            .init(step: .node, state: .done, said: "it hosts knights' VMs"),
+            .init(step: .image, state: .done, said: "built"),
+            .init(step: .vm, state: .done, said: "one was made through the firewall, ran a command, and was removed, in 4 s"),
+        ]
+        MacApp.shared.vmSetup.show(fresh)
         // The first run's three steps, as a Mac with no node sees them, in a window of the test's own: this build carries
         // no node and isn't in Applications, which the first run would say.
         let run = FirstRun()
@@ -64,6 +82,10 @@ struct MacShots {
                 try await Task.sleep(for: .seconds(1.5))
                 try await snap(first, "first-run-\(name)-\(look)")
             }
+            MacApp.shared.vmSetup.show(setUp)
+            try await Task.sleep(for: .seconds(1.5))
+            try await snap(first, "first-run-3-vms-set-up-\(look)")
+            MacApp.shared.vmSetup.show(fresh)
             run.step = .node
             run.way = .join
             run.invite = "gi1.not-a-real-invite-only-a-picture-of-one"
@@ -73,6 +95,7 @@ struct MacShots {
         }
         first.close()
         NSApp.appearance = nil
+        MacApp.shared.vmSetup.show(setUp)
         // Just the app: joining, with a `galahad:` link's invite filled in.
         MacApp.shared.firstRun.active = false
         main.makeKeyAndOrderFront(nil)

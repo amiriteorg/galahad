@@ -17,6 +17,7 @@ import {
   containerRunArgs,
   containerStartArgs,
   containerStopArgs,
+  containerSystemStartArgs,
   containerTerminalArgs,
   containerVersionArgs,
   containerVolumeDeleteArgs,
@@ -1385,14 +1386,14 @@ const runnerOf =
 /**
  * On a Mac: container's service started, when it is installed and stopped. It doesn't start itself at boot (the Mac
  * mini found it stopped after macOS updated itself and restarted, 17 November 2026), and a node there hosts nothing
- * until it runs. It never installs a kernel (the app's first run does, with the owner): without one it stays stopped,
- * and the doctor says how. "running": it was; "started"; "failed"; null: no container here.
+ * until it runs. It never fetches a kernel (`galahad sandbox setup` does, the app's step 3, with the owner): without
+ * one the service runs and no VM starts. "running": it was; "started"; "failed"; null: no container here.
  */
 export async function startContainerService(runner?: DockerRunner, bin = "container"): Promise<"running" | "started" | "failed" | null> {
   const found = await probeContainer(runner, bin);
   if (!found) return null;
   if (found.container.running) return "running";
-  const started = await (runner ?? runnerOf(bin))(["system", "start", "--disable-kernel-install", "--timeout", "60"], 90_000);
+  const started = await (runner ?? runnerOf(bin))(containerSystemStartArgs(false), 90_000);
   return started.code === 0 && (await probeContainer(runner, bin))?.container.running ? "started" : "failed";
 }
 

@@ -184,6 +184,7 @@ struct ThisMacSections: View {
     var body: some View {
         if node.isNode {
             nodeSection
+            vmsSection
             stayingOnSection
             commandSection
             updatesSection
@@ -263,6 +264,29 @@ struct ThisMacSections: View {
         case .on: return "Starting, or not answering"
         case .off: return node.scripted && node.started != nil ? "Starting, or not answering" : "Not running"
         }
+    }
+
+    /// What its knights' VMs need, read when This Mac opens; Set Up gives what doesn't hold (`galahad sandbox setup`).
+    private var vmsSection: some View {
+        let setup = mac.vmSetup
+        return Section {
+            VMSetupRows(setup: setup)
+            if let problem = setup.problem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            HStack(spacing: Space.s2) {
+                Spacer()
+                Button("Check Again") { Task { await setup.status() } }.disabled(setup.running)
+                if !setup.holds {
+                    Button(setup.failed ? "Try Again" : "Set Up") { setup.setUp() }.disabled(setup.running || !setup.read)
+                }
+            }
+        } header: {
+            Text("Knights' VMs")
+        } footer: {
+            Text(setup.holds ? "Each knight's VM is made here with Apple's container, behind the sandbox firewall. galahad sandbox setup in Terminal says the same." : VMSetupRows.footer)
+        }
+        .task { if !setup.read { await setup.status() } }
     }
 
     @ViewBuilder private var stayingOnSection: some View {
