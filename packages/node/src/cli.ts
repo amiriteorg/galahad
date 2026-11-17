@@ -479,8 +479,12 @@ async function main(): Promise<void> {
       untrusted: { type: "boolean" },
       interactive: { type: "boolean" },
       "no-wait": { type: "boolean" },
+      "no-qr": { type: "boolean" },
       on: { type: "string" },
       net: { type: "string" },
+      // (A knight's VM: `roundtable provision <id> --network gateway`. Undeclared, it was read as a switch and its VM made online.)
+      network: { type: "string" },
+      look: { type: "string" },
       cpus: { type: "string" },
       image: { type: "string" },
       keep: { type: "boolean" },
