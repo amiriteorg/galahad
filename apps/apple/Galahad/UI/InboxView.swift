@@ -20,6 +20,17 @@ struct InboxView: View {
                     Text("Let one in only if it shows the same code.")
                 }
             }
+            if !session.screenSessions.isEmpty {
+                Section {
+                    ForEach(session.screenSessions) { screen in
+                        ScreenSessionRow(session: session, screen: screen)
+                    }
+                } header: {
+                    Text("His use of a Mac itself")
+                } footer: {
+                    Text("Nothing of the Mac is his until you let him, and only for the minutes asked. You can watch it and end it any time.")
+                }
+            }
             if !session.waiting.isEmpty {
                 Section {
                     ForEach(session.waiting) { action in
@@ -70,7 +81,7 @@ struct InboxView: View {
             if !session.inboxLoaded {
                 ProgressView()
             } else if session.inboxCount == 0 {
-                ContentUnavailableView("Nothing needs you", systemImage: "checkmark.circle", description: Text("Approvals, keys Galahad asks for, facts he noticed about you, what your rules tell you and devices asking to join wait here."))
+                ContentUnavailableView("Nothing needs you", systemImage: "checkmark.circle", description: Text("Approvals, his asks to use a Mac, keys Galahad asks for, facts he noticed about you, what your rules tell you and devices asking to join wait here."))
             }
         }
         .navigationTitle("Inbox")
@@ -408,6 +419,80 @@ struct NoticeRow: View {
         defer { dismissing = false }
         do {
             try await session.dismiss(notice)
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
+/// His ask to use a Mac itself (docs/MAC.md, M4), or his session there: what for (his words), for how long, and your
+/// answer; while it runs, watching it and ending it.
+struct ScreenSessionRow: View {
+    let session: Session
+    let screen: ScreenSessionView
+    @State private var confirming = false
+    @State private var problem: String?
+
+    private func clock(_ ms: Double) -> Text {
+        Text(Date(timeIntervalSince1970: ms / 1000), style: .time)
+    }
+
+    var body: some View {
+        InboxRow(symbol: "desktopcomputer") {
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text(screen.state == "allowed" ? "Galahad is using \(screen.nodeName) itself" : "Galahad asks to use \(screen.nodeName) itself").font(.headline)
+                Text(screen.why).font(.subheadline)
+                Group {
+                    if screen.state == "allowed", let until = screen.until {
+                        Text("Until \(clock(until)), or until you end it.")
+                    } else {
+                        Text("For \(screen.minutes) minutes, if you let him. Answer by \(clock(screen.answerBy)).")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            if session.can("fleet:admin") {
+                InboxButtons {
+                    if screen.state == "allowed" {
+                        NavigationLink {
+                            KnightScreenView(session: session, of: .mac(node: screen.node, name: screen.nodeName))
+                        } label: {
+                            Text("Watch")
+                        }
+                        .buttonStyle(.glass)
+                        Button("End now", role: .destructive) { Task { await act { try await session.end(screen: screen) } } }
+                            .buttonStyle(.glass)
+                    } else {
+                        Button("Not now") { Task { await act { try await session.decide(screen: screen, allow: false) } } }
+                            .buttonStyle(.glass)
+                        Button {
+                            confirming = true
+                        } label: {
+                            Text("Let him…").fontWeight(.semibold).foregroundStyle(Prominent.label())
+                        }
+                        .buttonStyle(.glassProminent)
+                    }
+                }
+            } else {
+                Text("This device can't answer (it has no fleet:admin scope).").font(.footnote).foregroundStyle(.secondary)
+            }
+            if let problem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
+            }
+        }
+        .alert("Let Galahad use \(screen.nodeName) itself?", isPresented: $confirming) {
+            Button("Let him, for \(screen.minutes) minutes") { Task { await act { try await session.decide(screen: screen, allow: true) } } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("For \(screen.minutes) minutes from now he sees its screen, uses its apps and runs commands as its user, held to your rules. That account holds the node's keys: let him only for work you want done that way.")
+        }
+    }
+
+    private func act(_ work: () async throws -> Void) async {
+        do {
+            try await work()
             problem = nil
         } catch {
             problem = error.localizedDescription

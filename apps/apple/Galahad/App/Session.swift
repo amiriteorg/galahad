@@ -20,6 +20,8 @@ import Observation
     private(set) var facts: [Fact] = []
     /// What the node noticed for you that you haven't dismissed: a heartbeat's finding, a rule of yours that told you.
     private(set) var notices: [NoticeView] = []
+    /// His asks to use a Mac itself, and his sessions there while they last.
+    private(set) var screenSessions: [ScreenSessionView] = []
     private(set) var turns: [TurnView] = []
     private(set) var quests: [QuestView] = []
     /// The Inbox has been read at least once, so its count means something.
@@ -41,7 +43,7 @@ import Observation
     func can(_ scope: String) -> Bool { whoami?.scopes.contains(scope) ?? true }
 
     var waiting: [ActionView] { actions.filter { $0.waiting() } }
-    var inboxCount: Int { waiting.count + requests.count + pairings.count + facts.count + notices.count }
+    var inboxCount: Int { waiting.count + requests.count + pairings.count + facts.count + notices.count + screenSessions.count }
     var asks: [Ask] { waiting.map { Ask(by: $0.by, connector: $0.connector, tool: $0.tool) } }
     var rows: [RosterRow] { team.map { Roster.rows(snapshot: $0, asks: asks) } ?? [] }
 
@@ -93,6 +95,7 @@ import Observation
         async let pairings = attempt { try await client.get("/api/pairings", as: Listed.self).pairings ?? [] }
         async let about = attempt { try await client.get("/api/about-you", as: AboutYou.self) }
         async let notices = attempt { try await client.get("/api/notices", as: Listed.self).notices ?? [] }
+        async let screens = attempt { try await client.get("/api/screen/sessions", as: Listed.self).sessions ?? [] }
         async let turns = attempt { try await client.get("/api/turns", as: Listed.self) }
         async let quests = attempt { try await client.get("/api/quests", as: Listed.self).quests ?? [] }
 
@@ -115,6 +118,7 @@ import Observation
         if case .success(let list) = await pairings { self.pairings = list }
         if case .success(let about) = await about { self.facts = about.proposed }
         if case .success(let list) = await notices { self.notices = Notices.open(list) }
+        if case .success(let list) = await screens { self.screenSessions = list.filter { $0.state == "waiting" || $0.state == "allowed" } }
         if case .success(let listed) = await turns {
             self.turns = listed.turns ?? []
             // The chat on screen, as the node holds it, when anything kept changed on another device.
@@ -155,6 +159,20 @@ import Observation
     func drop(_ fact: Fact) async throws {
         struct Forget: Encodable { let id: String }
         _ = try await client.post("/api/memories/forget", Forget(id: fact.id), as: JSONValue.self)
+        await refresh()
+    }
+
+    /// Your answer to his ask to use a Mac itself: his for its minutes from now, or not.
+    func decide(screen: ScreenSessionView, allow: Bool) async throws {
+        struct Decision: Encodable { let id: String; let allow: Bool }
+        _ = try await client.post("/api/screen/decide", Decision(id: screen.id, allow: allow), as: JSONValue.self)
+        await refresh()
+    }
+
+    /// Ends his session on a Mac now: nothing of it is his after this.
+    func end(screen: ScreenSessionView) async throws {
+        struct End: Encodable { let id: String }
+        _ = try await client.post("/api/screen/end", End(id: screen.id), as: JSONValue.self)
         await refresh()
     }
 
@@ -231,6 +249,7 @@ import Observation
         var requests: [SecretRequestView]?
         var pairings: [PairingView]?
         var notices: [NoticeView]?
+        var sessions: [ScreenSessionView]?
         var turns: [TurnView]?
         /// Which writing of the chats this is (on `GET /api/turns`).
         var chats: String?

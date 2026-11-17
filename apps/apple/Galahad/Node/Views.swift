@@ -181,6 +181,23 @@ struct NoticeView: Decodable, Sendable, Identifiable, Equatable {
     var id: String { key }
 }
 
+/// `GET /api/screen/sessions`: Galahad's ask to use a Mac itself, or his session there (core's screen.ts): his only
+/// once you allow it, for its minutes from your answer, until you or he ends it.
+struct ScreenSessionView: Decodable, Sendable, Identifiable, Equatable {
+    let id: String
+    let node: String
+    let nodeName: String
+    /// What he wants it for: his words.
+    let why: String
+    let minutes: Int
+    /// Milliseconds.
+    let askedAt: Double
+    /// waiting · lapsed · denied · allowed · over · ended
+    let state: String
+    let answerBy: Double
+    let until: Double?
+}
+
 /// `GET /api/pairings`: a device asking to join, with the code it shows.
 /// `GET /api/about-you`: a fact about you, as a memory of the mind. Yours (`owner`) goes with every answer of his; his
 /// (an agent's) is only proposed, and waits for you to keep it.

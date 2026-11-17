@@ -8,7 +8,36 @@ import SwiftUI
  */
 struct KnightScreenView: View {
     let session: Session
-    let knight: VMSeat
+    let of: ScreenOf
+
+    /// Whose screen: a knight's (or his own VM's), by its seat; or a Mac's own, by its node.
+    enum ScreenOf {
+        case seat(VMSeat)
+        case mac(node: String, name: String)
+
+        var name: String {
+            switch self {
+            case .seat(let seat): seat.name
+            case .mac(_, let name): name
+            }
+        }
+    }
+
+    init(session: Session, knight: VMSeat) {
+        self.init(session: session, of: .seat(knight))
+    }
+
+    init(session: Session, of: ScreenOf) {
+        self.session = session
+        self.of = of
+    }
+
+    private var knight: (name: String, id: String) {
+        switch of {
+        case .seat(let seat): (seat.name, seat.id)
+        case .mac(let node, let name): (name, node)
+        }
+    }
     @State private var shot: DesktopShot?
     @State private var picture: PlatformImage?
     @State private var status = "Looking…"
@@ -178,8 +207,12 @@ struct KnightScreenView: View {
         defer { sending = false }
         if action != nil { status = "Sending…" }
         struct Ask: Encodable { let id: String; let action: DesktopAction? }
+        struct OnMac: Encodable { let on: String; let action: DesktopAction? }
         do {
-            let next = try await session.client.post("/api/team/desktop", Ask(id: knight.id, action: action), as: DesktopShot.self)
+            let next: DesktopShot = switch of {
+            case .seat(let seat): try await session.client.post("/api/team/desktop", Ask(id: seat.id, action: action), as: DesktopShot.self)
+            case .mac(let node, _): try await session.client.post("/api/screen/desktop", OnMac(on: node, action: action), as: DesktopShot.self)
+            }
             guard let data = Desktop.picture(next), let image = PlatformImage(data: data) else {
                 problem = "The desktop sent a picture this app doesn't show."
                 return
