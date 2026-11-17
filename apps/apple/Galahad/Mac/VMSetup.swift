@@ -57,9 +57,14 @@ import SwiftUI
         return try? JSONDecoder().decode(Line.self, from: Data(text.utf8))
     }
 
-    /// What holds and what doesn't, changing nothing (`galahad sandbox setup status`).
+    /// What holds and what doesn't, changing nothing (`galahad sandbox setup status`). A build without the node has
+    /// nothing to ask, and says so.
     func status() async {
-        guard !given, !running, bundle.carriesNode else { return }
+        guard !given, !running else { return }
+        guard bundle.carriesNode else {
+            (problem, read) = ("This build of Galahad carries no node to set this Mac up with: galahad sandbox setup does it in Terminal.", true)
+            return
+        }
         await follow(["sandbox", "setup", "status", "--json"])
     }
 

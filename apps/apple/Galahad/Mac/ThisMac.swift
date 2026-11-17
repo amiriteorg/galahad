@@ -274,11 +274,13 @@ struct ThisMacSections: View {
             if let problem = setup.problem {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
-            HStack(spacing: Space.s2) {
-                Spacer()
-                Button("Check Again") { Task { await setup.status() } }.disabled(setup.running)
-                if !setup.holds {
-                    Button(setup.failed ? "Try Again" : "Set Up") { setup.setUp() }.disabled(setup.running || !setup.read)
+            if setup.bundle.carriesNode {
+                HStack(spacing: Space.s2) {
+                    Spacer()
+                    Button("Check Again") { Task { await setup.status() } }.disabled(setup.running)
+                    if !setup.holds {
+                        Button(setup.failed ? "Try Again" : "Set Up") { setup.setUp() }.disabled(setup.running || !setup.read)
+                    }
                 }
             }
         } header: {

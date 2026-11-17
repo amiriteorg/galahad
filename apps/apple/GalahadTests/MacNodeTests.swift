@@ -185,11 +185,13 @@ struct MacNodeTests {
         #expect(!setup.holds && setup.failed)
     }
 
-    @Test @MainActor func aBuildWithoutTheNodeRunsNoSetUp() async {
+    @Test @MainActor func aBuildWithoutTheNodeRunsNoSetUpAndSaysSo() async {
         let setup = VMSetup(bundle: NodeBundle(app: URL(filePath: "/nonexistent/Galahad.app")))
-        await setup.status()
         setup.setUp()
-        #expect(!setup.running && !setup.read && setup.lines.isEmpty)
+        #expect(!setup.running && setup.lines.isEmpty)
+        await setup.status()
+        #expect(!setup.running && setup.read && setup.lines.isEmpty)
+        #expect(setup.problem == "This build of Galahad carries no node to set this Mac up with: galahad sandbox setup does it in Terminal.")
     }
 
     @Test func thisMacIsNamedForItsShortHostName() {
