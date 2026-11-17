@@ -191,11 +191,14 @@ describe("a sandbox on a Mac", () => {
     expect(await m.host.available()).toBe(false);
   });
 
-  test("its images are built for Apple silicon, and no keeper holds them (nothing prunes them on a Mac)", async () => {
+  test("its images are built for Apple silicon, the builder's VM stopped after, and no keeper holds them (nothing prunes them on a Mac)", async () => {
     const m = macHost();
     const built = await m.host.build("/opt/galahad/sandbox");
     expect(built.ok).toBe(true);
     expect(commands(m.fake.calls, "build")).toEqual([["build", "--pull", "--platform", "linux/arm64", "--tag", "galahad/sandbox:1", "/opt/galahad/sandbox"]]);
+    // (Its builder is a VM of 2 GB that a build leaves running: seen on the Mac mini.)
+    expect(commands(m.fake.calls, "builder")).toEqual([["builder", "stop"]]);
+    expect(m.fake.calls.findIndex((c) => c[0] === "builder")).toBeGreaterThan(m.fake.calls.findIndex((c) => c[0] === "build"));
     expect(await m.host.keepImage()).toBe(false);
     expect(commands(m.fake.calls, "create")).toEqual([]);
   });

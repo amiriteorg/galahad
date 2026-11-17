@@ -187,6 +187,8 @@ export function fakeContainer(): FakeContainer {
         case "build":
           fake.images.add(rest[rest.indexOf("--tag") + 1]!);
           return ok("built");
+        case "builder":
+          return rest[0] === "stop" ? ok("") : no(`fake container doesn't know "builder ${rest[0]}"`);
         case "stats":
           return ok(JSON.stringify(rest.filter((n) => fake.vms.has(n)).map((id) => ({ id, memoryUsageBytes: 2 ** 28, memoryLimitBytes: fake.vms.get(id)!.memoryBytes, cpuUsageUsec: 1, networkRxBytes: 0, networkTxBytes: 0, blockReadBytes: 0, blockWriteBytes: 0, numProcesses: 3, cpuUtilization: 0.25 }))));
         default:

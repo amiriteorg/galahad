@@ -4,6 +4,7 @@ import { type ActionClass, type Decision, decide, type ExecResult, isReservedGat
 import {
   CONTAINER_MAJOR,
   containerBuildArgs,
+  containerBuilderStopArgs,
   containerCannot,
   containerCollectArgs,
   containerDeleteArgs,
@@ -512,6 +513,8 @@ export class SandboxHost {
     if (!pending) {
       pending = (async () => {
         const result = await this.docker(this.apple ? containerBuildArgs(image, contextDir) : ["build", "--pull", "-t", image, contextDir], 60 * 60_000);
+        // On a Mac its builder is a VM of its own, left running by the build: stopped once no other build needs it.
+        if (this.apple && [...this.building.keys()].every((other) => other === image)) await this.docker(containerBuilderStopArgs(), 60_000);
         this.opts.ledger({
           class: "create",
           resource: "docker.image",
