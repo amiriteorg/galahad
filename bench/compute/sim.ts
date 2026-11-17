@@ -295,7 +295,7 @@ export async function runComputeSim(options: ComputeSimOptions): Promise<Compute
     const quests = drawQuests(options.seed, options.quests, options.effort);
     const census = { nodes: service.nodes() };
     const parallel = planParallel(census, options.parallel === "auto" ? "auto" : options.quests, options.effort, quests.length).parallel;
-    const need = (h: Host) => clampNeed(h.capacity, { cpus: SLOT_CPUS, memoryGb: SLOT_MEMORY_GB }, false);
+    const need = (h: Host) => clampNeed(h.capacity, { cpus: SLOT_CPUS, memoryGb: SLOT_MEMORY_GB }, null);
     const waits: number[] = [];
     let lost = 0;
     let finished = 0;

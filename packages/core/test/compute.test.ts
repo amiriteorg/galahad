@@ -7,6 +7,8 @@ import {
   calibrationDue,
   ceilingThreads,
   clampNeed,
+  MAC_VM_OVERHEAD,
+  VM_OVERHEAD,
   type ComputeBody,
   computeBody,
   type ComputePlan,
@@ -196,9 +198,11 @@ describe("admission: work fits, or it waits", () => {
   });
 
   test("a request larger than the ceiling is cut to it; a microVM's overhead is counted", () => {
-    expect(clampNeed(capacity, { cpus: 64, memoryGb: 512 }, false)).toEqual({ cpus: 16, memoryGb: 91, clamped: true });
-    expect(clampNeed(capacity, slot, false)).toEqual({ cpus: 4, memoryGb: 8, clamped: false });
-    expect(clampNeed(capacity, slot, true)).toEqual({ cpus: 5, memoryGb: 10, clamped: false });
+    expect(clampNeed(capacity, { cpus: 64, memoryGb: 512 }, null)).toEqual({ cpus: 16, memoryGb: 91, clamped: true });
+    expect(clampNeed(capacity, slot, null)).toEqual({ cpus: 4, memoryGb: 8, clamped: false });
+    expect(clampNeed(capacity, slot, VM_OVERHEAD)).toEqual({ cpus: 5, memoryGb: 10, clamped: false });
+    // A Mac's VM (Apple's container) takes the half GB measured there, not Kata's two.
+    expect(clampNeed(capacity, slot, MAC_VM_OVERHEAD)).toEqual({ cpus: 5, memoryGb: 8.5, clamped: false });
   });
 
   test("free slots: how many more standard sandboxes fit now", () => {

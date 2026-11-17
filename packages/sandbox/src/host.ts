@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { type ActionClass, type Decision, decide, type ExecResult, isReservedGatewayScope, randomBytes, redact, type SandboxNetwork, type SandboxView, TeamWorkspaceQuest } from "@galahad/core";
+import { type ActionClass, type Decision, decide, type ExecResult, isReservedGatewayScope, MAC_VM_OVERHEAD, randomBytes, redact, type SandboxNetwork, type SandboxView, TeamWorkspaceQuest, VM_OVERHEAD, type VmOverhead } from "@galahad/core";
 import {
   CONTAINER_MAJOR,
   containerBuildArgs,
@@ -350,6 +350,11 @@ export class SandboxHost {
   /** Whether a sandbox's CPUs are whole here (a Mac's VM is given whole ones: a part of one is a whole one). */
   get wholeCpus(): boolean {
     return this.apple;
+  }
+
+  /** What a VM here takes on top of what it is given: Kata's on Linux, Apple's container's (measured on the Mac mini) on a Mac. */
+  get vmOverhead(): VmOverhead {
+    return this.apple ? MAC_VM_OVERHEAD : VM_OVERHEAD;
   }
 
   /** Why this host won't make the sandbox asked for (a Mac: no network at all, an image not built for it), or null. */

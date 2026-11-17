@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { b64u, type NodeCapacity, newNodeIdentity, SELF_ACTION_QUEST, VM_OVERHEAD } from "@galahad/core";
+import { b64u, MAC_VM_OVERHEAD, type NodeCapacity, newNodeIdentity, SELF_ACTION_QUEST, VM_OVERHEAD } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import type { CreateInput, LedgerEntryInput, SpawnTerminal } from "@galahad/sandbox";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -276,8 +276,7 @@ describe("what a calibration measures of this node, through the same door", () =
 });
 
 describe("on a Mac (Apple's container), behind the same governor", () => {
-  function mac(cap = () => capacity({ cores: 12, memoryGb: 24, sandboxes: 2 })) {
-    const fake = fakeContainer();
+  function mac(cap = () => capacity({ cores: 12, memoryGb: 24, sandboxes: 2 }), fake = fakeContainer()) {
     const ledger: LedgerEntryInput[] = [];
     const governor = new Governor({ capacity: cap, host: () => null, retryMs: 5, maxWaitMs: 2_000 });
     const sandbox = new GovernedSandboxHost(
@@ -299,11 +298,16 @@ describe("on a Mac (Apple's container), behind the same governor", () => {
     return { sandbox, governor, fake, ledger };
   }
 
-  test("every sandbox is a VM, so each one's own overhead counts against the ceiling, whatever its network", async () => {
-    const { sandbox, governor } = mac();
+  test("every sandbox is a VM, so each one's own overhead counts against the ceiling, whatever its network: the Mac's, not Kata's", async () => {
+    const { sandbox, governor, fake } = mac();
     const made = await sandbox.create(request({ network: "gateway", cpus: 2, memoryGb: 4 }));
     expect(made.isolation).toBe("vm");
-    expect(governor.usage()).toMatchObject({ sandboxes: 1, cores: 2 + VM_OVERHEAD.cpus, memoryGb: 4 + VM_OVERHEAD.memoryGb });
+    expect(governor.usage()).toMatchObject({ sandboxes: 1, cores: 2 + MAC_VM_OVERHEAD.cpus, memoryGb: 4 + MAC_VM_OVERHEAD.memoryGb });
+    expect(MAC_VM_OVERHEAD).toEqual({ cpus: 1, memoryGb: 0.5 });
+    // A VM from before the node's restart is counted the same way when the node finds it.
+    const again = mac(undefined, fake);
+    await again.sandbox.reconcile();
+    expect(again.governor.usage()).toMatchObject({ sandboxes: 1, cores: 2 + MAC_VM_OVERHEAD.cpus, memoryGb: 4 + MAC_VM_OVERHEAD.memoryGb });
   });
 
   test("a VM's CPUs are whole: a part of one is given as one, and the governor counts what it gets", async () => {
@@ -311,7 +315,7 @@ describe("on a Mac (Apple's container), behind the same governor", () => {
     const made = await sandbox.create(request({ network: "gateway", cpus: 0.5, memoryGb: 1 }));
     expect(made.cpus).toBe(1);
     expect(fake.vms.get(made.name)!.cpus).toBe(1);
-    expect(governor.usage().cores).toBe(1 + VM_OVERHEAD.cpus);
+    expect(governor.usage().cores).toBe(1 + MAC_VM_OVERHEAD.cpus);
   });
 
   test("an isolated sandbox is refused there at once, never after waiting for a slot", async () => {

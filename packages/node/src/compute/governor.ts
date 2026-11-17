@@ -1,4 +1,4 @@
-import { admit, admitGrowth, type ComputeUsage, type ComputeUse, type HostLoad, type NodeCapacity, type QueuedWork, VM_OVERHEAD } from "@galahad/core";
+import { admit, admitGrowth, type ComputeUsage, type ComputeUse, type HostLoad, type NodeCapacity, type QueuedWork, VM_OVERHEAD, type VmOverhead } from "@galahad/core";
 
 /*
  * The governor: this node's slots. A sandbox is admitted only when it fits inside
@@ -316,15 +316,15 @@ export class Governor {
    * that came to be after the list was asked for (`asOf`: the mark taken before asking): a stale list
    * never frees the slot of a sandbox that exists.
    */
-  adopt(sandboxes: readonly { id: string; cpus: number; memoryGb: number; isolation: "container" | "vm"; kept?: boolean }[], asOf = this.bindings): void {
+  adopt(sandboxes: readonly { id: string; cpus: number; memoryGb: number; isolation: "container" | "vm"; kept?: boolean }[], asOf = this.bindings, vm: VmOverhead = VM_OVERHEAD): void {
     const before = JSON.stringify([...this.held.entries()]);
     this.remember();
     const listed = new Set(sandboxes.map((s) => s.id));
     for (const [key, h] of this.held) if (!h.creating && h.bound <= asOf && !listed.has(key)) this.held.delete(key);
     for (const s of sandboxes) {
       if (this.held.has(s.id)) continue;
-      const vm = s.isolation === "vm";
-      this.held.set(s.id, { cpus: s.cpus + (vm ? VM_OVERHEAD.cpus : 0), memoryGb: s.memoryGb + (vm ? VM_OVERHEAD.memoryGb : 0), kept: s.kept === true, creating: false, bound: 0 });
+      const own = s.isolation === "vm" ? vm : null;
+      this.held.set(s.id, { cpus: s.cpus + (own?.cpus ?? 0), memoryGb: s.memoryGb + (own?.memoryGb ?? 0), kept: s.kept === true, creating: false, bound: 0 });
     }
     this.remember();
     this.pump();

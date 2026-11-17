@@ -28,8 +28,17 @@ export const HOST_RESERVE = 0.1;
 export const MEMORY_RESERVE = 0.05;
 /** Model calls a node carries at once unless the owner says otherwise (calls to providers cost it almost nothing). */
 export const MODEL_CALLS_DEFAULT = 8;
-/** A microVM takes this on top of its sandbox's limits (its own kernel and VMM). */
-export const VM_OVERHEAD = { cpus: 1, memoryGb: 2 } as const;
+/** What a VM takes on top of its sandbox's limits (its own kernel and VMM). */
+export type VmOverhead = { readonly cpus: number; readonly memoryGb: number };
+/** A microVM (Kata's, on Linux) takes this on top of its sandbox's limits. */
+export const VM_OVERHEAD: VmOverhead = { cpus: 1, memoryGb: 2 };
+/**
+ * A VM of Apple's container takes this on a Mac: a thread (container counts one for each VM itself, its cpuOverhead) and
+ * half a GB. Measured on the Mac mini (17 November 2026): a 2 GB VM's process held 0.39 GB idle, and its guest's 1.5 GB
+ * and 0.38 GB more while its guest held that; container's runtime beside it, 36 MB. What a guest has touched stays the
+ * Mac's until the VM stops, so a VM is counted at all it was given, and this on top.
+ */
+export const MAC_VM_OVERHEAD: VmOverhead = { cpus: 1, memoryGb: 0.5 };
 /** The most attempts one quest runs at once. */
 export const MAX_EFFORT = 3;
 /** Extra attempts (beyond each quest's first) Galahad may spend in any 24 hours unless the owner says otherwise. */
@@ -287,10 +296,10 @@ export interface HostLoad {
 
 export type Admission = { ok: true } | { ok: false; why: string; /** The machine is busy with other work: it eases by itself. */ busy: boolean };
 
-/** What a sandbox takes of the ceiling: what it asked for (a microVM's overhead on top), cut to the ceiling. */
-export function clampNeed(capacity: NodeCapacity, request: { cpus: number; memoryGb: number }, vm: boolean): { cpus: number; memoryGb: number; clamped: boolean } {
-  const cpus = request.cpus + (vm ? VM_OVERHEAD.cpus : 0);
-  const memoryGb = request.memoryGb + (vm ? VM_OVERHEAD.memoryGb : 0);
+/** What a sandbox takes of the ceiling: what it asked for (a VM's own overhead on top, `vm`: its host's), cut to the ceiling. */
+export function clampNeed(capacity: NodeCapacity, request: { cpus: number; memoryGb: number }, vm: VmOverhead | null): { cpus: number; memoryGb: number; clamped: boolean } {
+  const cpus = request.cpus + (vm?.cpus ?? 0);
+  const memoryGb = request.memoryGb + (vm?.memoryGb ?? 0);
   const fit = { cpus: Math.min(cpus, capacity.cores), memoryGb: Math.min(memoryGb, capacity.memoryGb) };
   return { ...fit, clamped: fit.cpus < cpus || fit.memoryGb < memoryGb };
 }
@@ -335,7 +344,7 @@ export function admitGrowth(capacity: NodeCapacity, used: ComputeUse, more: { cp
 
 /** How many more standard sandboxes fit now. */
 export function freeSlots(capacity: NodeCapacity, used: ComputeUse, host: HostLoad | null): number {
-  const slot = clampNeed(capacity, { cpus: SLOT_CPUS, memoryGb: SLOT_MEMORY_GB }, false);
+  const slot = clampNeed(capacity, { cpus: SLOT_CPUS, memoryGb: SLOT_MEMORY_GB }, null);
   const others = host ? othersLoad(used, host) : 0;
   let free = 0;
   let now = { ...used };
