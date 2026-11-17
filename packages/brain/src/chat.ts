@@ -1,6 +1,6 @@
 import { type ChatMessage, type ChatStreamEvent, redact, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
-import { anthropicConversation, openAIConversation, RefusalError, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
+import { anthropicConversation, type ModelMessage, openAIConversation, RefusalError, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
 import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./persona.ts";
@@ -23,7 +23,8 @@ export interface BrainContext {
 export interface ChatRequest {
   role?: string;
   model?: string;
-  messages: ChatMessage[];
+  /** What was said, and the pictures that go with a message (yours, attached in your chat). */
+  messages: ModelMessage[];
   /** Appended after the stable persona (keeps the cacheable prefix intact). */
   context?: string;
   signal?: AbortSignal;

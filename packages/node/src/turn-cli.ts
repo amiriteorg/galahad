@@ -1,5 +1,8 @@
-import { type ChatStreamEvent, chatStateWords, plainLine, plainStream, plainText, type ConversationSummary, type ConversationView, holdWords, questInHand, type QuestView, type QueuedMessage, type QueueHold, type TurnLimits, type TurnView } from "@galahad/core";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
+import { type AttachmentRef, type ChatStreamEvent, chatStateWords, plainLine, plainStream, plainText, type ConversationSummary, type ConversationView, holdWords, questInHand, type QuestView, type QueuedMessage, type QueueHold, type TurnLimits, type TurnView } from "@galahad/core";
 import type { NodeClient } from "./quest-cli.ts";
+import { pictureType, textOf } from "./uploads.ts";
 
 /*
  * Turns, queues and quests in hand, from a terminal. A turn started here runs on the
@@ -133,6 +136,21 @@ export interface AskOptions {
   bring?: boolean;
   /** Start it and leave: he works on, and the answer is in the chat. */
   detach?: boolean;
+  /** Files to go with your message: pictures, and text (a log, code), each sent up to the node first. */
+  attach?: string[];
+}
+
+/** Your files, sent up to the node (uploadAttachment): each a picture or a text by its bytes, as the node will check it. */
+async function attachments(node: NodeClient, paths: readonly string[]): Promise<AttachmentRef[]> {
+  const refs: AttachmentRef[] = [];
+  for (const path of paths) {
+    const bytes = new Uint8Array(readFileSync(path));
+    const type = pictureType(bytes) ?? (textOf(bytes) !== null ? "text/plain" : null);
+    if (!type) throw new Error(`${path} is neither a picture (PNG, JPEG, WebP, GIF) nor text: only those go with a message`);
+    const { attachment } = await node.call<{ attachment: AttachmentRef }>("uploadAttachment", { name: basename(path), type, data: Buffer.from(bytes).toString("base64") });
+    refs.push(attachment);
+  }
+  return refs;
 }
 
 /** `galahad ask`. Returns the process's exit code: 0 answered, 1 it failed, 130 stopped. */
@@ -142,6 +160,7 @@ export async function askCommand(node: NodeClient, text: string, o: AskOptions, 
   if (modes > 1) throw new Error("give one of --steer, --queue or --aside");
   if (modes && !o.chat) throw new Error("--steer, --queue and --aside go with --chat <id>: the chat he's working in (galahad turns lists them)");
   if (o.bring && !o.aside) throw new Error("--bring goes with --aside");
+  if (o.attach?.length && modes) throw new Error("--attach goes with a message of yours, not --steer, --queue or --aside");
   // A temporary chat is kept nowhere: a turn of it that nobody watches is stopped by the node, so there's nothing to come back to.
   if (o.detach && o.temp && !o.chat) throw new Error("--detach needs a kept chat (drop --temp): a temporary chat's turn is stopped once nobody is watching it");
 
@@ -183,11 +202,13 @@ export async function askCommand(node: NodeClient, text: string, o: AskOptions, 
       events = node.stream("chat", { role: o.role, model: o.model, messages: [{ role: "user", content: text }], conversation: o.chat });
     }
   } else {
+    const carried = o.attach?.length ? await attachments(node, o.attach) : [];
+    if (carried.length) io.err(dim(`[attached: ${carried.map((a) => `${a.name} (${Math.max(1, Math.round(a.bytes / 1024))} KB)`).join(", ")}]\n`));
     // Kept in your history like the app's chats, unless --temp; --chat goes on with one.
     events = node.stream("chat", {
       role: o.role,
       model: o.model,
-      messages: [{ role: "user", content: text }],
+      messages: [{ role: "user", content: text, ...(carried.length ? { attachments: carried } : {}) }],
       ...(o.chat ? { conversation: o.chat } : o.temp ? {} : { save: true }),
       ...(o.project && !o.chat ? { project: o.project } : {}),
     });

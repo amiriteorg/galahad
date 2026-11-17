@@ -119,3 +119,42 @@ describe("pictures in tool results", () => {
     expect(withoutImages("words", undefined)).toBe("words");
   });
 });
+
+describe("pictures you attach to a message", () => {
+  const SHOT: ToolImage = { mediaType: "image/jpeg", data: "/9j/FAKEJPEG", alt: "screenshot.jpg, attached by your liege" };
+  const LATER: ToolImage = { mediaType: "image/gif", data: "R0lGODlhFAKEGIF", alt: "spinner.gif, attached by your liege" };
+  // Your earlier message carried a picture, his answer came, and your new one carries another with no words.
+  const told = [
+    { role: "user" as const, content: "Why does this fail?", images: [SHOT] },
+    { role: "assistant" as const, content: "The test can't reach the database." },
+    { role: "user" as const, content: "", images: [LATER] },
+  ];
+
+  test("Claude: each message's own pictures lead it, before its words, and a message of pictures alone has no empty words", async () => {
+    const model = scripted([anthropicStream([{ type: "text", text: "" }], [[{ type: "text_delta", text: "It spins." }]], "end_turn")]);
+    await collect(chat({ ...brain(["claude/claude-opus-5-5"]), fetch: model.fetch }, { messages: told }));
+    const [first, answer, last] = model.bodies[0].messages;
+    expect(first).toEqual({ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: SHOT.data } }, { type: "text", text: "Why does this fail?" }] });
+    expect(answer).toEqual({ role: "assistant", content: "The test can't reach the database." });
+    expect(last).toEqual({ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/gif", data: LATER.data } }] });
+  });
+
+  test("an OpenAI-compatible model that sees: the message's words, then its pictures; nothing else of a message is sent", async () => {
+    const model = scripted([say("It spins.")]);
+    await collect(chat({ ...brain(["ollama/gemma3:4b"]), fetch: model.fetch }, { messages: told }));
+    const [, first, answer, last] = model.bodies[0].messages;
+    expect(first).toEqual({ role: "user", content: [{ type: "text", text: "Why does this fail?" }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${SHOT.data}` } }] });
+    expect(answer).toEqual({ role: "assistant", content: "The test can't reach the database." });
+    expect(last).toEqual({ role: "user", content: [{ type: "image_url", image_url: { url: `data:image/gif;base64,${LATER.data}` } }] });
+    expect(JSON.stringify(model.bodies[0])).not.toContain('"images"');
+  });
+
+  test("a model that can't see is told each picture is there, by name, and that it can't see it; it never gets the bytes", async () => {
+    const model = scripted([say("I can't see it.")]);
+    await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: told }));
+    const [, first, , last] = model.bodies[0].messages;
+    expect(first).toEqual({ role: "user", content: "Why does this fail?\n\n[A picture is attached here (screenshot.jpg, attached by your liege), but this model can't see pictures.]" });
+    expect(last.content).toBe("[A picture is attached here (spinner.gif, attached by your liege), but this model can't see pictures.]");
+    expect(JSON.stringify(model.bodies[0])).not.toContain(SHOT.data);
+  });
+});

@@ -27,6 +27,7 @@ import { ChatStore } from "./chats.ts";
 import { TeamStore } from "./team-store.ts";
 import type { TeamService } from "./team.ts";
 import { type HubLimits, TurnHub } from "./turns.ts";
+import { Uploads } from "./uploads.ts";
 import { QuestBoard } from "./quests.ts";
 import { skillAsker, SkillsService } from "./skills.ts";
 import { buildAssets } from "./assets.ts";
@@ -353,6 +354,18 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const artifacts = new ArtifactStore({ store, identity, dir: join(home.dir, "artifacts"), ledger });
   const bank = new BankService({ dir: join(home.dir, "bank") });
   const chats = new ChatStore(join(home.dir, "chats.db"));
+  // What you attach to your messages: kept while a kept chat carries it (or a chat used it this week), then removed.
+  const uploads = new Uploads(join(home.dir, "uploads"));
+  const sweepUploads = () => {
+    try {
+      const removed = uploads.sweep(chats.attachmentIds());
+      if (removed.length) log(`removed ${removed.length} attachment(s) no kept chat carries and no chat used for a week`);
+    } catch (error) {
+      log(`attachments: ${(error as Error).message}`);
+    }
+  };
+  sweepUploads();
+  const uploadSweep = setInterval(sweepUploads, 24 * 3600_000);
   const team: { store: TeamStore; service?: TeamService } = { store: new TeamStore(join(home.dir, "team.db")) };
   // Your chat turns run here to their end, whoever is listening; what you queue behind a chat waits in chats.db.
   const turns = new TurnHub({
@@ -564,6 +577,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     heartbeatCheck: () => lookAround(taskDeps),
     bank,
     chats,
+    uploads,
     turns,
     team,
     quests,
@@ -706,6 +720,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       terminals?.closeAll();
       const teamEnded = team.service?.stop();
       clearInterval(outbox);
+      clearInterval(uploadSweep);
       if (refresh) clearInterval(refresh);
       if (reaper) clearInterval(reaper);
       if (gatewayRetry) clearInterval(gatewayRetry);

@@ -119,6 +119,9 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one.
                                   The turn runs on the node: Ctrl-C stops it; a terminal that goes away stops
                                   nothing; --detach starts it and leaves him to it (the answer is in the chat)
+  ask --attach <file> [--attach <file>]... [<prompt>]
+                                  files with your message: pictures (PNG, JPEG, WebP, GIF; a model that sees is shown
+                                  them, another told they're there) and text (a log, code: given to him as data)
   ask --chat <id> --steer <msg>   he's working in that chat: tell him now (it reaches him at his next safe point)
   ask --chat <id> --queue <msg>   … or keep it on the node, to send as the next turn when he's done
   ask --chat <id> --aside <question> [--bring]
@@ -606,6 +609,8 @@ async function main(): Promise<void> {
       proof: { type: "string", multiple: true },
       pitfall: { type: "string", multiple: true },
       file: { type: "string" },
+      // `ask --attach file --attach file`: your files with the message.
+      attach: { type: "string", multiple: true },
       // The doctor: `doctor [--offline] [--quick] [--json]`.
       offline: { type: "boolean" },
       quick: { type: "boolean" },
@@ -1071,7 +1076,8 @@ Next:
 
     case "ask": {
       const text = [sub, ...rest].filter(Boolean).join(" ");
-      if (!text) fail("usage: galahad ask [--chat <id> [--steer | --queue | --aside [--bring]]] [--project <id>] [--temp] [--detach] <prompt>");
+      const attach = (flags.attach as string[] | undefined) ?? [];
+      if (!text && !attach.length) fail("usage: galahad ask [--chat <id> [--steer | --queue | --aside [--bring]]] [--project <id>] [--temp] [--detach] [--attach file]... <prompt>");
       // The turn runs on the node (turn-cli.ts): this terminal watches it, Ctrl-C stops it, --detach leaves him to it.
       const code = await askCommand(new Admin(home), text, {
         role: str("role"),
@@ -1084,6 +1090,7 @@ Next:
         aside: Boolean(flags.aside),
         bring: Boolean(flags.bring),
         detach: Boolean(flags.detach),
+        ...(attach.length ? { attach } : {}),
       });
       if (code) process.exit(code);
       return;

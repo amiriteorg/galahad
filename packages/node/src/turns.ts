@@ -1,5 +1,6 @@
 import { Steering } from "@galahad/brain";
 import {
+  type AttachmentRef,
   type ChatMessage,
   type ChatStreamEvent,
   DEFAULT_TURN_LIMITS,
@@ -105,6 +106,8 @@ export interface TurnSpec {
   conversation: { id: string; title: string; project: string | null } | null;
   /** The owner's message that starts it. */
   question: string;
+  /** The files it carries, kept on the node (uploads.ts). */
+  attachments?: AttachmentRef[];
   /** What the model is given: what was said before, then the question (a side question is answered from the same). */
   messages: ChatMessage[];
   /** What it leaves waiting on the owner, noted as its tools run: approvals it filed, keys it asked for. */
@@ -294,7 +297,7 @@ export class TurnHub {
     const c = spec.conversation;
     let answerId: number | null = null;
     if (c) {
-      chats.addUser(c.id, spec.question);
+      chats.addUser(c.id, spec.question, spec.attachments);
       answerId = chats.startAnswer(c.id);
     }
     const startedAt = this.now();

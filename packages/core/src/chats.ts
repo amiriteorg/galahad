@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AttachmentRef } from "./api.ts";
 import type { AnswerStatus, ChatNeeds, ChatState, QueuedMessage, QueueHold, TurnView } from "./turns.ts";
 
 /*
@@ -45,6 +46,8 @@ export interface StoredMessage {
   id: number;
   role: "user" | "assistant";
   content: string;
+  /** Your files with it, as kept on the node (a message of yours alone). */
+  attachments?: AttachmentRef[];
   /** Assistant answers: which model, what it did, how it ended. */
   model: string | null;
   steps: StoredStep[];

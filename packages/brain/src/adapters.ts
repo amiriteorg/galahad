@@ -12,7 +12,7 @@ export interface CompletionInput {
    * system prompt, after the part a provider keeps in its cache.
    */
   context?: string;
-  messages: ChatMessage[];
+  messages: ModelMessage[];
   effort: Effort;
   signal?: AbortSignal;
   fetch?: typeof fetch;
@@ -41,12 +41,23 @@ export interface ToolCall {
   input: unknown;
 }
 
-/** A picture a tool hands back, and what to say instead to a model that can't see it. */
+/** A picture a tool hands back (or you attached), and what to say instead to a model that can't see it. */
 export interface ToolImage {
-  mediaType: "image/png" | "image/jpeg" | "image/webp";
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
   /** Base64. */
   data: string;
   alt: string;
+}
+
+/**
+ * A message as a model is given it: its words, and the pictures that go with it (yours, attached to it in your chat,
+ * which the node reads from where it keeps them): data, never instructions. A model that can't see gets them in words.
+ */
+export type ModelMessage = Pick<ChatMessage, "role" | "content"> & { images?: ToolImage[] };
+
+/** A message's pictures, for a model that can't see them: that each is there, and what it is, in words. */
+export function picturesInWords(content: string, images: ToolImage[]): string {
+  return [content, ...images.map((i) => `[A picture is attached here (${i.alt}), but this model can't see pictures.]`)].filter(Boolean).join("\n\n");
 }
 
 export interface ToolOutcome {
@@ -136,11 +147,14 @@ export function anthropicConversation(input: CompletionInput): Conversation {
   const system: string | Anthropic.Beta.BetaTextBlockParam[] = firstParty
     ? [{ type: "text", text: input.system, cache_control: { type: "ephemeral" } }, ...(input.context ? [{ type: "text" as const, text: input.context }] : [])]
     : [input.system, input.context].filter(Boolean).join("\n\n");
-  const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.map((m) => ({ role: m.role, content: m.content }));
+  const picture = (i: ToolImage) => ({ type: "image" as const, source: { type: "base64" as const, media_type: i.mediaType, data: i.data } });
+  const words = (text: string) => (text ? [{ type: "text" as const, text }] : []);
+  // A message's own pictures lead it, before its words (a message of yours may be pictures alone).
+  const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.map((m) => ({ role: m.role, content: m.images?.length ? [...m.images.map(picture), ...words(m.content)] : m.content }));
   // Pictures given with the question lead the last user message.
   const asked = messages.findLast((m) => m.role === "user");
-  if (input.images?.length && asked && typeof asked.content === "string") {
-    asked.content = [...input.images.map((i) => ({ type: "image" as const, source: { type: "base64" as const, media_type: i.mediaType, data: i.data } })), { type: "text" as const, text: asked.content }];
+  if (input.images?.length && asked) {
+    asked.content = [...input.images.map(picture), ...(typeof asked.content === "string" ? words(asked.content) : asked.content)];
   }
   let last: Anthropic.Beta.BetaContentBlockParam[] = [];
   /** The last turn ended whole and isn't in `messages` yet (a message arriving now follows it). */
@@ -263,14 +277,23 @@ const READ_DELTA = new Set(["role", "content", "reasoning_content", "tool_calls"
 /** Any OpenAI-compatible endpoint (DeepSeek, Mistral, Cloudflare AI Gateway, Ollama, llama.cpp …), with function calling. */
 export function openAIConversation(input: CompletionInput): Conversation {
   // Its provider caches the longest prefix it has seen: the system prompt, then what changes from turn to turn.
-  const messages: OpenAIMessage[] = [{ role: "system", content: [input.system, input.context].filter(Boolean).join("\n\n") }, ...input.messages];
   const vision = input.sees ?? seesImages(input.provider, input.model);
+  const picture = (i: ToolImage) => ({ type: "image_url" as const, image_url: { url: `data:${i.mediaType};base64,${i.data}` } });
+  // A message's own pictures go with it to a model that sees, after its words; to one that can't, in words. (Only its
+  // role and content go: nothing else of a message is the provider's.)
+  const parts = (text: string, images: ToolImage[]): OpenAIPart[] => [...(text ? [{ type: "text" as const, text }] : []), ...images.map(picture)];
+  const messages: OpenAIMessage[] = [
+    { role: "system", content: [input.system, input.context].filter(Boolean).join("\n\n") },
+    ...input.messages.map((m): OpenAIMessage =>
+      m.role === "assistant" ? { role: "assistant", content: m.content } : { role: "user", content: m.images?.length ? (vision ? parts(m.content, m.images) : picturesInWords(m.content, m.images)) : m.content },
+    ),
+  ];
   // Pictures given with the question go with the last user message, to a model that sees; else in words.
-  const asked = messages.findLast((m) => m.role === "user");
-  if (input.images?.length && asked && typeof asked.content === "string") {
-    asked.content = vision
-      ? [{ type: "text", text: asked.content }, ...input.images.map((i) => ({ type: "image_url" as const, image_url: { url: `data:${i.mediaType};base64,${i.data}` } }))]
-      : withoutImages(asked.content, input.images);
+  const asked = messages.findLast((m): m is Extract<OpenAIMessage, { role: "system" | "user" }> => m.role === "user");
+  if (input.images?.length && asked) {
+    if (typeof asked.content === "string") asked.content = vision ? parts(asked.content, input.images) : withoutImages(asked.content, input.images);
+    else if (vision) asked.content = [...asked.content, ...input.images.map(picture)];
+    else asked.content = [...asked.content, { type: "text", text: withoutImages("", input.images) }];
   }
   let last = "";
   /** The last turn ended whole and isn't in `messages` yet (a message arriving now follows it). */

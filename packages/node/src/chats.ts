@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { closeSync, existsSync, openSync } from "node:fs";
-import { type AnswerStatus, type ChatMessage, chatState, type ConversationSummary, type QueueHold, randomId, type StoredMessage, type StoredStep } from "@galahad/core";
+import { type AnswerStatus, AttachmentRef, type ChatMessage, chatState, type ConversationSummary, type QueueHold, randomId, type StoredMessage, type StoredStep } from "@galahad/core";
+import { z } from "zod";
 
 /*
  * Your chat history, on the node that served it: a private database (mode 600, in the
@@ -32,12 +33,31 @@ interface MessageRow {
   id: number;
   role: "user" | "assistant";
   content: string;
+  /** Your files with it (JSON: AttachmentRef[]), or null. */
+  attachments: string | null;
   model: string | null;
   steps: string;
   status: StoredMessage["status"];
   error: string | null;
   created_at: number;
   ended_at: number | null;
+}
+
+/** A row's attachments, read back: what was kept (each still checked to be one), or none. */
+function attachmentsOf(json: string | null): AttachmentRef[] {
+  if (!json) return [];
+  try {
+    const parsed = z.array(AttachmentRef).safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+}
+
+/** `{ attachments }` for a message that carries any, else nothing (a message without them has no such field). */
+function attachedTo(row: { attachments: string | null }): { attachments?: AttachmentRef[] } {
+  const attachments = attachmentsOf(row.attachments);
+  return attachments.length ? { attachments } : {};
 }
 
 interface QueueRow {
@@ -176,6 +196,9 @@ export class ChatStore {
     const columns = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().map((c) => c.name));
     if (!columns.has("queue_held")) this.db.exec("ALTER TABLE conversations ADD COLUMN queue_held TEXT");
     if (!columns.has("waiting")) this.db.exec("ALTER TABLE conversations ADD COLUMN waiting TEXT");
+    // A database from before attachments: a message of yours may carry files (kept on the node: uploads.ts).
+    const fields = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(messages)").all().map((c) => c.name));
+    if (!fields.has("attachments")) this.db.exec("ALTER TABLE messages ADD COLUMN attachments TEXT");
     // An answer the node was writing when it stopped can't finish any more.
     this.db.exec("UPDATE messages SET status = 'stopped' WHERE status = 'streaming'");
     // Nothing is sent just because the node came back: what was queued then is held until you resume it.
@@ -220,6 +243,7 @@ export class ChatStore {
           id: m.id,
           role: m.role,
           content: m.content,
+          ...attachedTo(m),
           model: m.model,
           steps: JSON.parse(m.steps) as StoredStep[],
           status: m.status,
@@ -239,8 +263,11 @@ export class ChatStore {
   told(id: string, upTo: number = Number.MAX_SAFE_INTEGER): { story: ChatStory | null; recent: (ChatMessage & { id: number })[] } {
     const story = this.db.query<ChatStory, [string]>("SELECT text, through FROM stories WHERE conversation = ?").get(id) ?? null;
     const recent = this.db
-      .query<{ id: number; role: "user" | "assistant"; content: string }, [string, number, number]>("SELECT id, role, content FROM messages WHERE conversation = ? AND content != '' AND id > ? AND id <= ? ORDER BY id")
-      .all(id, story?.through ?? 0, upTo);
+      .query<Pick<MessageRow, "id" | "role" | "content" | "attachments">, [string, number, number]>(
+        "SELECT id, role, content, attachments FROM messages WHERE conversation = ? AND (content != '' OR attachments IS NOT NULL) AND id > ? AND id <= ? ORDER BY id",
+      )
+      .all(id, story?.through ?? 0, upTo)
+      .map((m) => ({ id: m.id, role: m.role, content: m.content, ...attachedTo(m) }));
     return { story, recent };
   }
 
@@ -252,14 +279,29 @@ export class ChatStore {
   /** What the model sees of it: every question, and every answer that has words in it. */
   history(id: string): ChatMessage[] {
     return this.db
-      .query<{ role: "user" | "assistant"; content: string }, [string]>("SELECT role, content FROM messages WHERE conversation = ? AND content != '' ORDER BY id")
-      .all(id);
+      .query<Pick<MessageRow, "role" | "content" | "attachments">, [string]>("SELECT role, content, attachments FROM messages WHERE conversation = ? AND (content != '' OR attachments IS NOT NULL) ORDER BY id")
+      .all(id)
+      .map((m) => ({ role: m.role, content: m.content, ...attachedTo(m) }));
+  }
+
+  /** Every attachment a kept message carries (in one chat, or in all): what uploads.ts keeps whatever its age. */
+  attachmentIds(conversation?: string): Set<string> {
+    const ids = new Set<string>();
+    const rows = conversation
+      ? this.db.query<{ attachments: string }, [string]>("SELECT attachments FROM messages WHERE attachments IS NOT NULL AND conversation = ?").all(conversation)
+      : this.db.query<{ attachments: string }, []>("SELECT attachments FROM messages WHERE attachments IS NOT NULL").all();
+    for (const row of rows) {
+      for (const a of attachmentsOf(row.attachments)) ids.add(a.id);
+    }
+    return ids;
   }
 
   /** A message of yours. Whatever the turn before it left waiting on you is no longer where the chat stands. */
-  addUser(id: string, content: string): number {
+  addUser(id: string, content: string, attachments?: readonly AttachmentRef[]): number {
     const at = this.now();
-    const row = this.db.query<{ id: number }, [string, string, number, number]>("INSERT INTO messages (conversation, role, content, status, created_at, ended_at) VALUES (?, 'user', ?, 'done', ?, ?) RETURNING id").get(id, content, at, at)!;
+    const row = this.db
+      .query<{ id: number }, [string, string, string | null, number, number]>("INSERT INTO messages (conversation, role, content, attachments, status, created_at, ended_at) VALUES (?, 'user', ?, ?, 'done', ?, ?) RETURNING id")
+      .get(id, content, attachments?.length ? JSON.stringify(attachments) : null, at, at)!;
     this.db.query("UPDATE conversations SET waiting = NULL WHERE id = ?").run(id);
     this.touch(id);
     return row.id;

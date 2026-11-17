@@ -44,10 +44,37 @@ export const ProviderId = Name.refine((name) => !isReservedGatewayScope(name), {
 
 const ModelRef = z.string().min(3).max(256);
 
-export const ChatMessage = z.strictObject({
-  role: z.enum(["user", "assistant"]),
-  content: z.string().min(1).max(400_000),
+/**
+ * What a message of yours in your chat may carry (packages/node/src/uploads.ts): pictures (PNG, JPEG, WebP, GIF, as
+ * their bytes say), which a model that sees is shown, and text (UTF-8: a log, a file of code, notes), which goes with
+ * the message fenced as data, its name saying what it is. Each is kept on the node by the SHA-256 of its bytes.
+ */
+export const ATTACHMENT_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "text/plain"] as const;
+export const AttachmentType = z.enum(ATTACHMENT_TYPES);
+export type AttachmentType = z.infer<typeof AttachmentType>;
+/** At most so many with a message; a picture up to 5 MB (the apps send photos smaller), a text up to 256 KB. */
+export const ATTACHMENT_LIMITS = { perMessage: 8, imageBytes: 5 * 1024 * 1024, textBytes: 256 * 1024 } as const;
+/** A file's name as you gave it: no folders, no control characters. */
+export const AttachmentName = z.string().trim().min(1).max(200).regex(/^[^/\\\u0000-\u001f\u007f]+$/, "a file's name, without folders");
+export const AttachmentId = z.string().regex(/^[a-f0-9]{64}$/);
+export const AttachmentRef = z.strictObject({
+  id: AttachmentId,
+  name: AttachmentName,
+  type: AttachmentType,
+  bytes: z.number().int().min(1).max(ATTACHMENT_LIMITS.imageBytes),
 });
+export type AttachmentRef = z.infer<typeof AttachmentRef>;
+
+export const ChatMessage = z
+  .strictObject({
+    role: z.enum(["user", "assistant"]),
+    /** Its words: none only for a message of yours that carries attachments. */
+    content: z.string().max(400_000),
+    /** Your files with it, kept on the node (uploadAttachment). An answer carries none. */
+    attachments: z.array(AttachmentRef).min(1).max(ATTACHMENT_LIMITS.perMessage).optional(),
+  })
+  .refine((m) => m.content.length > 0 || (m.role === "user" && !!m.attachments), "a message has words, or files it carries")
+  .refine((m) => m.role === "user" || !m.attachments, "only your messages carry files");
 export type ChatMessage = z.infer<typeof ChatMessage>;
 
 export const PlacementNeeds = z.strictObject({
@@ -460,6 +487,26 @@ export const routes = {
       loop: z.boolean().optional(),
     }),
   },
+  /**
+   * A file for a message of yours (a picture, or text), kept on this node by the SHA-256 of its bytes: what you then
+   * attach to the message. Yours alone, as your chats are. The same file again is the same one. Its bytes in base64.
+   */
+  uploadAttachment: {
+    method: "POST",
+    path: "/api/uploads",
+    scope: "chat",
+    input: z.strictObject({
+      name: AttachmentName,
+      type: AttachmentType,
+      data: z
+        .string()
+        .min(4)
+        .max(Math.ceil(ATTACHMENT_LIMITS.imageBytes / 3) * 4)
+        .regex(/^[A-Za-z0-9+/]*={0,2}$/, "base64"),
+    }),
+  },
+  /** An attached file's bytes, to show it (a picture) or save it: served as what its bytes are, never run. */
+  attachmentFile: { method: "POST", path: "/api/uploads/get", scope: "chat", input: z.strictObject({ id: AttachmentId }) },
   /** Your chats, kept on this node (yours alone: never an agent's to read). */
   conversations: { method: "GET", path: "/api/conversations", scope: "chat", input: null },
   conversation: { method: "POST", path: "/api/conversations/get", scope: "chat", input: z.strictObject({ id: ConversationId }) },
