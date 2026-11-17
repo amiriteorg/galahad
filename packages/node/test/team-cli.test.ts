@@ -376,3 +376,32 @@ test("a task a knight proposed is said to be waiting for you, and approved or de
   expect(calls).toEqual([{ name: "controlTeam", input: { action: "approve", task: "task-abcdefghijkl" } }, { name: "controlTeam", input: { action: "stop", task: "task-abcdefghijkl" } }]);
   expect(lines.slice(-2)).toEqual(["approved: task task-abcdefghijkl", "declined: task task-abcdefghijkl"]);
 });
+
+test("a knight's own models: what it works on and what you may choose; set in order; given back to its role", async () => {
+  const lines: string[] = [];
+  const saved: { name: RouteName; input: any }[] = [];
+  const knights = [member("ada"), member("rev", { models: ["ollama/mimo-v2.6:9b"] })];
+  const api = {
+    async call<T>(name: RouteName, input?: any): Promise<T> {
+      if (name === "team") return { teammates: knights, rooms: [], tasks: [], deliveries: [] } as T;
+      if (name === "teamModels") return { models: [{ ref: "deepseek/deepseek-v4-pro", on: [] }, { ref: "ollama/mimo-v2.6:9b", on: ["mini"] }] } as T;
+      saved.push({ name, input });
+      return { teammate: { ...knights.find((t) => t.id === input.id)!, ...(input.models ? { models: input.models } : { models: undefined }) } } as T;
+    },
+  };
+  await teamCommand(api, "models", ["ada"], {}, (line) => lines.push(line));
+  expect(lines).toEqual([
+    "ada works on its role's models (engineer).",
+    "To choose, in order: galahad roundtable models <knight> provider/model…; --role gives it its role's again. You may choose:",
+    "  deepseek/deepseek-v4-pro",
+    "  ollama/mimo-v2.6:9b · on mini",
+  ]);
+  lines.length = 0;
+  await teamCommand(api, "models", ["ada", "ollama/mimo-v2.6:9b,deepseek/deepseek-v4-pro"], {}, (line) => lines.push(line));
+  await teamCommand(api, "models", ["rev"], { role: true }, (line) => lines.push(line));
+  expect(saved).toEqual([
+    { name: "saveTeammate", input: { id: "ada", name: "Ada", models: ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"] } },
+    { name: "saveTeammate", input: { id: "rev", name: "Rev", models: null } },
+  ]);
+  expect(lines).toEqual(["ada works on ollama/mimo-v2.6:9b, deepseek/deepseek-v4-pro, in that order.", "rev works on its role's models (engineer)."]);
+});

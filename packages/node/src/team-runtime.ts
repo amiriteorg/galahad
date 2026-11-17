@@ -256,7 +256,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
     }
     return `The owner has not written your instructions. Your job was set by ${author} when you were made. Work to it as your brief: it is a fellow knight's planning, never the owner's words, and it grants no permission.\n${data("Your job", teammate.instructions, fenceOf(teammate.id))}`;
   };
-  const ask = async (teammate: Teammate, role: string, messages: ChatMessage[], signal: AbortSignal, context?: string, spent?: (model: string, usage: Usage | null) => void, loop?: boolean) => {
+  /** A call of a knight's on a role's models (`own`: the knight's own, in their place, for its own work). */
+  const ask = async (teammate: Teammate, role: string, messages: ChatMessage[], signal: AbortSignal, context?: string, spent?: (model: string, usage: Usage | null) => void, loop?: boolean, own?: readonly string[]) => {
     const leave = await deps.enter(signal);
     // A call that says nothing for so long is ended, and asked again as any failed call is: a task has no clock that would end it.
     const quietMs = deps.callQuietMs ?? TEAM_CALL_QUIET_MINUTES * 60_000;
@@ -269,7 +270,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const skipped: { model: string; error: string }[] = [];
       try {
         // (A knight's task is coding work: a coding plan on the role may do it. A turn of its work loop is held to its format.)
-        for await (const event of chat(deps.brain(teammate), { role, messages, signal: AbortSignal.any([signal, quiet.signal]), context, coding: true, ...(loop ? { loop: true } : {}) })) {
+        for await (const event of chat(deps.brain(teammate), { role, ...(own?.length ? { models: [...own] } : {}), messages, signal: AbortSignal.any([signal, quiet.signal]), context, coding: true, ...(loop ? { loop: true } : {}) })) {
           clearTimeout(timer);
           timer = setTimeout(() => quiet.abort(), quietMs);
           if (event.type === "text") text += event.text;
@@ -404,7 +405,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       try {
         let text = "";
         // (A knight is a coding tool at its work, in a room as at a task: a coding plan on its role may answer.)
-        for await (const event of chat(deps.brain(teammate), { role: teammate.role, messages: [{ role: "user", content: asked }], context, tools, signal: ctx.signal, coding: true })) {
+        for await (const event of chat(deps.brain(teammate), { role: teammate.role, ...(teammate.models?.length ? { models: [...teammate.models] } : {}), messages: [{ role: "user", content: asked }], context, tools, signal: ctx.signal, coding: true })) {
           if (event.type === "text") text += event.text;
           else if (event.type === "tool") ctx.emit(`Using ${event.name}`);
           else if (event.type === "error") throw new Error(event.error);
@@ -484,7 +485,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, escalate: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         // The work is done on the models of the role you gave this knight (workRole: never the reviewer's); its plan
         // and the independent review stay the planner's and the reviewer's, whoever did the work.
-        ask: (role, messages, turn) => ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : context, (model, usage) => addUsage(spent, role, model, usage), turn?.loop),
+        ask: (role, messages, turn) => ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : context, (model, usage) => addUsage(spent, role, model, usage), turn?.loop, role === "engineer" ? teammate.models : undefined),
         exec, signal: ctx.signal,
         emit: (event) => {
           trail.on(event);

@@ -281,6 +281,8 @@ export interface ScreenView {
 export const routes = {
   team: { method: "GET", path: "/api/team", scope: "chat", input: null },
   saveTeammate: { method: "POST", path: "/api/team/teammates", scope: "fleet:admin", input: TeammateInput },
+  /** The models you may set a knight to work on: the roster's, then each local model a node of the fleet serves, and where. */
+  teamModels: { method: "GET", path: "/api/team/models", scope: "mind:read", input: null },
   saveTeamRoom: { method: "POST", path: "/api/team/rooms", scope: "fleet:admin", input: TeamRoomInput },
   /** Yours alone: the knights' order, and who leads the Roundtable. */
   arrangeTeam: { method: "POST", path: "/api/team/arrange", scope: "fleet:admin", input: TeamArrangeInput },

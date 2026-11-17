@@ -18,6 +18,21 @@ const setup = (store: TeamStore) => {
 };
 
 describe("private team persistence", () => {
+  test("a knight's own models are kept through edits that leave them out and a reopen; none, or null, gives it its role's again", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-models-")); dirs.push(dir); const path = join(dir, "team.db");
+    const store = make(path);
+    expect(store.saveTeammate({ id: "ada", name: "Ada" }).models).toBeUndefined();
+    expect(store.saveTeammate({ id: "ada", name: "Ada", models: ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"] }).models).toEqual(["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"]);
+    store.saveTeammate({ id: "ada", name: "Augusta", role: "planner" }); close(store);
+    const reopened = make(path);
+    expect(reopened.teammate("ada")).toMatchObject({ name: "Augusta", role: "planner", models: ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"] });
+    expect(reopened.saveTeammate({ id: "ada", name: "Augusta", models: [] }).models).toBeUndefined();
+    reopened.saveTeammate({ id: "ada", name: "Augusta", models: ["ollama/qwen3.8:27b"] });
+    expect(reopened.saveTeammate({ id: "ada", name: "Augusta", models: null }).models).toBeUndefined();
+    // Never a wildcard, never more than eight, always provider/model.
+    for (const models of [["ollama/*"], ["mimo"], Array.from({ length: 9 }, (_, i) => `p/m${i}`)]) expect(() => reopened.saveTeammate({ id: "ada", name: "Augusta", models })).toThrow();
+  });
+
   test("custom appearances survive omitted edits and reopen; explicit null resets the seeded default", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-team-avatar-")); dirs.push(dir); const path = join(dir, "team.db");
     const store = make(path);

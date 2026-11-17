@@ -102,6 +102,7 @@ import {
   agentCleanupCommand,
   chooseAgentModels,
   engramFound,
+  isEmbeddingModel,
   roleModels,
   ROLES,
   workRole,
@@ -1946,9 +1947,10 @@ export function createApp(ctx: AppContext) {
   /** The models of a knight's role (the engineer's unless you gave it another) a harness can run on through the gateway:
    * keyed, speaking that harness's API, and (given a VM's providers) covered by that VM's token. `outside`: when it covers
    * none of them, the ones it doesn't. */
-  const harnessModels = (harness: string, role: string, vm?: readonly string[]) => {
+  const harnessModels = (harness: string, role: string, vm?: readonly string[], own?: readonly string[]) => {
     const views = providerViews(ctx.store, ctx.vault);
-    const choose = (providers: typeof views) => chooseAgentModels(roleModels(ctx.store, role), providers, 3, AGENTS[harness]?.kind);
+    // (A knight's own models, when you chose them, in place of its role's.)
+    const choose = (providers: typeof views) => chooseAgentModels(own?.length ? [...own] : roleModels(ctx.store, role), providers, 3, AGENTS[harness]?.kind);
     const models = choose(views.filter((p) => !vm || vm.includes(p.id)));
     return { models, outside: models.length ? [] : choose(views) };
   };
@@ -1999,8 +2001,8 @@ export function createApp(ctx: AppContext) {
           () => [],
         );
       },
-      models: (member) => harnessModels(member.harness, workRole(member.role), keyedProviders()).models,
-      modelsOutside: (member) => harnessModels(member.harness, workRole(member.role), keyedProviders()).outside,
+      models: (member) => harnessModels(member.harness, workRole(member.role), keyedProviders(), member.models).models,
+      modelsOutside: (member) => harnessModels(member.harness, workRole(member.role), keyedProviders(), member.models).outside,
       engram: () => ctx.team!.store.engram(),
       memories: (query) => memoryContext(query) ?? "",
       roundtable: () => teamOf().overview().workers,
@@ -2230,7 +2232,8 @@ export function createApp(ctx: AppContext) {
       // His own computer runs no harness and no notes store: only he works there.
       if (member.id === TEAM_GALAHAD) return { workspace, harnesses: [], engram: { on: teamOf().store.engram(), pinned: ENGRAM_VERSION } };
       const state = teamOf().snapshot();
-      const role = workRole(teamMember(member.id).role);
+      const knight = teamMember(member.id);
+      const role = workRole(knight.role);
       const busy = state.tasks.some((t) => t.assignee === member.id && t.status === "running") || state.deliveries.some((d) => d.teammate === member.id && d.status === "running");
       // Each harness: is it installed there, and what would it run on (a vendor's tool: its own sign-in, asked of
       // the tool itself and never read; then, or otherwise, a roster model through the gateway).
@@ -2241,7 +2244,7 @@ export function createApp(ctx: AppContext) {
           continue;
         }
         // (What its next task's lease will cover: the providers with a key now.)
-        const usable = harnessModels(id, role, keyedProviders());
+        const usable = harnessModels(id, role, keyedProviders(), knight.models);
         const { ready, on, reason } = harnessReadiness(driver, await execTeam(member, driver.check, 30, req.signal), usable.models, usable.outside, role);
         harnesses.push({ id, ready, ...(on ? { on } : {}), ...(reason ? { reason } : {}) });
       }
@@ -2406,6 +2409,24 @@ export function createApp(ctx: AppContext) {
       } catch (error) {
         throw new HttpError(502, redact(String((error as Error).message ?? error), [provider.apiKey]).slice(0, 500));
       }
+    },
+    teamModels: () => {
+      // What you may set a knight to work on: each model the roster names (wildcards aside), each local model a full
+      // node of the fleet serves (an embedder aside), with the nodes that serve it, and any a knight works on already.
+      const found = new Map<string, Set<string>>();
+      const add = (ref: string, node?: string) => {
+        if (ref.includes("*")) return;
+        const at = found.get(ref) ?? new Set<string>();
+        if (node) at.add(node);
+        found.set(ref, at);
+      };
+      for (const spec of Object.values(roster(ctx.store))) for (const ref of spec?.models ?? []) add(ref);
+      for (const d of ctx.store.devices()) {
+        if (d.kind !== "node" || d.role !== "full") continue;
+        for (const r of localModelsOf(d.profile?.caps)) for (const m of r.models) if (!isEmbeddingModel(m)) add(`${r.runtime}/${m}`, d.name);
+      }
+      for (const t of ctx.team ? teamOf().store.teammates() : []) for (const ref of t.models ?? []) add(ref);
+      return { models: [...found].map(([ref, on]) => ({ ref, on: [...on].sort() })) };
     },
     localModelCall: async (input, p, req) => {
       // A full node's call to a model only this node's runtime serves (viaFleet): passed to that runtime as sent, on its

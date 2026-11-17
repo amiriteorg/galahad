@@ -23,6 +23,8 @@ export interface BrainContext {
 export interface ChatRequest {
   role?: string;
   model?: string;
+  /** These models, in order, in place of the role's (a knight's own: its work runs on them). `model` comes first. */
+  models?: string[];
   /** What was said, and the pictures that go with a message (yours, attached in your chat). */
   messages: ModelMessage[];
   /** Appended after the stable persona (keeps the cacheable prefix intact). */
@@ -178,7 +180,7 @@ async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
  * run) hands the answer to the next one, which starts it again from your message.
  */
 export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator<ChatStreamEvent> {
-  const asked = req.model ? [req.model] : roleModels(ctx.store, req.role ?? "planner");
+  const asked = req.model ? [req.model] : req.models?.length ? [...req.models] : roleModels(ctx.store, req.role ?? "planner");
   // A coding plan's key is for coding (providers.ts): his coding work uses it, and the knights' coding tools through
   // the gateway. For any other answer its models are passed over without a word, unless they were all there was.
   const own = req.coding ? asked : asked.filter((ref) => !onPlan(ref));

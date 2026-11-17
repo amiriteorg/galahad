@@ -46,6 +46,10 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     ask him in chat to seat and brief a knight)
   roundtable add <id> --name <name> [--instructions text] [--role planner] [--agent native|opencode|hermes|claude|codex]
                                     [--repo https://github.com/owner/repo] [--limit daily-turns]
+  roundtable models <id> [provider/model…] [--role]
+                                    a knight's own models, in place of its role's: its conversations, its tasks' work
+                                    and its harness run on them, in order (a local model on whichever node serves it);
+                                    with none named, what it works on and what you may choose; --role gives it back
   roundtable dm <id> [message]       open/read a direct chat, or send a message
   roundtable room <name> <member…>   create a shared room (--limit bounds its coordination chain)
   roundtable chat <room> [message]   read a room, or send a message; work continues on the node

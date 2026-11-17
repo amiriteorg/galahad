@@ -253,6 +253,16 @@ test("a model call that says nothing is ended after a while and asked again: a t
   expect(f.held()).toBe(0);
 });
 
+test("a knight on models of its own works on them, at its tasks and in its rooms; its plan and its review stay the planner's and the reviewer's", async () => {
+  const own: Teammate = { ...member, models: ["local/mimo", "local/qwen"] };
+  const f = fixture([say("1. Make the change and test it."), say("```sh\necho built\n```"), say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")], { teammate: () => own });
+  expect((await f.runtime.executeTask(own, task, f.context)).verified).toBe(true);
+  expect(f.bodies.map((body) => body.model)).toEqual(["fake", "mimo", "mimo", "fake"]);
+  const g = fixture([say("On it.")], { teammate: () => own });
+  expect(await g.runtime.respond(own, room, [], g.context)).toBe("On it.");
+  expect(g.bodies[0].model).toBe("mimo");
+});
+
 test("every turn of a task is sent the same beginning: the knight's notes are fenced once for the task, not anew on each call", async () => {
   const f = fixture([say("1. Make the change and test it."), say("```sh\necho one\n```"), say("```sh\necho two\n```"), say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")]);
   expect((await f.runtime.executeTask(member, task, f.context)).verified).toBe(true);

@@ -1,4 +1,4 @@
-import { plainLine, plainText, type Prices, type RouteName, taskRecordFacts, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate } from "@galahad/core";
+import { plainLine, plainText, type Prices, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate } from "@galahad/core";
 import { AVATAR_LOOKS, lookProfile, resolveAvatar, withBodyColor } from "@galahad/core/avatar";
 
 interface Api { call<T>(name: RouteName, input?: unknown): Promise<T> }
@@ -61,6 +61,24 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     const id = args[0];
     const result = await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: string("name") ?? id, ...(string("instructions") ? { instructions: string("instructions") } : {}), ...(string("role") ? { role: string("role") } : {}), ...(string("agent") ? { harness: string("agent") } : {}), ...(string("repo") ? { repository: string("repo") } : {}), ...(string("limit") ? { dailyTurns: Number(string("limit")) } : {}) });
     print(`${plainLine(result.teammate.name)} is ready to chat. Its VM is made on a node that makes VMs (KVM with Kata, or a Mac with Apple's container) when it is first needed.`); return;
+  }
+  if (sub === "models") {
+    // A knight's own models, in place of its role's: shown with what you may choose, set in order, or given back (--role).
+    const id = args[0];
+    if (!id) throw new Error("usage: galahad roundtable models <knight> [provider/model…] [--role]");
+    const knight = (await api.call<TeamSnapshot>("team")).teammates.find((m) => m.id === id);
+    if (!knight) throw new Error(`no knight ${id}`);
+    const says = (m: Teammate) => (m.models?.length ? `${m.id} works on ${m.models.join(", ")}, in that order.` : `${m.id} works on its role's models (${m.role}).`);
+    const refs = args.slice(1).flatMap((arg) => arg.split(",")).map((ref) => ref.trim()).filter(Boolean);
+    if (refs.length || flags.role === true) {
+      const saved = await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: knight.name, models: flags.role === true ? null : refs });
+      print(says(saved.teammate)); return;
+    }
+    const { models } = await api.call<{ models: TeamModelChoice[] }>("teamModels");
+    print(says(knight));
+    print("To choose, in order: galahad roundtable models <knight> provider/model…; --role gives it its role's again. You may choose:");
+    for (const m of models) print(`  ${m.ref}${m.on.length ? ` · on ${m.on.join(", ")}` : ""}`);
+    return;
   }
   if (sub === "order") {
     // Your order of the knights: every device shows them so. Those not named come after, by handle.

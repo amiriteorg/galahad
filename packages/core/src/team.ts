@@ -36,12 +36,19 @@ export const AvatarProfileSchema = z.strictObject({
 
 /** The model role a knight works on: one of the roster's, built in or one you made. */
 export const TeammateRole = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
+/**
+ * The models a knight's own work runs on, in order, in place of its role's: `provider/model` as the roster names them,
+ * a local runtime's on whichever node of the fleet serves it (never a wildcard), eight at most.
+ */
+export const TeammateModels = z.array(z.string().trim().min(3).max(256).regex(/^[A-Za-z0-9._-]+\/[^\s*]+$/, "provider/model, as the roster names it")).max(8);
 
 export const TeammateInput = z.strictObject({
   id: TeammateId,
   name: z.string().trim().min(1).max(80),
   instructions: z.string().max(8000).optional(),
   role: TeammateRole.optional(),
+  /** Omitted: kept as they were; null or none: its role's again. */
+  models: TeammateModels.nullable().optional(),
   harness: TeamHarness.optional(),
   enabled: z.boolean().optional(),
   dailyTurns: z.number().int().min(0).max(1000).optional(),
@@ -163,6 +170,11 @@ export interface Teammate {
   name: string;
   instructions: string;
   role: string;
+  /**
+   * The models its own work runs on, in order, in place of its role's (absent: its role's): its conversations, its
+   * tasks' work and its harness. A task's plan and its independent review stay the planner's and the reviewer's.
+   */
+  models?: string[];
   harness: TeamHarness;
   enabled: boolean;
   dailyTurns: number;
@@ -184,6 +196,12 @@ export interface Teammate {
   /** When you removed it. A removed worker is in no list and does no work; its record is kept, so what it said
    * stays its own and its handle is never anyone else's. */
   removedAt?: number;
+}
+
+/** A model you may set a knight to work on (`GET /api/team/models`): its ref, and the nodes that serve it, when a local runtime does. */
+export interface TeamModelChoice {
+  ref: string;
+  on: string[];
 }
 
 export interface TeamRoom {

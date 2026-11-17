@@ -101,6 +101,14 @@ test("a model call on ultra for a model only the mini's Ollama serves is answere
   expect(JSON.stringify(asked[0]!.body.messages)).toContain("Where are you?");
 });
 
+test("what you may set a knight to work on: the roster's models, then each local one a node serves and where; never an embedder or a wildcard", async () => {
+  expect((await admin(homeA, portA)("setRoster", { role: "swift", models: ["ollama/*", "deepseek/deepseek-flash"] })).status).toBe(200);
+  const { models } = (await (await admin(homeA, portA)("teamModels")).json()) as { models: { ref: string; on: string[] }[] };
+  expect(models).toContainEqual({ ref: "deepseek/deepseek-flash", on: [] });
+  expect(models).toContainEqual({ ref: "ollama/mimo-v2.6:9b", on: ["mini"] });
+  expect(models.some((m) => m.ref.includes("*") || m.ref.includes("embedding"))).toBe(false);
+});
+
 test("a node's local runtime is asked by full nodes alone, and only for a model it serves", async () => {
   // You (an owner's device) never call it: it is the fleet's way, not a way to a node's runtime from outside it.
   expect((await admin(homeB, portB)("localModelCall", { provider: "ollama", request: { model: "mimo-v2.6:9b", messages: [] } })).status).toBe(403);
