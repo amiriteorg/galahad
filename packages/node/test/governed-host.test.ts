@@ -9,7 +9,7 @@ import { modelSpeed, sandboxStart } from "../src/compute/measure.ts";
 import { fakeDocker } from "./fake-docker.ts";
 // (The sandbox package's stand-in for Apple's container: a Mac's host, behind the same governor.)
 import { fakeContainer } from "../../sandbox/test/fake-container.ts";
-import { ContainerVolumes } from "@galahad/sandbox";
+import { ContainerVolumes, KEEPERS } from "@galahad/sandbox";
 
 /*
  * The governed sandbox host: the real host's own logic above a stand-in Docker, behind
@@ -289,6 +289,8 @@ describe("on a Mac (Apple's container), behind the same governor", () => {
         maxCpus: 64,
         maxMemoryGb: 512,
         runner: fake.runner,
+        launchctl: async () => ({ code: 0, stdout: "", stderr: "" }),
+        firewall: async () => ({ on: true }),
         workspaces: new ContainerVolumes(fake.runner, () => ({ totalBytes: 1000 * 2 ** 30, freeBytes: 900 * 2 ** 30 })),
         microVMs: true,
       },
@@ -326,8 +328,9 @@ describe("on a Mac (Apple's container), behind the same governor", () => {
     const { sandbox, governor, fake, ledger } = mac();
     const starts = await sandboxStart(sandbox, governor, () => capacity({ cores: 12, memoryGb: 24, sandboxes: 2 }));
     expect(starts.map((s) => s.kind)).toEqual(["vm"]);
-    expect(ledger.filter((e) => e.class === "create" && e.resource === "docker.container").map((e) => e.detail)).toEqual(["microVM · gateway · 1 cpu · 1 GB · 20 GB disk · galahad/sandbox:1"]);
-    expect(fake.vms.size).toBe(0);
+    expect(ledger.filter((e) => e.class === "create" && e.resource === "docker.container" && e.target.startsWith("galahad-sbx-")).map((e) => e.detail)).toEqual(["microVM · gateway · 1 cpu · 1 GB · 20 GB disk · galahad/sandbox:1"]);
+    // Nothing of it is left: only the networks' keepers, which are no sandboxes.
+    expect([...fake.vms.keys()]).toEqual([KEEPERS.gateway, KEEPERS.online]);
     expect(fake.volumes.size).toBe(0);
   });
 });

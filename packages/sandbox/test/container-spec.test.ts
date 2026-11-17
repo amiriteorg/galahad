@@ -7,6 +7,7 @@ import {
   containerDeleteArgs,
   containerExecArgs,
   containerInspectArgs,
+  containerKeeperArgs,
   containerListArgs,
   containerNetworkCreateArgs,
   containerRunArgs,
@@ -15,7 +16,9 @@ import {
   containerStopArgs,
   containerTerminalArgs,
   containerVolumeCreateArgs,
+  containerVolumeOwnArgs,
   DOCKER_ON_A_MAC,
+  helperRestartArgs,
   NETWORKS,
   networkCreateArgs,
   parseContainers,
@@ -118,9 +121,15 @@ describe("a sandbox on a Mac: the hardening flags", () => {
 });
 
 describe("a sandbox on a Mac: its networks", () => {
-  test("online is container's default network, and the gateway network beside it, egress first", () => {
-    expect(all(containerRunArgs({ ...base, network: "online" }), "--network")).toEqual(["default", NETWORKS.gateway.name]);
+  test("online is Galahad's own NAT network, as on Docker, and the gateway network beside it, egress first", () => {
+    expect(all(containerRunArgs({ ...base, network: "online" }), "--network")).toEqual([NETWORKS.online.name, NETWORKS.gateway.name]);
     expect(containerRunArgs({ ...base, network: "online" })).not.toContain("--no-dns");
+  });
+
+  test("every VM boots without IPv6, which would reach the host and the sandboxes beside it past rules written for IPv4", () => {
+    for (const network of ["online", "gateway"] as const) expect(all(containerRunArgs({ ...base, network }), "--kernel-arg")).toEqual(["ipv6.disable=1"]);
+    expect(all(containerKeeperArgs("galahad/sandbox:1", "online"), "--kernel-arg")).toEqual(["ipv6.disable=1"]);
+    expect(all(containerVolumeOwnArgs("0123456789", "galahad/sandbox:1"), "--kernel-arg")).toEqual(["ipv6.disable=1"]);
   });
 
   test("gateway is the internal network alone, with no resolver: it reaches the gateway by its address", () => {
@@ -134,8 +143,13 @@ describe("a sandbox on a Mac: its networks", () => {
     expect(containerCannot({ network: "isolated" })).toBe(CONTAINER_CANNOT.isolated);
   });
 
-  test("the gateway network is made with --internal (host-only), on Docker's subnet, so the gateway's address is the same", () => {
-    expect(containerNetworkCreateArgs()).toEqual(["network", "create", "--internal", "--subnet", NETWORKS.gateway.subnet, "--label", "dev.galahad=1", NETWORKS.gateway.name]);
+  test("the networks are made on Docker's subnets, so the gateways' addresses are the same: the gateway's host-only (--internal), online's with vmnet's NAT", () => {
+    expect(containerNetworkCreateArgs("gateway")).toEqual(["network", "create", "--internal", "--subnet", NETWORKS.gateway.subnet, "--label", "dev.galahad=1", NETWORKS.gateway.name]);
+    expect(containerNetworkCreateArgs("online")).toEqual(["network", "create", "--subnet", NETWORKS.online.subnet, "--label", "dev.galahad=1", NETWORKS.online.name]);
+  });
+
+  test("a network's helper is restarted by its launchd label, in the domain given (apple/container#2051)", () => {
+    expect(helperRestartArgs("gui/501", NETWORKS.online.name)).toEqual(["kickstart", "-k", "gui/501/com.apple.container.container-network-vmnet.galahad-net"]);
   });
 });
 
@@ -228,8 +242,8 @@ describe("what container prints, read", () => {
       "not a container",
     ]);
     expect(parseContainers(listed)).toEqual([
-      { id: "galahad-sbx-0123456789", labels: { "dev.galahad": "1", "dev.galahad.id": "0123456789", "dev.galahad.image": "galahad/sandbox:1" }, image: "galahad/sandbox:1", status: "running", cpus: 4, memoryBytes: 1073741824 },
-      { id: "buildkit", labels: {}, image: "", status: "exited", cpus: 2, memoryBytes: 2147483648 },
+      { id: "galahad-sbx-0123456789", labels: { "dev.galahad": "1", "dev.galahad.id": "0123456789", "dev.galahad.image": "galahad/sandbox:1" }, image: "galahad/sandbox:1", status: "running", cpus: 4, memoryBytes: 1073741824, networks: ["default"] },
+      { id: "buildkit", labels: {}, image: "", status: "exited", cpus: 2, memoryBytes: 2147483648, networks: [] },
     ]);
     // Without the label, the image is container's own reference to it.
     expect(parseContainers(JSON.stringify([{ configuration: { id: "x", image: { reference: "galahad/sandbox:1" } }, status: { state: "running" } }]))?.[0]?.image).toBe("galahad/sandbox:1");

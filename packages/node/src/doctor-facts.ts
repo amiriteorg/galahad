@@ -352,10 +352,14 @@ async function sandboxOf(deps: DoctorDeps, deep: boolean): Promise<DoctorFacts["
     // is-active prints the state and exits non-zero unless it's active; a unit that doesn't exist reads "inactive" too.
     if (unit) firewall = unit.stdout === "active" ? "active" : (await deps.system.run(["systemctl", "cat", "galahad-firewall.service"]))?.code === 0 ? "inactive" : "missing";
   }
+  // A Mac's own, as the node reads it (its helper's status and the bridges): no sandbox is made there while it is off.
+  const wall = await host.firewallState().catch(() => null);
+  const macFirewall = wall ? { macFirewall: { on: wall.on, installed: wall.on || wall.installed, soon: !wall.on && wall.soon, why: wall.on ? null : wall.why } } : {};
   // Never when the image is missing: creating a sandbox would rebuild it, and the doctor changes nothing.
-  const start = deep && status.docker && status.image ? await startSandboxes(host, deps.governor, () => deps.compute.selfCapacity()).catch(() => null) : null;
+  // (Nor on a Mac whose firewall is off: it refuses to, by design, and its own line says so.)
+  const start = deep && status.docker && status.image && (!wall || wall.on) ? await startSandboxes(host, deps.governor, () => deps.compute.selfCapacity()).catch(() => null) : null;
   return {
-    host: { docker: status.docker, ...(caps?.sandbox?.engine === "container" ? { engine: "container" as const } : {}), image: status.image, networks: status.networks.gateway && status.networks.online, diskLimited, kvm: !!caps?.vm.kvm, microVMs, firewall, start },
+    host: { docker: status.docker, ...(caps?.sandbox?.engine === "container" ? { engine: "container" as const } : {}), image: status.image, networks: status.networks.gateway && status.networks.online, diskLimited, kvm: !!caps?.vm.kvm, microVMs, firewall, ...macFirewall, start },
     others,
     ...container,
   };

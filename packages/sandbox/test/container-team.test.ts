@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ContainerVolumes, type LedgerEntryInput, NETWORKS, SandboxHost, type TokenMinter } from "../src/index.ts";
+import { ContainerVolumes, type LedgerEntryInput, type MacFirewallState, NETWORKS, SandboxHost, type TokenMinter } from "../src/index.ts";
 import { fakeContainer } from "./fake-container.ts";
 
 /*
@@ -18,11 +18,14 @@ async function knightOnAMac() {
   const minted: Parameters<TokenMinter["mint"]>[0][] = [];
   const revoked: string[] = [];
   const stored = new Map<string, string>();
+  const firewall: { state: MacFirewallState } = { state: { on: true } };
   let now = 1_000_000;
   const host = new SandboxHost({
     node: "n_mac",
     engine: "container",
     runner: fake.runner,
+    launchctl: async () => ({ code: 0, stdout: "", stderr: "" }),
+    firewall: async () => firewall.state,
     workspaces: new ContainerVolumes(fake.runner, () => ({ totalBytes: 1000 * GIB, freeBytes: 900 * GIB })),
     tokenStore: {
       put: (id, hash) => void stored.set(id, hash),
@@ -52,7 +55,7 @@ async function knightOnAMac() {
   const name = `galahad-sbx-${vm.id}`;
   fake.calls.length = 0;
   ledger.length = 0;
-  return { fake, host, vm, name, ledger, minted, revoked, stored, later: (ms: number) => void (now += ms) };
+  return { fake, host, vm, name, ledger, minted, revoked, stored, firewall, later: (ms: number) => void (now += ms) };
 }
 
 describe("a knight's VM on a Mac", () => {
@@ -72,6 +75,15 @@ describe("a knight's VM on a Mac", () => {
     expect(k.minted.at(-1)).toMatchObject({ ttlMinutes: 30, maxRequests: 500 });
   });
 
+  test("is resumed only with the Mac's firewall on: it rejoins its networks as it starts, so it stays stopped and the error says why", async () => {
+    const k = await knightOnAMac();
+    k.fake.vms.get(k.name)!.state = "stopped";
+    k.firewall.state = { on: false, installed: true, soon: false, why: "the sandbox firewall's helper last ran 95 s ago: is it loaded? (sudo launchctl print system/sh.galahad.firewall)" };
+    await expect(k.host.prepareTeam(k.vm.id, QUEST)).rejects.toThrow(/no sandbox is made on this Mac while its firewall isn't on: the sandbox firewall's helper last ran 95 s ago/);
+    expect(k.fake.vms.get(k.name)!.state).toBe("stopped");
+    expect(k.fake.calls.filter((c) => c[0] === "start")).toEqual([]);
+  });
+
   test("grows by pausing: stopped, made again with more on the same volume, started; the answer and the ledger say it paused", async () => {
     const k = await knightOnAMac();
     let paused = false;
@@ -81,7 +93,7 @@ describe("a knight's VM on a Mac", () => {
     expect(k.fake.calls.filter((c) => ["stop", "delete", "run"].includes(c[0]!)).map((c) => c[0])).toEqual(["stop", "delete", "run"]);
     const vm = k.fake.vms.get(k.name)!;
     expect(vm.volume).toBe(`${k.name}-work`);
-    expect(vm.networks).toEqual(["default", NETWORKS.gateway.name]);
+    expect(vm.networks).toEqual([NETWORKS.online.name, NETWORKS.gateway.name]);
     expect(vm.labels["dev.galahad.quest"]).toBe(QUEST);
     expect(vm.labels["dev.galahad.ephemeral"]).toBe("false");
     // Its volume was never left to be taken, and it is the one it had.
@@ -129,7 +141,7 @@ describe("a knight's VM on a Mac", () => {
     await expect(k.host.resizeTeam(k.vm.id, QUEST, { memoryGb: 4, approvedBy: "test-owner" })).rejects.toThrow(/so it is as it was: Error: the new VM wouldn't boot/);
     const vm = k.fake.vms.get(k.name)!;
     expect(vm).toMatchObject({ state: "running", cpus: 1, memoryBytes: 2 * GIB, volume: `${k.name}-work` });
-    expect(vm.networks).toEqual(["default", NETWORKS.gateway.name]);
+    expect(vm.networks).toEqual([NETWORKS.online.name, NETWORKS.gateway.name]);
     // The new lease is revoked; the one it runs with now covers what it had.
     expect(k.minted.at(-1)).toMatchObject({ providers: ["deepseek"] });
     expect(k.revoked).toContain("test-only-hash-2");

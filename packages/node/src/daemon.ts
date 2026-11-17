@@ -9,7 +9,7 @@ import { cloudflareNatives } from "./cloudflare.ts";
 import { gmailNatives, outlookNatives } from "./mail.ts";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
-import { type DockerRunner, type LedgerEntryInput, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, type SpawnTerminal, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
+import { type DockerRunner, type LedgerEntryInput, type MacFirewallState, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, type SpawnTerminal, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
 import type { HostLoad } from "@galahad/core";
 import { calibrate, spawnBench } from "./compute/calibrate.ts";
 import { GovernedSandboxHost } from "./compute/governed-host.ts";
@@ -96,6 +96,10 @@ export interface DaemonOptions {
   docker?: DockerRunner;
   /** The disk a Mac's workspaces come out of, for their budget (default: the one its home is on; tests beside a stand-in pass one). */
   sandboxDisk?: () => { totalBytes: number; freeBytes: number };
+  /** How launchctl is run on a Mac (tests: a stand-in; beside a stand-in for the engine, nothing, unless one is given). */
+  launchctl?: DockerRunner;
+  /** Whether a Mac's sandbox firewall is on (default: as its helper and the bridges say: mac-firewall.ts; tests pass their own). */
+  macFirewall?: () => Promise<MacFirewallState>;
   /** How a terminal's process is started beside that stand-in (tests: a local shell instead of `docker exec`). */
   spawnTerminal?: SpawnTerminal;
   /**
@@ -284,6 +288,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       ledger,
       ...(apple ? { engine: "container" as const, ...(opts.sandboxDisk ? { disk: opts.sandboxDisk } : {}) } : {}),
       ...(opts.docker ? { runner: opts.docker } : {}),
+      // (Never the real launchd beside a stand-in for the engine: restarting a network's helper there would be the Mac's.)
+      ...(opts.launchctl ? { launchctl: opts.launchctl } : opts.docker ? { launchctl: async () => ({ code: 0, stdout: "", stderr: "" }) } : {}),
+      ...(opts.macFirewall ? { firewall: opts.macFirewall } : {}),
       ...(opts.spawnTerminal ? { spawnTerminal: opts.spawnTerminal } : {}),
       maxCpus: caps.cores,
       maxMemoryGb: Math.max(1, Math.floor(caps.memoryGb * 0.75)),

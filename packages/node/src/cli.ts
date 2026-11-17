@@ -30,6 +30,7 @@ import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
 import { priceCommand, trialCommand, usageCommand, UsageError } from "./trial-commands.ts";
 import { doctorCommand, stoppedReport } from "./doctor-cli.ts";
+import { firewallCommand, systemFirewallDeps } from "./firewall-cli.ts";
 import { notifyCommand } from "./notify-cli.ts";
 import { teamCommand } from "./team-cli.ts";
 import { terminalCommand, ttyScreen } from "./terminal-cli.ts";
@@ -311,6 +312,10 @@ Agents (MCP)
 Maintenance
   awake on|off|status             a Mac set to stay on (a Mac mini serving the fleet) is kept from sleeping while its
                                   node runs, and counts as always on (no battery); a laptop on its battery never is
+  firewall [status|rules|install|remove]
+                                  a Mac's sandbox firewall (pf, from a helper of root's): a gateway sandbox reaches
+                                  the gateway alone, an online one the internet, never the Mac or your networks; no
+                                  sandbox is made on a Mac while it is off. install and remove ask for your password
   doctor [--offline] [--quick] [--json]
                                   is everything well? One look at this node's whole installation, in plain lines
                                   (ok, needs you, broken) with what to do: its keys, the mind, its clock, sync and
@@ -959,6 +964,12 @@ Next:
       const self = fleet?.devices.find((d) => d.id === fleet.self);
       const holding = self?.caps ? self.caps.awake === true : null;
       console.log(`keep-awake: ${config.keepAwake ? "on" : "off"}${holding === null ? " (the node isn't running, or didn't say)" : holding ? " · the running node is keeping this Mac awake" : config.keepAwake ? " · the running node isn't holding it yet: restart it" : ""}`);
+      return;
+    }
+
+    case "firewall": {
+      // A Mac's sandbox firewall (firewall-cli.ts): no node home is needed for it, and none is touched as root.
+      process.exitCode = await firewallCommand(sub, systemFirewallDeps());
       return;
     }
 

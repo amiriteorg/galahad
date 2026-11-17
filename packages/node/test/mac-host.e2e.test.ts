@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type LedgerEntry, routes, type RouteName, type SandboxView } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
-import { CONTAINER_CANNOT, CONTAINER_UNMADE, NETWORKS } from "@galahad/sandbox";
+import { CONTAINER_CANNOT, CONTAINER_UNMADE, KEEPERS, type MacFirewallState, NETWORKS } from "@galahad/sandbox";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
@@ -44,6 +44,8 @@ const caps: Capabilities = {
   container: { version: "1.7.1", running: true },
 };
 const fake = fakeContainer();
+/** This Mac's sandbox firewall, as the node is told it is (its stand-in for the helper's status and the bridges). */
+let firewall: MacFirewallState = { on: true };
 let daemon: Daemon;
 
 async function api<T = any>(name: RouteName, input?: unknown): Promise<T> {
@@ -64,7 +66,7 @@ beforeAll(async () => {
   const fleet = foundFleet(mind, identity, { fleetName: "mac-fleet", nodeName: "mini" });
   mind.close();
   home.writeConfig({ v: 1, name: "mini", fleet, port, keystore, advertise: "127.0.0.1" });
-  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, loopIntervalMs: 60_000, docker: fake.runner, measure: false, defaultHeartbeat: false,
+  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, loopIntervalMs: 60_000, docker: fake.runner, measure: false, defaultHeartbeat: false, macFirewall: async () => firewall,
     // (The stand-in's volumes aren't on this machine's disk: their budget is a Mac mini's, its 1 TB nearly free.)
     sandboxDisk: () => ({ totalBytes: 1000 * 2 ** 30, freeBytes: 900 * 2 ** 30 }) });
 });
@@ -75,8 +77,21 @@ afterAll(async () => {
 });
 
 describe("a node on a Mac with Apple's container", () => {
-  test("makes its gateway network at its start, with --internal", () => {
+  test("makes its networks at its start, the gateway's with --internal, and holds both up", () => {
     expect(fake.calls).toContainEqual(["network", "create", "--internal", "--subnet", NETWORKS.gateway.subnet, "--label", "dev.galahad=1", NETWORKS.gateway.name]);
+    expect(fake.calls).toContainEqual(["network", "create", "--subnet", NETWORKS.online.subnet, "--label", "dev.galahad=1", NETWORKS.online.name]);
+    expect([KEEPERS.gateway, KEEPERS.online].map((k) => fake.vms.get(k)?.state)).toEqual(["running", "running"]);
+  });
+
+  test("makes no sandbox while its firewall is off: the API answers 424 with why, and nothing is made", async () => {
+    const before = fake.vms.size;
+    firewall = { on: false, installed: false, soon: false, why: "this Mac's sandbox firewall isn't installed: run `galahad firewall install` (it asks for your password once)" };
+    try {
+      await expect(api("createSandbox", { on: "mini", network: "gateway", cpus: 1, memoryGb: 1, quest: "q-no-firewall" })).rejects.toThrow("createSandbox: 424 no sandbox is made on this Mac while its firewall isn't on: this Mac's sandbox firewall isn't installed: run `galahad firewall install`");
+      expect(fake.vms.size).toBe(before);
+    } finally {
+      firewall = { on: true };
+    }
   });
 
   test("makes a sandbox as a VM of its own through container, runs a command in it as uid 1000, and removes it", async () => {
@@ -101,7 +116,7 @@ describe("a node on a Mac with Apple's container", () => {
   test("placed without being pinned: its sandbox is made on the Mac; one asked to be isolated finds no host here, and says why", async () => {
     const { sandbox } = await api<{ sandbox: SandboxView }>("createSandbox", { network: "online", cpus: 1, memoryGb: 1, quest: "q-placed" });
     expect(sandbox).toMatchObject({ node: daemon.identity.id, network: "online", isolation: "vm" });
-    expect(fake.vms.get(sandbox.name)!.networks).toEqual(["default", NETWORKS.gateway.name]);
+    expect(fake.vms.get(sandbox.name)!.networks).toEqual([NETWORKS.online.name, NETWORKS.gateway.name]);
     await api("destroySandbox", { id: sandbox.id });
     await expect(api("createSandbox", { network: "isolated", cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 no sandbox host in this fleet can make it: mini: ${CONTAINER_CANNOT.isolated}`);
     await expect(api("createSandbox", { network: "online", desktop: true, cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 no sandbox host in this fleet can make it: mini: ${CONTAINER_CANNOT.desktop}`);

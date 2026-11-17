@@ -22,12 +22,15 @@ import {
   containerVolumeDeleteArgs,
   parseContainers,
   CONTAINER_UNMADE,
-  GATEWAY_KEEPER,
+  DEFAULT_NETWORK,
+  helperRestartArgs,
+  KEEPERS,
   parseContainerVersion,
   type SandboxAsk,
   type Unmade,
 } from "./container.ts";
 import { ContainerVolumes } from "./container-volumes.ts";
+import { macFirewall, type MacFirewallState } from "./mac-firewall.ts";
 import {
   chooseIsolation,
   containerName,
@@ -124,6 +127,10 @@ export interface SandboxHostOptions {
   now?: () => number;
   /** How long to wait before starting a sandbox once more (tests pass one that doesn't). */
   pause?: (ms: number) => Promise<void>;
+  /** How launchctl is run on a Mac, to restart a network's helper (tests pass a stand-in; nothing is spawned then). */
+  launchctl?: DockerRunner;
+  /** On a Mac: whether its sandbox firewall is on (mac-firewall.ts; tests pass their own). No sandbox is made while it isn't. */
+  firewall?: () => Promise<MacFirewallState>;
 }
 
 /**
@@ -305,6 +312,10 @@ export class SandboxHost {
   /** Workspaces made for a sandbox that hasn't started yet (so a cleanup never takes them). */
   private readonly creating = new Set<string>();
   private readonly building = new Map<string, Promise<{ ok: boolean; output: string }>>();
+  /** On a Mac: the networks being held up, once at a time (what it does to their helpers must never overlap). */
+  private keeping: Promise<void> | null = null;
+  /** On a Mac: why a network's keeper couldn't be started the last time it was tried, or null. */
+  private unkept: string | null = null;
 
   constructor(opts: SandboxHostOptions) {
     this.apple = opts.engine === "container";
@@ -376,9 +387,9 @@ export class SandboxHost {
   async status() {
     if (!(await this.available())) return { docker: false, image: false, networks: { gateway: false, online: false } };
     if (this.apple) {
-      // (`docker`: its engine answers. Online is container's default network, its service's own.)
-      const [image, gw] = await Promise.all([this.docker(containerImageInspectArgs(DEFAULT_IMAGE)), this.docker(containerNetworkInspectArgs())]);
-      return { docker: true, image: image.code === 0, networks: { gateway: gw.code === 0, online: true } };
+      // (`docker`: its engine answers.)
+      const [image, gw, net] = await Promise.all([this.docker(containerImageInspectArgs(DEFAULT_IMAGE)), this.docker(containerNetworkInspectArgs("gateway")), this.docker(containerNetworkInspectArgs("online"))]);
+      return { docker: true, image: image.code === 0, networks: { gateway: gw.code === 0, online: net.code === 0 } };
     }
     const [image, gw, net] = await Promise.all([
       this.docker(["image", "inspect", DEFAULT_IMAGE, "--format", "{{.Id}}"]),
@@ -389,18 +400,13 @@ export class SandboxHost {
   }
 
   /**
-   * Idempotent: creates the sandbox networks if missing. (On a Mac only the gateway's: online is container's own
-   * default network. The ledger's resource names are the kinds of thing Galahad reads them as, whichever engine.)
+   * Idempotent: creates the sandbox networks if missing, and on a Mac holds them up (keepNetworks). (The ledger's
+   * resource names are the kinds of thing Galahad reads them as, whichever engine.)
    */
   async ensureNetworks(): Promise<void> {
     if (this.apple) {
-      if ((await this.docker(containerNetworkInspectArgs())).code !== 0) {
-        const result = await this.docker(containerNetworkCreateArgs());
-        if (result.code !== 0) throw new SandboxError(`could not create network ${NETWORKS.gateway.name}: ${result.stderr.trim()}`, 500);
-        this.opts.ledger({ class: "create", resource: "docker.network", target: NETWORKS.gateway.name, verdict: "allow", detail: "host-only (container network create --internal)" });
-      }
-      await this.keepGatewayAddress();
-      return;
+      this.keeping ??= this.keepNetworks().finally(() => (this.keeping = null));
+      return this.keeping;
     }
     for (const kind of ["gateway", "online"] as const) {
       const exists = (await this.docker(["network", "inspect", NETWORKS[kind].name, "--format", "{{.Id}}"])).code === 0;
@@ -412,21 +418,91 @@ export class SandboxHost {
   }
 
   /**
-   * On a Mac: the gateway network's address on the host is there only while a VM is attached to it, so GATEWAY_KEEPER
-   * stays attached (started again if it stopped, made if it isn't there). Never made from an image this Mac hasn't got:
-   * container would pull whatever that name leads to. Without it the gateway is bound once a sandbox is attached.
+   * On a Mac: both sandbox networks made if missing, and each held up by its keeper (KEEPERS, the gateway's first),
+   * started again if it stopped, made if it isn't there. A keeper that comes up on a network nothing else runs on
+   * comes up once that network's helper is restarted, and after one has, container's default network's is too while
+   * nothing runs on it: so no network's bridge is ever one a live one holds, nor gets one of theirs later
+   * (apple/container#2051). Never made from an image this Mac hasn't got: container would pull whatever that name
+   * leads to. A keeper that won't start is said once a sandbox is asked for (readyForVm), not here: at the node's
+   * start that would leave it hosting nothing until it next starts.
    */
-  private async keepGatewayAddress(): Promise<void> {
-    const looked = await this.docker(containerInspectArgs([GATEWAY_KEEPER]));
-    const state = looked.code === 0 ? (parseContainers(looked.stdout)?.[0]?.status ?? null) : null;
-    if (state === "running") return;
-    if (state) {
-      await this.docker(containerStartArgs(GATEWAY_KEEPER));
+  private async keepNetworks(): Promise<void> {
+    for (const kind of ["gateway", "online"] as const) {
+      if ((await this.docker(containerNetworkInspectArgs(kind))).code === 0) continue;
+      const result = await this.docker(containerNetworkCreateArgs(kind));
+      if (result.code !== 0) throw new SandboxError(`could not create network ${NETWORKS[kind].name}: ${result.stderr.trim()}`, 500);
+      this.opts.ledger({ class: "create", resource: "docker.network", target: NETWORKS[kind].name, verdict: "allow", detail: kind === "gateway" ? "host-only (container network create --internal)" : "with a way out (vmnet's NAT): online sandboxes' egress" });
+    }
+    this.unkept = null;
+    if (!(await this.hasImage())) {
+      this.unkept = `${DEFAULT_IMAGE} isn't built on this Mac, and the VMs that hold its networks up are made from it: galahad sandbox build`;
       return;
     }
-    if (!(await this.hasImage())) return;
-    const ran = await this.docker(containerKeeperArgs(DEFAULT_IMAGE), 120_000);
-    if (ran.code === 0) this.opts.ledger({ class: "create", resource: "docker.container", target: GATEWAY_KEEPER, verdict: "allow", detail: "holds the gateway network's address on this Mac (1 cpu, 256 MB, nothing running in it)" });
+    // What runs, and on which network (null when container couldn't say: never read as "nothing", so no helper is restarted).
+    const running = async () => {
+      const listed = await this.docker(containerListArgs());
+      return (listed.code === 0 ? parseContainers(listed.stdout) : null)?.filter((c) => c.status === "running") ?? null;
+    };
+    const idle = (now: Awaited<ReturnType<typeof running>>, network: string) => !!now && !now.some((c) => c.networks.includes(network));
+    const now = await running();
+    let started = false;
+    for (const kind of ["gateway", "online"] as const) {
+      const name = KEEPERS[kind];
+      if (now?.some((c) => c.id === name)) continue;
+      if (idle(now, NETWORKS[kind].name)) await this.restartHelper(NETWORKS[kind].name);
+      const looked = await this.docker(containerInspectArgs([name]));
+      const there = looked.code === 0 && (parseContainers(looked.stdout)?.length ?? 0) > 0;
+      const ran = await this.docker(there ? containerStartArgs(name) : containerKeeperArgs(DEFAULT_IMAGE, kind), 120_000);
+      if (ran.code !== 0) {
+        this.unkept = `the VM that holds the ${NETWORKS[kind].name} network up on this Mac (${name}) won't ${there ? "start" : "make"}: ${redact(ran.stderr.trim() || `exit ${ran.code}`).split("\n")[0]!.slice(0, 300)}`;
+        return;
+      }
+      started = true;
+      if (!there) this.opts.ledger({ class: "create", resource: "docker.container", target: name, verdict: "allow", detail: `holds the ${NETWORKS[kind].name} network up on this Mac (1 cpu, 256 MB, nothing running in it)` });
+    }
+    if (started && idle(await running(), DEFAULT_NETWORK)) await this.restartHelper(DEFAULT_NETWORK);
+  }
+
+  /** A network's helper on a Mac, restarted (helperRestartArgs), in the login session's domain or else the user's. */
+  private async restartHelper(network: string): Promise<void> {
+    const uid = process.getuid?.() ?? 0;
+    for (const domain of [`gui/${uid}`, `user/${uid}`]) {
+      const args = helperRestartArgs(domain, network);
+      const ran = this.opts.launchctl ? await this.opts.launchctl(args, 15_000) : await this.spawn(["/bin/launchctl", ...args], 15_000);
+      if (ran.code === 0) return;
+    }
+    // (Not there to restart, as for a network made a moment ago: then it has no bridge fixed yet either.)
+  }
+
+  private async spawn(argv: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
+    const proc = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    const timer = setTimeout(() => proc.kill(), timeoutMs);
+    const [out, err, code] = await Promise.all([readCapped(proc.stdout, MAX_OUTPUT), readCapped(proc.stderr, MAX_OUTPUT), proc.exited]);
+    clearTimeout(timer);
+    return { code, stdout: out.text, stderr: err.text };
+  }
+
+  /**
+   * What every VM start goes through: the networks, and on a Mac its keepers up and its firewall on (mac-firewall.ts),
+   * or nothing is made. A bridge a keeper has just brought up has its filter within the helper's next run, so a firewall
+   * that says it will be on soon is waited for (two of its runs at most).
+   */
+  private async readyForVm(): Promise<void> {
+    await this.ensureNetworks();
+    if (!this.apple) return;
+    if (this.unkept) throw new SandboxError(this.unkept, 500);
+    const pause = this.opts.pause ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    let state = (await this.firewallState())!;
+    for (let waited = 0; !state.on && state.soon && waited < 20; waited++) {
+      await pause(1_000);
+      state = (await this.firewallState())!;
+    }
+    if (!state.on) throw new SandboxError(`no sandbox is made on this Mac while its firewall isn't on: ${state.why}`, 424);
+  }
+
+  /** A Mac's sandbox firewall, as it is now (mac-firewall.ts); null on Linux, whose is galahad-firewall's unit. */
+  async firewallState(): Promise<MacFirewallState | null> {
+    return this.apple ? (this.opts.firewall ?? (() => macFirewall()))() : null;
   }
 
   async build(contextDir: string, why?: string, image = DEFAULT_IMAGE): Promise<{ ok: boolean; output: string }> {
@@ -510,7 +586,7 @@ export class SandboxHost {
       const problem = budgetProblem(await this.opts.workspaces!.stats(), diskGb);
       if (problem) throw new SandboxError(problem, 507);
     }
-    if (input.network !== "isolated") await this.ensureNetworks();
+    if (input.network !== "isolated") await this.readyForVm();
 
     const id = hex(randomBytes(5));
     const quest = input.quest ?? `adhoc-${id}`;
@@ -697,6 +773,8 @@ export class SandboxHost {
     }
     if (sandbox.status !== "running") {
       if (!['exited', 'created'].includes(sandbox.status)) throw new SandboxError(`the teammate's VM is ${sandbox.status}`, 409);
+      // (On a Mac it rejoins its networks as it starts: they are held up, and its firewall on, first.)
+      if (this.apple) await this.readyForVm();
       const started = await this.docker(["start", containerName(id)], 120_000);
       if (started.code !== 0) throw new SandboxError(`could not resume the teammate's VM: ${redact(started.stderr).slice(0, 300)}`, 424);
     }
@@ -1205,7 +1283,7 @@ export class SandboxHost {
     // Its volume is never an orphan's while this runs (the reaper skips what is being made).
     this.creating.add(id);
     try {
-      await this.ensureNetworks();
+      await this.readyForVm();
       await this.docker(containerStopArgs(name), 60_000);
       const removed = await this.docker(containerDeleteArgs(name));
       if (removed.code !== 0) {
@@ -1297,8 +1375,8 @@ export async function probeContainer(runner?: DockerRunner, bin = "container"): 
   }
   const container = { version: version?.version ?? null, running: !!version?.running };
   if (!version?.running || version.major !== CONTAINER_MAJOR) return { container, sandbox: null };
-  const [image, gw] = await Promise.all([run(containerImageInspectArgs(DEFAULT_IMAGE), 8000), run(containerNetworkInspectArgs(), 8000)]);
-  return { container, sandbox: { image: image.code === 0, networks: gw.code === 0, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false } };
+  const [image, gw, net] = await Promise.all([run(containerImageInspectArgs(DEFAULT_IMAGE), 8000), run(containerNetworkInspectArgs("gateway"), 8000), run(containerNetworkInspectArgs("online"), 8000)]);
+  return { container, sandbox: { image: image.code === 0, networks: gw.code === 0 && net.code === 0, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false } };
 }
 
 const LEDGER_DETAIL_LIMIT = 400;

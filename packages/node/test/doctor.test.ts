@@ -398,7 +398,7 @@ describe("each fault gives its own line and advice", () => {
     const checks = diagnose(mac);
     expect(checks.filter((c) => c.state !== "ok").map((c) => c.id)).toEqual([]);
     expect(byId(checks, "sandbox.docker").line).toBe("Apple's container answers: every sandbox here is a VM of its own");
-    expect(byId(checks, "sandbox.networks").line).toBe("the gateway network is there (online sandboxes use container's own default network)");
+    expect(byId(checks, "sandbox.networks").line).toBe("both sandbox networks are there, each held up by a VM of the node's own");
     const down = healthy();
     down.sandbox.host = { ...down.sandbox.host!, engine: "container", docker: false, kvm: false, firewall: null, start: null };
     expect(byId(diagnose(down), "sandbox.docker")).toMatchObject({ state: "broken", line: "Apple's container isn't answering on this Mac", fix: expect.stringContaining("container system start") });
@@ -409,6 +409,22 @@ describe("each fault gives its own line and advice", () => {
     const stopped = healthy();
     stopped.sandbox = { host: null, others: [], container: { version: "1.7.1", running: false } };
     expect(byId(diagnose(stopped), "sandbox.host")).toMatchObject({ state: "needs-you", fix: expect.stringContaining("container system start") });
+  });
+
+  test("a Mac's sandbox firewall: on, not installed, off for a moment, off", () => {
+    const mac = (wall: { on: boolean; installed: boolean; soon: boolean; why: string | null }) => {
+      const f = healthy();
+      f.sandbox.host = { ...f.sandbox.host!, engine: "container", kvm: false, firewall: null, macFirewall: wall, start: null };
+      return byId(diagnose(f), "sandbox.firewall");
+    };
+    expect(mac({ on: true, installed: true, soon: false, why: null })).toMatchObject({ state: "ok", line: expect.stringContaining("never this Mac or your networks") });
+    const missing = mac({ on: false, installed: false, soon: false, why: "isn't installed" });
+    expect(missing).toMatchObject({ state: "needs-you", line: expect.stringContaining("makes no sandboxes"), fix: "galahad firewall install (it asks for your password once)." });
+    expect(missing.finding?.severity).toBe("info");
+    expect(mac({ on: false, installed: true, soon: true, why: "the galahad-gw network has no bridge on this Mac yet" })).toMatchObject({ state: "needs-you", line: expect.stringContaining("no bridge on this Mac yet") });
+    const off = mac({ on: false, installed: true, soon: false, why: "pf isn't on, so the sandbox firewall's rules hold nothing" });
+    expect(off).toMatchObject({ state: "broken", fix: expect.stringContaining("galahad firewall status") });
+    expect(off.finding).toMatchObject({ severity: "warn", title: expect.stringContaining("The sandbox firewall is off on") });
   });
 
   test("compute: never measured, stale, old", () => {

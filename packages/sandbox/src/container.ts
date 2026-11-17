@@ -14,8 +14,18 @@ import { containerName, LABEL, labels, NETWORKS, type SandboxSpec, volumeName } 
 /** The major release whose command line this driver speaks. */
 export const CONTAINER_MAJOR = 1;
 
-/** The network `container system start` makes (vmnet, with a way out): an online sandbox's egress. */
+/**
+ * The network `container system start` makes, which its builder joins (`container build`). No sandbox is put on it: an
+ * online sandbox's way out is Galahad's own galahad-net, as on Docker, so the Mac's firewall knows every address.
+ */
 export const DEFAULT_NETWORK = "default";
+
+/**
+ * Every VM here boots without IPv6 (a kernel argument, so nothing inside can bring it back): Docker's networks are
+ * IPv4 alone, and on a Mac IPv6 would reach the host and the sandboxes beside it by their link-local addresses
+ * (seen on the Mac mini, 17 November 2026), past rules written for IPv4.
+ */
+const NO_IPV6 = ["--kernel-arg", "ipv6.disable=1"];
 
 /** How long a sandbox has to stop before it is killed (Docker's path gives 10 s too). */
 const STOP_SECONDS = 10;
@@ -93,27 +103,27 @@ export const DOCKER_ON_A_MAC: Readonly<Record<string, { container: string | null
   },
   "--ulimit": { container: "--ulimit", holds: "same", why: "nofile=8192:8192, as on Docker (ulimits.md)." },
   "--network": {
-    container: "--network default --network galahad-gw (online) · --network galahad-gw --no-dns (gateway)",
+    container: "--network galahad-net --network galahad-gw (online) · --network galahad-gw --no-dns (gateway)",
     holds: "refused",
-    why: "online: container's default network, then the gateway network, egress first, as on Docker. gateway: the internal network alone, with no resolver (it reaches the gateway by its address). isolated (--network none) has no counterpart: it isn't made on a Mac (CONTAINER_CANNOT).",
+    why: "online: Galahad's own NAT network, then the gateway network, egress first, as on Docker (its resolver is the network's gateway). gateway: the internal network alone, with no resolver (it reaches the gateway by its address). isolated (--network none) has no counterpart: it isn't made on a Mac (CONTAINER_CANNOT).",
   },
   "--runtime": { container: null, holds: "vm", why: "Every container is its own lightweight VM, with its own kernel: what Kata's runtime gives on Linux." },
   "--label": { container: "--label", holds: "same", why: "The same labels, and the image it was made from (a VM made again is made from it)." },
   "--internal": {
     container: "--internal",
     holds: "same",
-    why: "Host-only, with no way out (the reference: \"Restrict to host-only network\"). What UFW adds on Ultra, one port of the host and nothing else, has no counterpart: a gateway sandbox reaches whatever the Mac serves on that network (docs/MAC.md).",
+    why: "Host-only, with no way out (the reference: \"Restrict to host-only network\"). What galahad-firewall adds on Ultra, one port of the host and nothing else, is the Mac's firewall (mac-firewall.ts): pf, from a root helper, and no sandbox is made here while it isn't on.",
   },
-  "--subnet": { container: "--subnet", holds: "same", why: "Docker's subnet, 172.31.250.0/24, so the gateway's address and the lease's URL are the same." },
+  "--subnet": { container: "--subnet", holds: "same", why: "Docker's subnets, 172.31.250.0/24 and 172.31.249.0/24, so the gateway's address and the lease's URL are the same." },
   "--gateway": {
     container: null,
     holds: "replaced",
-    why: "No flag: vmnet gives the host the subnet's first address (the documentation shows 192.168.64.1 on 192.168.64.0/24), which is Docker's 172.31.250.1. To be confirmed on the Mac mini.",
+    why: "No flag: vmnet gives the host the subnet's first address, which is Docker's: 172.31.250.1 and 172.31.249.1 (seen on the Mac mini, 17 November 2026).",
   },
   "-o": {
-    container: null,
-    holds: "weaker",
-    why: "Docker's bridge options: its name (moot here) and enable_icc=false, which keeps sandboxes on one network from reaching each other. container has no such option: \"every container gets an IP address on its network, always reachable by that IP from the host and from other containers on the same network\" (networking.md). The VM boundary doesn't change that, so on a Mac it is weaker (docs/MAC.md).",
+    container: "the Mac's firewall",
+    holds: "replaced",
+    why: "Docker's bridge options: its name (moot here) and enable_icc=false, which keeps sandboxes on one network from reaching each other. container has no such option (\"always reachable by that IP from … other containers on the same network\", networking.md), so the Mac's firewall has pf see what passes between a bridge's VMs (its member filter) and its rules refuse it.",
   },
 };
 
@@ -151,8 +161,9 @@ export function containerRunArgs(spec: SandboxSpec): string[] {
     "nofile=8192:8192",
     "--ulimit",
     `nproc=${spec.pidsLimit}:${spec.pidsLimit}`,
+    ...NO_IPV6,
     // Online joins its egress first (it holds the default route), then the gateway's network.
-    ...(spec.network === "online" ? ["--network", DEFAULT_NETWORK, "--network", NETWORKS.gateway.name] : ["--network", NETWORKS.gateway.name, "--no-dns"]),
+    ...(spec.network === "online" ? ["--network", NETWORKS.online.name, "--network", NETWORKS.gateway.name] : ["--network", NETWORKS.gateway.name, "--no-dns"]),
   ];
   for (const [key, value] of Object.entries({ ...labels(spec), [`${LABEL}.image`]: spec.image })) args.push("--label", `${key}=${value}`);
   for (const [key, value] of Object.entries(spec.env)) args.push("--env", `${key}=${value}`);
@@ -160,8 +171,17 @@ export function containerRunArgs(spec: SandboxSpec): string[] {
   return args;
 }
 
-/** The gateway network: host-only (`--internal`), on Docker's subnet. `default` is container's own, never made here. */
-export const containerNetworkCreateArgs = (): string[] => ["network", "create", "--internal", "--subnet", NETWORKS.gateway.subnet, "--label", `${LABEL}=1`, NETWORKS.gateway.name];
+/** A sandbox network, on Docker's subnet: the gateway's host-only (`--internal`), online's with a way out (vmnet's NAT). */
+export const containerNetworkCreateArgs = (kind: "gateway" | "online"): string[] => [
+  "network",
+  "create",
+  ...(kind === "gateway" ? ["--internal"] : []),
+  "--subnet",
+  NETWORKS[kind].subnet,
+  "--label",
+  `${LABEL}=1`,
+  NETWORKS[kind].name,
+];
 
 /** A command as uid 1000 in /work, under a hard deadline inside the VM (killing `container exec` alone may not stop it). */
 export const containerExecArgs = (id: string, cmd: string[], timeoutSec: number): string[] => [
@@ -209,25 +229,29 @@ export const containerListArgs = (): string[] => ["list", "--all", "--format", "
 export const containerInspectArgs = (names: string[]): string[] => ["inspect", ...names];
 
 /**
- * What holds the gateway network's address on a Mac. container gives the host its address on a network only while a VM is
- * attached to it (seen on the Mac mini, 17 November 2026), and the node's gateway listens on that address, so one small
- * VM of the node's own stays attached: hardened as a sandbox is, doing nothing. It is no sandbox and carries none of a
- * sandbox's labels, so it is never listed, counted or reaped as one.
+ * What holds each sandbox network up on a Mac: one small VM of the node's own on it, hardened as a sandbox is, doing
+ * nothing. container gives the host its address on a network only while a VM is attached to it (seen on the Mac mini,
+ * 17 November 2026), and the node's gateway listens on that address. And a network whose last VM has gone can lose
+ * its bridge to another network's as its next one comes, which cuts both off (apple/container#2051, open at 1.7.1):
+ * held up, a bridge never goes. Each is no sandbox and carries none of a sandbox's labels, so it is never listed,
+ * counted or reaped as one. The gateway's is made first.
  */
-export const GATEWAY_KEEPER = "galahad-gateway-keeper";
-export const containerKeeperArgs = (image: string): string[] => [
+export const KEEPERS = { gateway: "galahad-gateway-keeper", online: "galahad-online-keeper" } as const;
+export const GATEWAY_KEEPER = KEEPERS.gateway;
+export const containerKeeperArgs = (image: string, kind: "gateway" | "online"): string[] => [
   "run",
   "-d",
   "--name",
-  GATEWAY_KEEPER,
+  KEEPERS[kind],
   "--label",
-  `${LABEL}.keeper=gateway`,
+  `${LABEL}.keeper=${kind}`,
   "--cpus",
   "1",
   "--memory",
   "256M",
+  ...NO_IPV6,
   "--network",
-  NETWORKS.gateway.name,
+  NETWORKS[kind].name,
   "--no-dns",
   "--read-only",
   "--cap-drop",
@@ -243,7 +267,15 @@ export const containerStartArgs = (name: string): string[] => ["start", name];
 export const containerDeleteArgs = (name: string): string[] => ["delete", "--force", name];
 export const containerStatsArgs = (names: string[]): string[] => ["stats", "--format", "json", "--no-stream", ...names];
 export const containerImageInspectArgs = (image: string): string[] => ["image", "inspect", image];
-export const containerNetworkInspectArgs = (): string[] => ["network", "inspect", NETWORKS.gateway.name];
+export const containerNetworkInspectArgs = (kind: "gateway" | "online"): string[] => ["network", "inspect", NETWORKS[kind].name];
+
+/**
+ * A network's helper restarted, before the first VM on it: a restarted helper has no bridge fixed yet, so that VM's
+ * takes one no live bridge holds (apple/container#2051). Only ever while nothing runs on that network. The label is
+ * container's own launchd agent's, under the login session (gui/<uid>) or, over SSH, the user's domain (user/<uid>).
+ */
+export const networkHelper = (network: string): string => `com.apple.container.container-network-vmnet.${network}`;
+export const helperRestartArgs = (domain: string, network: string): string[] => ["kickstart", "-k", `${domain}/${networkHelper(network)}`];
 /** Galahad's images on a Mac: Apple silicon's, their base pulled afresh. */
 export const containerBuildArgs = (image: string, contextDir: string): string[] => ["build", "--pull", "--platform", "linux/arm64", "--tag", image, contextDir];
 /** A workspace: a volume whose size is fixed as it is made, labelled as its sandbox's (and kept for good: a knight's). */
@@ -260,6 +292,7 @@ export const containerVolumeOwnArgs = (id: string, image: string): string[] => [
   "0:0",
   "--entrypoint",
   "chown",
+  ...NO_IPV6,
   "--network",
   NETWORKS.gateway.name,
   "--no-dns",
@@ -315,6 +348,8 @@ export interface ListedContainer {
   status: string;
   cpus: number | null;
   memoryBytes: number | null;
+  /** The networks it is attached to while it runs (none once stopped). */
+  networks: string[];
 }
 
 /** `list --all --format json` (or `inspect`), read; null when it isn't a list (never mistaken for "none"). */
@@ -330,8 +365,9 @@ export function parseContainers(text: string): ListedContainer[] | null {
     const status = isObj(row) && isObj(row.status) ? row.status : {};
     const state = typeof status.state === "string" ? status.state : "unknown";
     const resources = isObj(config.resources) ? config.resources : {};
+    const networks = (Array.isArray(status.networks) ? status.networks : []).flatMap((n) => (isObj(n) && typeof n.network === "string" ? [n.network] : []));
     // (A stopped container is what Docker calls exited: the rest of the node reads Docker's words.)
-    return [{ id, labels: given, image, status: state === "stopped" ? "exited" : state, cpus: number(resources.cpus), memoryBytes: number(resources.memoryInBytes) }];
+    return [{ id, labels: given, image, status: state === "stopped" ? "exited" : state, cpus: number(resources.cpus), memoryBytes: number(resources.memoryInBytes), networks }];
   });
 }
 

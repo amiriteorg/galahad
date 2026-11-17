@@ -49,6 +49,8 @@ export interface FakeContainer {
   onRun?: (args: string[]) => Promise<void>;
   /** Every one-off `run --rm` (no name: it is gone when it ends), each with all its arguments. */
   oneOffs: string[][];
+  /** A `list` that fails, as when its service is busy. */
+  failList?: boolean;
 }
 
 const after = (args: string[], flag: string) => args.filter((_, i) => args[i - 1] === flag);
@@ -143,6 +145,7 @@ export function fakeContainer(): FakeContainer {
           return ok(name);
         }
         case "list":
+          if (fake.failList) return no("XPC connection error: Connection interrupted");
           return ok(JSON.stringify([...fake.vms.values()].filter((vm) => rest.includes("--all") || vm.state === "running").map(shape)));
         case "inspect": {
           const found = rest.map((name) => fake.vms.get(name)).filter((vm): vm is FakeVm => !!vm);

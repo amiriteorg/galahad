@@ -83,6 +83,8 @@ export interface DoctorFacts {
       microVMs: boolean;
       /** The firewall unit that keeps sandboxes to the one gateway port (null: can't be asked here). */
       firewall: "active" | "inactive" | "missing" | null;
+      /** A Mac's sandbox firewall (pf, from a helper of root's: galahad firewall), as the node reads it; absent on Linux. */
+      macFirewall?: { on: boolean; installed: boolean; soon: boolean; why: string | null };
       /** A sandbox started, ran one command and was removed: each kind tried. "busy": no slot was free. null: not tried. */
       start: { kind: "container" | "vm"; ok: boolean; ms: number; error: string | null }[] | "busy" | null;
     } | null;
@@ -389,7 +391,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       if (!host.image) add("sandbox", "sandbox.image", "needs-you", "the sandbox image is missing (another tool's cleanup may have pruned it)", "galahad sandbox build. He also rebuilds it himself when a sandbox is next needed, which makes that quest wait.");
       else add("sandbox", "sandbox.image", "ok", "the sandbox image is built and kept in use");
       if (!host.networks) add("sandbox", "sandbox.networks", "needs-you", "a sandbox network is missing", "Restart the node: it creates them at its start (systemctl restart galahad).");
-      else add("sandbox", "sandbox.networks", "ok", mac ? "the gateway network is there (online sandboxes use container's own default network)" : "both sandbox networks are there");
+      else add("sandbox", "sandbox.networks", "ok", mac ? "both sandbox networks are there, each held up by a VM of the node's own" : "both sandbox networks are there");
 
       if (host.start === null) add("sandbox", "sandbox.start", "skipped", f.quick ? "no sandbox was started (a full check starts one and removes it)" : "no sandbox was started: the image is missing");
       else if (host.start === "busy") add("sandbox", "sandbox.start", "skipped", "no sandbox was started: there is no room for one now, and the doctor doesn't queue behind real work");
@@ -413,6 +415,17 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     } else if (host.firewall === "missing") {
       add("sandbox", "sandbox.firewall", "needs-you", "there's no galahad-firewall unit here: what a sandbox can reach on this host depends on its other firewall", "Deploy with --sudo to install it: only the gateway port on the sandbox bridge, whatever UFW does.", {
         finding: { severity: "info", title: `${self} has no sandbox firewall unit`, body: "What a sandbox can reach on that host depends on its other firewall. A deploy with --sudo installs galahad-firewall." },
+      });
+    }
+    const wall = host.macFirewall;
+    if (wall?.on) add("sandbox", "sandbox.firewall", "ok", "this Mac's sandbox firewall is on: a gateway sandbox reaches the gateway alone, an online one the internet, never this Mac or your networks; no sandbox reaches another");
+    else if (wall && !wall.installed) {
+      add("sandbox", "sandbox.firewall", "needs-you", "this Mac has no sandbox firewall, so it makes no sandboxes: its knights work on your other nodes", "galahad firewall install (it asks for your password once).", {
+        finding: { severity: "info", title: `${self} has no sandbox firewall`, body: "A Mac makes no sandboxes until its firewall is installed. On that Mac: galahad firewall install." },
+      });
+    } else if (wall) {
+      add("sandbox", "sandbox.firewall", wall.soon ? "needs-you" : "broken", `this Mac's sandbox firewall isn't on, so it makes no sandboxes: ${wall.why ?? "no reason given"}`, wall.soon ? "Its helper puts it right within seconds of the networks coming up: galahad firewall status." : "galahad firewall status says why; galahad firewall install puts it back.", {
+        finding: { severity: "warn", title: `The sandbox firewall is off on ${self}`, body: `It makes no sandboxes until it is: ${wall.why ?? "no reason given"}. On that Mac: galahad firewall status.` },
       });
     }
   }
