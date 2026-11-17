@@ -1763,6 +1763,13 @@ export function createApp(ctx: AppContext) {
       if (cloned.exitCode !== 0) throw new HttpError(424, "could not clone the knight's repository through its GitHub connector");
     }
   }
+  /** A knight's lease kept while its task runs (team-runtime asks as the work goes on): whether it was. */
+  async function renewTeam(member: Teammate, signal: AbortSignal): Promise<boolean> {
+    const seat = seatOf(member.id);
+    if (!seat.workspace) return false;
+    const { renewed } = await inProcess(teamOwner, signal).call<{ renewed: boolean }>("renewTeamWorkspace", { on: seat.workspace.node, id: seat.workspace.id, quest: armQuest(teammateLabel(member.id)) });
+    return renewed;
+  }
   /* A knight's VM made again from its image as it is now, on the owner's word (`p`: the device that asked, which the
    * VM's host records). Not while the knight is working: whatever runs in a VM ends with its container. A task that
    * starts meanwhile waits for it, as it would for a VM being made. Its token covers the providers with a key now. */
@@ -1928,7 +1935,7 @@ export function createApp(ctx: AppContext) {
     const runtime = teamRuntime({
       brain: (member) => ({ ...brainFor(teammatePrincipal(member.id)), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) }),
       enter: (signal) => ctx.governor.enterModel({ wait: true }, signal),
-      exec: execTeam, prepare: prepareTeam, teammate: teamMember,
+      exec: execTeam, prepare: prepareTeam, renew: renewTeam, teammate: teamMember,
       dependencies: (task) => task.dependsOn.map((id) => ctx.team!.store.task(id)).filter((t): t is NonNullable<typeof t> => !!t && t.status === "done" && t.verified).map(({ id, title, output }) => ({ id, title, output })),
       stopWorker: stopTeamWorker,
       // A knight's eyes: the roster's first `eyes` model on a provider this VM's gateway token covers (a task's token
@@ -2234,6 +2241,10 @@ export function createApp(ctx: AppContext) {
         git = { connector, ...repo };
       }
       return longRunning(onNode(p, input.on, routes.prepareTeamWorkspace.path, input, () => ctx.sandbox!.prepareTeam(input.id, input.quest, git, input.providers), { sandbox: input.id }));
+    },
+    renewTeamWorkspace: (input, p) => {
+      if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only the team controller keeps a knight's lease");
+      return onNode(p, input.on, routes.renewTeamWorkspace.path, input, async () => ({ renewed: await ctx.sandbox!.renewTeam(input.id, input.quest) }));
     },
     checkoutRepository: (input, p) => {
       if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only you put a repository in a sandbox");

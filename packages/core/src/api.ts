@@ -427,6 +427,11 @@ export const routes = {
       providers: z.array(z.string().min(1).max(64)).max(16).optional(),
     }),
   },
+  /** A knight's lease kept while its task runs (its controller asks every ten minutes): `{ renewed }`. A lapsed one isn't brought back. */
+  renewTeamWorkspace: {
+    method: "POST", path: "/api/team/renew-workspace", scope: "fleet:admin",
+    input: z.strictObject({ id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest }),
+  },
   whoami: { method: "GET", path: "/api/whoami", scope: null, input: null },
   fleet: { method: "GET", path: "/api/fleet", scope: "mind:read", input: null },
   recall: {

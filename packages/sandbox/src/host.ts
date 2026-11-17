@@ -73,12 +73,16 @@ export interface TokenMinter {
     info: { hash: string };
   };
   revoke(hash: string): boolean;
+  /** The same token, valid longer and with more requests (a lease kept while its work runs): never a lapsed or revoked one. */
+  extend?(hash: string, scope: { ttlMinutes: number; maxRequests: number }): boolean;
 }
 
 /** Node-local record of which gateway token belongs to which sandbox (never a container label). */
 export interface SandboxTokenStore {
   put(id: string, tokenHash: string): void;
   take(id: string): string | null;
+  /** Which token a sandbox has, leaving it there. */
+  peek?(id: string): string | null;
 }
 
 export function memoryTokenStore(): SandboxTokenStore {
@@ -90,6 +94,7 @@ export function memoryTokenStore(): SandboxTokenStore {
       map.delete(id);
       return hash;
     },
+    peek: (id) => map.get(id) ?? null,
   };
 }
 
@@ -806,6 +811,21 @@ export class SandboxHost {
     }
     this.opts.ledger({ class: "modify", resource: "sandbox.team-ready", target: sandbox.name, verdict: "allow", quest, detail: `existing VM resumed; model access capped at ${TEAM_LEASE_MINUTES} minutes and 500 requests` });
     return { ...sandbox, status: "running" };
+  }
+
+  /**
+   * A knight's VM, its lease kept while its task runs (the controller asks every ten minutes, as the work goes on): the
+   * same lease, so whatever holds it (a coding tool's run) works on, valid TEAM_LEASE_MINUTES more and with 500 more
+   * requests from now. Whether it was: one that lapsed or was revoked is not brought back.
+   */
+  async renewTeam(id: string, quest: string): Promise<boolean> {
+    const sandbox = await this.get(id);
+    if (!sandbox) throw new SandboxError("the teammate's VM is missing", 404);
+    if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
+      throw new SandboxError("that is not this teammate's persistent VM", 403);
+    }
+    const hash = this.tokenStore.peek?.(id) ?? null;
+    return hash !== null && (this.opts.tokens.extend?.(hash, { ttlMinutes: TEAM_LEASE_MINUTES, maxRequests: 500 }) ?? false);
   }
 
   /** A lease written inside a sandbox as /work/.galahad-gateway.json: JSON, never a shell's configuration. Whether it was. */

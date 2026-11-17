@@ -262,6 +262,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       local.query("DELETE FROM sandbox_tokens WHERE id = ?").run(id);
       return row?.hash ?? null;
     },
+    peek: (id: string) => local.query<{ hash: string }, [string]>("SELECT hash FROM sandbox_tokens WHERE id = ?").get(id)?.hash ?? null,
   };
 
   // Every gated action lands in the signed, replicated ledger.

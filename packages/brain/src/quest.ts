@@ -41,6 +41,11 @@ export interface QuestDeps {
   /** What time it is, for when an audit is due (QuestOptions.audit; tests pass their own clock). */
   now?(): number;
   /**
+   * The work is still going: said at each step of the engineer's, each look at a coding agent and each submission.
+   * What keeps it going hangs on this (a knight's VM's lease, renewed while its task runs).
+   */
+  alive?(): void | Promise<void>;
+  /**
    * Your rules (core's rules.ts) as they stand now: read before each command, each parallel batch and each run of the
    * gates, so a tripwire you add while the quest runs stops its next command. Absent: none. If they can't be read, the
    * quest stops: no command runs unchecked. (A coding agent's own commands run inside its sandbox, unseen: only its
@@ -878,6 +883,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
    * A failing gate is a "revise" like the reviewer's, with what failed as its notes.
    */
   const submit = async (summary: string, trail: Step[]): Promise<{ verdict: "pass" | "revise"; notes: string; conclusion?: string; by: "gates" | "reviewer" }> => {
+    await deps.alive?.();
     emit({ type: "submitted", summary });
     // The test files the gates name are the contract: work that changed one goes back before any gate runs on it.
     if (locked.size) {
@@ -997,10 +1003,12 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     let audited: { verdict: AuditVerdict; note: string } | null = null;
     let live: string | null = null;
     /**
-     * At each look at the agent, an audit when one is due (o.audit). Whether it ends this run: a stop does, and a steer
-     * does when its session can be told (it is taken up there); one without a session works on, its steer said.
+     * At each look at the agent: the work is still going (deps.alive), and an audit when one is due (o.audit). Whether
+     * that ends this run: a stop does, and a steer does when its session can be told (it is taken up there); one
+     * without a session works on, its steer said.
      */
     const auditNow = async (): Promise<boolean> => {
+      await deps.alive?.();
       if (!auditDue()) return false;
       const found = await audit(trail.slice(auditedAt));
       auditedAt = trail.length;
@@ -1054,7 +1062,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       const model = agent.models[current]!;
       const run = await runAgent(
         agent.driver,
-        { model, prompt, session, deadline, workdir: agent.workdir, spent: spentNow, ...(o.audit ? { audit: auditNow } : {}) },
+        { model, prompt, session, deadline, workdir: agent.workdir, spent: spentNow, audit: auditNow },
         {
           exec: deps.exec,
           stopAgent: deps.stopAgent,
@@ -1228,6 +1236,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     audits.at = clock();
     audits.step = steps;
     while (steps < o.maxSteps) {
+      await deps.alive?.();
       const now = await money();
       if (now && now.usd >= now.budget) {
         spentOut = true;

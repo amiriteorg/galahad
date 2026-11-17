@@ -71,6 +71,15 @@ export class GatewayTokens {
     return this.db.query("DELETE FROM gw_tokens WHERE hash = ?").run(hash).changes > 0;
   }
 
+  /**
+   * The same token, valid `ttlMinutes` more from now and with `maxRequests` more than it has used: a lease kept while its
+   * work runs, so whatever holds it works on. Never one that has lapsed or was revoked (false).
+   */
+  extend(hash: string, scope: { ttlMinutes: number; maxRequests: number }): boolean {
+    const now = this.now();
+    return this.db.query("UPDATE gw_tokens SET expires_at = ?, max_requests = used + ? WHERE hash = ? AND expires_at > ?").run(now + scope.ttlMinutes * 60_000, scope.maxRequests, hash, now).changes > 0;
+  }
+
   list(): TokenInfo[] {
     return this.db
       .query<TokenRow, []>("SELECT * FROM gw_tokens ORDER BY created_at DESC")

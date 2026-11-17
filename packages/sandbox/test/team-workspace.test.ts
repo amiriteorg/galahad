@@ -29,6 +29,8 @@ function teammateHost(opts: {
   const ledger: LedgerEntryInput[] = [];
   const minted: Parameters<TokenMinter["mint"]>[0][] = [];
   const revoked: string[] = [];
+  /** Every lease kept while its task runs (extend), and what it was given. */
+  const extended: { hash: string; ttlMinutes: number; maxRequests: number }[] = [];
   const stored = new Map([[ID, OLD_LEASE]]);
   /** The containers Docker has by name. */
   const named = new Set([opts.setAside ? `${containerName(ID)}-replaced` : containerName(ID)]);
@@ -66,6 +68,7 @@ function teammateHost(opts: {
     tokenStore: {
       put: (id, hash) => { stored.set(id, hash); },
       take: (id) => { const value = stored.get(id) ?? null; stored.delete(id); return value; },
+      peek: (id) => stored.get(id) ?? null,
     },
     tokens: {
       mint: (scope) => {
@@ -73,6 +76,7 @@ function teammateHost(opts: {
         return { token: lease(minted.length), info: { hash: `test-only-hash-${minted.length}` } };
       },
       revoke: (hash) => { revoked.push(hash); note(`revoke:${hash}`); return true; },
+      extend: (hash, scope) => { extended.push({ hash, ...scope }); note(`extend:${hash}`); return !revoked.includes(hash); },
     },
     ledger: (entry) => { ledger.push(entry); },
     runner: async (args) => {
@@ -111,7 +115,7 @@ function teammateHost(opts: {
       return { code: 0, stdout: "", stderr: "" };
     },
   });
-  return { host, commands, events, all, ledger, minted, revoked, stored };
+  return { host, commands, events, all, ledger, minted, revoked, extended, stored };
 }
 
 describe("persistent teammate workspaces", () => {
@@ -154,6 +158,25 @@ describe("persistent teammate workspaces", () => {
     expect(f.stored.get(ID)).toBe("test-only-hash-2");
     expect(f.commands.some((args) => args[0] === "start")).toBe(false);
     expect(f.minted.every((scope) => scope.ttlMinutes === 30 && scope.maxRequests === 500)).toBe(true);
+  });
+
+  test("kept while its task runs: the same lease, thirty minutes more and 500 more requests, and nothing else; never another knight's, nor one it no longer has", async () => {
+    const f = teammateHost({ status: "running" });
+    await f.host.prepareTeam(ID, QUEST);
+    const before = f.all.length;
+    expect(await f.host.renewTeam(ID, QUEST)).toBe(true);
+    expect(f.extended).toEqual([{ hash: "test-only-hash-1", ttlMinutes: 30, maxRequests: 500 }]);
+    // No new lease, nothing revoked, nothing written in the VM or started: whatever holds it works on.
+    expect(f.all.slice(before)).toEqual(["extend:test-only-hash-1"]);
+    expect(f.stored.get(ID)).toBe("test-only-hash-1");
+    await expect(f.host.renewTeam(ID, "arm.team.abcdef0123.other")).rejects.toMatchObject({ status: 403 });
+    await expect(f.host.renewTeam("9876543210", QUEST)).rejects.toMatchObject({ status: 404 });
+    // A lease that was revoked, or that it no longer has, isn't brought back.
+    f.revoked.push("test-only-hash-1");
+    expect(await f.host.renewTeam(ID, QUEST)).toBe(false);
+    f.stored.delete(ID);
+    expect(await f.host.renewTeam(ID, QUEST)).toBe(false);
+    expect(f.minted).toHaveLength(1);
   });
 
   test("a missing VM is never replaced during resume", async () => {

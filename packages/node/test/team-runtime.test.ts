@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { newNodeIdentity, type ExecResult, type Teammate, type TeamRoom, type TeamTask, type TeamMessage } from "@galahad/core";
 import { taskStep, type AvatarExpression } from "@galahad/core/avatar";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
@@ -215,6 +215,27 @@ test("task completion requires its gates before independent review, and the revi
   expect(reviewer).toContain("bun test required-check");
   expect(reviewer).not.toContain("private working note");
   expect(f.held()).toBe(0);
+});
+
+test("a task's lease is kept as its work goes on, every ten minutes however long it takes; one that can't be kept is said, once", async () => {
+  const renewals: boolean[] = [];
+  const answers = [true, false, false];
+  const told: string[] = [];
+  let now = Date.now();
+  const steps = ["one", "two", "three", "four", "five", "six"].map((n) => say(`\`\`\`sh\necho ${n}\n\`\`\``));
+  const f = fixture([say("1. Make the change and test it."), ...steps, say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")], {
+    renew: async (m) => { expect(m.id).toBe("ada"); const kept = answers.shift() ?? true; renewals.push(kept); return kept; },
+    // Each of its commands takes six minutes.
+    exec: async (_m, command) => { if (command.includes("echo ")) setSystemTime(new Date((now += 6 * 60_000))); return result(); },
+  });
+  try {
+    expect((await f.runtime.executeTask(member, task, { ...f.context, emit: (line) => void told.push(line) })).verified).toBe(true);
+  } finally {
+    setSystemTime();
+  }
+  // Thirty-six minutes of work, renewed at twelve, twenty-four and thirty-six: never left to lapse at thirty.
+  expect(renewals).toEqual([true, false, false]);
+  expect(told.filter((line) => line.startsWith("Lease ·"))).toEqual(["Lease · its model access couldn't be kept (it had lapsed or was revoked): what goes through the gateway in its VM may be refused until its next task"]);
 });
 
 test("every turn of a task is sent the same beginning: the knight's notes are fenced once for the task, not anew on each call", async () => {

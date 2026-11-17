@@ -11,6 +11,8 @@ export interface TeamRuntimeDeps {
   /** Fixed identity and exact workspace binding are enforced by the server. */
   exec(teammate: Teammate, command: string, timeout: number, signal: AbortSignal): Promise<ExecResult>;
   prepare(teammate: Teammate, signal: AbortSignal): Promise<void>;
+  /** Keeps a knight's lease while its task runs (asked every TEAM_LEASE_RENEW_MINUTES as the work goes on): whether it was. */
+  renew?(teammate: Teammate, signal: AbortSignal): Promise<boolean>;
   tools(teammate: Teammate, signal: AbortSignal): ChatTools;
   /** Your prices (models without one are counted, not priced): what a task's budget is measured in. */
   prices?(): Prices;
@@ -163,6 +165,8 @@ export const TEAM_TASK_COMMANDS = 40;
 export const TEAM_TASK_MINUTES = 45;
 /** The longest any one command of a knight's may run in its VM, which kills it there at that (`timeout --signal=KILL`). */
 export const TEAM_COMMAND_SECONDS = 900;
+/** How often a task's lease (thirty minutes) is renewed while it runs: two renewals can be missed before it lapses. */
+export const TEAM_LEASE_RENEW_MINUTES = 10;
 
 /** What a harness would run on in a knight's VM, or why it can't work there yet. */
 export interface HarnessReadiness {
@@ -398,6 +402,9 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const startedAt = Date.now();
       const spent: UsageLine[] = [];
       await deps.prepare(teammate, ctx.signal);
+      /** When its lease was last written or renewed, and whether one that couldn't be kept was said. */
+      let leaseKept = Date.now();
+      let leaseLost = false;
       teammate = deps.teammate(teammate.id);
       const root = `/work/tasks/${task.id}`;
       const sessionFile = `/work/.agent/sessions/${task.id}.${teammate.harness}`;
@@ -466,6 +473,16 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         emit: (event) => {
           trail.on(event);
           ctx.emit(progress(event));
+        },
+        // Its VM's lease, kept as the work goes on: renewed every TEAM_LEASE_RENEW_MINUTES, so whatever holds it (a coding
+        // tool's run) works on however long the task takes. One that can't be kept is said, once.
+        alive: async () => {
+          if (!deps.renew || Date.now() - leaseKept < TEAM_LEASE_RENEW_MINUTES * 60_000) return;
+          leaseKept = Date.now();
+          const why = await deps.renew(teammate, ctx.signal).then((kept) => (kept ? null : "it had lapsed or was revoked"), (error: Error) => redact(String(error?.message ?? error)).slice(0, 200));
+          if (why === null || leaseLost) return;
+          leaseLost = true;
+          ctx.emit(`Lease · its model access couldn't be kept (${why}): what goes through the gateway in its VM may be refused until its next task`);
         },
         // Your tripwires, as the mind holds them before each command; each trip told to the ledger.
         ...(deps.rules ? { rules: deps.rules } : {}),

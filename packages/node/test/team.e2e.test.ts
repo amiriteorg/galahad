@@ -79,6 +79,7 @@ test("team owner routes reject external arms, spoofed speakers and fake VM avail
   expect((await request("team", undefined, token)).status).toBe(403);
   expect((await request("postTeamMessage", { room: "forge", text: "forged", speaker: "ada" })).status).toBe(400);
   expect((await request("prepareTeamWorkspace", { id: "0123456789", quest: "arm.team.ada" }, token)).status).toBe(403);
+  expect((await request("renewTeamWorkspace", { id: "0123456789", quest: "arm.team.ada" }, token)).status).toBe(403);
   const unavailable = await request("provisionTeammate", { id: "ada" });
   expect(unavailable.status).toBe(424);
   expect((await api<TeamSnapshot>("team")).teammates.find((m) => m.id === "ada")?.workspace).toBeNull();
