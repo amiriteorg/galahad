@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CONTAINER_CANNOT, ContainerVolumes, LABEL, NETWORKS, SandboxError, SandboxHost, type CreateInput, type LedgerEntryInput, type SandboxHostOptions, type TokenMinter } from "../src/index.ts";
+import { CONTAINER_CANNOT, ContainerVolumes, GATEWAY_KEEPER, LABEL, NETWORKS, SandboxError, SandboxHost, type CreateInput, type LedgerEntryInput, type SandboxHostOptions, type TokenMinter } from "../src/index.ts";
 import { fakeContainer } from "./fake-container.ts";
 
 /*
@@ -142,7 +142,8 @@ describe("a sandbox on a Mac", () => {
     expect(removed.verdict).toBe("allow");
     const order = m.fake.calls.filter((c) => (c[0] === "delete" || (c[0] === "volume" && c[1] === "delete")));
     expect(order).toEqual([["delete", "--force", `galahad-sbx-${made.id}`], ["volume", "delete", `galahad-sbx-${made.id}-work`]]);
-    expect(m.fake.vms.size).toBe(0);
+    // (The gateway's keeper stays: it is no sandbox.)
+    expect([...m.fake.vms.keys()]).toEqual([GATEWAY_KEEPER]);
     expect(m.fake.volumes.size).toBe(0);
     expect(m.ledger.at(-1)).toMatchObject({ class: "delete", resource: "docker.container", verdict: "allow", quest: "q-mac" });
   });
@@ -240,5 +241,38 @@ describe("its workspaces: container's volumes", () => {
     const volumes = new ContainerVolumes(fake.runner, () => ({ totalBytes: 100 * GIB, freeBytes: 60 * GIB }));
     await expect(volumes.create("0123456789", 20)).rejects.toThrow(/couldn't give the workspace to the sandbox's user: Error: the init image is missing/);
     expect(fake.volumes.size).toBe(0);
+  });
+});
+
+describe("the gateway's address on a Mac", () => {
+  test("is held by one small VM of the node's own on the gateway network, hardened as a sandbox, made as the networks are", async () => {
+    const m = macHost();
+    await m.host.ensureNetworks();
+    const keeper = m.fake.vms.get(GATEWAY_KEEPER)!;
+    expect(keeper.state).toBe("running");
+    expect(keeper.args).toEqual(["run", "-d", "--name", GATEWAY_KEEPER, "--label", `${LABEL}.keeper=gateway`, "--cpus", "1", "--memory", "256M", "--network", NETWORKS.gateway.name, "--no-dns", "--read-only", "--cap-drop", "ALL", "--user", "1000:1000", "galahad/sandbox:1", "sleep", "infinity"]);
+    // Running: nothing more. Stopped: started again, never made twice.
+    await m.host.ensureNetworks();
+    expect([...m.fake.calls].filter((c) => c[0] === "run").length).toBe(1);
+    keeper.state = "stopped";
+    await m.host.ensureNetworks();
+    expect(m.fake.vms.get(GATEWAY_KEEPER)!.state).toBe("running");
+    expect([...m.fake.calls].filter((c) => c[0] === "run").length).toBe(1);
+  });
+
+  test("isn't a sandbox: never listed or reaped as one", async () => {
+    const m = macHost();
+    await m.host.ensureNetworks();
+    expect(await m.host.list()).toEqual([]);
+    await m.host.reap();
+    expect(m.fake.vms.has(GATEWAY_KEEPER)).toBe(true);
+  });
+
+  test("is never made from an image this Mac hasn't got: it would be pulled from wherever that name leads", async () => {
+    const m = macHost();
+    m.fake.images.clear();
+    await m.host.ensureNetworks();
+    expect(m.fake.vms.has(GATEWAY_KEEPER)).toBe(false);
+    expect(m.fake.calls.some((c) => c[0] === "run")).toBe(false);
   });
 });

@@ -207,6 +207,37 @@ export function containerCollectArgs(id: string, path: string): string[] {
 export const containerVersionArgs = (): string[] => ["system", "version", "--format", "json"];
 export const containerListArgs = (): string[] => ["list", "--all", "--format", "json"];
 export const containerInspectArgs = (names: string[]): string[] => ["inspect", ...names];
+
+/**
+ * What holds the gateway network's address on a Mac. container gives the host its address on a network only while a VM is
+ * attached to it (seen on the Mac mini, 17 November 2026), and the node's gateway listens on that address, so one small
+ * VM of the node's own stays attached: hardened as a sandbox is, doing nothing. It is no sandbox and carries none of a
+ * sandbox's labels, so it is never listed, counted or reaped as one.
+ */
+export const GATEWAY_KEEPER = "galahad-gateway-keeper";
+export const containerKeeperArgs = (image: string): string[] => [
+  "run",
+  "-d",
+  "--name",
+  GATEWAY_KEEPER,
+  "--label",
+  `${LABEL}.keeper=gateway`,
+  "--cpus",
+  "1",
+  "--memory",
+  "256M",
+  "--network",
+  NETWORKS.gateway.name,
+  "--no-dns",
+  "--read-only",
+  "--cap-drop",
+  "ALL",
+  "--user",
+  "1000:1000",
+  image,
+  "sleep",
+  "infinity",
+];
 export const containerStopArgs = (name: string): string[] => ["stop", "--time", String(STOP_SECONDS), name];
 export const containerStartArgs = (name: string): string[] => ["start", name];
 export const containerDeleteArgs = (name: string): string[] => ["delete", "--force", name];

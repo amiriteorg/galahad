@@ -574,15 +574,34 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   if (advertise !== "127.0.0.1") {
     servers.push(Bun.serve({ hostname: advertise, port, idleTimeout: 255, maxRequestBodySize: MAX_REQUEST_BODY, fetch: (req) => app(req, "tailnet") }));
   }
-  // Sandboxes reach this listener (and only this one) on the gateway network's bridge IP.
+  // Sandboxes reach this listener (and only this one) on the gateway network's bridge IP. On a Mac that address is the
+  // host's only while a VM is attached to the network (the host's keeper holds it once the image is built), so until
+  // it can be bound it is tried again every few seconds.
   let reaper: ReturnType<typeof setInterval> | null = null;
+  let gatewayRetry: ReturnType<typeof setInterval> | null = null;
   if (sandbox) {
-    try {
-      servers.push(
-        Bun.serve({ hostname: NETWORKS.gateway.gateway, port: SANDBOX_GATEWAY_PORT, idleTimeout: 255, maxRequestBodySize: MAX_REQUEST_BODY, fetch: (req) => app(req, "sandbox") }),
-      );
-    } catch (error) {
-      log(`sandbox gateway listener unavailable: ${(error as Error).message}`);
+    const apple = caps.sandbox?.engine === "container";
+    let said = false;
+    const bindGateway = (): boolean => {
+      try {
+        servers.push(
+          Bun.serve({ hostname: NETWORKS.gateway.gateway, port: SANDBOX_GATEWAY_PORT, idleTimeout: 255, maxRequestBodySize: MAX_REQUEST_BODY, fetch: (req) => app(req, "sandbox") }),
+        );
+        if (said) log("sandbox gateway listening");
+        return true;
+      } catch (error) {
+        if (!said) log(`sandbox gateway listener unavailable: ${(error as Error).message}${apple ? " (tried again until a VM holds its address)" : ""}`);
+        said = true;
+        return false;
+      }
+    };
+    if (!bindGateway() && apple) {
+      gatewayRetry = setInterval(() => {
+        if (bindGateway() && gatewayRetry) {
+          clearInterval(gatewayRetry);
+          gatewayRetry = null;
+        }
+      }, 5_000);
     }
     const host = sandbox;
     reaper = setInterval(() => {
@@ -671,6 +690,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       clearInterval(outbox);
       if (refresh) clearInterval(refresh);
       if (reaper) clearInterval(reaper);
+      if (gatewayRetry) clearInterval(gatewayRetry);
       stopPush();
       sync.stop();
       stopping = true;

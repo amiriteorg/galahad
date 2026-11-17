@@ -9,16 +9,20 @@ import {
   containerDeleteArgs,
   containerExecArgs,
   containerImageInspectArgs,
+  containerInspectArgs,
+  containerKeeperArgs,
   containerListArgs,
   containerNetworkCreateArgs,
   containerNetworkInspectArgs,
   containerRunArgs,
+  containerStartArgs,
   containerStopArgs,
   containerTerminalArgs,
   containerVersionArgs,
   containerVolumeDeleteArgs,
   parseContainers,
   CONTAINER_UNMADE,
+  GATEWAY_KEEPER,
   parseContainerVersion,
   type SandboxAsk,
   type Unmade,
@@ -390,10 +394,12 @@ export class SandboxHost {
    */
   async ensureNetworks(): Promise<void> {
     if (this.apple) {
-      if ((await this.docker(containerNetworkInspectArgs())).code === 0) return;
-      const result = await this.docker(containerNetworkCreateArgs());
-      if (result.code !== 0) throw new SandboxError(`could not create network ${NETWORKS.gateway.name}: ${result.stderr.trim()}`, 500);
-      this.opts.ledger({ class: "create", resource: "docker.network", target: NETWORKS.gateway.name, verdict: "allow", detail: "host-only (container network create --internal)" });
+      if ((await this.docker(containerNetworkInspectArgs())).code !== 0) {
+        const result = await this.docker(containerNetworkCreateArgs());
+        if (result.code !== 0) throw new SandboxError(`could not create network ${NETWORKS.gateway.name}: ${result.stderr.trim()}`, 500);
+        this.opts.ledger({ class: "create", resource: "docker.network", target: NETWORKS.gateway.name, verdict: "allow", detail: "host-only (container network create --internal)" });
+      }
+      await this.keepGatewayAddress();
       return;
     }
     for (const kind of ["gateway", "online"] as const) {
@@ -403,6 +409,24 @@ export class SandboxHost {
       if (result.code !== 0) throw new SandboxError(`could not create network ${NETWORKS[kind].name}: ${result.stderr.trim()}`, 500);
       this.opts.ledger({ class: "create", resource: "docker.network", target: NETWORKS[kind].name, verdict: "allow" });
     }
+  }
+
+  /**
+   * On a Mac: the gateway network's address on the host is there only while a VM is attached to it, so GATEWAY_KEEPER
+   * stays attached (started again if it stopped, made if it isn't there). Never made from an image this Mac hasn't got:
+   * container would pull whatever that name leads to. Without it the gateway is bound once a sandbox is attached.
+   */
+  private async keepGatewayAddress(): Promise<void> {
+    const looked = await this.docker(containerInspectArgs([GATEWAY_KEEPER]));
+    const state = looked.code === 0 ? (parseContainers(looked.stdout)?.[0]?.status ?? null) : null;
+    if (state === "running") return;
+    if (state) {
+      await this.docker(containerStartArgs(GATEWAY_KEEPER));
+      return;
+    }
+    if (!(await this.hasImage())) return;
+    const ran = await this.docker(containerKeeperArgs(DEFAULT_IMAGE), 120_000);
+    if (ran.code === 0) this.opts.ledger({ class: "create", resource: "docker.container", target: GATEWAY_KEEPER, verdict: "allow", detail: "holds the gateway network's address on this Mac (1 cpu, 256 MB, nothing running in it)" });
   }
 
   async build(contextDir: string, why?: string, image = DEFAULT_IMAGE): Promise<{ ok: boolean; output: string }> {
