@@ -11,6 +11,7 @@ import { h, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
 import { CLASS_INFO } from "./activity.ts";
+import { signInBlock } from "./sign-in.ts";
 
 /*
  * Remote MCP servers as connectors. Galahad lists a server's tools when you add
@@ -29,7 +30,7 @@ export interface McpDeps {
 export interface McpInput {
   url: string;
   label?: string;
-  auth?: "none" | "bearer" | "header";
+  auth?: "none" | "bearer" | "header" | "oauth";
   header?: string;
   only?: string[];
   classes?: Record<string, ToolClass>;
@@ -203,6 +204,10 @@ export async function refreshMcp(ctx: Ctx, c: ConnectorView, deps: McpDeps): Pro
   try {
     const { connector, discovered } = await setMcp(ctx, c.id, { url: c.url });
     deps.changed();
+    if (discovered.needsSignIn) {
+      toast(`${c.label} isn't signed in`, { tone: "warn", description: "Sign in on its card: its tools are listed then." });
+      return;
+    }
     if (discovered.needsKey) {
       toast(`${c.label} still needs its key`, { tone: "warn", description: "Add it on its card, then refresh." });
       return;
@@ -222,7 +227,7 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
   const header = h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", maxlength: 64, placeholder: "x-api-key" });
   const only = h("input", { class: "input mono", type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off", placeholder: "search, createIssue" });
   let idEdited = false;
-  let auth: "none" | "bearer" | "header" = "none";
+  let auth: "none" | "bearer" | "header" | "oauth" = "none";
 
   const headerField = field("Header name", header, { hint: "The header the server reads its key from." });
   const onlyField = field("Only these tools", only, { hint: "The server's own tool names, separated by commas. Up to 64." });
@@ -235,20 +240,23 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
         ? "It answers without a key."
         : auth === "bearer"
           ? "Sent as Authorization: Bearer, and only to this server. You'll seal the key next."
-          : "Sent in a header of the server's choosing, and only to this server. You'll seal the key next.";
+          : auth === "header"
+            ? "Sent in a header of the server's choosing, and only to this server. You'll seal the key next."
+            : "You sign in as yourself, in your browser, next: no key and no app of yours. Galahad registers itself with the server then.";
   };
   const authControl = segmented(
     [
-      { value: "none", label: "No key" },
+      { value: "none", label: "None" },
       { value: "bearer", label: "Bearer" },
       { value: "header", label: "A header" },
+      { value: "oauth", label: "Sign in" },
     ],
     auth,
     (value) => {
       auth = value as typeof auth;
       syncAuth();
     },
-    { label: "Needs a key?", small: true },
+    { label: "Its key or sign-in", small: true },
   );
   syncAuth();
 
@@ -294,7 +302,8 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
           try {
             const { connector, discovered } = await setMcp(ctx, name, input);
             deps.changed();
-            if (discovered.needsKey) needsKey(connector, url);
+            if (discovered.needsSignIn) signInStep(ctx, sheet, connector);
+            else if (discovered.needsKey) needsKey(connector, url);
             else showTools(ctx, sheet, connector, discovered, deps, true);
           } catch (error) {
             const status413 = error instanceof ApiError && error.status === 413;
@@ -304,7 +313,7 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
               status,
               callout("danger", errorMessage(error), { title: "Couldn't connect" }),
               status413 ? h("p", { class: "small muted" }, "Name the tools you need under Only these tools, and connect again.") : null,
-              status424 && auth === "none" ? h("p", { class: "small muted" }, "If it wants a key, choose how it's sent under Needs a key?, and connect again.") : null,
+              status424 && auth === "none" ? h("p", { class: "small muted" }, "If it wants a key or a sign-in, choose which under Its key or sign-in, and connect again.") : null,
             );
             if (status413) only.focus();
           }
@@ -313,7 +322,7 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
     },
     field("Address", address, { hint: "The server's endpoint (streamable HTTP). Galahad talks to it and nowhere else." }),
     h("div", { class: "fields" }, field("Id", id, { hint: "How agents and loops name it." }), field("Name (optional)", label)),
-    h("div", { class: "stack tight" }, h("div", { class: "label" }, "Needs a key?"), h("div", {}, authControl.el), authHint),
+    h("div", { class: "stack tight" }, h("div", { class: "label" }, "Its key or sign-in"), h("div", {}, authControl.el), authHint),
     headerField,
     onlyField,
     callout("quiet", "Galahad lists its tools once, and you choose what each may do. Its key, if it has one, goes into the vault and is only ever sent to this server."),
@@ -357,6 +366,26 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
     size: "wide",
     initialFocus: () => address,
   });
+}
+
+/** The next step for a server you sign in to, in its sheet: the sign-in, and the sheet closes once you're in (its tools listed). */
+export function signInStep(ctx: Ctx, sheet: Sheet, connector: ConnectorView): void {
+  replace(
+    sheet.body,
+    h(
+      "div",
+      { class: "stack loose" },
+      callout("info", `${connector.label} is added. Its tools are listed once you've signed in.`, { title: "Sign in next" }),
+      signInBlock(ctx, connector, { onSignedIn: () => sheet.close() }),
+      formActions(button("Later", { onClick: () => sheet.close() })),
+    ),
+  );
+}
+
+/** Sign in to a server just added (from the library): its own sheet, so you stay where you were. */
+export function openSignIn(ctx: Ctx, connector: ConnectorView): void {
+  const sheet = openSheet({ title: `Sign in to ${connector.label}`, description: "As yourself, in your browser.", body: h("div") });
+  signInStep(ctx, sheet, connector);
 }
 
 /** The few words an MCP card adds: where it talks to, and that tool descriptions are the server's. */

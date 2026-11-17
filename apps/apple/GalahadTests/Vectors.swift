@@ -163,7 +163,8 @@ struct Vectors: Decodable {
     struct ConnectorState: Decodable {
         struct State: Decodable { let label: String; let tone: String }
         let key: String
-        let signsIn: Bool
+        /// Whose sign-in it uses (google · mcp), or nil for a key.
+        let signIn: String?
         let state: State?
     }
 

@@ -1,7 +1,7 @@
 import type { ArgValue, ConnectorRequestView, ConnectorToolView, ConnectorView, OrderView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
-import { KEY_STATE, OAUTH_STATE } from "../lib/connector-state.ts";
+import { connectorStateOf, KEY_STATE } from "../lib/connector-state.ts";
 import { argKind, claimSentence, type ToolClass } from "../lib/connectors.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
@@ -12,7 +12,7 @@ import { icon, type IconName } from "../ui/icons.ts";
 import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
 import { CLASS_INFO } from "./activity.ts";
-import { classSelect, type McpDeps, mcpBadge, openAddMcp, refreshMcp, saveClasses, serverWords } from "./mcp.ts";
+import { classSelect, type McpDeps, mcpBadge, openAddMcp, openSignIn, refreshMcp, saveClasses, serverWords } from "./mcp.ts";
 import { loadOrders, openNewOrder, ordersChanged, renderOrders } from "./orders.ts";
 import { vaultChanged } from "./vault.ts";
 import { signInBlock } from "./sign-in.ts";
@@ -434,7 +434,12 @@ function installBlock(ctx: Ctx, c: ConnectorView): HTMLElement | null {
             connectorsChanged.update((n) => n + 1);
             toast(`${connector.label} installed`, {
               tone: "ok",
-              description: connector.key === "missing" || connector.key === "wrong-origin" ? "Add its key next. Until then it can't do anything." : `${plural(connector.tools.length, "tool")}, on every node.`,
+              description:
+                connector.oauth?.provider === "mcp" && connector.key !== "ready"
+                  ? "Sign in on its card next: its tools are listed then."
+                  : connector.key === "missing" || connector.key === "wrong-origin"
+                    ? "Add its key next. Until then it can't do anything."
+                    : `${plural(connector.tools.length, "tool")}, on every node.`,
             });
           } catch (error) {
             replace(status, callout("danger", errorMessage(error), { title: "Couldn't install it" }));
@@ -510,9 +515,11 @@ async function remove(ctx: Ctx, c: ConnectorView): Promise<void> {
 }
 
 function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: McpDeps): HTMLElement {
-  const state = (c.oauth ? OAUTH_STATE[c.key] : undefined) ?? KEY_STATE[c.key];
+  const state = connectorStateOf(c);
   const asking = c.tools.filter((t) => t.asks).length;
   const mcp = c.kind === "mcp" && c.installed;
+  // (One you sign in to lists its tools once you have: until then there's nothing to refresh.)
+  const signedOut = c.oauth?.provider === "mcp" && c.key !== "ready";
   const write = ctx.can("brain:write");
   // Your class choices for an MCP server's tools, until you save them.
   const picked = new Map<string, ToolClass>();
@@ -537,7 +544,7 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
     }),
   );
   undo.addEventListener("click", () => deps.changed());
-  const refresh = mcp && write
+  const refresh = mcp && write && !signedOut
     ? button("Refresh tools", {
         size: "sm",
         icon: "refresh",
@@ -590,7 +597,13 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
             h(
               "span",
               { class: "tiny subtle grow" },
-              c.tools.length ? "Its tools and their descriptions come from the server. You choose what each may do." : c.key === "missing" ? "No tools yet: add its key, and Galahad lists them." : "No tools yet. Refresh to list them.",
+              c.tools.length
+                ? "Its tools and their descriptions come from the server. You choose what each may do."
+                : signedOut
+                  ? "No tools yet: sign in, and Galahad lists them."
+                  : c.key === "missing"
+                    ? "No tools yet: add its key, and Galahad lists them."
+                    : "No tools yet. Refresh to list them.",
             ),
             refresh,
           )
@@ -618,9 +631,34 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
   );
 }
 
+/** A hosted MCP server of the library, not added yet: what it gives, and Add (its sign-in, where it has one, is next). */
+function libraryRow(ctx: Ctx, c: ConnectorView): HTMLElement {
+  const add = ctx.can("brain:write") ? button("Add", { size: "sm", icon: "plus" }) : null;
+  add?.addEventListener("click", () =>
+    void busy(add, async () => {
+      try {
+        const { connector } = await ctx.api.post<{ connector: ConnectorView }>("/api/connectors", { id: c.id });
+        connectorsChanged.update((n) => n + 1);
+        if (connector.oauth?.provider === "mcp" && connector.key !== "ready") openSignIn(ctx, connector);
+        else toast(`${connector.label} added`, { tone: "ok", description: `${plural(connector.tools.length, "tool")}, on every node.` });
+      } catch (error) {
+        toast(`Couldn't add ${c.label}`, { tone: "error", description: errorMessage(error) });
+      }
+    }),
+  );
+  return h(
+    "div",
+    { class: "item center" },
+    h("div", { class: "grow" }, h("strong", {}, c.label), h("p", { class: "tiny subtle" }, c.description ?? "")),
+    add,
+  );
+}
+
 export const connectorsView: View = (root, ctx, { scope, opts }) => {
   const installedBox = h("div", { class: "grid wide" }, skeletonBlock(320), skeletonBlock(320));
   const availableBox = h("div", { class: "grid wide" });
+  // The library of hosted MCP servers (core mcp-library.ts): a row each, added with one tap.
+  const libraryBox = h("div", { class: "rows" });
   const note = h("div");
   const deps: McpDeps = {
     changed: () => connectorsChanged.update((n) => n + 1),
@@ -629,6 +667,12 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
   const addMcp = ctx.can("brain:write") ? button("Add an MCP server", { size: "sm", icon: "plus", onClick: () => openAddMcp(ctx, connectors, deps) }) : null;
   const installedSection = section("Installed", { actions: addMcp }, installedBox);
   const availableSection = section("Available", { id: "connectors-available" }, availableBox);
+  const librarySection = section(
+    "Hosted MCP servers",
+    { id: "connectors-library" },
+    h("p", { class: "small subtle" }, "Each is the service's own server, as the official MCP Registry lists it. One that signs in needs no key and no app of yours: add it, and sign in as yourself."),
+    h("div", { class: "card flat" }, libraryBox),
+  );
   const read = ctx.can("mind:read");
   const admin = ctx.can("fleet:admin");
   const ordersBox = h("div", { class: "stack" }, skeletonBlock(96));
@@ -685,8 +729,13 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
             ),
           ]),
     );
-    replace(availableBox, ...available.map((c) => connectorCard(ctx, c, active, deps)));
-    availableSection.hidden = !available.length;
+    // (The library's servers in a list of their own; the ones Galahad ships, as cards.)
+    const shelved = available.filter((c) => c.kind === "mcp");
+    const shipped = available.filter((c) => c.kind !== "mcp");
+    replace(availableBox, ...shipped.map((c) => connectorCard(ctx, c, active, deps)));
+    availableSection.hidden = !shipped.length;
+    replace(libraryBox, ...shelved.map((c) => libraryRow(ctx, c)));
+    librarySection.hidden = !shelved.length;
   }
 
   async function fetchOrders(): Promise<OrderView[] | null> {
@@ -748,6 +797,7 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
         installedSection,
         ordersSection,
         availableSection,
+        librarySection,
         h("p", { class: "note" }, "A service of your own: describe it in a manifest and run ", h("span", { class: "mono" }, "galahad connector add --manifest file.json"), " on a node."),
       ),
     ),

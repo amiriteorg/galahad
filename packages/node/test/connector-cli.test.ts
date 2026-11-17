@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import type { ConnectorRequestView, RouteName } from "@galahad/core";
+import type { ConnectorRequestView, ConnectorView, RouteName } from "@galahad/core";
 import { connectorCommand } from "../src/loop-cli.ts";
 
 /* `galahad connector requests` and `connector dismiss` at a terminal, against what the node would answer. */
@@ -84,4 +84,29 @@ test("signing in at a terminal: the app's secret is asked for hidden, never a fl
   expect(asked.find((a) => a.name === "oauthStart")?.input).toEqual({ connector: "gmail", redirect: "https://keep.example.test/oauth/callback" });
   const out = await printed(() => connectorCommand(api, "signout", ["gmail"], {}));
   expect(out.join("\n")).toContain("Signed out of Gmail");
+});
+
+test("a hosted MCP server from the library at a terminal: added by its id, its sign-in next with no app of yours, and ls and signout say so", async () => {
+  const linear = { id: "linear", label: "Linear", kind: "mcp", url: "https://mcp.linear.app/mcp", origin: "https://mcp.linear.app", installed: true, key: "missing", secret: "linear", oauth: { provider: "mcp", account: null }, tools: [], problem: null } as unknown as ConnectorView;
+  const asked: { name: RouteName; input: unknown }[] = [];
+  const api = {
+    async call<T>(name: RouteName, input?: unknown): Promise<T> {
+      asked.push({ name, input });
+      if (name === "setConnector") return { connector: linear, discovered: { server: null, tools: 0, needsKey: false, needsSignIn: true, added: [], changed: [], removed: [], skipped: 0 } } as T;
+      if (name === "connectors") return { connectors: [linear] } as T;
+      if (name === "connectorRequests") return { requests: [] } as T;
+      if (name === "oauthSignOut") return { connector: { ...linear, key: "signed-out" } } as T;
+      return { ok: true } as T;
+    },
+  };
+  const added = (await printed(() => connectorCommand(api, "add", ["linear"], {}))).join("\n");
+  expect(asked[0]).toEqual({ name: "setConnector", input: { id: "linear" } });
+  expect(added).toContain("galahad connector signin linear --redirect");
+  expect(added).not.toContain("connector app");
+  const listed = (await printed(() => connectorCommand(api, "ls", [], {}))).join("\n");
+  expect(listed).toContain("not signed in: galahad connector signin linear");
+  expect(listed).not.toContain("needs your app");
+  const out = (await printed(() => connectorCommand(api, "signout", ["linear"], {}))).join("\n");
+  expect(out).toContain("Signed out of Linear");
+  expect(out).not.toContain("app you registered");
 });

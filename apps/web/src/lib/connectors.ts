@@ -78,6 +78,8 @@ export interface Discovered {
   server: string | null;
   tools: number;
   needsKey: boolean;
+  /** One you sign in to, not signed in yet: its tools are listed once you have. */
+  needsSignIn?: boolean;
   added: string[];
   changed: string[];
   removed: string[];

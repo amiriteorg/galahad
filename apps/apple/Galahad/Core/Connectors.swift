@@ -26,6 +26,8 @@ struct ConnectorView: Decodable, Sendable, Identifiable {
     let label: String
     let description: String?
     let kind: String
+    /// An MCP server's address (nil for the others).
+    let url: String?
     let origin: String?
     let installed: Bool
     /// none-needed · ready · missing · optional-missing · signed-out · wrong-origin
@@ -61,9 +63,14 @@ enum Connectors {
         "wrong-origin": ("pinned elsewhere", "danger"),
     ]
 
-    /// A connector's badge (lib/connector-state.ts' `connectorState`).
-    static func state(key: String, signsIn: Bool) -> (label: String, tone: String)? {
-        if signsIn, let state = oauthState[key] { return state }
+    /// A hosted MCP server's sign-in (lib/connector-state.ts' MCP_SIGN_IN_STATE): no app of yours, so until you sign in
+    /// it is just not signed in.
+    static let mcpState = oauthState.merging(["missing": ("not signed in", "warn")]) { $1 }
+
+    /// A connector's badge (lib/connector-state.ts' `connectorState`): `signIn` is whose sign-in it uses (google,
+    /// microsoft, mcp), or nil for one with a key.
+    static func state(key: String, signIn: String?) -> (label: String, tone: String)? {
+        if let signIn, let state = (signIn == "mcp" ? mcpState : oauthState)[key] { return state }
         return keyState[key].map { ($0.label, $0.tone) }
     }
 

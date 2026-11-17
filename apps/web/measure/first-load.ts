@@ -651,6 +651,9 @@ try {
     await admin("setRule", { name: "no-lockfiles", does: "refuse", words: ["*.lock", "package-lock.json"] });
     await admin("setRule", { name: "no-env-files", does: "halt", words: [".env*"] });
   }
+  // A hosted MCP server from the library, added and waiting for your sign-in, where the checkout has the library (nothing
+  // is asked of it over the network until you sign in).
+  if (core.MCP_LIBRARY) await admin("setConnector", { id: "linear" });
   const team = await admin("team");
   const faces = Object.fromEntries(team.teammates.map((member: { id: string }) => [member.id, core.avatarExpression(member, team, Date.now())]));
 
@@ -969,6 +972,7 @@ try {
       { name: "sheet-create-sandbox", hash: "#/sandboxes", open: [press("Create sandbox")] },
       { name: "sheet-add-key", hash: "#/vault", open: [press("Add a key", "Add key")] },
       { name: "sheet-add-provider", hash: "#/models", open: [press("Add provider")] },
+      { name: "sheet-add-mcp", hash: "#/connectors", open: [press("Add an MCP server")] },
     ];
     // A phone held upright, and screens as wide as asked (--widths), each as tall as a laptop's is for its width.
     const sizes = WIDTHS.map((width) => (width < 640 ? ([width, 844, true] as const) : ([width, Math.round(width * 0.625), false] as const)));

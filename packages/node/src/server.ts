@@ -93,6 +93,8 @@ import {
   textOf,
   screenSessionView,
   activeScreenSession,
+  MCP_LIBRARY,
+  mcpLibraryEntry,
 } from "@galahad/core";
 import {
   AGENTS,
@@ -1097,10 +1099,33 @@ export function createApp(ctx: AppContext) {
 
   function connectorViews(): ConnectorView[] {
     const installed = new Map(installedConnectors(ctx.store).map((c) => [c.id, c]));
-    const ids = [...new Set([...installed.keys(), ...Object.keys(CATALOG)])].sort();
+    // (The hosted MCP servers of the library too, not yet added: each one tap away.)
+    const ids = [...new Set([...installed.keys(), ...Object.keys(CATALOG), ...MCP_LIBRARY.map((entry) => entry.id)])].sort();
     return ids.map((id) => {
       const mine = installed.get(id);
       const catalog = Object.hasOwn(CATALOG, id) ? CATALOG[id] : undefined;
+      const shelved = !mine && !catalog ? mcpLibraryEntry(id) : null;
+      if (shelved) {
+        const signsIn = shelved.auth === "oauth";
+        return {
+          id,
+          label: shelved.label,
+          description: shelved.description,
+          kind: "mcp" as const,
+          url: shelved.url,
+          origin: new URL(shelved.url).origin,
+          installed: false,
+          key: signsIn ? ("missing" as const) : ("none-needed" as const),
+          secret: signsIn ? id : null,
+          keyHelp: null,
+          needsOrigin: false,
+          problem: null,
+          tools: [],
+          access: null,
+          oauth: signsIn ? { provider: "mcp" as const, account: null } : null,
+          private: false,
+        };
+      }
       const manifest = mine?.manifest ?? catalog?.manifest ?? null;
       const tools = Object.entries(manifest?.tools ?? {}).map(([name, tool]) => ({
         name,
@@ -3262,7 +3287,14 @@ export function createApp(ctx: AppContext) {
         manifest = parsed.data;
       } else {
         const catalog = Object.hasOwn(CATALOG, input.id) ? CATALOG[input.id] : undefined;
-        if (!catalog) throw new HttpError(404, `no "${input.id}" in the catalog (${Object.keys(CATALOG).join(", ")}); give a manifest for your own`);
+        // A hosted MCP server of the library: added by its address, signing in when it does.
+        const shelved = catalog ? null : mcpLibraryEntry(input.id);
+        if (shelved) {
+          const installed = await connectorErrors(() => ctx.connectors.installMcp(input.id, { url: shelved.url, label: shelved.label, description: shelved.description, auth: shelved.auth }));
+          ctx.connectorRequests.resolve(input.id);
+          return { connector: connectorViews().find((c) => c.id === input.id), discovered: installed };
+        }
+        if (!catalog) throw new HttpError(404, `no "${input.id}" in the catalog (${Object.keys(CATALOG).join(", ")}) or the library of MCP servers; give a manifest for your own, or an MCP server's address`);
         const origin = catalog.needsOrigin ? (input.origin ? originOf(input.origin) : null) : catalog.manifest.origin;
         if (!origin) throw new HttpError(400, `${catalog.manifest.label} runs at an address of yours: give its origin (e.g. http://homeassistant.local:8123)`);
         const parsed = ConnectorManifest.safeParse({ ...catalog.manifest, origin });

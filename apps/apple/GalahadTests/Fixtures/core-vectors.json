@@ -4656,7 +4656,7 @@
   "connectorStates": [
     {
       "key": "none-needed",
-      "signsIn": false,
+      "signIn": null,
       "state": {
         "label": "no key needed",
         "tone": "neutral"
@@ -4664,7 +4664,15 @@
     },
     {
       "key": "none-needed",
-      "signsIn": true,
+      "signIn": "google",
+      "state": {
+        "label": "no key needed",
+        "tone": "neutral"
+      }
+    },
+    {
+      "key": "none-needed",
+      "signIn": "mcp",
       "state": {
         "label": "no key needed",
         "tone": "neutral"
@@ -4672,7 +4680,7 @@
     },
     {
       "key": "ready",
-      "signsIn": false,
+      "signIn": null,
       "state": {
         "label": "key sealed",
         "tone": "ok"
@@ -4680,7 +4688,15 @@
     },
     {
       "key": "ready",
-      "signsIn": true,
+      "signIn": "google",
+      "state": {
+        "label": "signed in",
+        "tone": "ok"
+      }
+    },
+    {
+      "key": "ready",
+      "signIn": "mcp",
       "state": {
         "label": "signed in",
         "tone": "ok"
@@ -4688,7 +4704,7 @@
     },
     {
       "key": "missing",
-      "signsIn": false,
+      "signIn": null,
       "state": {
         "label": "needs a key",
         "tone": "warn"
@@ -4696,15 +4712,23 @@
     },
     {
       "key": "missing",
-      "signsIn": true,
+      "signIn": "google",
       "state": {
         "label": "needs your app",
         "tone": "warn"
       }
     },
     {
+      "key": "missing",
+      "signIn": "mcp",
+      "state": {
+        "label": "not signed in",
+        "tone": "warn"
+      }
+    },
+    {
       "key": "optional-missing",
-      "signsIn": false,
+      "signIn": null,
       "state": {
         "label": "public only",
         "tone": "neutral"
@@ -4712,7 +4736,15 @@
     },
     {
       "key": "optional-missing",
-      "signsIn": true,
+      "signIn": "google",
+      "state": {
+        "label": "public only",
+        "tone": "neutral"
+      }
+    },
+    {
+      "key": "optional-missing",
+      "signIn": "mcp",
       "state": {
         "label": "public only",
         "tone": "neutral"
@@ -4720,7 +4752,7 @@
     },
     {
       "key": "signed-out",
-      "signsIn": false,
+      "signIn": null,
       "state": {
         "label": "not signed in",
         "tone": "warn"
@@ -4728,7 +4760,15 @@
     },
     {
       "key": "signed-out",
-      "signsIn": true,
+      "signIn": "google",
+      "state": {
+        "label": "not signed in",
+        "tone": "warn"
+      }
+    },
+    {
+      "key": "signed-out",
+      "signIn": "mcp",
       "state": {
         "label": "not signed in",
         "tone": "warn"
@@ -4736,7 +4776,7 @@
     },
     {
       "key": "wrong-origin",
-      "signsIn": false,
+      "signIn": null,
       "state": {
         "label": "key pinned elsewhere",
         "tone": "danger"
@@ -4744,7 +4784,15 @@
     },
     {
       "key": "wrong-origin",
-      "signsIn": true,
+      "signIn": "google",
+      "state": {
+        "label": "pinned elsewhere",
+        "tone": "danger"
+      }
+    },
+    {
+      "key": "wrong-origin",
+      "signIn": "mcp",
       "state": {
         "label": "pinned elsewhere",
         "tone": "danger"
@@ -4752,12 +4800,17 @@
     },
     {
       "key": "unheard-of",
-      "signsIn": false,
+      "signIn": null,
       "state": null
     },
     {
       "key": "unheard-of",
-      "signsIn": true,
+      "signIn": "google",
+      "state": null
+    },
+    {
+      "key": "unheard-of",
+      "signIn": "mcp",
       "state": null
     }
   ],

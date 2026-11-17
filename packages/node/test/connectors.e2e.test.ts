@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ActionView, APPROVAL_TTL_MS, b64u, type ConnectorView, decodeHlc, HlcClock, type LoopRunView, type LoopView, newNodeIdentity, type NoticeView, type OrderView, type RouteName, routes } from "@galahad/core";
+import { type ActionView, APPROVAL_TTL_MS, b64u, type ConnectorView, decodeHlc, HlcClock, type LoopRunView, type LoopView, newNodeIdentity, type NoticeView, type OrderView, type RouteName, routes, MCP_LIBRARY } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore, Vault } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { ConnectorService } from "../src/connectors.ts";
@@ -117,7 +117,9 @@ afterAll(async () => {
 describe("connectors", () => {
   test("the catalog is listed, a manifest of your own installs, and an invalid one is refused with why", async () => {
     const before = (await admin<{ connectors: ConnectorView[] }>("connectors")).body.connectors;
-    expect(before.map((c) => c.id)).toEqual(["cloudflare", "github", "gmail", "home-assistant", "outlook"]);
+    expect(before.filter((c) => c.kind === "http").map((c) => c.id)).toEqual(["cloudflare", "github", "gmail", "home-assistant", "outlook"]);
+    // (And the library's hosted MCP servers, each one tap away.)
+    expect(before.filter((c) => c.kind === "mcp").map((c) => c.id)).toEqual(MCP_LIBRARY.map((entry) => entry.id).sort());
     expect(before.every((c) => !c.installed)).toBe(true);
 
     const bad = await admin("setConnector", { id: "forge", manifest: { ...manifest(), tools: { x: { description: "x", method: "DELETE", path: "/x", class: "read" } } } });

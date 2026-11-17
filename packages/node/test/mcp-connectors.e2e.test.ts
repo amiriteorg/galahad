@@ -219,6 +219,6 @@ describe("an MCP server as a connector", () => {
     expect(moved.body.error).toMatch(/redirect/);
     const nokey = await admin("setConnector", { id: "nokey", mcp: { url } });
     expect(nokey.status).toBe(424);
-    expect(nokey.body.error).toMatch(/401.*It needs a key/);
+    expect(nokey.body.error).toMatch(/401.*It wants a key or a sign-in/);
   });
 });

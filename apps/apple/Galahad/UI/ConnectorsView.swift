@@ -2,8 +2,9 @@ import SwiftUI
 
 /**
  * Your connectors (the PWA's Connectors): the services Galahad reaches through his oath, each with where its key or its
- * sign-in stands; and those in the node's catalog, to add. One opens to what it can do, who may use it, its key or its
- * sign-in (Google's or Microsoft's own page, which comes back to your node), and to remove it.
+ * sign-in stands; those in the node's catalog, to add; and the hosted MCP servers of its library (core mcp-library.ts).
+ * One opens to what it can do, who may use it, its key or its sign-in (Google's, Microsoft's or the MCP server's own
+ * page, which comes back to your node), and to remove it.
  */
 struct ConnectorsView: View {
     let session: Session
@@ -11,7 +12,8 @@ struct ConnectorsView: View {
     @State private var problem: String?
 
     private var installed: [ConnectorView] { (connectors ?? []).filter(\.installed) }
-    private var catalog: [ConnectorView] { (connectors ?? []).filter { !$0.installed } }
+    private var catalog: [ConnectorView] { (connectors ?? []).filter { !$0.installed && $0.kind != "mcp" } }
+    private var library: [ConnectorView] { (connectors ?? []).filter { !$0.installed && $0.kind == "mcp" } }
 
     var body: some View {
         GroupedList {
@@ -34,6 +36,17 @@ struct ConnectorsView: View {
                     Text("Add")
                 } footer: {
                     Text("Each reaches its service through Galahad's oath: reading, making and changing run freely, and anything sent out or deleted asks you first.")
+                }
+            }
+            if !library.isEmpty {
+                Section {
+                    ForEach(library) { connector in
+                        NavigationLink { ConnectorDetail(session: session, id: connector.id) { await load() } } label: { ConnectorRow(connector: connector) }
+                    }
+                } header: {
+                    Text("Hosted MCP servers")
+                } footer: {
+                    Text("Each is the service's own server, as the official MCP Registry lists it. One that signs in needs no key and no app of yours: add it, then sign in.")
                 }
             }
         }
@@ -65,7 +78,7 @@ private struct ConnectorRow: View {
                 if let description = connector.description { Text(description).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
             }
             Spacer(minLength: Space.s2)
-            if connector.installed, let state = Connectors.state(key: connector.key, signsIn: connector.oauth != nil) {
+            if connector.installed, let state = Connectors.state(key: connector.key, signIn: connector.oauth?.provider) {
                 StateBadge(text: state.label, tone: state.tone)
             }
         }
@@ -130,14 +143,16 @@ private struct ConnectorDetail: View {
     enum Started: Equatable { case page, code(String, URL) }
 
     private var google: Bool { connector?.oauth?.provider == "google" }
-    private var who: String { google ? "Google" : "Microsoft" }
+    /// A hosted MCP server's own sign-in: no app of yours, its page back to your node as Google's is.
+    private var mcp: Bool { connector?.oauth?.provider == "mcp" }
+    private var who: String { mcp ? connector?.label ?? "it" : google ? "Google" : "Microsoft" }
 
     var body: some View {
         Form {
             if let connector {
                 Section {
                     if let description = connector.description { Text(description) }
-                    if connector.installed, let state = Connectors.state(key: connector.key, signsIn: connector.oauth != nil) {
+                    if connector.installed, let state = Connectors.state(key: connector.key, signIn: connector.oauth?.provider) {
                         HStack {
                             StateBadge(text: state.label, tone: state.tone)
                             if let account = connector.oauth?.account { Text(account).font(.footnote).foregroundStyle(.secondary) }
@@ -199,7 +214,15 @@ private struct ConnectorDetail: View {
             for _ in 0..<200 where !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
                 await load()
-                if connector?.key == "ready" { started = nil; await changed(); return }
+                guard connector?.key == "ready" else { continue }
+                // An MCP server's tools are listed just after you sign in: a few seconds' grace for them.
+                for _ in 0..<6 where mcp && connector?.tools.isEmpty == true && !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(2))
+                    await load()
+                }
+                started = nil
+                await changed()
+                return
             }
         }
     }
@@ -216,12 +239,24 @@ private struct ConnectorDetail: View {
             Button("Add \(connector.label)") { Task { await install() } }
                 .disabled(working || !session.can("brain:write") || (connector.needsOrigin && origin.trimmingCharacters(in: .whitespaces).isEmpty))
         } footer: {
-            if let help = connector.keyHelp { Text(help) }
+            if let help = connector.keyHelp {
+                Text(help)
+            } else if connector.kind == "mcp", let url = connector.url {
+                // A plain string: as a localized key, its address would be made a link drawn in the tint.
+                Text(verbatim: "Its own server, \(url.replacingOccurrences(of: "https://", with: "")), and only that. " + (connector.oauth != nil ? "You sign in as yourself next: no key and no app of yours." : "It needs no sign-in."))
+            }
         }
     }
 
     @ViewBuilder private func signIn(_ connector: ConnectorView) -> some View {
-        if connector.key == "missing" || connector.key == "wrong-origin" {
+        if mcp, connector.key != "ready" {
+            // No app of yours: Galahad registers itself with the server when you sign in.
+            Section {
+                signInButton("Sign in to \(who)")
+            } footer: {
+                Text("As yourself, through \(who)'s own page: no key and no app of yours. The node keeps the sign-in, sealed, and lists its tools then; nothing of it comes back to this device.")
+            }
+        } else if connector.key == "missing" || connector.key == "wrong-origin" {
             Section {
                 FormField(google ? "1234-abc.apps.googleusercontent.com" : "00000000-0000-0000-0000-000000000000", text: $client)
                     .font(.body.monospaced())
@@ -243,33 +278,38 @@ private struct ConnectorDetail: View {
             Section {
                 Button("Sign out", role: .destructive) { Task { await signOut() } }.disabled(working || !session.can("brain:write"))
             } footer: {
-                Text("The app you registered stays: sign in again any time.")
+                Text(mcp ? "Sign in again any time." : "The app you registered stays: sign in again any time.")
             }
         } else {
             Section {
-                Button("Sign in with \(who)") { Task { await startSignIn() } }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.ink)
-                    .disabled(working || !session.can("brain:write"))
-                switch started {
-                case .page:
-                    Text("Finish in the page that opened: choose your account and allow it. This page says when you're signed in.").font(.footnote)
-                case .code(let code, let url):
-                    VStack(alignment: .leading, spacing: Space.s2) {
-                        Text("Open \(url.host() ?? url.absoluteString), sign in, and type this code:").font(.footnote)
-                        HStack {
-                            Text(code).font(.title2.monospaced().weight(.semibold)).textSelection(.enabled)
-                            Spacer()
-                            Button("Copy") { Pasteboard.copy(code) }.buttonStyle(.bordered).controlSize(.small)
-                            Button("Open") { openURL(url) }.buttonStyle(.bordered).controlSize(.small)
-                        }
-                    }
-                case nil:
-                    EmptyView()
-                }
+                signInButton("Sign in with \(who)")
             } footer: {
-                Text("As yourself, through \(who)'s own page: the node keeps the sign-in, sealed, and nothing of it comes back to this phone.")
+                Text("As yourself, through \(who)'s own page: the node keeps the sign-in, sealed, and nothing of it comes back to this device.")
             }
+        }
+    }
+
+    /// Sign in, and what to do while it's open: finish at the page, or type the code at Microsoft's.
+    @ViewBuilder private func signInButton(_ title: String) -> some View {
+        Button(title) { Task { await startSignIn() } }
+            .buttonStyle(.borderedProminent)
+            .tint(.ink)
+            .disabled(working || !session.can("brain:write"))
+        switch started {
+        case .page:
+            Text("Finish in the page that opened: choose your account and allow it. This page says when you're signed in.").font(.footnote)
+        case .code(let code, let url):
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("Open \(url.host() ?? url.absoluteString), sign in, and type this code:").font(.footnote)
+                HStack {
+                    Text(code).font(.title2.monospaced().weight(.semibold)).textSelection(.enabled)
+                    Spacer()
+                    Button("Copy") { Pasteboard.copy(code) }.buttonStyle(.bordered).controlSize(.small)
+                    Button("Open") { openURL(url) }.buttonStyle(.bordered).controlSize(.small)
+                }
+            }
+        case nil:
+            EmptyView()
         }
     }
 
@@ -341,12 +381,12 @@ private struct ConnectorDetail: View {
         working = true
         defer { working = false }
         do {
-            let answer = try await session.client.post("/api/oauth/start", Start(connector: id, redirect: google ? Connectors.callback(origin: session.node.origin) : nil), as: Started.self)
+            let answer = try await session.client.post("/api/oauth/start", Start(connector: id, redirect: google || mcp ? Connectors.callback(origin: session.node.origin) : nil), as: Started.self)
             guard let url = URL(string: answer.url), ["https", "http"].contains(url.scheme ?? "") else { problem = "The node gave no page to sign in at."; return }
             if answer.flow == "device", let code = answer.code {
                 started = .code(code, url)
             } else {
-                // Google's own page, in Safari: it comes back to your node, which says when you're in.
+                // Google's (or the MCP server's) own page, in Safari: it comes back to your node, which says when you're in.
                 started = .page
                 openURL(url)
             }

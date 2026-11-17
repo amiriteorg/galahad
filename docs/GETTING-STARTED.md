@@ -592,6 +592,16 @@ bun galahad connector refresh tracker --class search=read --class "*=outward"   
 bun galahad connector call deepwiki.read_wiki_structure --arg repoName=oven-sh/bun
 ```
 
+**Hosted servers you sign in to.** Most services' own MCP servers (Linear, Notion, Sentry, Atlassian, Vercel, Stripe, Figma…) take no key: you sign in to them as yourself. Galahad keeps a short library of them, each the service's own server as the official MCP Registry lists it, and every one that signs in checked to take Galahad's sign-in as it is (`packages/core/src/mcp-library.ts`). In the app they're under **Hosted MCP servers** on Connectors: **Add**, then **Sign in to Linear** in the page that opens. At a terminal:
+
+```sh
+bun galahad connector add linear                                   # from the library: installed, not signed in yet
+bun galahad connector signin linear --redirect https://<your app's address>/oauth/callback
+bun galahad connector add issues --mcp https://mcp.example.com/mcp --auth oauth   # any other server that signs in
+```
+
+There's no app of yours to register: Galahad registers itself with the server's own sign-in when you sign in, your browser allows it there and comes back to your node, and its tools are listed then. The sign-in stays sealed on your nodes and is sent to that server's sign-in alone; each call carries a short-lived token for that server alone. A server whose sign-in won't let a client register itself is told to take a key instead.
+
 The server's hints only propose a class: read-only becomes read, destructive becomes delete, and anything else becomes outward, which asks you. A refresh tells you which tools changed on the server since you installed them. A server that puts its key in the URL isn't supported, because the URL would replicate in plaintext.
 
 ### Standing orders: approve once, for a narrow kind of call

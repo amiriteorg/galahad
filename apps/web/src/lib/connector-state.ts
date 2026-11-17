@@ -30,8 +30,15 @@ export const OAUTH_STATE: Record<string, { label: string; tone: Tone; icon: Icon
   "wrong-origin": { label: "pinned elsewhere", tone: "danger", icon: "alert" },
 };
 
+/** A hosted MCP server you sign in to (Linear, Notion): no app of yours, so until you sign in it is just not signed in. */
+export const MCP_SIGN_IN_STATE: Record<string, { label: string; tone: Tone; icon: IconName }> = { ...OAUTH_STATE, missing: { label: "not signed in", tone: "warn", icon: "key" } };
+
+/** Where a connector stands, with its icon: a sign-in's words for one that signs in as you, a key's for any other. */
+export const connectorStateOf = (c: Pick<ConnectorView, "key" | "oauth">): { label: string; tone: Tone; icon: IconName } | undefined =>
+  (c.oauth ? (c.oauth.provider === "mcp" ? MCP_SIGN_IN_STATE : OAUTH_STATE)[c.key] : undefined) ?? KEY_STATE[c.key];
+
 /** A connector's badge: a sign-in's words for one that signs in as you, a key's for any other. */
 export const connectorState = (c: Pick<ConnectorView, "key" | "oauth">): { label: string; tone: Tone } | null => {
-  const state = (c.oauth ? OAUTH_STATE[c.key] : undefined) ?? KEY_STATE[c.key];
+  const state = connectorStateOf(c);
   return state ? { label: state.label, tone: state.tone } : null;
 };

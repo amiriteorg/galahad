@@ -440,8 +440,9 @@ const eyes = {
 };
 
 // ---- where a connector's key or sign-in stands (the PWA's own lib/connector-state.ts) -------------------------------
+// (signIn: whose sign-in it uses, or null for a key: Google's or Microsoft's needs your app; a hosted MCP server's doesn't.)
 const connectorStates = ["none-needed", "ready", "missing", "optional-missing", "signed-out", "wrong-origin", "unheard-of"].flatMap((key) =>
-  [false, true].map((signsIn) => ({ key, signsIn, state: connectorState({ key, oauth: signsIn ? { provider: "google" as const, account: null } : null }) })),
+  ([null, "google", "mcp"] as const).map((signIn) => ({ key, signIn, state: connectorState({ key, oauth: signIn ? { provider: signIn, account: null } : null }) })),
 );
 
 // ---- a chat on screen: kept messages, and a turn's stream applied event by event (the PWA's lib/turns.ts) --------------

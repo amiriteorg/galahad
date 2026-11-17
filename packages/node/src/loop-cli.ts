@@ -269,9 +269,12 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
         const key = c.oauth
           ? c.key === "ready"
             ? `signed in${c.oauth.account ? ` as ${c.oauth.account}` : ""} ✓`
-            : c.key === "signed-out"
-              ? `not signed in: galahad connector signin ${c.id}`
-              : `needs your app: galahad connector app ${c.id}`
+            : c.oauth.provider === "mcp"
+              ? // A hosted MCP server's own sign-in: no app of yours.
+                `not signed in: galahad connector signin ${c.id} --redirect <your app's address>/oauth/callback`
+              : c.key === "signed-out"
+                ? `not signed in: galahad connector signin ${c.id}`
+                : `needs your app: galahad connector app ${c.id}`
           : ({ "none-needed": "no key needed", ready: "key ✓", missing: "needs a key", "optional-missing": "no key (public only)", "wrong-origin": "key pinned elsewhere" }[c.key] ?? c.key);
         console.log(`  ${bold(c.id.padEnd(16))} ${(c.installed ? "installed" : dim("available")).padEnd(tty ? 18 : 9)} ${c.origin ?? dim("(your address)")}  ${c.installed ? key : ""}`);
         if (c.problem) console.log(`      ${bold(c.problem)}`);
@@ -337,7 +340,11 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
     case "signout": {
       if (!rest[0]) throw new Error("usage: galahad connector signout <id>");
       const { connector } = await api.call<{ connector: ConnectorView }>("oauthSignOut", { connector: rest[0] });
-      console.log(`Signed out of ${connector.label}. The app you registered stays; sign in again with galahad connector signin ${connector.id}.`);
+      console.log(
+        connector.oauth?.provider === "mcp"
+          ? `Signed out of ${connector.label}. Sign in again with galahad connector signin ${connector.id} --redirect <your app's address>/oauth/callback.`
+          : `Signed out of ${connector.label}. The app you registered stays; sign in again with galahad connector signin ${connector.id}.`,
+      );
       return;
     }
     case "dismiss": {
@@ -372,7 +379,7 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
             },
           })
           .catch((error: Error) => {
-            if (/needs a key/.test(error.message)) error.message += ` (here: --auth bearer, or --auth header:<name>)`;
+            if (/wants a key or a sign-in/.test(error.message)) error.message += ` (here: --auth bearer, --auth header:<name>, or --auth oauth)`;
             throw error;
           });
         printDiscovered(connector, discovered);
@@ -384,7 +391,7 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
       if (owner && !/^[A-Za-z0-9-]{1,39}$/.test(owner)) throw new Error("--owner is a GitHub user or organization name");
       // One more GitHub owner (a token per organization): the catalog's manifest under github-<owner>, with its own key.
       const own = owner ? `github-${owner.toLowerCase()}` : null;
-      const { connector } = await api.call<{ connector: ConnectorView }>(
+      const { connector, discovered } = await api.call<{ connector: ConnectorView; discovered?: Parameters<typeof printDiscovered>[1] }>(
         "setConnector",
         own
           ? {
@@ -399,6 +406,11 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
             }
           : { id: rest[0], ...(str(flags, "origin") ? { origin: str(flags, "origin") } : {}) },
       );
+      if (discovered) {
+        // A hosted MCP server from the library (core mcp-library.ts): its tools as listed, or its sign-in next.
+        printDiscovered(connector, discovered);
+        return;
+      }
       console.log(`Installed ${connector.label} (${connector.tools.length} tools) for ${connector.origin}.`);
       if (connector.oauth) {
         // It signs in as you: the app you registered, then your sign-in (docs/MAIL.md for mail).

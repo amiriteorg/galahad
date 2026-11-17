@@ -61,7 +61,7 @@ What the others are known for, and where Galahad has it.
 | Keys never in the agent's hands | The model gateway and connectors inject them ✅ (knights' own scripts: #17) |
 | A trimmer for tool output (OpenAI Agents SDK) | A quest's older outputs as excerpts, and as a line where a later run superseded them or a later edit made them stale ✅ (more: #5) |
 | State that can be replayed (LangGraph's checkpoints) | The mind: a signed log whose state is the same in any order of delivery ✅ (a quest's own steps: #15) |
-| Open agent protocols | Galahad is an MCP server for every arm and a client of remote MCP servers, and drives Hermes over ACP ✅ |
+| Open agent protocols | Galahad is an MCP server for every arm and a client of remote MCP servers (with a key, or signed in to as you by MCP's own authorization), and drives Hermes over ACP ✅ |
 
 ## Declined, and why
 
@@ -78,4 +78,4 @@ What the others are known for, and where Galahad has it.
 | Voice and realtime agents | Your word (14 Nov): no voice yet. And talking is the wrong axis for coding work. |
 | Code as the agent's action (CodeAct) | The knights already run OpenCode, Claude Code, Codex and Hermes in their VMs, and Galahad's own loop runs one command a turn under its gates. |
 | A visual flow editor | The mandate's anti-goal: not infinite configuration. A plan in words and gates that run say more than a graph of boxes. |
-| Thousands of connectors as a catalog (Dots) | Remote MCP servers, added as connectors, cover the long tail with no catalog to keep. |
+| Thousands of connectors as a catalog (Dots) | Remote MCP servers, added as connectors, cover the long tail with no catalog to keep. The library of hosted servers is a short list of services' own servers, an address each, not integrations to maintain. |

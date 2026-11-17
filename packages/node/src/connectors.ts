@@ -480,7 +480,7 @@ export class ConnectorService {
       discovered = await discoverMcpTools({ vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}), oauth: { save: this.keepRotated } }, base.data);
     } catch (error) {
       if (error instanceof ConnectorError) {
-        const hint = !auth && /401/.test(error.message) ? " It needs a key: install it again saying how the key is sent (bearer or a header), then add the key." : "";
+        const hint = !auth && /401/.test(error.message) ? " It wants a key or a sign-in: install it again saying which (bearer or a header for a key, then add the key; oauth to sign in as yourself)." : "";
         throw new ConnectorCallError(424, `${error.message}.${hint}`);
       }
       throw new ConnectorCallError(502, `${base.data.label} unreachable: ${redact(String((error as Error).message ?? error))}`);

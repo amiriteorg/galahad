@@ -158,3 +158,15 @@ test("signed out: its calls stop, saying why", async () => {
   const refused = await admin<{ error?: string; result?: { ok: boolean; body: string } }>("callConnector", { connector: "issues", tool: "list_issues", args: {} });
   expect(JSON.stringify(refused.body)).toContain("isn't signed in");
 });
+
+test("the library: hosted MCP servers listed before they're added, and one added by its id alone, signing in as it does", async () => {
+  const { connectors } = (await admin<{ connectors: ConnectorView[] }>("connectors")).body;
+  expect(connectors.find((c) => c.id === "linear")).toMatchObject({ installed: false, kind: "mcp", url: "https://mcp.linear.app/mcp", oauth: { provider: "mcp" }, key: "missing" });
+  expect(connectors.find((c) => c.id === "cloudflare-docs")).toMatchObject({ installed: false, kind: "mcp", oauth: null, key: "none-needed" });
+  // Added by its id alone: nothing asked of it over the network until you sign in.
+  const added = await admin("setConnector", { id: "linear" });
+  expect(added.status).toBe(200);
+  expect(added.body.discovered).toMatchObject({ needsSignIn: true, tools: 0 });
+  expect(added.body.connector).toMatchObject({ installed: true, kind: "mcp", url: "https://mcp.linear.app/mcp", oauth: { provider: "mcp" }, key: "missing" });
+  expect((await admin("setConnector", { id: "nothing-like-it" })).status).toBe(404);
+});
