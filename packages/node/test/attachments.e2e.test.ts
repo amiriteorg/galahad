@@ -9,6 +9,7 @@ import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { LocalClient } from "../src/loop-tasks.ts";
 import { askCommand, type Io } from "../src/turn-cli.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * Files you attach to a message in your chat, end to end: a real daemon over real HTTP and a stand-in model that sees
@@ -19,13 +20,6 @@ import { askCommand, type Io } from "../src/turn-cli.ts";
  */
 
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "attachments-test", cores: 4, cpu: "test", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
-};
 
 const root = mkdtempSync(join(tmpdir(), "galahad-attachments-"));
 const home = new Home(join(root, "node"));

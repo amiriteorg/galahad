@@ -8,6 +8,7 @@ import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { runWithToken, STOP_SIGNALS, WAIT_SIGNALS } from "../src/run-tool.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * `galahad run -- <tool>` gives the tool a scoped gateway token and revokes it when the
@@ -29,13 +30,6 @@ const caps: Capabilities = {
   tools: [],
   localModels: [],
   tailscale: null,
-};
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
 };
 
 const root = mkdtempSync(join(tmpdir(), "galahad-run-"));

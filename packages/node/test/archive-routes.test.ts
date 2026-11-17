@@ -9,6 +9,7 @@ import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { chatTools, type GalahadTool, type ToolApi, TOOLS } from "../src/tools.ts";
 import { embeddingsServer, HOSTILE_PAGE } from "./archive-fixtures.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * The archive through the node: each route's one scope, who may see archived chats,
@@ -19,12 +20,6 @@ import { embeddingsServer, HOSTILE_PAGE } from "./archive-fixtures.ts";
  */
 
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "archive-test", cores: 4, cpu: "test", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
-};
 
 const root = mkdtempSync(join(tmpdir(), "galahad-archive-routes-"));
 const home = new Home(join(root, "node"));

@@ -10,6 +10,7 @@ import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { githubRepo, shipBranch } from "../src/quest-cli.ts";
 import { sameRepository, SHIPMENT_SCRIPT, type ShipDeps, shipToGitHub } from "../src/ship.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * Shipping: a quest's kept changes become a pull request. The shipper against a fake
@@ -249,12 +250,6 @@ describe("the shipment the sandbox leaves", () => {
 
 describe("the gate, end to end", () => {
   const caps: Capabilities = { os: "linux", arch: "x64", hostname: "ship", cores: 4, cpu: "t", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
-  const freePort = () => {
-    const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-    const p = s.port!;
-    s.stop(true);
-    return p;
-  };
   const root = mkdtempSync(join(tmpdir(), "galahad-shipgate-"));
   const home = new Home(join(root, "node"));
   const port = freePort();

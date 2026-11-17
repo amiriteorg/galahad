@@ -27,6 +27,7 @@ import { foundFleet, MindStore } from "../../../packages/mind/src/index.ts";
 import { startDaemon } from "../../../packages/node/src/daemon.ts";
 import { Home } from "../../../packages/node/src/home.ts";
 import { fakeDocker } from "../../../packages/node/test/fake-docker.ts";
+import { freePort } from "../../../packages/node/test/ports.ts";
 
 const flag = (name: string): string | undefined => {
   const at = process.argv.indexOf(`--${name}`);
@@ -40,12 +41,6 @@ const tmp = mkdtempSync(join(chosen ?? tmpdir(), "galahad-apple-node-"));
 const dir = chosen ?? join(tmp, "out");
 mkdirSync(dir, { recursive: true });
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
-const freePort = (): number => {
-  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = server.port!;
-  server.stop(true);
-  return port;
-};
 const say = (line: string) => console.log(`[dev-node] ${line}`);
 
 let daemon: Awaited<ReturnType<typeof startDaemon>> | undefined;

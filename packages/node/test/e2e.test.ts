@@ -9,6 +9,7 @@ import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * M0, end to end, over real HTTP:
@@ -34,13 +35,6 @@ const fakeCaps = (hostname: string, extra: Partial<Capabilities> = {}): Capabili
   tailscale: null,
   ...extra,
 });
-
-function freePort(): number {
-  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = server.port!;
-  server.stop(true);
-  return port;
-}
 
 async function until(check: () => boolean | Promise<boolean>, timeoutMs = 8000): Promise<void> {
   const deadline = Date.now() + timeoutMs;

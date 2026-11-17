@@ -15,6 +15,7 @@ import { runNodeQuest } from "../src/quest-cli.ts";
 import { runTrials } from "../src/trial-cli.ts";
 import { UsageStore } from "../src/usage.ts";
 import { fakeDocker } from "./fake-docker.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * What model calls cost, end to end over real HTTP on a real node (stand-ins only for
@@ -39,13 +40,6 @@ const caps: Capabilities = {
   localModels: [],
   tailscale: null,
   sandbox: { image: true, networks: true },
-};
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
 };
 
 const root = mkdtempSync(join(tmpdir(), "galahad-usage-"));

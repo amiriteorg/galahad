@@ -14,6 +14,7 @@ import { doctorCommand, reportLines, stoppedReport } from "../src/doctor-cli.ts"
 import type { DoctorSystem } from "../src/doctor-facts.ts";
 import { Home } from "../src/home.ts";
 import { fakeDocker } from "./fake-docker.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * The doctor, end to end: a real daemon over real HTTP, with stand-ins for Docker, the
@@ -25,13 +26,6 @@ import { fakeDocker } from "./fake-docker.ts";
 
 // (A machine with no KVM, said whole: its sandbox host makes no microVMs, whatever the machine running this test can.)
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "doctor-test", cores: 16, cpu: "test", memoryGb: 64, hasBattery: false, gpu: [], docker: true, vm: { kvm: false, tools: [] }, tools: ["docker"], localModels: [], tailscale: null, sandbox: { image: true, networks: true, vm: false } };
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
-};
 
 const root = mkdtempSync(join(tmpdir(), "galahad-doctor-"));
 const home = new Home(join(root, "node"));

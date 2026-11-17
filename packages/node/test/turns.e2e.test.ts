@@ -10,6 +10,7 @@ import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { LocalClient } from "../src/loop-tasks.ts";
 import { askCommand, type Io, queueCommand, turnsCommand } from "../src/turn-cli.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * Turns the node owns, end to end: a real daemon over real HTTP, with a stand-in model
@@ -21,13 +22,6 @@ import { askCommand, type Io, queueCommand, turnsCommand } from "../src/turn-cli
  */
 
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "turns-test", cores: 4, cpu: "test", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
-};
 
 const root = mkdtempSync(join(tmpdir(), "galahad-turns-"));
 const home = new Home(join(root, "node"));

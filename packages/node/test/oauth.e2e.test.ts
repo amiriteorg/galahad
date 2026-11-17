@@ -8,6 +8,7 @@ import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * Signing in to a connector as you, end to end over real HTTP: a node, you (the admin token), an agent (an arm token),
@@ -17,12 +18,6 @@ import { Home } from "../src/home.ts";
  */
 
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "oauth-test", cores: 4, cpu: "test", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
-};
 
 const root = mkdtempSync(join(tmpdir(), "galahad-oauth-"));
 const home = new Home(join(root, "node"));

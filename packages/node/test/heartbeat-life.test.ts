@@ -8,6 +8,7 @@ import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { loopRecords } from "../src/loops.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * His heartbeat and self-action, against a real daemon in a temp home with a stand-in
@@ -31,13 +32,6 @@ const caps: Capabilities = {
   // The stand-in model on loopback counts as a local runtime this node serves.
   localModels: [{ runtime: "stand-in", models: ["m"] }],
   tailscale: null,
-};
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
 };
 
 const root = mkdtempSync(join(tmpdir(), "galahad-life-"));

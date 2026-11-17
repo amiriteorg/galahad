@@ -9,6 +9,7 @@ import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { chatTools, type GalahadTool, type ToolApi, TOOLS, toolsFor } from "../src/tools.ts";
 import { z } from "zod";
+import { freePort } from "./ports.ts";
 
 /*
  * The same Galahad on every surface: chat in the PWA and the terminal gets the tools
@@ -30,13 +31,6 @@ const caps: Capabilities = {
   tools: [],
   localModels: [],
   tailscale: null,
-};
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
 };
 
 const root = mkdtempSync(join(tmpdir(), "galahad-chat-"));

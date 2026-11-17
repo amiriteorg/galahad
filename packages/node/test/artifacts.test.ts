@@ -10,6 +10,7 @@ import { ArtifactStore, artifactTarget, contentTypeOf } from "../src/artifacts.t
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * Artifacts: what a sandbox's /work/out leaves behind. The collector (docker cp
@@ -118,12 +119,6 @@ describe("artifacts over the API", () => {
     tools: [],
     localModels: [],
     tailscale: null,
-  };
-  const freePort = () => {
-    const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-    const p = s.port!;
-    s.stop(true);
-    return p;
   };
   const root = temp();
   const home = new Home(join(root, "node"));

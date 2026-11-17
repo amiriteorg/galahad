@@ -10,6 +10,7 @@ import { Home } from "../src/home.ts";
 import { LocalClient } from "../src/loop-tasks.ts";
 import { runNodeQuest } from "../src/quest-cli.ts";
 import { fakeDocker } from "./fake-docker.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * What a quest's model is sent, turn after turn, over real HTTP on a real node (stand-ins only for Docker and
@@ -19,7 +20,6 @@ import { fakeDocker } from "./fake-docker.ts";
  */
 
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "prefix-test", cores: 8, cpu: "test", memoryGb: 32, hasBattery: false, gpu: [], docker: true, vm: { kvm: false, tools: [] }, tools: ["docker"], localModels: [], tailscale: null, sandbox: { image: true, networks: true } };
-const freePort = () => { const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() }); const p = s.port!; s.stop(true); return p; };
 
 const root = mkdtempSync(join(tmpdir(), "galahad-prefix-"));
 const home = new Home(join(root, "node"));

@@ -7,10 +7,10 @@ import { foundFleet, MindStore } from "@galahad/mind";
 import { startDaemon, type Daemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import type { Capabilities } from "../src/capabilities.ts";
+import { freePort } from "./ports.ts";
 
 const root = mkdtempSync(join(tmpdir(), "galahad-team-e2e-"));
 const home = new Home(join(root, "node"));
-const freePort = () => { const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() }); const p = s.port!; s.stop(true); return p; };
 const port = freePort();
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "team-test", cores: 4, cpu: "test", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
 let daemon: Daemon;

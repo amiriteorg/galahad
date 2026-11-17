@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * A remote MCP server as a connector, end to end: a real MCP server (the SDK's,
@@ -33,13 +34,6 @@ const caps: Capabilities = {
   tools: [],
   localModels: [],
   tailscale: null,
-};
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
 };
 
 const KEY = "tracker_mcp_test_key_0123456789";

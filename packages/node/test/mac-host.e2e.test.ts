@@ -10,6 +10,7 @@ import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 // (The sandbox package's stand-in for Apple's container: what a Mac mini will run, answered from memory.)
 import { fakeContainer } from "../../sandbox/test/fake-container.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * A node on a Mac with Apple's container (its capabilities as the probe finds them there), the real daemon, HTTP
@@ -19,12 +20,6 @@ import { fakeContainer } from "../../sandbox/test/fake-container.ts";
 
 const root = mkdtempSync(join(tmpdir(), "galahad-mac-host-"));
 const home = new Home(join(root, "node"));
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const p = s.port!;
-  s.stop(true);
-  return p;
-};
 const port = freePort();
 const caps: Capabilities = {
   os: "darwin",

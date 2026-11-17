@@ -9,16 +9,11 @@ import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { fakeDocker } from "./fake-docker.ts";
+import { freePort } from "./ports.ts";
 
 // The real node over HTTP; Docker is a stand-in, and the terminal's process a local shell where `docker exec` would run.
 const root = mkdtempSync(join(tmpdir(), "galahad-terminals-"));
 const home = new Home(join(root, "node"));
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const p = s.port!;
-  s.stop(true);
-  return p;
-};
 const port = freePort();
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "terminals-test", cores: 8, cpu: "test", memoryGb: 16, hasBattery: false, gpu: [], docker: true, vm: { kvm: false, tools: [] }, tools: ["docker"], localModels: [], tailscale: null, sandbox: { image: true, networks: true } };
 const docker = fakeDocker();

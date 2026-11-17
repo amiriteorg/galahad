@@ -9,6 +9,7 @@ import type { Capabilities } from "../src/capabilities.ts";
 import { ConnectorService } from "../src/connectors.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * Connectors, approvals and loops, end to end over real HTTP: a stand-in service,
@@ -30,13 +31,6 @@ const caps: Capabilities = {
   tools: [],
   localModels: [],
   tailscale: null,
-};
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
 };
 
 async function until<T>(check: () => Promise<T | null | undefined | false> | T | null | undefined | false, timeoutMs = 8000): Promise<T> {

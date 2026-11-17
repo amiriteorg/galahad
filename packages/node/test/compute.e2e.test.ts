@@ -25,6 +25,7 @@ import { Home } from "../src/home.ts";
 import { LocalClient } from "../src/loop-tasks.ts";
 import { runNodeQuest } from "../src/quest-cli.ts";
 import { fakeDocker } from "./fake-docker.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * Compute, end to end, over real HTTP on a real node: stand-ins only for Docker (the
@@ -50,13 +51,6 @@ const caps: Capabilities = {
   localModels: [],
   tailscale: null,
   sandbox: { image: true, networks: true },
-};
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
 };
 
 const root = mkdtempSync(join(tmpdir(), "galahad-compute-"));

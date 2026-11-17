@@ -11,6 +11,7 @@ import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { chatTools, type GalahadTool, TOOLS, toolsFor } from "../src/tools.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * Galahad seats a knight at his liege's Roundtable: asked in your conversation with him, or when the work needs one, he makes a
@@ -20,7 +21,6 @@ import { chatTools, type GalahadTool, TOOLS, toolsFor } from "../src/tools.ts";
 
 const root = mkdtempSync(join(tmpdir(), "galahad-team-his-own-"));
 const home = new Home(join(root, "node"));
-const freePort = () => { const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() }); const p = s.port!; s.stop(true); return p; };
 const port = freePort();
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "team-test", cores: 4, cpu: "test", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
 let daemon: Daemon;

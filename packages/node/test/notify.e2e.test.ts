@@ -11,6 +11,7 @@ import { Home } from "../src/home.ts";
 import { deviceNamed, notifyCommand } from "../src/notify-cli.ts";
 import { DEFAULT_PUSH_CONTACT } from "../src/push-send.ts";
 import { type StandInBrowser, standInPushService } from "./push-standin.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * He comes to you, end to end: a real daemon over real HTTP, paired devices that sign
@@ -25,13 +26,6 @@ import { type StandInBrowser, standInPushService } from "./push-standin.ts";
  */
 
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "notify-test", cores: 4, cpu: "test", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
-};
 
 const root = mkdtempSync(join(tmpdir(), "galahad-notify-"));
 const home = new Home(join(root, "node"));

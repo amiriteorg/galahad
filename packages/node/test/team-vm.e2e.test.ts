@@ -11,11 +11,11 @@ import { Home } from "../src/home.ts";
 import type { Capabilities } from "../src/capabilities.ts";
 import { Database } from "bun:sqlite";
 import { fakeDocker } from "./fake-docker.ts";
+import { freePort } from "./ports.ts";
 
 // Real HTTP/controller/host/quest code, with stand-ins only for Docker and models.
 const root = mkdtempSync(join(tmpdir(), "galahad-team-vm-"));
 const home = new Home(join(root, "node"));
-const freePort = () => { const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() }); const p = s.port!; s.stop(true); return p; };
 const port = freePort();
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "team-vm-test", cores: 16, cpu: "test", memoryGb: 32, hasBattery: false, gpu: [], docker: true, vm: { kvm: true, tools: ["kata"] }, tools: ["docker"], localModels: [], tailscale: null, sandbox: { image: true, networks: true, vm: true } };
 const docker = fakeDocker();

@@ -59,6 +59,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { freePort } from "../../../packages/node/test/ports.ts";
 
 const flag = (name: string): string | undefined => {
   const at = process.argv.indexOf(`--${name}`);
@@ -88,12 +89,6 @@ if (!existsSync(CHROME)) throw new Error(`No Chrome found. Set CHROME to a Chrom
 process.env.GALAHAD_KEYSTORE = "file";
 const tmp = mkdtempSync(join(tmpdir(), "galahad-web-measure-"));
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
-const freePort = (): number => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
-};
 
 // ---------- the browser, over the DevTools protocol (one connection, a session per target) ----------
 interface CdpEvent {

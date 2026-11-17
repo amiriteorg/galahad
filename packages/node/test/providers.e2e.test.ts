@@ -10,6 +10,7 @@ import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { keyAddCommand } from "../src/key-cli.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * Providers through a real node (a temp home, the file keystore, loopback only): what the routes every surface
@@ -30,13 +31,6 @@ const caps: Capabilities = {
   tools: [],
   localModels: [],
   tailscale: null,
-};
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
 };
 
 const fakeKey = (id: string) => ["FAKE", id, "key", "for", "tests", crypto.randomUUID().slice(0, 8)].join("-");

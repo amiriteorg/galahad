@@ -13,6 +13,7 @@ import { LocalClient } from "../src/loop-tasks.ts";
 import { runNodeQuest } from "../src/quest-cli.ts";
 import { TOOLS } from "../src/tools.ts";
 import { fakeDocker } from "./fake-docker.ts";
+import { freePort } from "./ports.ts";
 
 /*
  * His learning loop, end to end over real HTTP on a real node (stand-ins only for Docker
@@ -38,13 +39,6 @@ const caps: Capabilities = {
   localModels: [{ runtime: "stand-in", models: ["m"] }],
   tailscale: null,
   sandbox: { image: true, networks: true },
-};
-
-const freePort = () => {
-  const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = s.port!;
-  s.stop(true);
-  return port;
 };
 
 const root = mkdtempSync(join(tmpdir(), "galahad-skills-e2e-"));
