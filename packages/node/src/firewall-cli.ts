@@ -90,7 +90,7 @@ export async function firewallCommand(sub: string | undefined, deps: FirewallDep
 async function status(deps: FirewallDeps): Promise<number> {
   const state = await deps.state();
   if (state.on) deps.print("On: a gateway sandbox reaches the gateway alone; an online one, its resolver and the internet, never this Mac or your networks; no sandbox reaches another.");
-  else deps.print(`Off: ${state.why}${state.soon ? " (its helper's next run puts it right)" : ""}`);
+  else deps.print(`Off: ${state.why}${state.soon ? ` (it turns on by itself once the node's networks are up: its helper runs every ${MAC_FIREWALL.every} s)` : ""}`);
   return state.on ? 0 : 1;
 }
 

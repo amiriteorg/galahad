@@ -60,7 +60,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
   if (sub === "add") {
     const id = args[0];
     const result = await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: string("name") ?? id, ...(string("instructions") ? { instructions: string("instructions") } : {}), ...(string("role") ? { role: string("role") } : {}), ...(string("agent") ? { harness: string("agent") } : {}), ...(string("repo") ? { repository: string("repo") } : {}), ...(string("limit") ? { dailyTurns: Number(string("limit")) } : {}) });
-    print(`${plainLine(result.teammate.name)} is ready to chat. VM work is provisioned on a KVM/Kata host when first needed.`); return;
+    print(`${plainLine(result.teammate.name)} is ready to chat. Its VM is made on a node that makes VMs (KVM with Kata, or a Mac with Apple's container) when it is first needed.`); return;
   }
   if (sub === "order") {
     // Your order of the knights: every device shows them so. Those not named come after, by handle.
