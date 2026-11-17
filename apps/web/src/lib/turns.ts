@@ -1,4 +1,4 @@
-import type { ChatStreamEvent, StoredMessage } from "@galahad/core";
+import type { AttachmentRef, ChatStreamEvent, StoredMessage } from "@galahad/core";
 import { type ChatNeeds, type ChatState, chatStateWords, type QueueHold } from "@galahad/core/turns";
 import { archiveStep, stepsOf } from "./chats.ts";
 
@@ -109,6 +109,8 @@ export interface Turn {
   sid?: number;
   role: "user" | "assistant";
   content: string;
+  /** Your files with it (your turns), as the node keeps them. */
+  attachments?: AttachmentRef[];
   /** The roster role that answered (assistant turns). */
   as?: string;
   model?: string;
@@ -172,6 +174,7 @@ export function turnOf(m: StoredMessage, role: string, id: number): Turn {
     sid: m.id,
     role: m.role,
     content: m.content,
+    ...(m.attachments?.length ? { attachments: m.attachments } : {}),
     as: role,
     ...(m.model ? { model: m.model } : {}),
     steps,
@@ -198,8 +201,8 @@ const blank = (thread: Thread, as: string, now: number, model?: string): Turn =>
 };
 
 /** You send a message: it and the answer to come join the thread (the answer is what the stream then writes). */
-export function beginTurn(thread: Thread, question: string, as: string, now: number): Turn {
-  thread.turns.push({ id: thread.nextId++, role: "user", content: question, steps: [], status: "done", fallbacks: 0, startedAt: now });
+export function beginTurn(thread: Thread, question: string, as: string, now: number, attachments: AttachmentRef[] = []): Turn {
+  thread.turns.push({ id: thread.nextId++, role: "user", content: question, ...(attachments.length ? { attachments } : {}), steps: [], status: "done", fallbacks: 0, startedAt: now });
   thread.base = thread.turns.length;
   const answer = blank(thread, as, now);
   step(answer, { icon: "arrow-up", text: `Asked as ${as}`, state: "done" });

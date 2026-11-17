@@ -12,7 +12,8 @@
  *                   a press, the tap; each place twice, so a revisit shows), this many times over on each profile;
  *                   with --runs 0, only that
  *     --shots <dir> also screenshots, 390 and 1280 px, light and dark: the Roundtable (as a board, as a list, its
- *                   knights being arranged, and led by a knight), Galahad's timeline, a knight's
+ *                   knights being arranged, and led by a knight), Galahad's timeline (and a message of yours that
+ *                   carried files, and the message box with two waiting to go), a knight's
  *                   with a task running, one whose task kept its changes, one whose task failed, a room's work, a
  *                   knight's Workspace with its desktop, a task given to the Roundtable (where the app can), every
  *                   place the app has (its lib/nav.ts), each as far down as it goes too ("-full"), the sheets and
@@ -214,6 +215,20 @@ const PAGES: { name: string; hash: string }[] = [
   { name: "Room", hash: "#/team?room=forge" },
   { name: "Overview", hash: "#/overview" },
 ];
+/** Two files given to the message box through its own file input, as a person's choice gives them, and words to go with them. */
+const ATTACHING = `(async () => {
+  const input = document.querySelector(".composer input[type=file]");
+  if (!input) throw new Error("this app takes no files with a message");
+  const drawing = await (await fetch("/knights/kay.webp")).blob();
+  const files = new DataTransfer();
+  files.items.add(new File([drawing], "kay.webp", { type: "image/webp" }));
+  files.items.add(new File(["FAIL db.test.ts\\n  connect ECONNREFUSED 127.0.0.1:5432\\n"], "test.log", { type: "text/plain" }));
+  input.files = files.files;
+  input.dispatchEvent(new Event("change"));
+  const box = document.querySelector(".composer textarea");
+  box.value = "Why does this fail?";
+  box.dispatchEvent(new Event("input"));
+})()`;
 const PROFILES = {
   laptop: { width: 1280, height: 800, scale: 2, mobile: false, cpu: 1, network: null },
   phone: { width: 390, height: 844, scale: 3, mobile: true, cpu: 4, network: { latency: 60, downloadThroughput: 9e6 / 8, uploadThroughput: 1.5e6 / 8 } },
@@ -610,6 +625,22 @@ try {
   if (!asked.ok || !conversation) throw new Error(`the kept chat wasn't made: ${asked.status}`);
   await until("the kept chat's turn to end", async () => (await admin("turns")).turns.length === 0);
   PAGES.push({ name: "Kept chat", hash: `#/chat?c=${conversation}` });
+  // A kept chat whose message carried a picture and a text (where the node takes files with a message): Kay as the owner
+  // drew him, and notes on him.
+  let attachedChat: string | null = null;
+  if (routes.uploadAttachment) {
+    const up = async (name: string, type: string, bytes: Uint8Array) => (await admin("uploadAttachment", { name, type, data: Buffer.from(bytes).toString("base64") })).attachment;
+    const drawing = await up("kay.webp", "image/webp", new Uint8Array(readFileSync(join(REPO, "apps/web/src/knights/kay.webp"))));
+    const notes = await up("kay-notes.md", "text/plain", new TextEncoder().encode("# Kay\n\nThe steward. Reads every import's dates; trusts no format he hasn't seen.\n"));
+    const sent = await fetch(`http://127.0.0.1:${port}${routes.chat!.path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${home.adminToken()}`, "content-type": "application/json" },
+      body: JSON.stringify({ role: "planner", save: true, tools: false, messages: [{ role: "user", content: "Is this how Kay should look in the app?", attachments: [drawing, notes] }] }),
+    });
+    attachedChat = /"(cv_[A-Za-z0-9_-]{22})"/.exec(await sent.text())?.[1] ?? null;
+    if (!sent.ok || !attachedChat) throw new Error(`the kept chat with files wasn't made: ${sent.status}`);
+    await until("the kept chat with files to be answered", async () => (await admin("turns")).turns.length === 0);
+  }
   await admin("questProgress", { quest: "measure-1", goal: "Make sync resume after a dropped connection", state: "working", plan: "1. Reproduce the drop.\n2. Resume from the last acknowledged entry.\n3. Run the gate.", step: 3, maxSteps: 30, doing: "bun test packages/link", revisions: 0, gates: [{ command: "bun test packages/link", by: "owner", exitCode: null }] });
   await admin("requestSecret", { name: "github-token", purpose: "To open the pull request for the sync fix." });
   // What he knows of you (with routes any checkout has): a fact you kept, and one he noticed, waiting for you.
@@ -913,6 +944,9 @@ try {
       { name: "roundtable-arrange", hash: "#/team", steps: [press("Arrange")], wait: "[data-arranging]" },
       { name: "roundtable-lin-leads", hash: "#/team", around: { route: "arrangeTeam", before: { primary: "lin" }, after: { primary: "galahad" } } },
       { name: "galahad", hash: `#/chat?c=${conversation}`, wait: ".turn.assistant" },
+      // Files with a message: a kept one that carried a picture and a text, and the message box with two waiting to go.
+      ...(attachedChat ? [{ name: "galahad-attached", hash: `#/chat?c=${attachedChat}`, wait: ".attached-picture img[src]" }] : []),
+      { name: "chat-attaching", hash: "#/chat", steps: [ATTACHING], wait: ".composer-file.up ~ .composer-file.up" },
       { name: "ada-running-task", hash: `#/team?room=${own.ada}` },
       { name: "kay-kept-changes", hash: `#/team?room=${own.kay}&tab=work`, wait: ".team-task" },
       { name: "gareth-failed-task", hash: `#/team?room=${own.gareth}&tab=work`, wait: ".team-task" },
