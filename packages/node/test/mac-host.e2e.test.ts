@@ -60,13 +60,16 @@ async function api<T = any>(name: RouteName, input?: unknown): Promise<T> {
   return body as T;
 }
 
+/** What the node logged. */
+const logged: string[] = [];
+
 beforeAll(async () => {
   const { identity, keystore } = await home.createIdentity("file");
   const mind = new MindStore(home.mindPath);
   const fleet = foundFleet(mind, identity, { fleetName: "mac-fleet", nodeName: "mini" });
   mind.close();
   home.writeConfig({ v: 1, name: "mini", fleet, port, keystore, advertise: "127.0.0.1" });
-  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, loopIntervalMs: 60_000, docker: fake.runner, measure: false, defaultHeartbeat: false, macFirewall: async () => firewall,
+  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: (line) => void logged.push(line), loopIntervalMs: 60_000, docker: fake.runner, measure: false, defaultHeartbeat: false, macFirewall: async () => firewall,
     // (The stand-in's volumes aren't on this machine's disk: their budget is a Mac mini's, its 1 TB nearly free.)
     sandboxDisk: () => ({ totalBytes: 1000 * 2 ** 30, freeBytes: 900 * 2 ** 30 }) });
 });
@@ -77,6 +80,12 @@ afterAll(async () => {
 });
 
 describe("a node on a Mac with Apple's container", () => {
+  test("waits for the gateway's address, which comes with the networks' VMs, and doesn't call that trouble", () => {
+    // (No machine running this has 172.31.250.1: here the address never comes, and the wait is all it says in a minute.)
+    expect(logged).toContain("sandbox gateway: waiting for its address on this Mac, which comes with the networks' VMs (tried every 5 s)");
+    expect(logged.filter((line) => line.includes("gateway listener unavailable"))).toEqual([]);
+  });
+
   test("makes its networks at its start, the gateway's with --internal, and holds both up", () => {
     expect(fake.calls).toContainEqual(["network", "create", "--internal", "--subnet", NETWORKS.gateway.subnet, "--label", "dev.galahad=1", NETWORKS.gateway.name]);
     expect(fake.calls).toContainEqual(["network", "create", "--subnet", NETWORKS.online.subnet, "--label", "dev.galahad=1", NETWORKS.online.name]);

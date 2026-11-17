@@ -595,6 +595,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   if (sandbox) {
     const apple = caps.sandbox?.engine === "container";
     let said = false;
+    let tries = 0;
     const bindGateway = (): boolean => {
       try {
         servers.push(
@@ -603,7 +604,11 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
         if (said) log("sandbox gateway listening");
         return true;
       } catch (error) {
-        if (!said) log(`sandbox gateway listener unavailable: ${(error as Error).message}${apple ? " (tried again until a VM holds its address)" : ""}`);
+        // On a Mac the address comes a moment after the networks' VMs start, at every start (seen on the Mac mini, 17
+        // November 2026): waiting for it is said plainly, and only a minute of it reads as trouble (the doctor's word).
+        tries++;
+        if (apple && tries === 1) log("sandbox gateway: waiting for its address on this Mac, which comes with the networks' VMs (tried every 5 s)");
+        else if (!apple ? !said : tries === 13) log(`sandbox gateway listener unavailable: ${(error as Error).message}${apple ? " (for a minute now; still tried every 5 s, until a VM holds its address)" : ""}`);
         said = true;
         return false;
       }
