@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +30,10 @@ let daemon: Daemon;
 let alphaEntered = false;
 let releaseAlpha: (() => void) | undefined;
 let alphaHold: Promise<void> | undefined;
+/** A command of his on his computer that runs until it's let go (`hold-his`). */
+let hisEntered = false;
+let releaseHis: (() => void) | undefined;
+let hisHold: Promise<void> | undefined;
 let cleanupFailure = false;
 let dockerSilent = false;
 /** What a vendor's tool says of itself in a VM, when its bridge is asked (`--status`): by tool. */
@@ -49,9 +53,10 @@ const model = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (request)
     const delta = turns.some((message) => message.role === "tool") ? { content: "It has more now." } : call;
     return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
   }
-  // Galahad asked to use his computer: the tool once, then a word on what came of it.
-  if (turns.some((message) => message.content?.includes?.("USE_YOUR_COMPUTER"))) {
-    const call = { tool_calls: [{ index: 0, id: "call_computer", function: { name: "computer", arguments: JSON.stringify({ command: "echo computer-ok" }) } }] };
+  // Galahad asked to use his computer: the tool once, then a word on what came of it (HOLD_: a command that runs until it's let go).
+  if (turns.some((message) => /(USE|HOLD)_YOUR_COMPUTER/.test(message.content ?? ""))) {
+    const command = turns.some((message) => message.content?.includes?.("HOLD_YOUR_COMPUTER")) ? "echo hold-his" : "echo computer-ok";
+    const call = { tool_calls: [{ index: 0, id: "call_computer", function: { name: "computer", arguments: JSON.stringify({ command }) } }] };
     const delta = turns.some((message) => message.role === "tool") ? { content: "It ran on my computer." } : call;
     return new Response(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
   }
@@ -135,6 +140,7 @@ beforeAll(async () => {
       if (told) return told;
       if (command.at(-1) === "/opt/engram/bin/engram version") return engramSays ?? { code: 127, stdout: "", stderr: "bash: line 1: /opt/engram/bin/engram: No such file or directory" };
       if (text.includes("write-alpha")) { alphaEntered = true; await alphaHold; }
+      if (text.includes("hold-his")) { hisEntered = true; await hisHold; }
       return { code: 0, stdout: text.includes("gate-") ? "required gate passed" : "command completed" };
     } finally { active.set(container, count - 1); }
   };
@@ -587,4 +593,49 @@ test("what became of its VM is asked of the host and said as it was: Docker that
   expect(docker.running()).toBe(stillThere);
   expect(await ledgered("tom")).toMatchObject({ detail: "its VM was on a node that has left the fleet; nothing there was touched" });
   expect((await snapshot()).removed?.map((member) => member.id).sort()).toEqual(["ada", "dex", "lin", "sam", "tom", "una"]);
+}, 20000);
+
+test("his computer's model access, a lease of 30 minutes, is renewed before a command of his could outlive it, never under one still running", async () => {
+  const his = (await snapshot()).computer!;
+  const leases = () => events.filter((event) => event.kind === "lease" && event.target === `galahad-sbx-${his.id}`).length;
+  const use = (how: "USE" | "HOLD" = "USE") => fetch(`http://127.0.0.1:${port}${routes.chat.path}`, { method: "POST", headers: { authorization: `Bearer ${home.adminToken()}`, "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: `${how}_YOUR_COMPUTER: run it there.` }] }) }).then((reply) => reply.text());
+  const hold = () => {
+    hisEntered = false;
+    hisHold = new Promise<void>((resolve) => { releaseHis = resolve; });
+    return use("HOLD");
+  };
+  const later = (minutes: number) => setSystemTime(new Date(Date.now() + minutes * 60_000));
+  try {
+    expect(await use()).toContain("It ran on my computer.");
+    const first = leases();
+    expect(first).toBeGreaterThan(0);
+    // Within it, his next command has the same one.
+    expect(await use()).toContain("It ran on my computer.");
+    expect(leases()).toBe(first);
+    // A quarter of an hour on, a command of up to fifteen minutes could outlive it: a new one comes first.
+    later(16);
+    expect(await use()).toContain("It ran on my computer.");
+    expect(leases()).toBe(first + 1);
+    // Due again while one of his runs: renewing would revoke the lease that one holds, so it waits for nothing of his to run.
+    const held = hold();
+    await until(() => hisEntered);
+    later(16);
+    expect(await use()).toContain("It ran on my computer.");
+    expect(leases()).toBe(first + 1);
+    releaseHis!();
+    expect(await held).toContain("It ran on my computer.");
+    expect(await use()).toContain("It ran on my computer.");
+    expect(leases()).toBe(first + 2);
+    // Lapsed, it is renewed whatever runs: no command of his still holds one that works.
+    const heldAgain = hold();
+    await until(() => hisEntered);
+    later(31);
+    expect(await use()).toContain("It ran on my computer.");
+    expect(leases()).toBe(first + 3);
+    releaseHis!();
+    expect(await heldAgain).toContain("It ran on my computer.");
+  } finally {
+    releaseHis?.();
+    setSystemTime();
+  }
 }, 20000);

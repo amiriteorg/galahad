@@ -277,6 +277,9 @@ interface Run {
   truncated: boolean;
 }
 
+/** How long the lease of model access a knight's VM is given at each preparation lasts (and 500 requests at most). */
+export const TEAM_LEASE_MINUTES = 30;
+
 const MAX_OUTPUT = 1024 * 1024;
 const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
@@ -793,7 +796,7 @@ export class SandboxHost {
     if (previous) this.opts.tokens.revoke(previous);
     const covered = providers ? [...providers] : sandbox.providers;
     const scopes = [...covered, ...(git ? [`git:${git.connector}:${git.owner}:${git.repo}`] : [])];
-    const minted = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: scopes, ttlMinutes: 30, maxRequests: 500 });
+    const minted = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: scopes, ttlMinutes: TEAM_LEASE_MINUTES, maxRequests: 500 });
     this.tokenStore.put(id, minted.info.hash);
     const env = gatewayEnv(minted.token, covered);
     if (git) env.GALAHAD_REPO_URL = repositoryUrl(env.GALAHAD_GATEWAY!, git);
@@ -801,7 +804,7 @@ export class SandboxHost {
       this.opts.tokens.revoke(minted.info.hash);
       throw new SandboxError("could not prepare the teammate's model access", 424);
     }
-    this.opts.ledger({ class: "modify", resource: "sandbox.team-ready", target: sandbox.name, verdict: "allow", quest, detail: "existing VM resumed; model access capped at 30 minutes and 500 requests" });
+    this.opts.ledger({ class: "modify", resource: "sandbox.team-ready", target: sandbox.name, verdict: "allow", quest, detail: `existing VM resumed; model access capped at ${TEAM_LEASE_MINUTES} minutes and 500 requests` });
     return { ...sandbox, status: "running" };
   }
 

@@ -138,7 +138,7 @@ import {
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
-import { DESKTOP_IMAGE, type LedgerEntryInput, SandboxError } from "@galahad/sandbox";
+import { DESKTOP_IMAGE, type LedgerEntryInput, SandboxError, TEAM_LEASE_MINUTES } from "@galahad/sandbox";
 import type { GovernedSandboxHost } from "./compute/governed-host.ts";
 import type { Governor } from "./compute/governor.ts";
 import type { ComputeService } from "./compute/service.ts";
@@ -1801,15 +1801,37 @@ export function createApp(ctx: AppContext) {
     });
     return eyesOf(roster(ctx.store).eyes?.models ?? [], checks, usable);
   }
-  /** When his computer last had its gateway lease written, on this node since it started: renewed every six hours. */
-  let computerReady = 0;
-  async function prepareComputer(signal: AbortSignal): Promise<void> {
-    if (Date.now() - computerReady < 6 * 3_600_000) return;
+  /** His computer's lease of model access, on this node since it started: when it was asked for, a renewal under way, and how many of his commands run there now. */
+  const computer = { leased: 0, renewing: null as Promise<void> | null, running: 0 };
+  /**
+   * His computer, ready for one command of his, and the call that says it is over. Its lease (TEAM_LEASE_MINUTES) is
+   * renewed before the command could outlive it, but not while another of his runs there, as a renewal revokes the
+   * lease that one holds; once it has lapsed, whatever runs, since nothing still holds one that works.
+   */
+  async function useComputer(): Promise<() => void> {
+    for (;;) {
+      if (computer.renewing) {
+        await computer.renewing;
+        continue;
+      }
+      const age = Date.now() - computer.leased;
+      if (age >= TEAM_LEASE_MINUTES * 60_000 || (age >= TEAM_LEASE_MINUTES * 60_000 - TEAM_COMMAND_SECONDS * 1000 && computer.running === 0)) {
+        computer.renewing = renewComputer().finally(() => (computer.renewing = null));
+        continue;
+      }
+      computer.running++;
+      return () => void computer.running--;
+    }
+  }
+  /** (With a deadline of its own: commands waiting on it don't end with the one that asked.) */
+  async function renewComputer(): Promise<void> {
+    const asked = Date.now();
+    const signal = AbortSignal.timeout(5 * 60_000);
     const workspace = await teamWorkspace(seatOf(TEAM_GALAHAD), signal);
     if (!workspace) throw new HttpError(424, noVm(TEAM_GALAHAD));
     await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(TEAM_GALAHAD)) });
     leased.set(TEAM_GALAHAD, workspace.providers);
-    computerReady = Date.now();
+    computer.leased = asked;
   }
   /* A knight's VM made bigger while it runs, on the owner's word (`p`: the device that asked, which the VM's host
    * records). Nothing in it stops, so a knight at work may be grown too. */
@@ -2145,9 +2167,12 @@ export function createApp(ctx: AppContext) {
       if (p.kind !== "arm" || p.label !== GALAHAD_ARM) throw new HttpError(403, "Galahad's computer is his alone to work on: watch it, take it over or open a terminal there");
       const seat = seatOf(TEAM_GALAHAD);
       if (!seat.workspace) throw new HttpError(424, noVm(TEAM_GALAHAD));
-      await prepareComputer(req.signal);
-      const eyes = eyesFor(TEAM_GALAHAD);
-      return longRunning(execTeam(seat, withGateway(`cd /work && ${eyes ? `export GALAHAD_EYES=${quote(eyes)} && ` : ""}${input.command}`), Math.min(input.timeoutSec ?? 120, TEAM_COMMAND_SECONDS), req.signal));
+      const done = await useComputer();
+      const ran = (async () => {
+        const eyes = eyesFor(TEAM_GALAHAD);
+        return execTeam(seat, withGateway(`cd /work && ${eyes ? `export GALAHAD_EYES=${quote(eyes)} && ` : ""}${input.command}`), Math.min(input.timeoutSec ?? 120, TEAM_COMMAND_SECONDS), req.signal);
+      })().finally(done);
+      return longRunning(ran);
     },
     resizeTeamWorkspace: (input, p) => {
       // Yours alone, like making it again: an arm (a knight among them) is never let through, whatever its scopes.
