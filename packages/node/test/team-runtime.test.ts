@@ -222,8 +222,9 @@ test("a task's lease is kept as its work goes on, every ten minutes however long
   const answers = [true, false, false];
   const told: string[] = [];
   let now = Date.now();
-  const steps = ["one", "two", "three", "four", "five", "six"].map((n) => say(`\`\`\`sh\necho ${n}\n\`\`\``));
-  const f = fixture([say("1. Make the change and test it."), ...steps, say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")], {
+  const step = (n: string) => say(`\`\`\`sh\necho ${n}\n\`\`\``);
+  // (Every fifteen minutes of it is audited too: at eighteen and thirty-six, the reviewer's models are asked.)
+  const f = fixture([say("1. Make the change and test it."), step("one"), step("two"), step("three"), say("ON\nOn its task."), step("four"), step("five"), step("six"), say("ON\nCloser."), say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")], {
     renew: async (m) => { expect(m.id).toBe("ada"); const kept = answers.shift() ?? true; renewals.push(kept); return kept; },
     // Each of its commands takes six minutes.
     exec: async (_m, command) => { if (command.includes("echo ")) setSystemTime(new Date((now += 6 * 60_000))); return result(); },
@@ -879,24 +880,32 @@ test("a task's commands have a temporary directory of their own on the workspace
   expect(plain(commands.at(-1)!)).toBe(`rm -rf '${temp}'`);
 });
 
-test("a task has room for real work: forty commands", async () => {
-  const replies = Array.from({ length: 41 }, (_, i) => say(`\`\`\`sh\necho ${i}\n\`\`\``));
-  const f = fixture([say("1. Make the change."), ...replies]);
+/** A knight's commands, `n` of them from `from`, as its engineer's replies. */
+const echoes = (from: number, n: number) => Array.from({ length: n }, (_, i) => say(`\`\`\`sh\necho ${from + i}\n\`\`\``));
+
+test("a task has no count of commands: it works on past forty, audited every twenty, until it is done", async () => {
+  // (The models' answers in the order they are asked: the planner, the engineer's commands, and at every twentieth
+  // command an audit, the reviewer's models.)
+  const f = fixture([say("1. Make the change."), ...echoes(0, 20), say("ON\nIt is making the change."), ...echoes(20, 20), say("ON\nCloser: the change is in."), ...echoes(40, 10), say("DONE\nMade and checked."), say("PASS\nThe gate passes.")]);
   const outcome = await f.runtime.executeTask(member, task, f.context);
-  expect(outcome.record).toMatchObject({ ended: "stopped", commands: 40 });
+  expect(outcome.verified).toBe(true);
+  expect(outcome.record).toMatchObject({ ended: "done", commands: 50 });
+  // He was told how he is held, as he began.
+  expect(JSON.stringify(f.bodies[1])).toContain("Your commands have no fixed number. An independent audit looks at your work every 20 commands or 15 minutes");
 });
 
-test("a knight that finishes its work and never says so is still judged: out of commands, what is there goes to the gates and the reviewer", async () => {
+test("a knight that finishes its work and never says so is still judged: its audit stops work going nowhere, and what is there goes to the gates and the reviewer", async () => {
   // Seen on ultra, 14 November 2026: gareth made its change to this repository, went on checking it, and ran out of
-  // commands. The work was right and nobody was asked: the task ended stopped and unverified.
-  const replies = Array.from({ length: 40 }, (_, i) => say(`\`\`\`sh\necho ${i}\n\`\`\``));
-  const f = fixture([say("1. Make the change."), ...replies, say("PASS\nThe gate passes and the commands show the change.")]);
+  // commands. The work was right and nobody was asked: the task ended stopped and unverified. Nothing runs out now:
+  // the audit steers it, then stops it, and what is there is judged.
+  const f = fixture([say("1. Make the change."), ...echoes(0, 20), say("STEER\nThe change is made: reply DONE with the evidence."), ...echoes(20, 20), say("STEER\nIt is still checking the same thing."), say("PASS\nThe gate passes and the commands show the change.")]);
   const outcome = await f.runtime.executeTask(member, task, f.context);
   expect(outcome.verified).toBe(true);
   expect(outcome.record).toMatchObject({ ended: "done", commands: 40 });
-  expect(outcome.output).toContain("He ran out of commands (40) before he said he was done.");
-  // The last model asked was the reviewer, and it was told nobody had claimed the work done.
-  expect(JSON.stringify(f.bodies.at(-1))).toContain("He ran out of commands before he said he was done: this is the work as it stands.");
+  expect(outcome.output).toContain("An independent audit stopped the work before he said he was done.");
+  // The steer was said with what he was told next; the last model asked was the reviewer, told nobody had claimed the work done.
+  expect(JSON.stringify(f.bodies[22])).toContain("An independent audit of the work so far says: The change is made: reply DONE with the evidence.");
+  expect(JSON.stringify(f.bodies.at(-1))).toContain("An independent audit stopped the work before he said he was done: this is the work as it stands.");
 });
 
 test("a knight whose VM has a desktop is told so, and how to operate it; one without is told nothing of one", async () => {

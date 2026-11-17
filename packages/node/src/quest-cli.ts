@@ -534,7 +534,7 @@ async function openWorkshop(node: NodeClient, options: DoOptions, quest: string,
     // Research: web search through the gateway, wherever there's a network.
     ...(options.network !== "isolated" ? { search: true } : {}),
     // The agent calls models itself, through the gateway, on a token that lives as long as the sandbox.
-    ...(agent ? { providers: [...new Set(agent.models.map((m) => m.provider))], ttlMinutes: Math.min(agent.minutes + 30, 7 * 24 * 60) } : {}),
+    ...(agent ? { providers: [...new Set(agent.models.map((m) => m.provider))], ttlMinutes: Math.min((agent.minutes ?? 7 * 24 * 60) + 30, 7 * 24 * 60) } : {}),
     ...(tag ? { attempt: tag } : {}),
   });
   // Sandboxes name their host by device id; people (and the engineer) know it by name.

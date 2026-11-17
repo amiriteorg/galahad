@@ -114,7 +114,7 @@ describe("the engineer's own loop, audited", () => {
  * A coding agent at work: each look at it shows one more tool call (its session in the first), and moves the quest's
  * clock six minutes; it ends of itself at its `polls`th look. The reviewer's answers are the audits' and the review's.
  */
-function agentAtWork(reviewer: string[], options: Partial<QuestOptions> = {}, polls = 10) {
+function agentAtWork(reviewer: string[], options: Partial<QuestOptions> = {}, polls = 10, minutes: number | null = 600) {
   const driver: AgentDriver = { name: "stub", title: "Stub", kind: "openai", check: "true", files: () => ({}), command: () => "stub-agent", read: (line) => JSON.parse(line) as AgentEvent[] };
   const queues: Record<QuestRole, string[]> = { planner: ["1. Write the parser.\nDone when: its test passes."], engineer: [], reviewer: [...reviewer] };
   const events: QuestEvent[] = [];
@@ -123,7 +123,7 @@ function agentAtWork(reviewer: string[], options: Partial<QuestOptions> = {}, po
   let stopped = 0;
   let now = 1_000_000;
   const run = runQuest(
-    { goal: "write the parser", environment: "a test sandbox", audit: true, agent: { driver, models: [{ provider: "p", model: "m" }], minutes: 600, workdir: "/work" }, ...options },
+    { goal: "write the parser", environment: "a test sandbox", audit: true, agent: { driver, models: [{ provider: "p", model: "m" }], ...(minutes !== null ? { minutes } : {}), workdir: "/work" }, ...options },
     {
       ask: async (role) => {
         const text = queues[role].shift();
@@ -177,5 +177,21 @@ describe("a coding agent's run, audited", () => {
     const q = agentAtWork(["STOP\nIt keeps rewriting the same file."]);
     const outcome = await q.run;
     expect(outcome).toMatchObject({ status: "stopped", summary: "Stopped by an independent audit: It keeps rewriting the same file." });
+  });
+});
+
+describe("work with no count and no clock, audited instead", () => {
+  test("the engineer is told his commands have no fixed number, and that an audit looks at his work", async () => {
+    const q = engineer({ engineer: [...commands(2 * AUDIT_EVERY.steps + 5), "DONE\nWritten."], reviewer: ["ON\nOn its task.", "ON\nCloser.", "PASS\nIt holds."] }, { audit: true, maxSteps: Infinity });
+    expect(await q.run).toMatchObject({ status: "done", steps: 2 * AUDIT_EVERY.steps + 5 });
+    expect(q.told()[0]).toContain(`Your commands have no fixed number. An independent audit looks at your work every ${AUDIT_EVERY.steps} commands or ${AUDIT_EVERY.minutes} minutes: it may tell you what to do next, and it stops work that isn't getting closer to done.`);
+  });
+
+  test("a coding agent given no minutes has no deadline: told so, it works an hour and more, audited, until it ends of itself", async () => {
+    const q = agentAtWork(["ON\nOn its task.", "ON\nCloser.", "ON\nNearly there.", "PASS\nIt holds."], {}, 10, null);
+    expect((await q.run).status).toBe("done");
+    expect(q.audits().map((a) => a.verdict)).toEqual(["on", "on", "on"]);
+    expect(q.stopped()).toBe(0);
+    expect(q.prompts[0]).toContain(`Your time has no fixed limit. An independent audit looks at your work every ${AUDIT_EVERY.steps} tool calls or ${AUDIT_EVERY.minutes} minutes`);
   });
 });

@@ -629,6 +629,13 @@ describe("stopping, interruption and resource bounds", () => {
     // (At the reply's limit of 10 ms it would have been interrupted, and its room held.)
     expect(store.task(task.id)).toMatchObject({ status: "done", verified: true });
   });
+  test("a task with no limit of time is never stopped by the clock: a knight's, which its audit watches instead", async () => {
+    const { store, service } = setup({ timeoutMs: 10, taskTimeoutMs: null, executeTask: async () => { await Bun.sleep(60); return { verified: true, output: "Checked" }; } });
+    const task = service.createTask({ room: "workshop", assignee: "ada", title: "Long", goal: "Long" });
+    service.start(); await until(() => !["queued", "running"].includes(store.task(task.id)?.status ?? ""));
+    expect(store.task(task.id)).toMatchObject({ status: "done", verified: true });
+    expect(store.room("workshop")?.paused).toBe(false);
+  });
   test("restart resumes untouched queues but does not replay interrupted side effects", async () => {
     let calls = 0;
     const { store, service } = setup({ executeTask: async () => { calls++; return { verified: true, output: "Checked" }; } });

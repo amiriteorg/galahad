@@ -172,7 +172,7 @@ import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
 import type { TeamAsker, TeamStore } from "./team-store.ts";
-import { galahadInRoom, harnessReadiness, quote, TEAM_COMMAND_SECONDS, TEAM_TASK_MINUTES, teamRuntime, withGateway } from "./team-runtime.ts";
+import { galahadInRoom, harnessReadiness, quote, TEAM_COMMAND_SECONDS, teamRuntime, withGateway } from "./team-runtime.ts";
 import { APPLE_PUSH, APPLE_PUSH_SECRET, appleProviderToken, storedApplePushKey } from "./apns-send.ts";
 import { inputRefused, type MacScreen, ScreenError, screenDid } from "./mac-screen.ts";
 import { galahadRevision } from "./revision.ts";
@@ -2005,7 +2005,7 @@ export function createApp(ctx: AppContext) {
       reason: made.createdBy === TEAM_GALAHAD ? "Galahad seated a knight, in your conversation with him" : `the knight ${made.createdBy} seated another, in its room`,
       detail: `${made.role} · ${made.dailyTurns} turns a day`,
     });
-    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, answer: answerInRoom, timeoutMs: 15 * 60_000, taskTimeoutMs: TEAM_TASK_MINUTES * 60_000, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit });
+    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, answer: answerInRoom, timeoutMs: 15 * 60_000, taskTimeoutMs: null, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit });
     ctx.team.service.start();
   }
 

@@ -156,13 +156,12 @@ if not os.path.isdir(root):
     open(kept,'w').write(subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' '+how)
 print(open(kept).read() if os.path.exists(kept) else subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' unknown')`;
 
-/**
- * What a knight's task may spend. Sixteen commands and fifteen minutes were enough for a file in an empty
- * directory and not for work in a repository: the first such task (ultra, 14 November 2026) read code for
- * eleven commands and ran out before it had changed anything. The controller's limit is the minutes.
+/*
+ * A knight's task has no count of commands and no limit of time (your ruling, 17 November 2026): limits ended real work
+ * (sixteen commands and fifteen minutes, then forty and forty-five, and a coding tool's twelve), so instead an
+ * independent audit looks at it as it runs and stops work that isn't getting closer to done (QuestOptions.audit). Its
+ * budget, when you gave it one, and the knight's daily allowance still hold, and so does each command's limit below.
  */
-export const TEAM_TASK_COMMANDS = 40;
-export const TEAM_TASK_MINUTES = 45;
 /** The longest any one command of a knight's may run in its VM, which kills it there at that (`timeout --signal=KILL`). */
 export const TEAM_COMMAND_SECONDS = 900;
 /** How often a task's lease (thirty minutes) is renewed while it runs: two renewals can be missed before it lapses. */
@@ -454,7 +453,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         const ready = harnessReadiness(driver, probe, deps.models(teammate), deps.modelsOutside?.(teammate), workRole(teammate.role));
         if (!ready.ready) throw new Error(`${driver.title} can't work in this VM yet: ${ready.reason}`);
         const saved = (await exec(`cat ${quote(sessionFile)} 2>/dev/null || true`, 10)).stdout.trim();
-        agent = { driver, models: ready.models, minutes: 12, workdir: root, ...(/^[A-Za-z0-9_.:-]{1,160}$/.test(saved) ? { session: saved } : {}) };
+        agent = { driver, models: ready.models, workdir: root, ...(/^[A-Za-z0-9_.:-]{1,160}$/.test(saved) ? { session: saved } : {}) };
       }
       const inherited = data("Verified predecessor results (file paths belong to their original VM)", deps.dependencies(task));
       // Fenced once for the task: every turn of its planner and engineer is then sent the same beginning, which a
@@ -465,7 +464,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // What the review's evidence is made of (each command and its exit, the gates), for what the work may teach.
       const trail = questTrail();
       const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: TEAM_TASK_COMMANDS, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, escalate: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, escalate: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         // The work is done on the models of the role you gave this knight (workRole: never the reviewer's); its plan
         // and the independent review stay the planner's and the reviewer's, whoever did the work.
         ask: (role, messages, turn) => ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : context, (model, usage) => addUsage(spent, role, model, usage), turn?.loop),

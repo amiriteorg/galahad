@@ -1,8 +1,14 @@
 import { costOf, type ExecResult, type Prices, type SandboxView, spendTotal, type TeamSnapshot, type TeamTaskRecord, type TrialAnswer, type TrialRecord, trialScore, tokensLabel, usdLabel } from "@galahad/core";
 import { QUEST_DEFAULTS, testFilesOf } from "@galahad/brain";
 import { inWorkdir, type NodeClient, questId, runNodeQuest } from "./quest-cli.ts";
-import { quote, TEAM_TASK_COMMANDS } from "./team-runtime.ts";
+import { quote } from "./team-runtime.ts";
 import { harnessOptions, heldToEffort, tellPassedOver, type TrialJob, type TrialUnit } from "./trial-cli.ts";
+
+/**
+ * The commands a trial of a knight's task has: what the knight's own task had until it was audited instead of counted
+ * (17 November 2026). A trial stays bounded, so its runs can be compared.
+ */
+const TRIAL_COMMANDS = 40;
 
 /*
  * Trials from your own work (PLAN #9). A case is a knight's task that passed review, in a repository, with the commit
@@ -308,8 +314,7 @@ export async function attemptCase(node: CaseClient, c: YourCase, job: TrialJob):
         network: job.network,
         ...(job.isolation ? { isolation: job.isolation } : {}),
         ...(job.on ? { on: job.on } : {}),
-        // The commands a knight's task has.
-        maxSteps: TEAM_TASK_COMMANDS,
+        maxSteps: TRIAL_COMMANDS,
         instructions: instructions(c),
         evidence,
         workdir: root,

@@ -38,8 +38,8 @@ export interface TeamServiceOptions {
   answer?(room: TeamRoom, history: TeamMessage[], ask: { asker: TeamAsker; trigger: TeamMessage | null }, signal: AbortSignal): Promise<string>;
   concurrency?: number;
   timeoutMs?: number;
-  /** A task's own limit (work in a repository takes longer than a reply); absent: the same as `timeoutMs`. */
-  taskTimeoutMs?: number;
+  /** A task's own limit (work in a repository takes longer than a reply); absent: the same as `timeoutMs`; null: none (a knight's task, which its audit watches instead). */
+  taskTimeoutMs?: number | null;
   /** Shutdown waits this long for callbacks to settle, then leaves their persisted state interrupted. */
   shutdownGraceMs?: number;
   /** How long work a planned restart cut off waits before it is taken up again by itself: until whatever it was running
@@ -75,7 +75,7 @@ export class TeamService {
   private readonly removing = new Set<string>();
   private readonly concurrency: number;
   private readonly timeoutMs: number;
-  private readonly taskTimeoutMs: number;
+  private readonly taskTimeoutMs: number | null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private scheduled = false;
@@ -84,7 +84,7 @@ export class TeamService {
   constructor(private readonly options: TeamServiceOptions) {
     this.concurrency = Math.max(1, Math.min(16, Math.trunc(options.concurrency ?? 4)));
     this.timeoutMs = Math.max(1, Math.min(2 * 60 * 60_000, options.timeoutMs ?? 30 * 60_000));
-    this.taskTimeoutMs = Math.max(1, Math.min(2 * 60 * 60_000, options.taskTimeoutMs ?? this.timeoutMs));
+    this.taskTimeoutMs = options.taskTimeoutMs === null ? null : Math.max(1, Math.min(2 * 60 * 60_000, options.taskTimeoutMs ?? this.timeoutMs));
   }
 
   get store(): TeamStore { return this.options.store; }
@@ -370,13 +370,15 @@ export class TeamService {
     const controller = new AbortController();
     const active: Active = { job, controller, done: Promise.resolve(), timer: null };
     this.active.set(job.teammate, active);
-    active.timer = setTimeout(() => {
+    // (A task with no limit of time has no clock: its audit watches it instead.)
+    const limit = job.kind === "task" ? this.taskTimeoutMs : this.timeoutMs;
+    if (limit !== null) active.timer = setTimeout(() => {
       if (!this.running) return;
       this.store.finish(job.id, "interrupted", "This work reached its time limit. Review it before resuming.");
       this.store.pauseRoom(job.room, true);
       controller.abort(new Error("Team work timed out"));
       this.changed();
-    }, job.kind === "task" ? this.taskTimeoutMs : this.timeoutMs);
+    }, limit);
     active.done = Promise.resolve().then(() => this.run(job, controller.signal)).catch((error) => {
       if (this.running) this.store.finish(job.id, "failed", String((error as Error).message ?? error));
     }).finally(() => {
