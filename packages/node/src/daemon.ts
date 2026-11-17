@@ -49,6 +49,7 @@ import { NotifyService } from "./notify.ts";
 import { Terminals } from "./terminals.ts";
 import { NotifyStore } from "./notify-store.ts";
 import { APPLE_PUSH, APPLE_PUSH_SECRET, ApplePushSender, appleTarget, readApplePushKey } from "./apns-send.ts";
+import { MacScreen, screenHelper, spawnHelper } from "./mac-screen.ts";
 import { DEFAULT_PUSH_CONTACT, PushSender } from "./push-send.ts";
 
 export interface Daemon {
@@ -95,6 +96,8 @@ export interface DaemonOptions {
   archiveIntervalMs?: number | false;
   /** A stand-in for Docker (tests): the sandbox host runs its commands through it instead of spawning any. */
   docker?: DockerRunner;
+  /** This Mac's own screen (tests: one over a stand-in helper; null: none). Absent: the app's own, where the node runs from it. */
+  screen?: MacScreen | null;
   /** The disk a Mac's workspaces come out of, for their budget (default: the one its home is on; tests beside a stand-in pass one). */
   sandboxDisk?: () => { totalBytes: number; freeBytes: number };
   /** How launchctl is run on a Mac (tests: a stand-in; beside a stand-in for the engine, nothing, unless one is given). */
@@ -222,7 +225,11 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     if (service === "started") log("started Apple's container: its service doesn't start by itself at boot");
     else if (service === "failed") log("Apple's container is installed, but its service wouldn't start: container system start says why");
   }
-  let caps = opts.capabilities ?? withAwake(await probeCapabilities());
+  // This Mac's own screen, where the node runs from the app (mac-screen.ts): what macOS lets the app do, it may.
+  const screenBinary = opts.screen === undefined ? screenHelper() : null;
+  const screen = opts.screen !== undefined ? opts.screen : screenBinary ? new MacScreen(spawnHelper(screenBinary)) : null;
+  const withScreen = (c: Capabilities): Capabilities => (screen ? { ...c, screen: true } : c);
+  let caps = withScreen(opts.capabilities ?? withAwake(await probeCapabilities()));
   const advertise = env.GALAHAD_ADVERTISE ?? config.advertise ?? caps.tailscale?.ip ?? "127.0.0.1";
   const endpoint = `http://${advertise}:${port}`;
 
@@ -564,6 +571,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     presence: async () => ({ ...(await presence()), compute: compute.usage() }),
     log,
     sandbox,
+    screen,
     governor,
     compute,
     computeUpkeep: upkeep,
@@ -683,7 +691,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const refresh = opts.capabilities
     ? null
     : setInterval(() => {
-        void refreshCapabilities(async () => withAwake(await probeCapabilities()), (fresh) => publishProfile(store, identity, endpoint, fresh), log).then((fresh) => {
+        void refreshCapabilities(async () => withScreen(withAwake(await probeCapabilities())), (fresh) => publishProfile(store, identity, endpoint, fresh), log).then((fresh) => {
           if (fresh) caps = fresh;
           // A GPU, a local runtime, more memory, a new ceiling: it measures itself again.
           upkeep();

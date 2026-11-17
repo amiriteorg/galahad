@@ -13,6 +13,7 @@ import Foundation
  *   Galahad --this-mac                                            what This Mac shows: the node, and staying on
  *   Galahad --first-run start [--name <name>] [--fleet <fleet>]   Start a fleet, then keep it on, as the first run does
  *   Galahad --first-run join <invite> [--name <name>]             Join my fleet, then keep it on
+ *   Galahad --desktop <op> …                                      This Mac's screen, as Galahad's computer (MacScreen.swift)
  */
 @main
 enum MacMain {
@@ -25,6 +26,9 @@ enum MacMain {
             // Each line as it is said, even into a file (open --stdout).
             setvbuf(stdout, nil, _IOLBF, 0)
             Task { exit(await Headless.run(arguments)) }
+            dispatchMain()
+        case "--desktop":
+            Task { exit(await MacScreen.run(Array(arguments.dropFirst()))) }
             dispatchMain()
         default: GalahadMacApp.main()
         }

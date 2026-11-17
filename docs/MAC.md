@@ -131,6 +131,7 @@ Then it shows the code to pair your iPhone, as install.sh does, and offers Tails
 | M1 | The client on the Mac | It pairs with any node and does everything the iPad app does, with the Mac's windows, menus and shortcuts; the vectors pass on both |
 | M2 | The node inside | First run (start, join, or just the app), *This Mac*, the CLI on PATH and staying on; signed, notarized and on galahad.sh |
 | M3 | Knights' VMs and models on the Mac | The `container` driver in the node, placement that knows a Mac's VMs don't grow live, the MLX preset, the Roundtable in the menu bar, and updates. The driver and placement built against a stand-in, 17 November (*M3, the driver*, below); their first real run is the Mac mini's |
+| M4 | The Mac itself, for Galahad | His computer can be the Mac's own screen and shell, which you chose for the Mac mini on 17 November: each session asks you first and is time-boxed, you watch it and take it over from the apps, and his commands there are held to your rules. Step 1, the screen (*M4, the Mac itself*, below), is built |
 
 ## The spike, 16 November
 
@@ -276,6 +277,17 @@ And what no check had asked: **macOS updated itself** (27.0 to 27.2.1) and resta
 - `container stats` is read, and shown nowhere yet: *This Mac*'s VMs can show it.
 - The desktop image, the Lab and Gazebo on arm64.
 - Another tool's networks on the same Mac can still collide with Galahad's (apple/container#2051): the node keeps its own up, and container's default network clear, but can't keep a network it doesn't know of. A dedicated Mac mini has none.
+
+## M4, the Mac itself (17 November)
+
+On a dedicated Mac (the Mac mini), Galahad's computer can be the Mac itself rather than a VM: its own screen, its apps and a shell as its user. You chose it knowing what it costs: that account holds the node's admin credential, so within a session a misled model could act as you across the fleet. So a session is asked for each time, time-boxed, watched and ended from the apps, and his commands there are held to your tripwires. It is built in steps; the first is here.
+
+**Step 1, the screen** (`packages/node/src/mac-screen.ts`, `apps/apple/Galahad/Mac/MacScreen.swift`). The app's own binary takes the screen's pictures (ScreenCaptureKit, at the main display's size in points: 1512 by 948 on the Mac mini) and moves its pointer and keys (CGEvent), as `Galahad --desktop <op>` in a knight's desktop's words and places: `click <x> <y> [left|right|middle|double]`, `move`, `scroll up|down [turns]`, `type` (its text in base64, one argument no shell reads), `key` (xdotool's names: `Return`, `BackSpace`, `super+space`), `open <address|app>`, `shot`, `status`, `allow`. So it is the app macOS asks you to allow, once, in System Settings → Privacy & Security: Screen & System Audio Recording, and Accessibility. The node that runs from the app finds it beside its own Bun, and says so in its capabilities (`screen: true`).
+
+- `galahad screen [status|allow|look] [--on <node>]`: its size and what macOS allows; `allow` shows macOS's prompts on that Mac's screen (answer them there, in person or over Screen Sharing); `look` saves a picture.
+- `POST /api/screen`, `/api/screen/allow` and `/api/screen/desktop` (`fleet:admin`, yours alone: a terminal, a paired device that may manage the fleet, or a node of yours passing on what you asked; never an agent): the last does one thing there, as the knights' desktop route does, and answers with a picture at the screen's size, which the apps' viewers already read from each answer. Each thing done is a line in the ledger (`screen`); looking isn't; of typing, only how many characters.
+
+Next: a session you allow (an approve card on every app, its minutes counted from your answer, ended when you say), then his tool there (each step answered with a picture his model sees, his shell commands held to your rules), then watching it from his chat.
 
 ## How it is told
 

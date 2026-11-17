@@ -172,6 +172,7 @@ import { TeamService, TeamError } from "./team.ts";
 import type { TeamAsker, TeamStore } from "./team-store.ts";
 import { galahadInRoom, harnessReadiness, quote, TEAM_COMMAND_SECONDS, TEAM_TASK_MINUTES, teamRuntime, withGateway } from "./team-runtime.ts";
 import { APPLE_PUSH, APPLE_PUSH_SECRET, appleProviderToken, storedApplePushKey } from "./apns-send.ts";
+import { type MacScreen, ScreenError, screenDid } from "./mac-screen.ts";
 import { galahadRevision } from "./revision.ts";
 import { githubRepo } from "./quest-cli.ts";
 import type { Terminals } from "./terminals.ts";
@@ -203,6 +204,8 @@ export interface AppContext {
   log: (message: string) => void;
   /** Present when this node is a sandbox host: every sandbox it creates takes a slot first (compute/governed-host.ts). */
   sandbox?: GovernedSandboxHost | null;
+  /** This Mac's own screen, where the node runs from the Galahad app (mac-screen.ts); absent or null elsewhere. */
+  screen?: MacScreen | null;
   /** This node's slots: sandboxes and model calls. */
   governor: Governor;
   /** Compute: the census, this node's calibration, the plan, effort. */
@@ -536,6 +539,26 @@ export function createApp(ctx: AppContext) {
       throw error;
     }
   }
+
+  /**
+   * A Mac's own screen: this node's, or forwarded (signed as this node) to the node named (`on`), which has it. A request
+   * a node forwarded runs where it lands.
+   */
+  async function onScreen<T>(p: Principal, on: string | undefined, path: string, body: Record<string, unknown>, local: (screen: MacScreen) => Promise<T>): Promise<T> {
+    const target = p.kind === "node" || !on ? null : resolveNode(on);
+    if (target && target.id !== ctx.identity.id) return forward<T>(target, path, body);
+    if (!ctx.screen) throw new HttpError(424, `${ctx.nodeName} has no screen of its own for Galahad: only a Mac that runs its node from the Galahad app has one`);
+    try {
+      return await local(ctx.screen);
+    } catch (error) {
+      if (error instanceof ScreenError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
+  }
+  /** A Mac's screen is watched and taken over by you, or a node of yours passing on what you asked: never an agent's to. */
+  const screenOwner = (p: Principal): void => {
+    if (!isOwner(p) && p.kind !== "node") throw new HttpError(403, "a Mac's screen is watched and taken over by you alone");
+  };
 
   function candidates(): Candidate[] {
     return fleetCandidates({ devices: ctx.store.devices(), self: ctx.identity.id, selfCaps: ctx.caps(), statuses: ctx.sync.status(), compute: ctx.compute.nodes(), dispatched });
@@ -1952,6 +1975,24 @@ export function createApp(ctx: AppContext) {
       if (p.kind === "arm") throw new HttpError(403, "a knight's desktop is watched and taken over by you alone");
       const { on, ...asked } = input;
       return onNode(p, on, routes.teamDesktopOn.path, asked, () => ctx.sandbox!.desktop(input.id, input.quest, input.action), { sandbox: input.id });
+    },
+    screen: (input, p) => {
+      screenOwner(p);
+      return onScreen(p, input.on, routes.screen.path, {}, async (screen) => ({ node: ctx.identity.id, ...(await screen.status()) }));
+    },
+    screenAllow: (input, p) => {
+      screenOwner(p);
+      return onScreen(p, input.on, routes.screenAllow.path, {}, async (screen) => ({ node: ctx.identity.id, ...(await screen.allow()) }));
+    },
+    screenDesktop: (input, p) => {
+      screenOwner(p);
+      return onScreen(p, input.on, routes.screenDesktop.path, { action: input.action }, async (screen) => {
+        const view = await screen.act(input.action);
+        // Each thing done is a line in the ledger (looking isn't: whoever watches asks again every second or two).
+        const did = screenDid(input.action);
+        if (did) ctx.ledger?.({ class: "modify", resource: "screen", target: ctx.nodeName, verdict: "allow", detail: `${did} · ${p.kind === "node" ? `for you, from ${ctx.store.device(p.device)?.name ?? "a node"}` : "by you"}`.slice(0, 300) });
+        return view;
+      });
     },
     postTeamMessage: (input, p) => { ownerOnly(p); return { message: teamOf().post(input, p.kind === "admin" ? { kind: "admin" } : { kind: "client", device: p.device }) }; },
     createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },

@@ -227,6 +227,33 @@ export const DesktopAction = z.discriminatedUnion("do", [
 ]);
 export type DesktopAction = z.infer<typeof DesktopAction>;
 
+/** An app on a Mac, by its name (`Safari`, `Xcode`) or bundle id (`com.apple.Safari`). */
+const AppName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$/);
+/**
+ * One thing done on a Mac's own screen (docs/MAC.md, the Mac itself): a knight's desktop's actions, in its words and
+ * places (its xdotool key names, a turn of the wheel), and an app opened by its name. A place is in the screen's points.
+ */
+export const ScreenAction = z.discriminatedUnion("do", [...DesktopAction.options, z.strictObject({ do: z.literal("app"), name: AppName })]);
+export type ScreenAction = z.infer<typeof ScreenAction>;
+
+/** A Mac's own screen, as the node that has it says: its size in points, and whether macOS lets Galahad record it and control it. */
+export interface ScreenStatus {
+  node: string;
+  width: number;
+  height: number;
+  record: boolean;
+  control: boolean;
+  /** The app in front, and its window's title where macOS lets Galahad read it. */
+  front: string;
+}
+
+/** A picture of a screen, as a knight's desktop and a Mac's own give it: JPEG, at the screen's size. */
+export interface ScreenView {
+  shot: { mediaType: "image/jpeg"; data: string };
+  width: number;
+  height: number;
+}
+
 export const routes = {
   team: { method: "GET", path: "/api/team", scope: "chat", input: null },
   saveTeammate: { method: "POST", path: "/api/team/teammates", scope: "fleet:admin", input: TeammateInput },
@@ -334,6 +361,18 @@ export const routes = {
   teamDesktop: { method: "POST", path: "/api/team/desktop", scope: "sandbox", input: z.strictObject({ id: z.string().min(1).max(32), action: DesktopAction.default({ do: "look" }) }) },
   /** The same, asked of the node that hosts the VM by the team's controller. */
   teamDesktopOn: { method: "POST", path: "/api/team/desktop-workspace", scope: "sandbox", input: z.strictObject({ id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest, action: DesktopAction }) },
+  /** A Mac's own screen (`on`: another node's): its size, and what macOS lets Galahad do with it. Yours alone. */
+  screen: { method: "POST", path: "/api/screen", scope: "fleet:admin", input: z.strictObject({ on: NodeRef.optional() }) },
+  /**
+   * Shows macOS's own prompts on that Mac's screen, to let Galahad record it and control it (or lists the app in System
+   * Settings for you to turn on): answered there, once, by you.
+   */
+  screenAllow: { method: "POST", path: "/api/screen/allow", scope: "fleet:admin", input: z.strictObject({ on: NodeRef.optional() }) },
+  /**
+   * A Mac's own screen, for you to watch and take over: one thing done there, or nothing (`look`), and a picture back.
+   * Yours alone; what you type is carried to it and never written to the ledger.
+   */
+  screenDesktop: { method: "POST", path: "/api/screen/desktop", scope: "fleet:admin", input: z.strictObject({ on: NodeRef.optional(), action: ScreenAction.default({ do: "look" }) }) },
   prepareTeamWorkspace: {
     method: "POST", path: "/api/team/prepare-workspace", scope: "fleet:admin",
     input: z.strictObject({

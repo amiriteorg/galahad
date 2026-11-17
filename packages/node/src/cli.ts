@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type TrialView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenStatus, type ScreenView, type TrialView } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -324,6 +324,10 @@ Agents (MCP)
 Maintenance
   awake on|off|status             a Mac set to stay on (a Mac mini serving the fleet) is kept from sleeping while its
                                   node runs, and counts as always on (no battery); a laptop on its battery never is
+  screen [status|allow|look] [--on <node>] [--out shot.jpg]
+                                  a Mac's own screen, for Galahad (a Mac whose node runs from the Galahad app): its
+                                  size and what macOS lets him do with it; allow shows macOS's prompts on that Mac
+                                  (you turn both on there, once); look saves a picture of it
   firewall [status|rules|install|remove]
                                   a Mac's sandbox firewall (pf, from a helper of root's): a gateway sandbox reaches
                                   the gateway alone, an online one the internet, never the Mac or your networks; no
@@ -983,6 +987,36 @@ Next:
       const self = fleet?.devices.find((d) => d.id === fleet.self);
       const holding = self?.caps ? self.caps.awake === true : null;
       console.log(`keep-awake: ${config.keepAwake ? "on" : "off"}${holding === null ? " (the node isn't running, or didn't say)" : holding ? " · the running node is keeping this Mac awake" : config.keepAwake ? " · the running node isn't holding it yet: restart it" : ""}`);
+      return;
+    }
+
+    case "screen": {
+      // A Mac's own screen (mac-screen.ts): the node that has one answers, here or as `--on` names it.
+      const at = str("on") ? { on: str("on")! } : {};
+      const admin = new Admin(home);
+      const say = (s: ScreenStatus) =>
+        console.log(
+          `${s.width}×${s.height} points · recording the screen: ${s.record ? "allowed" : "not allowed yet"} · controlling the Mac: ${s.control ? "allowed" : "not allowed yet"}${s.front ? ` · in front: ${s.front}` : ""}`,
+        );
+      if (!sub || sub === "status") {
+        const s = await admin.call<ScreenStatus>("screen", at);
+        say(s);
+        if (!s.record || !s.control) console.log(dim("galahad screen allow shows macOS's prompts on that Mac; turn both on there, in System Settings → Privacy & Security."));
+        return;
+      }
+      if (sub === "allow") {
+        say(await admin.call<ScreenStatus>("screenAllow", at));
+        console.log(dim("On that Mac, System Settings → Privacy & Security: turn Galahad on in Screen & System Audio Recording, and in Accessibility. Then galahad screen says both are allowed."));
+        return;
+      }
+      if (sub === "look") {
+        const view = await admin.call<ScreenView>("screenDesktop", { ...at, action: { do: "look" } });
+        const out = str("out") ?? "screen.jpg";
+        writeFileSync(out, Buffer.from(view.shot.data, "base64"));
+        console.log(`${out}: ${view.width}×${view.height}`);
+        return;
+      }
+      fail("usage: galahad screen [status|allow|look] [--on <node>] [--out shot.jpg]");
       return;
     }
 
