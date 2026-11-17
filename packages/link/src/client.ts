@@ -15,13 +15,16 @@ import {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
-/** POST JSON to a peer, signed by this node's device key; the answer as it came (bytes, say). */
+/**
+ * POST JSON to a peer, signed by this node's device key; the answer as it came (bytes, say). `signal`: the caller's own,
+ * in place of the timeout (an answer streamed for as long as it takes).
+ */
 export async function signedFetch(
   identity: NodeIdentity,
   endpoint: string,
   path: string,
   payload: unknown,
-  opts: { fetch?: FetchLike; timeoutMs?: number } = {},
+  opts: { fetch?: FetchLike; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<Response> {
   const body = utf8(JSON.stringify(payload));
   const headers = await signRequest(identity.id, identity.sign, "POST", path, body);
@@ -30,7 +33,7 @@ export async function signedFetch(
     headers: { ...headers, "content-type": "application/json" },
     body,
     redirect: "error",
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 15_000),
+    signal: opts.signal ?? AbortSignal.timeout(opts.timeoutMs ?? 15_000),
   });
 }
 

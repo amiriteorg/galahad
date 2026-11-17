@@ -510,6 +510,15 @@ export const routes = {
   },
   removeProvider: { method: "POST", path: "/api/providers/remove", scope: "brain:write", input: z.strictObject({ id: Name }) },
   providerModels: { method: "POST", path: "/api/providers/models", scope: "mind:read", input: z.strictObject({ id: Name }) },
+  /**
+   * A full node's call to a model this node's own local runtime serves (Ollama, llama.cpp: on its loopback), when the
+   * node that asks has none: an OpenAI-style chat request passed to that runtime as sent, its answer streamed back as it
+   * came. Nodes only.
+   */
+  localModelCall: {
+    method: "POST", path: "/api/models/local", scope: "brain:write",
+    input: z.strictObject({ provider: Name, request: z.record(z.string(), z.unknown()) }),
+  },
   roster: { method: "GET", path: "/api/roster", scope: "mind:read", input: null },
   /**
    * Check what a model can do (brain/checks.ts): follow the quest loop's format, read a screen, place a click on

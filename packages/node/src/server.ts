@@ -176,6 +176,7 @@ import { galahadInRoom, harnessReadiness, quote, TEAM_COMMAND_SECONDS, teamRunti
 import { APPLE_PUSH, APPLE_PUSH_SECRET, appleProviderToken, storedApplePushKey } from "./apns-send.ts";
 import { inputRefused, type MacScreen, ScreenError, screenDid } from "./mac-screen.ts";
 import { galahadRevision } from "./revision.ts";
+import { localModelsOf, type ModelPeer, serves, viaFleet } from "./local-models.ts";
 import { githubRepo } from "./quest-cli.ts";
 import type { Terminals } from "./terminals.ts";
 
@@ -735,10 +736,30 @@ export function createApp(ctx: AppContext) {
   const leadsTeam = (p: Principal) => p.kind === "arm" && p.label === GALAHAD_ARM && p.commandsTeam === true;
   /** Whose model calls these are, in this node's count of them: yours, an agent's (a loop's quest is arm:loop.<name>), a node's. */
   const whoOf = (p: Principal): string => (isOwner(p) ? "you" : p.kind === "arm" ? `arm:${p.label ?? "unnamed"}` : `node:${ctx.store.device(p.device)?.name ?? p.device.slice(0, 12)}`);
-  /** The brain, counting what each call cost on this node (counts only). */
+  /* ---------- the fleet's local models (local-models.ts): one only a peer serves is answered there ---------- */
+
+  /** This node's local runtimes (Ollama, llama.cpp: loopback), by where a chat call to each goes: their provider ids. */
+  const localRuntimes = (): Map<string, string> => {
+    const out = new Map<string, string>();
+    for (const id of new Set(["ollama", "llamacpp", ...providerViews(ctx.store, ctx.vault).map((v) => v.id)])) {
+      const provider = resolveProvider(ctx.store, ctx.vault, id);
+      if (provider?.local) out.set(`${provider.baseUrl}/chat/completions`, id);
+    }
+    return out;
+  };
+  const ownLocalModels = () => localModelsOf(ctx.store.activeDevice(ctx.identity.id)?.profile?.caps);
+  /** The full nodes that may answer for their local models: each one that can be reached, and what it serves. */
+  const modelPeers = (): ModelPeer[] =>
+    ctx.store.devices().flatMap((d) => (d.kind === "node" && d.role === "full" && d.id !== ctx.identity.id && d.profile?.endpoint ? [{ name: d.name, endpoint: d.profile.endpoint, models: localModelsOf(d.profile.caps) }] : []));
+  /** Model calls over the fleet, on `base`: one for a local model only a peer serves goes there, signed; the rest as they would. */
+  const overFleet = (base: typeof fetch): typeof fetch =>
+    viaFleet({ base, runtimes: localRuntimes, here: ownLocalModels, peers: modelPeers, send: (endpoint, payload, signal) => signedFetch(ctx.identity, endpoint, routes.localModelCall.path, payload, signal ? { signal } : { timeoutMs: 30 * 60_000 }) });
+  const modelFetch = overFleet(((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init)) as typeof fetch);
+
+  /** The brain, counting what each call cost on this node (counts only); a local model only a peer serves is asked there. */
   const brainFor = (p: Principal) => {
     const who = whoOf(p);
-    return { store: ctx.store, vault: ctx.vault, spent: (call: { role: string; ref: string; usage: Usage | null }) => ctx.usage.note(who, call.role, call.ref, call.usage) };
+    return { store: ctx.store, vault: ctx.vault, fetch: modelFetch, spent: (call: { role: string; ref: string; usage: Usage | null }) => ctx.usage.note(who, call.role, call.ref, call.usage) };
   };
   function ownerOnly(p: Principal): void {
     if (!isOwner(p)) throw new HttpError(403, "chats are yours alone");
@@ -1933,7 +1954,7 @@ export function createApp(ctx: AppContext) {
   };
   if (ctx.team) {
     const runtime = teamRuntime({
-      brain: (member) => ({ ...brainFor(teammatePrincipal(member.id)), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) }),
+      brain: (member) => ({ ...brainFor(teammatePrincipal(member.id)), ...(ctx.fetch ? { fetch: overFleet(ctx.fetch) } : {}) }),
       enter: (signal) => ctx.governor.enterModel({ wait: true }, signal),
       exec: execTeam, prepare: prepareTeam, renew: renewTeam, teammate: teamMember,
       dependencies: (task) => task.dependsOn.map((id) => ctx.team!.store.task(id)).filter((t): t is NonNullable<typeof t> => !!t && t.status === "done" && t.verified).map(({ id, title, output }) => ({ id, title, output })),
@@ -2385,6 +2406,17 @@ export function createApp(ctx: AppContext) {
       } catch (error) {
         throw new HttpError(502, redact(String((error as Error).message ?? error), [provider.apiKey]).slice(0, 500));
       }
+    },
+    localModelCall: async (input, p, req) => {
+      // A full node's call to a model only this node's runtime serves (viaFleet): passed to that runtime as sent, on its
+      // loopback alone, and its answer streamed back as it came. Never a runtime that isn't local, nor a model it doesn't serve.
+      if (p.kind !== "node" || ctx.store.device(p.device)?.role !== "full") throw new HttpError(403, "only a full node of this fleet asks this node's local models");
+      const provider = resolveProvider(ctx.store, ctx.vault, input.provider);
+      if (!provider?.local) throw new HttpError(404, `${input.provider} isn't a local runtime on ${ctx.nodeName}`);
+      const model = typeof input.request.model === "string" ? input.request.model : "";
+      if (!serves(ownLocalModels(), input.provider, model)) throw new HttpError(404, `${ctx.nodeName} doesn't serve ${input.provider}/${model}`);
+      const answer = await (ctx.fetch ?? fetch)(`${provider.baseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input.request), signal: req.signal });
+      return new Response(answer.body, { status: answer.status, headers: { "content-type": answer.headers.get("content-type") ?? "application/json" } });
     },
     // (With the plans whose allowance is spent just now, and until when, and what each checked model was seen to do.)
     roster: () => ({
