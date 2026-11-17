@@ -999,7 +999,7 @@ Next:
       const admin = new Admin(home);
       const say = (s: ScreenStatus) =>
         console.log(
-          `${s.width}×${s.height} points · recording the screen: ${s.record ? "allowed" : "not allowed yet"} · controlling the Mac: ${s.control ? "allowed" : "not allowed yet"}${s.front ? ` · in front: ${s.front}` : ""}`,
+          `${s.width}×${s.height} points · recording the screen: ${s.record ? "allowed" : "not allowed yet"} · controlling the Mac: ${s.control ? "allowed" : "not allowed yet"}${s.front ? ` · in front: ${s.front}` : ""}${s.asking ? ` · macOS is asking a question there (${s.asking}): yours to answer, at that Mac` : ""}`,
         );
       if (!sub || sub === "status") {
         const s = await admin.call<ScreenStatus>("screen", at);
