@@ -7,9 +7,9 @@ struct ChatsView: View {
     let open: (String) -> Void
     let startNew: () -> Void
     @Environment(\.dismiss) private var dismiss
-    #if os(macOS)
     @Environment(\.openWindow) private var openWindow
-    #endif
+    /// Whether a chat can open in a window of its own: a Mac's, an iPad's.
+    @Environment(\.supportsMultipleWindows) private var windows
     @State private var chats: [ConversationSummary]?
     @State private var problem: String?
     @State private var query = ""
@@ -41,18 +41,19 @@ struct ChatsView: View {
                                 }
                                 .tint(.ink)
                             }
-                            #if os(macOS)
-                            // A Mac opens a chat in a window of its own, and has the swipes' actions in the row's menu.
+                            // A chat opens in a window of its own where there are windows (a Mac, an iPad), and the row's
+                            // menu has the swipes' actions too.
                             .contextMenu {
-                                Button("Open in New Window") {
-                                    openWindow(value: MacWindow.chat(chat.id))
-                                    dismiss()
+                                if windows {
+                                    Button("Open in New Window", systemImage: "macwindow.badge.plus") {
+                                        openWindow(value: PlaceWindow.chat(chat.id))
+                                        dismiss()
+                                    }
                                 }
-                                Button(chat.pinned ? "Unpin" : "Pin") { Task { await pin(chat, !chat.pinned) } }
+                                Button(chat.pinned ? "Unpin" : "Pin", systemImage: chat.pinned ? "pin.slash" : "pin") { Task { await pin(chat, !chat.pinned) } }
                                 Divider()
-                                Button("Delete…", role: .destructive) { deleting = chat }
+                                Button("Delete…", systemImage: "trash", role: .destructive) { deleting = chat }
                             }
-                            #endif
                         }
                     }
                 }

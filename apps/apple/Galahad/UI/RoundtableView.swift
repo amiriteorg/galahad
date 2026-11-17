@@ -26,20 +26,15 @@ struct RoundtableView: View {
     #endif
     /// A change of yours to the order, or to who leads, that didn't hold: what, and why.
     @State private var refused: (what: String, why: String)?
-    #if os(iOS)
-    /// The knights as cards rather than rows, as this device last showed them (an iPad's choice).
-    @AppStorage("roundtable.cards") private var asCards = false
-    #else
-    /// On a Mac the Roundtable's own page is its board, every knight a card (the PWA's on a wide screen), until you choose
-    /// its list.
+    /// Beside a sidebar that lists the knights (an iPad's, a Mac's), the Roundtable's own page is its board, every knight a
+    /// card (the PWA's on a wide screen), until you choose its list.
     @AppStorage("roundtable.cards") private var asCards = true
-    #endif
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var words: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var mayArrange: Bool { session.can("fleet:admin") && session.team != nil }
-    /// Cards are offered where there is room for them: beside an iPad's detail column.
+    /// Cards are offered where there is room for them: the page beside a sidebar (an iPhone pushes its rows instead).
     private var cardsOffered: Bool { selection != nil }
     private var cards: Bool { cardsOffered && asCards }
     /// Edit is moving the knights. A Mac has no Edit: its list is put in order by dragging, as its lists are.
@@ -392,7 +387,9 @@ struct SeatCard<Face: View>: View {
             } else {
                 StateBadge(text: "Queued", tone: "neutral").hidden().accessibilityHidden(true)
             }
-            Text(standing.beside(line))
+            // (An empty line reserves no room: a space does, so a card with nothing to say is as tall as the rest.)
+            let said = standing.beside(line)
+            Text(said.isEmpty ? " " : said)
                 .font(.footnote)
                 .foregroundStyle(needs ? Color.siege : .secondary)
                 .multilineTextAlignment(.center)
@@ -415,7 +412,7 @@ private struct CardGrid<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.cardWidth), spacing: Space.s3)], spacing: Space.s3) { content }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.cardWidth), spacing: Space.s3, alignment: .top)], spacing: Space.s3) { content }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
     }

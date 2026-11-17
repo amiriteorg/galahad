@@ -11,9 +11,7 @@ struct ChatView: View {
     /// His own computer, watched from here: its screen, or its terminal.
     @State private var watching = false
     @State private var inTerminal = false
-    #if os(macOS)
     @Environment(\.composerWanted) private var composerWanted
-    #endif
 
     init(session: Session, chat: ChatModel? = nil) {
         self.session = session
@@ -110,14 +108,12 @@ struct ChatView: View {
             }
         }
         .task { await chat.openLatest(with: session.client) }
-        #if os(macOS)
-        // A new chat asked for from the menu (⌘N): the message box takes the keys.
+        // A new chat asked for from the menus (⌘N, a Mac's or an iPad's): the message box takes the keys.
         .task(id: composerWanted.wrappedValue) {
             guard composerWanted.wrappedValue else { return }
             composerWanted.wrappedValue = false
             composing = true
         }
-        #endif
     }
 
     private var welcome: some View {

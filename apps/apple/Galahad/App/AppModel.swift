@@ -38,8 +38,13 @@ struct PairedNode: Codable, Equatable, Sendable {
     }
 
     private(set) var phase = Phase.loading
+    /// The windows in front, and the one loop that asks the node again while any is (keepFresh).
+    @ObservationIgnored private var inFront = 0
+    @ObservationIgnored private var refreshing: Task<Void, Never>?
 
     func start() {
+        // (Each window starts it: the first that finds this device paired is the one.)
+        if case .paired = phase { return }
         do {
             guard let key = try DeviceKey.load(), let node = PairedNode.load(), node.device == key.device else {
                 phase = .unpaired
@@ -54,6 +59,26 @@ struct PairedNode: Codable, Equatable, Sendable {
     func paired(key: DeviceKey, node: PairedNode) {
         node.save()
         phase = .paired(Session(key: key, node: node))
+    }
+
+    /// Asks the node again every few seconds while the window that called it is in front, in one loop for every window
+    /// that is: returns when this one leaves the front (its task is cancelled), and the loop stops with the last.
+    func keepFresh(_ session: Session) async {
+        inFront += 1
+        if refreshing == nil {
+            refreshing = Task {
+                while !Task.isCancelled {
+                    await session.refresh()
+                    try? await Task.sleep(for: .seconds(5))
+                }
+            }
+        }
+        while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+        inFront -= 1
+        if inFront == 0 {
+            refreshing?.cancel()
+            refreshing = nil
+        }
     }
 
     /// Deletes this device's key. It can't be recovered: pairing again makes a new device, and the old one stays in

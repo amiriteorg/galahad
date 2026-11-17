@@ -106,7 +106,7 @@ struct MenuBarRoundtable: View {
     }
 
     /// Galahad's window in front, at `place` when one is given.
-    private func show(_ place: MacPlace?) {
+    private func show(_ place: Place?) {
         if let place { mac.place = place }
         openWindow(id: MacApp.main)
         NSApplication.shared.activate()

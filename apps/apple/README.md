@@ -46,6 +46,16 @@ provider or coding plan the PWA's way, refuse a subscription's sign-in, and keep
 
 The node lets one app in: give each app, and each run of `MacShots` below, a node of its own.
 
+## The iPad
+
+The Mac's window (`Galahad/UI/Places.swift`, shared by both): the places in a sidebar, the Roundtable as the PWA's wide
+screen has it (its mark, which opens its board of cards; the one who leads and the knights in your order, each face in
+its still ring; the rooms; the Inbox and More), and the place chosen beside it. Each window keeps its own place across
+launches; a knight, a room or one of Galahad's chats opens in a window of its own (its row's menu); the menus (iPadOS's
+menu bar) have ⌘N a new chat, ⌥⌘N a new window, ⌘K a task for the Roundtable and ⌘1 to ⌘4 the places, acting in the window
+in front. A narrow window (Slide Over, a thin split) is the iPhone's three tabs. One `AppModel` serves every window, and
+one loop asks the node again while any of them is in front.
+
 ## The Mac
 
 The iPad's sidebar and detail, with the Roundtable as the sidebar; a knight, a room or one of Galahad's chats in a window

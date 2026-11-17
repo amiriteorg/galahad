@@ -22,7 +22,7 @@ struct GalahadMacApp: App {
         // A `galahad:` link comes here, to joining.
         .handlesExternalEvents(matching: ["galahad"])
 
-        WindowGroup(for: MacWindow.self) { $window in
+        WindowGroup(for: PlaceWindow.self) { $window in
             MacWindowRoot(mac: mac, window: window)
         }
         .defaultSize(width: 760, height: 760)
@@ -41,33 +41,6 @@ struct GalahadMacApp: App {
     }
 }
 
-/// What the Mac's main window shows: Galahad's chat, the Roundtable's board, a knight's or a room's page, the Inbox, More,
-/// and This Mac (its node).
-enum MacPlace: Hashable, Codable {
-    case galahad, roundtable, inbox, more, thisMac
-    case knight(String)
-    case room(String)
-
-    init(_ route: Route) {
-        switch route {
-        case .galahad: self = .galahad
-        case .knight(let id): self = .knight(id)
-        case .room(let id): self = .room(id)
-        }
-    }
-
-    /// A seat at the Roundtable: Galahad's chat, or a knight's page.
-    static func seat(_ id: String) -> MacPlace { id == "galahad" ? .galahad : .knight(id) }
-}
-
-/// What a window of its own shows: one of Galahad's chats (by its id on the node), a knight's page, or a room's. Kept by
-/// macOS with the window, so it opens again where it was.
-enum MacWindow: Hashable, Codable {
-    case chat(String)
-    case knight(String)
-    case room(String)
-}
-
 /// What the Mac app's windows, menus and menu bar share: whether this Mac is paired (and with what), the place its main
 /// window shows (kept for the next launch), and what a menu asked of it.
 @MainActor @Observable final class MacApp {
@@ -82,7 +55,7 @@ enum MacWindow: Hashable, Codable {
     let thisMac = ThisMac()
     /// What its knights' VMs need (`galahad sandbox setup`): the first run's step 3, and This Mac's.
     let vmSetup = VMSetup()
-    var place: MacPlace = MacApp.keptPlace() {
+    var place: Place = MacApp.keptPlace() {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(place), forKey: Self.placeKey) }
     }
     /// The Roundtable is being given a task (⌘K).
@@ -99,8 +72,8 @@ enum MacWindow: Hashable, Codable {
         if case .paired(let session) = app.phase { session } else { nil }
     }
 
-    private static func keptPlace() -> MacPlace {
-        UserDefaults.standard.data(forKey: placeKey).flatMap { try? JSONDecoder().decode(MacPlace.self, from: $0) } ?? .galahad
+    private static func keptPlace() -> Place {
+        UserDefaults.standard.data(forKey: placeKey).flatMap { try? JSONDecoder().decode(Place.self, from: $0) } ?? .galahad
     }
 
     /// Reads this Mac's key, then asks the node again every few seconds while the app runs, windows or not (the menu bar
@@ -189,18 +162,12 @@ struct MacRoot: View {
 /// A window of its own: a chat, a knight or a room, while this Mac is paired.
 struct MacWindowRoot: View {
     let mac: MacApp
-    let window: MacWindow?
+    let window: PlaceWindow?
 
     var body: some View {
         Group {
             if let session = mac.session, let window {
-                NavigationStack {
-                    switch window {
-                    case .chat(let id): ChatWindow(session: session, id: id)
-                    case .knight(let id): KnightView(session: session, id: id)
-                    case .room(let id): RoomView(session: session, id: id)
-                    }
-                }
+                PlaceWindowView(session: session, window: window)
             } else {
                 ContentUnavailableView("Not in a fleet", systemImage: "person.2.slash", description: Text("Join your fleet in Galahad's window first."))
             }
@@ -208,29 +175,6 @@ struct MacWindowRoot: View {
         .frame(minWidth: 480, minHeight: 420)
         .tint(.ink)
         .formStyle(.grouped)
-    }
-}
-
-/// One of Galahad's chats in a window of its own: its own conversation, beside the one in the main window.
-private struct ChatWindow: View {
-    let session: Session
-    let id: String
-    @State private var chat = ChatModel()
-    @State private var opened = false
-
-    var body: some View {
-        Group {
-            if opened { ChatView(session: session, chat: chat) } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
-        }
-        .task {
-            await chat.open(id, with: session.client)
-            opened = true
-            // He may be answering in it for another device: looked at again every few seconds.
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                await chat.noticed(chats: nil, turns: session.turns, with: session.client)
-            }
-        }
     }
 }
 
@@ -267,7 +211,7 @@ struct MacCommands: Commands {
         }
     }
 
-    private func place(_ name: String, _ place: MacPlace, _ key: KeyEquivalent) -> some View {
+    private func place(_ name: String, _ place: Place, _ key: KeyEquivalent) -> some View {
         Button(name) {
             mac.place = place
             front()

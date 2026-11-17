@@ -27,6 +27,17 @@ extension Image {
     }
 }
 
+extension EnvironmentValues {
+    /// A new chat was asked for from the menus (⌘N, a Mac's or an iPad's): Galahad's message box takes the keys, and says
+    /// so by clearing it.
+    @Entry var composerWanted: Binding<Bool> = .constant(false)
+}
+
+extension Metrics {
+    /// The widest a conversation's lines are in a wide window, a Mac's or an iPad's (the PWA's reading pages, 760 px).
+    static let readingWidth: CGFloat = 760
+}
+
 /// What this device is, in its own words: "iPhone", "iPad" or "Mac".
 @MainActor enum ThisDevice {
     static var kind: String {
@@ -182,21 +193,26 @@ extension View {
     }
     /// A sheet's own size: on an iPhone or an iPad, the system's.
     func sheetSize(width: CGFloat = 520, height: CGFloat = 600) -> some View { self }
-    /// A conversation's width: an iPhone's or an iPad's whole column.
-    func readingWidth() -> some View { self }
+    /// A conversation's width: an iPhone's whole column; in an iPad's wide window, a reading width in its middle, as a Mac's.
+    func readingWidth() -> some View { modifier(ReadingWidth()) }
     /// A field drawn by what holds it (a message box's glass, a quiet fill): an iPhone's field draws nothing of its own.
     func plainField() -> some View { self }
 }
-#else
-extension EnvironmentValues {
-    /// A new chat was asked for from the Mac's menu (⌘N): Galahad's message box takes the keys, and says so by clearing it.
-    @Entry var composerWanted: Binding<Bool> = .constant(false)
-}
 
-extension Metrics {
-    /// The widest a conversation's lines are on a Mac's wide window (the PWA's reading pages, 760 px).
-    static let readingWidth: CGFloat = 760
+/// A conversation kept to a reading width in the middle of a wide window (a regular width); a narrow one's whole column
+/// as it was, an iPhone's always.
+private struct ReadingWidth: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var width
+
+    func body(content: Content) -> some View {
+        if width == .regular {
+            content.frame(maxWidth: Metrics.readingWidth).frame(maxWidth: .infinity)
+        } else {
+            content
+        }
+    }
 }
+#else
 
 extension Color {
     /// A card on a Mac's list, whose rows lie on the window's own ground: a fill, lighter on dark and darker on light.
