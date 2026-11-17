@@ -1,6 +1,8 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
-import type { ScreenAction, ScreenStatus, ScreenView } from "@galahad/core";
+import type { ExecResult, ScreenAction, ScreenStatus, ScreenView } from "@galahad/core";
 
 /*
  * A Mac's own screen, for Galahad (docs/MAC.md, the Mac itself): the app's own binary takes its pictures and moves its
@@ -38,6 +40,59 @@ export function spawnHelper(binary: string): HelperRun {
       clearTimeout(timer);
     }
   };
+}
+
+/** A shell command on this Mac, as its user, in its home. */
+export type ShellRun = (command: string, timeoutSec: number) => Promise<ExecResult>;
+
+/** The most of each of a command's outputs kept: past it, cut, and said to be. */
+const SHELL_OUTPUT_MAX = 1024 * 1024;
+
+/**
+ * zsh as a login shell (so the PATH is the user's own, as Terminal's is), in the user's home, with an environment of
+ * its own: never the node's. At its deadline the command and everything it started are killed together.
+ */
+export function zshRunner(): ShellRun {
+  return (command, timeoutSec) =>
+    new Promise((resolve) => {
+      const started = Date.now();
+      const me = userInfo();
+      const env = {
+        HOME: homedir(),
+        USER: me.username,
+        LOGNAME: me.username,
+        SHELL: "/bin/zsh",
+        PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+        ...(process.env.LANG ? { LANG: process.env.LANG } : {}),
+        ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
+      };
+      const child = spawn("/bin/zsh", ["-lc", command], { cwd: homedir(), env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+      const out = { stdout: "", stderr: "", truncated: false };
+      const take = (which: "stdout" | "stderr") => (chunk: Buffer) => {
+        if (out[which].length >= SHELL_OUTPUT_MAX) return void (out.truncated = true);
+        out[which] += chunk.toString("utf8");
+        if (out[which].length > SHELL_OUTPUT_MAX) [out[which], out.truncated] = [out[which].slice(0, SHELL_OUTPUT_MAX), true];
+      };
+      child.stdout!.on("data", take("stdout"));
+      child.stderr!.on("data", take("stderr"));
+      let killed = false;
+      const timer = setTimeout(() => {
+        killed = true;
+        try {
+          process.kill(-child.pid!, "SIGKILL");
+        } catch {
+          /* gone already */
+        }
+      }, timeoutSec * 1000);
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        resolve({ exitCode: killed ? 137 : (code ?? 1), stdout: out.stdout, stderr: out.stderr, durationMs: Date.now() - started, truncated: out.truncated });
+      });
+      child.on("error", (error) => {
+        clearTimeout(timer);
+        resolve({ exitCode: 127, stdout: "", stderr: `the shell couldn't start: ${error.message}`, durationMs: Date.now() - started, truncated: false });
+      });
+    });
 }
 
 export class ScreenError extends Error {
@@ -89,11 +144,20 @@ export class MacScreen {
   /** How long the screen is given to show what was done before its picture is taken. */
   private readonly settleMs: number;
 
+  /** Its shell (tests: a stand-in). */
+  private readonly shell: ShellRun;
+
   constructor(
     private readonly run: HelperRun,
-    opts: { settleMs?: number } = {},
+    opts: { settleMs?: number; shell?: ShellRun } = {},
   ) {
     this.settleMs = opts.settleMs ?? 350;
+    this.shell = opts.shell ?? zshRunner();
+  }
+
+  /** A shell command as this Mac's user, in its home (two minutes unless asked for longer, fifteen at most). */
+  command(command: string, timeoutSec = 120): Promise<ExecResult> {
+    return this.shell(command, Math.min(Math.max(1, timeoutSec), 900));
   }
 
   private async helper(args: string[], timeoutMs = 20_000): Promise<string> {
@@ -116,9 +180,13 @@ export class MacScreen {
     return this.status();
   }
 
+  /** What was in front at the last picture (`look`), for saying where things stand. */
+  front = "";
+
   /** A picture of the screen, at its size in points. */
   async look(): Promise<ScreenView> {
     const status = await this.status();
+    this.front = status.front;
     const data = (await this.helper(["shot"], 30_000)).trim();
     if (!data) throw new ScreenError(502, "the screen's helper gave no picture");
     return { shot: { mediaType: "image/jpeg", data }, width: status.width, height: status.height };

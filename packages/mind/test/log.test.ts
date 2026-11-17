@@ -574,7 +574,7 @@ describe("migrating a replica in place", () => {
       expect(raw.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version).toBe(0);
       raw.close();
       const store = new MindStore(path);
-      expect(store.schemaVersion()).toBe(4);
+      expect(store.schemaVersion()).toBe(5);
       expect(store.fleet).toBe(expected.fleet);
       expect(logHash(store)).toBe(expected.log);
       expect(store.eventCount()).toBe(expected.eventCount);
@@ -700,7 +700,7 @@ describe("migrating a replica in place", () => {
       const { dir, path } = copyOf(legacyFixture);
       try {
         const store = new MindStore(path);
-        expect(store.schemaVersion()).toBe(4);
+        expect(store.schemaVersion()).toBe(5);
         expect(store.eventCount()).toBe(legacy.count);
         expect(store.pendingCount()).toBe(legacy.pending);
         expect(rejected(store.db)).toEqual(rebuilt);
@@ -782,7 +782,7 @@ writeSync(2, "opened after " + applied + " applied\\n");
         raw.close();
 
         const store = new MindStore(path);
-        expect(store.schemaVersion()).toBe(4);
+        expect(store.schemaVersion()).toBe(5);
         expect(store.eventCount()).toBe(legacy.count);
         expect(rejected(store.db)).toEqual(rebuilt);
         const migrated = store.digest();

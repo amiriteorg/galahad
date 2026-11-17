@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clientIdFromKey, type RouteName, routes, type Scope, type ScreenStatus, type ScreenView, signRequest, utf8 } from "@galahad/core";
+import { clientIdFromKey, type RouteName, routes, type Scope, type ScreenSessionView, type ScreenStatus, type ScreenView, signRequest, utf8 } from "@galahad/core";
 import { requestPairing, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -149,3 +149,55 @@ describe("a Mac's own screen", () => {
     expect(bare.store.activeDevice(bare.identity.id)?.profile?.caps?.screen).toBeUndefined();
   });
 });
+
+describe("sessions on a Mac's own screen", () => {
+  /** An ask, as Galahad's own (in your conversation with him) puts it in the log: only his principal reaches the route. */
+  let n = 0;
+  const asked = (minutes = 30) => {
+    const id = `sc_${String(++n).padStart(22, "0")}`;
+    daemon.store.emit(daemon.identity, "screen.asked", { id, node: daemon.identity.id, why: "build the app in Xcode", minutes });
+    return id;
+  };
+  const sessionNow = async (id: string) => (await admin<{ sessions: ScreenSessionView[] }>("screenSessions")).body.sessions.find((s) => s.id === id)!;
+
+  test("an ask waits as a card; you allow it from a paired device, and it is his for its minutes from your answer", async () => {
+    const id = asked(30);
+    const reader = await pair("reader-2", ["chat", "mind:read"]);
+    const listed = await reader<{ sessions: ScreenSessionView[] }>("screenSessions");
+    expect(listed.status).toBe(200);
+    expect(listed.body.sessions.find((s) => s.id === id)).toMatchObject({ node: daemon.identity.id, nodeName: "mini", why: "build the app in Xcode", minutes: 30, state: "waiting", until: null });
+    // A device that may only read can't answer it; one that may manage the fleet can.
+    expect((await reader("decideScreen", { id, allow: true })).status).toBe(403);
+    const phone = await pair("phone-2", ["chat", "fleet:admin"]);
+    const before = Date.now();
+    const allowed = await phone<{ session: ScreenSessionView }>("decideScreen", { id, allow: true });
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.session.state).toBe("allowed");
+    expect(allowed.body.session.decidedVia).toMatch(/^c_/);
+    expect(allowed.body.session.until! - before).toBeGreaterThanOrEqual(30 * 60_000 - 1_000);
+    // The first answer stands.
+    expect((await phone("decideScreen", { id, allow: false })).status).toBe(409);
+    expect((await sessionNow(id)).state).toBe("allowed");
+  });
+
+  test("said no to, it stays no; ended by you, it is over at once, and saying so again changes nothing", async () => {
+    const no = asked();
+    expect((await admin<{ session: ScreenSessionView }>("decideScreen", { id: no, allow: false })).body.session.state).toBe("denied");
+    const yes = asked();
+    await admin("decideScreen", { id: yes, allow: true });
+    const ended = await admin<{ session: ScreenSessionView }>("endScreen", { id: yes });
+    expect(ended.body.session.state).toBe("ended");
+    expect((await admin<{ session: ScreenSessionView }>("endScreen", { id: yes })).body.session.state).toBe("ended");
+    expect(daemon.store.screenSessions().find((s) => s.id === yes)?.endedAt).toBeNumber();
+    expect((await admin("decideScreen", { id: `sc_${"x".repeat(22)}`, allow: true })).status).toBe(404);
+  });
+
+  test("an agent neither asks (only Galahad himself does, in your conversation), nor answers, nor ends one", async () => {
+    const id = asked();
+    expect((await arm("askScreen", { why: "just looking", minutes: 5 })).status).toBe(403);
+    expect((await arm("decideScreen", { id, allow: true })).status).toBe(403);
+    expect((await arm("endScreen", { id })).status).toBe(403);
+    expect((await sessionNow(id)).state).toBe("waiting");
+  });
+});
+

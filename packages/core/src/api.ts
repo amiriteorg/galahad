@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ATTACHMENT_LIMITS, ATTACHMENT_TYPES } from "./attachments.ts";
 import { AgentLabel, ConnectorArgs, ToolName } from "./connectors.ts";
-import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
+import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity, SCREEN_SESSION_MAX_MINUTES, ScreenSessionId } from "./events.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { RuleInput, RuleName, RuleToldInput, RuleTrippedInput } from "./rules.ts";
@@ -236,6 +236,26 @@ const AppName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$/);
 export const ScreenAction = z.discriminatedUnion("do", [...DesktopAction.options, z.strictObject({ do: z.literal("app"), name: AppName })]);
 export type ScreenAction = z.infer<typeof ScreenAction>;
 
+/**
+ * One thing Galahad does on a Mac itself, in a session you allowed: a thing done on its screen, or a shell command run
+ * as its user in its home (`run`, held to your tripwires).
+ */
+export const ScreenUseAction = z.discriminatedUnion("do", [
+  ...ScreenAction.options,
+  z.strictObject({ do: z.literal("run"), command: z.string().min(1).max(100_000), timeoutSec: z.number().int().min(1).max(900).optional() }),
+]);
+export type ScreenUseAction = z.infer<typeof ScreenUseAction>;
+
+/** What one thing he did on a Mac itself came to: a picture of its screen after it, or what a command printed. */
+export interface ScreenUse {
+  node: string;
+  nodeName: string;
+  session: string;
+  view?: ScreenView;
+  front?: string;
+  ran?: ExecResult;
+}
+
 /** A Mac's own screen, as the node that has it says: its size in points, and whether macOS lets Galahad record it and control it. */
 export interface ScreenStatus {
   node: string;
@@ -373,6 +393,25 @@ export const routes = {
    * Yours alone; what you type is carried to it and never written to the ledger.
    */
   screenDesktop: { method: "POST", path: "/api/screen/desktop", scope: "fleet:admin", input: z.strictObject({ on: NodeRef.optional(), action: ScreenAction.default({ do: "look" }) }) },
+  /** Sessions on a Mac's own screen Galahad asked for, the newest first, each where it stands now (core's screen.ts). */
+  screenSessions: { method: "GET", path: "/api/screen/sessions", scope: "mind:read", input: null },
+  /**
+   * Galahad asks to use a Mac itself for a while (`on`: which, where the fleet has more than one): his alone, in your
+   * conversation with him. An approve card goes to your devices; nothing of that Mac is his until you allow it.
+   */
+  askScreen: {
+    method: "POST", path: "/api/screen/ask", scope: "sandbox",
+    input: z.strictObject({ on: NodeRef.optional(), why: z.string().trim().min(3).max(500), minutes: z.number().int().min(1).max(SCREEN_SESSION_MAX_MINUTES) }),
+  },
+  /** Your answer to his ask, yours alone: allowed (his for its minutes, from now) or not. */
+  decideScreen: { method: "POST", path: "/api/screen/decide", scope: "fleet:admin", input: z.strictObject({ id: ScreenSessionId, allow: z.boolean() }) },
+  /** A session over before its time: ended by you, or by him once he's done. */
+  endScreen: { method: "POST", path: "/api/screen/end", scope: "chat", input: z.strictObject({ id: ScreenSessionId }) },
+  /**
+   * One thing Galahad does on a Mac itself (his alone, in a session you allowed: the Mac checks it from its own copy of
+   * the log before anything is done), and a picture of its screen after it, or what a command printed.
+   */
+  screenUse: { method: "POST", path: "/api/screen/use", scope: "sandbox", input: z.strictObject({ on: NodeRef.optional(), action: ScreenUseAction }) },
   prepareTeamWorkspace: {
     method: "POST", path: "/api/team/prepare-workspace", scope: "fleet:admin",
     input: z.strictObject({

@@ -65,8 +65,10 @@ CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, device TEXT NOT NULL, h
  *    by a replica that held such events before it knew them.
  * 4: your rules (rule.set, rule.removed; in v_lww as rule:<name>), applied the same way by a replica that held
  *    them before it knew them.
+ * 5: sessions on a Mac's own screen (screen.asked, screen.decided, screen.ended; in v_lww as screen:<id>,
+ *    screen-decision:<id>, screen-ended:<id>), applied the same way by a replica that held them before it knew them.
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const MAX_PENDING = 2000;
 
@@ -266,6 +268,9 @@ export class MindStore {
         this.replay();
       } else if (from < 4 && this.db.query("SELECT 1 FROM events WHERE kind IN ('rule.set', 'rule.removed') LIMIT 1").get()) {
         // Rules a newer node wrote while this replica didn't know them: applied now, as a rebuild would.
+        this.replay();
+      } else if (from < 5 && this.db.query("SELECT 1 FROM events WHERE kind IN ('screen.asked', 'screen.decided', 'screen.ended') LIMIT 1").get()) {
+        // Screen sessions a newer node wrote while this replica didn't know them: applied now, as a rebuild would.
         this.replay();
       }
       if (from < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -1065,6 +1070,32 @@ export class MindStore {
         this.putLww(`action-decision:${body.action}`, event, { id: body.action, verdict: "approved", order: body.order, note: `standing order: ${order.label}` });
         return null;
       }
+      // Sessions on a Mac's own screen (docs/MAC.md, M4): asked for him by a full node, allowed or not by you alone (the
+      // first answer stands), and ended once, by you or by him; how long one lasts is counted from your answer.
+      case "screen.asked": {
+        if (!isFullNode(signer)) return "only full nodes may ask for a screen session";
+        const body = bodyOf(event, "screen.asked");
+        if (this.lww(`screen:${body.id}`)) return "screen session already asked";
+        this.putLww(`screen:${body.id}`, event, body as Json);
+        return null;
+      }
+      case "screen.decided": {
+        if (!isFullNode(signer)) return "only full nodes may record decisions";
+        if (event.prov?.trust !== "owner") return "a screen session is yours alone to allow";
+        const body = bodyOf(event, "screen.decided");
+        if (!this.lww(`screen:${body.id}`)) return "no such screen session";
+        if (this.lww(`screen-decision:${body.id}`)) return "screen session already decided";
+        this.putLww(`screen-decision:${body.id}`, event, { ...body, ...(event.prov.via ? { via: event.prov.via } : {}) } as Json);
+        return null;
+      }
+      case "screen.ended": {
+        if (!isFullNode(signer)) return "only full nodes may end a screen session";
+        const body = bodyOf(event, "screen.ended");
+        if (!this.lww(`screen:${body.id}`)) return "no such screen session";
+        if (this.lww(`screen-ended:${body.id}`)) return "screen session already ended";
+        this.putLww(`screen-ended:${body.id}`, event, body as Json);
+        return null;
+      }
       case "rule.set":
       case "rule.removed": {
         // Your rules (core's rules.ts) are your word alone: never an agent's, never a stranger's, never unsaid.
@@ -1298,6 +1329,29 @@ export class MindStore {
   /** Your rules in force, by name, each as it was written (open in the log: core's readRule reads it). */
   rules(): RuleRecord[] {
     return this.lwwPrefix<{ name: string; rule: Json; via?: string }>("rule:").map((entry) => ({ name: entry.value!.name, rule: entry.value!.rule, hlc: entry.hlc, via: entry.value!.via ?? null }));
+  }
+
+  // ---- screen sessions ---------------------------------------------------------
+
+  /** Every session on a Mac's own screen Galahad asked for, the newest first, with your answer and its end. */
+  screenSessions(): ScreenSessionRecord[] {
+    return this.lwwPrefix<{ id: string; node: string; why: string; minutes: number }>("screen:")
+      .map((entry) => {
+        const asked = entry.value!;
+        const decision = this.lww<{ verdict: "allowed" | "denied"; via?: string }>(`screen-decision:${asked.id}`);
+        const ended = this.lww(`screen-ended:${asked.id}`);
+        return {
+          id: asked.id,
+          node: asked.node,
+          why: asked.why,
+          minutes: asked.minutes,
+          askedAt: decodeHlc(entry.hlc).ms,
+          askedBy: entry.device,
+          decision: decision?.value ? { verdict: decision.value.verdict, at: decodeHlc(decision.hlc).ms, via: decision.value.via ?? null } : null,
+          endedAt: ended ? decodeHlc(ended.hlc).ms : null,
+        };
+      })
+      .sort((x, y) => y.askedAt - x.askedAt || (x.id < y.id ? -1 : 1));
   }
 
   // ---- skills ----------------------------------------------------------------
@@ -1535,6 +1589,20 @@ export interface RuleRecord {
   rule: Json;
   hlc: string;
   via: string | null;
+}
+
+/** A session on a Mac's own screen, as the log holds it (store.screenSessions; core's screenSession says where it stands). */
+export interface ScreenSessionRecord {
+  id: string;
+  /** The Mac it is on. */
+  node: string;
+  why: string;
+  minutes: number;
+  askedAt: number;
+  /** The node that asked for him. */
+  askedBy: string;
+  decision: { verdict: "allowed" | "denied"; at: number; via: string | null } | null;
+  endedAt: number | null;
 }
 
 /** One version of a skill, as the log's event wrote it. Its words (`doc`) are as written: the reader checks them. */

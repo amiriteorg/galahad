@@ -1,4 +1,4 @@
-import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
+import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, ScreenSessionView, SecretRequestView } from "@galahad/core";
 import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { Live } from "./context.ts";
@@ -37,6 +37,8 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   const connectorRequests = signal<ConnectorRequestView[]>([]);
   const aboutYou = signal<MemoryView[]>([]);
   const actions = signal<ActionView[]>([]);
+  /** His asks to use a Mac itself, and his sessions there (core's screen.ts). */
+  const screenSessions = signal<ScreenSessionView[]>([]);
   const notices = signal<NoticeView[]>([]);
   const online = signal(navigator.onLine);
   const inboxLoaded = signal(false);
@@ -56,6 +58,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
       pairings.value.length +
         secretRequests.value.length +
         actions.value.filter((a) => isWaiting(a)).length +
+        screenSessions.value.filter((s) => s.state === "waiting" || s.state === "allowed").length +
         notices.value.filter((n) => !n.dismissed).length +
         loopDrafts.value.length +
         connectorRequests.value.length +
@@ -67,6 +70,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   connectorRequests.subscribe(recount);
   aboutYou.subscribe(recount);
   actions.subscribe(recount);
+  screenSessions.subscribe(recount);
   notices.subscribe(recount);
 
   async function refreshFleet(): Promise<void> {
@@ -165,6 +169,21 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     }
   }
 
+  let lastScreen = "";
+  async function refreshScreenSessions(): Promise<void> {
+    if (!can("mind:read")) return;
+    try {
+      const { sessions } = await api.get<{ sessions: ScreenSessionView[] }>("/api/screen/sessions");
+      const signature = JSON.stringify(sessions);
+      if (signature !== lastScreen) {
+        lastScreen = signature;
+        screenSessions.set(sessions);
+      }
+    } catch {
+      /* transient, or an older node without screen sessions */
+    }
+  }
+
   async function refreshNotices(): Promise<void> {
     if (!can("mind:read")) return;
     try {
@@ -209,7 +228,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   }
 
   const refreshInbox = async () => {
-    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshNotices(), refreshLoopDrafts(), refreshConnectorRequests(), refreshAboutYou()]);
+    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshScreenSessions(), refreshNotices(), refreshLoopDrafts(), refreshConnectorRequests(), refreshAboutYou()]);
     inboxLoaded.set(true);
   };
 
@@ -225,6 +244,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     timers.push(setInterval(() => void refreshConnectorRequests(), REQUESTS_MS));
     timers.push(setInterval(() => void refreshAboutYou(), REQUESTS_MS));
     timers.push(setInterval(() => void refreshActions(), ACTIONS_MS));
+    timers.push(setInterval(() => void refreshScreenSessions(), ACTIONS_MS));
     timers.push(setInterval(() => void refreshNotices(), NOTICES_MS));
     watchTeam();
   }
@@ -248,5 +268,5 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     stop();
     listeners.abort();
   };
-  return { fleet, pairings, secretRequests, actions, notices, loopDrafts, connectorRequests, aboutYou, refreshAboutYou, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshLoopDrafts, refreshConnectorRequests, refreshInbox, stop: dispose };
+  return { fleet, pairings, secretRequests, actions, screenSessions, refreshScreenSessions, notices, loopDrafts, connectorRequests, aboutYou, refreshAboutYou, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshLoopDrafts, refreshConnectorRequests, refreshInbox, stop: dispose };
 }

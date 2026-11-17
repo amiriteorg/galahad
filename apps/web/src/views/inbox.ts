@@ -1,4 +1,4 @@
-import type { ActionView, LoopDraftView, NoticeView } from "@galahad/core";
+import type { ActionView, LoopDraftView, NoticeView, ScreenSessionView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { noticeFrom } from "../lib/notices.ts";
@@ -202,6 +202,61 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
   );
 }
 
+/**
+ * His ask to use a Mac itself (docs/MAC.md, M4), or his session there while it lasts: what for (his words), for how
+ * long, and your answer: let him (asked once more, saying what it gives him), say no, or end it sooner.
+ */
+function screenSessionCard(ctx: Ctx, s: ScreenSessionView): HTMLElement {
+  const outcome = h("div");
+  const admin = ctx.can("fleet:admin");
+  const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  async function answer(path: string, body: Record<string, unknown>, trigger: HTMLButtonElement, said: string): Promise<void> {
+    await busy(trigger, async () => {
+      try {
+        await ctx.api.post(path, body);
+        toast(said);
+      } catch (error) {
+        replace(outcome, callout("danger", errorMessage(error), { title: "Couldn't do that" }));
+      }
+      await ctx.live.refreshScreenSessions();
+    });
+  }
+  if (s.state === "allowed") {
+    const end = button("End now", { variant: "danger", icon: "x" });
+    end.addEventListener("click", () => void answer("/api/screen/end", { id: s.id }, end, "Ended: nothing of that Mac is his now."));
+    return card(
+      { tone: "warn", label: `Galahad is using ${s.nodeName} itself` },
+      listRow({ lead: "mark", leadTone: "agent", top: true, title: `Galahad is using ${s.nodeName} itself`, sub: `Until ${clock(s.until!)}, or until you end it.`, meta: [h("span", { title: new Date(s.until!).toLocaleString() }, `ends ${relativeTime(s.until!)}`)] }),
+      h("div", { class: "quote small" }, s.why),
+      admin ? formActions(end) : callout("quiet", h("span", {}, "This device can't end it (no fleet:admin scope): ", h("code", {}, `galahad screen end ${s.id}`))),
+      outcome,
+    );
+  }
+  const yes = button("Let him…", { variant: "primary", icon: "check" });
+  const no = button("Not now", { icon: "x" });
+  yes.addEventListener("click", async () => {
+    const ok = await confirmAction({
+      title: `Let Galahad use ${s.nodeName} itself?`,
+      body: [
+        h("p", {}, `For ${s.minutes} minutes from now: he sees its screen, uses its apps and runs commands as its user, held to your rules. You can watch it and end it any time.`),
+        h("p", {}, "That account holds the node's keys, so a misled model could act as you there: let him only for work you want done that way."),
+      ],
+      confirmLabel: `Let him, for ${s.minutes} minutes`,
+      tone: "primary",
+    });
+    if (ok) await answer("/api/screen/decide", { id: s.id, allow: true }, yes, `Allowed for ${s.minutes} minutes.`);
+  });
+  no.addEventListener("click", () => void answer("/api/screen/decide", { id: s.id, allow: false }, no, "Said no: nothing of it is his."));
+  return card(
+    { tone: "accent", label: `Galahad asks to use ${s.nodeName} itself` },
+    listRow({ lead: "mark", leadTone: "agent", top: true, title: `Galahad asks to use ${s.nodeName} itself`, sub: `For ${s.minutes} minutes, if you let him.`, meta: [h("span", { title: new Date(s.askedAt).toLocaleString() }, relativeTime(s.askedAt))] }),
+    h("div", { class: "quote small" }, s.why),
+    note(`Answer by ${clock(s.answerBy)}. No answer means no.`),
+    admin ? formActions(no, yes) : callout("quiet", h("span", {}, "This device can't answer (no fleet:admin scope): ", h("code", {}, `galahad screen approve ${s.id}`))),
+    outcome,
+  );
+}
+
 function decidedRow(ctx: Ctx, action: ActionView): HTMLElement {
   const state = STATE[action.state] ?? { label: action.state, tone: "neutral" as Tone };
   const asked = hlcMs(action.requestedAt);
@@ -230,6 +285,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const draftsBox = h("div", { class: "stack" });
   const connectorsBox = h("div", { class: "stack" });
   const actionsBox = h("div", { class: "stack" });
+  const screenBox = h("div", { class: "stack" });
   const noticesBox = card({ flush: true });
   const historyRows = rows();
   const historySummary = h("span", { class: "small strong" });
@@ -239,6 +295,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const read = ctx.can("mind:read");
 
   const waiting = () => ctx.live.actions.value.filter((a) => isWaiting(a));
+  const openScreen = () => ctx.live.screenSessions.value.filter((x) => x.state === "waiting" || x.state === "allowed");
   const openNotices = () => ctx.live.notices.value.filter((n) => !n.dismissed);
 
   async function dismiss(n: NoticeView, trigger: HTMLButtonElement): Promise<void> {
@@ -304,6 +361,18 @@ export const inboxView: View = (root, ctx, { scope }) => {
     renderAllClear();
   };
 
+  let shownScreen = "";
+  const renderScreen = () => {
+    const list = openScreen();
+    const signature = JSON.stringify(list);
+    if (signature !== shownScreen) {
+      shownScreen = signature;
+      replace(screenBox, ...list.map((x) => screenSessionCard(ctx, x)));
+    }
+    screenSection.hidden = !list.length;
+    renderAllClear();
+  };
+
   const renderDrafts = () => {
     const drafts = ctx.live.loopDrafts.value;
     replace(draftsBox, ...drafts.map((d) => loopDraftCard(ctx, d)));
@@ -326,7 +395,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   };
 
   const renderAllClear = () => {
-    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + ctx.live.loopDrafts.value.length + ctx.live.aboutYou.value.length + ctx.live.connectorRequests.value.length;
+    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + ctx.live.loopDrafts.value.length + ctx.live.aboutYou.value.length + ctx.live.connectorRequests.value.length + openScreen().length;
     // Until the first answer, a skeleton: "nothing needs you" would be a guess, and pushed away a moment later.
     const loaded = ctx.live.inboxLoaded.value;
     allClear.hidden = loaded && pending > 0;
@@ -349,6 +418,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   };
 
   const pairingsSection = section("Devices asking to join", {}, pairingsBox);
+  const screenSection = section("His use of a Mac itself", {}, screenBox);
   const actionsSection = section(
     "Galahad asks your leave",
     { note: "Anything outward, and every delete, waits for you unless a standing order answers it. Approved, it's sent once; no answer in 24 hours means no." },
@@ -379,7 +449,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
       { class: "page narrow" },
       pageHead("Inbox", "Everything that needs you. Nothing here happens without your say."),
       // Shown whole once the Inbox has been read: what waits comes in at once, not section by section.
-      pageBody(allClear, pairingsSection, actionsSection, requestsSection, connectorsSection, draftsSection, aboutYouSection, noticesSection, read ? history : null),
+      pageBody(allClear, pairingsSection, screenSection, actionsSection, requestsSection, connectorsSection, draftsSection, aboutYouSection, noticesSection, read ? history : null),
     ),
   );
 
@@ -389,6 +459,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   scope.add(ctx.live.connectorRequests.subscribe(renderConnectorRequests));
   scope.add(ctx.live.aboutYou.subscribe(renderAboutYou));
   scope.add(ctx.live.actions.subscribe(renderActions));
+  scope.add(ctx.live.screenSessions.subscribe(renderScreen));
   scope.add(ctx.live.notices.subscribe(renderNotices));
   scope.add(ctx.live.inboxLoaded.subscribe(renderAllClear));
   renderPairings();

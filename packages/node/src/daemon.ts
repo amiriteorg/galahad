@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonical, decodeHlc, type NodeIdentity } from "@galahad/core";
+import { canonical, decodeHlc, type NodeIdentity, screenSessionView } from "@galahad/core";
 import { type BrainContext, GatewayTokens, installedConnectors, type OAuthEndpoints, pinLegacyKeys } from "@galahad/brain";
 import { UsageStore } from "./usage.ts";
 import { cloudflareNatives } from "./cloudflare.ts";
@@ -506,6 +506,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     sources: {
       notices: () => store.lwwPrefix<{ key: string; severity: string; title: string; source: string; dismissed?: boolean }>("notice:").flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
       actions: () => connectors.actions(),
+      screenSessions: () => store.screenSessions().map((s) => screenSessionView(s, Date.now(), (id) => store.device(id)?.name ?? id.slice(2, 10))),
       secretRequests: () => vault.requests().map((r) => r.name),
       connectorRequests: () => {
         const installed = new Set(installedConnectors(store).map((c) => c.id));

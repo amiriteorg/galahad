@@ -91,6 +91,8 @@ import {
   type RuleView,
   pictureType,
   textOf,
+  screenSessionView,
+  activeScreenSession,
 } from "@galahad/core";
 import {
   AGENTS,
@@ -555,6 +557,26 @@ export function createApp(ctx: AppContext) {
       throw error;
     }
   }
+  /** The Mac a session is on: the one named, or the fleet's one Mac that lends Galahad its screen. */
+  function screenMac(on: string | undefined): Device {
+    const lends = (d: Device) => d.profile?.caps?.screen === true;
+    if (on) {
+      const named = resolveNode(on);
+      if (!lends(named)) throw new HttpError(424, `${named.name} has no screen of its own for Galahad: only a Mac that runs its node from the Galahad app has one`);
+      return named;
+    }
+    const macs = ctx.store.devices().filter((d) => d.kind === "node" && d.role === "full" && lends(d));
+    if (!macs.length) throw new HttpError(424, "no Mac in this fleet lends Galahad its screen: a Mac whose node runs from the Galahad app does, once you allow it there (galahad screen allow)");
+    if (macs.length > 1) throw new HttpError(400, `name the Mac (on): ${macs.map((m) => m.name).join(", ")}`);
+    return macs[0]!;
+  }
+  /** Every session on a Mac's own screen, where each stands now. */
+  const screenSessionViews = (now = Date.now()) => ctx.store.screenSessions().map((s) => screenSessionView(s, now, (id) => ctx.store.device(id)?.name ?? id.slice(2, 10)));
+  const screenSessionOf = (id: string) => {
+    const found = screenSessionViews().find((s) => s.id === id);
+    if (!found) throw new HttpError(404, "no such session");
+    return found;
+  };
   /** A Mac's screen is watched and taken over by you, or a node of yours passing on what you asked: never an agent's to. */
   const screenOwner = (p: Principal): void => {
     if (!isOwner(p) && p.kind !== "node") throw new HttpError(403, "a Mac's screen is watched and taken over by you alone");
@@ -866,8 +888,10 @@ export function createApp(ctx: AppContext) {
   }
   /** His tools for an answer. In a chat where he read the bank he's offered no way to write a skill: none is ever drawn from one. */
   const toolsIn = (agent: Principal, kept: ConversationSummary | null) => {
-    // (His own tools, the ones to the knights, only where he may lead them and this node keeps a team.)
-    const tools = toolsFor(agent.scopes, leadsTeam(agent) && !!ctx.team);
+    // (His own tools, the ones to the knights, only where he may lead them and this node keeps a team; a Mac itself
+    // only where a node of the fleet lends him its screen.)
+    const lends = ctx.store.devices().some((d) => d.kind === "node" && d.profile?.caps?.screen === true);
+    const tools = toolsFor(agent.scopes, leadsTeam(agent) && !!ctx.team).filter((t) => lends || t.name !== "mac");
     return kept?.bank ? tools.filter((t) => t.name !== "skill_write") : tools;
   };
   /**
@@ -1993,6 +2017,63 @@ export function createApp(ctx: AppContext) {
         if (did) ctx.ledger?.({ class: "modify", resource: "screen", target: ctx.nodeName, verdict: "allow", detail: `${did} · ${p.kind === "node" ? `for you, from ${ctx.store.device(p.device)?.name ?? "a node"}` : "by you"}`.slice(0, 300) });
         return view;
       });
+    },
+    screenSessions: () => ({ sessions: screenSessionViews() }),
+    screenUse: (input, p) => {
+      if (!leadsTeam(p) && p.kind !== "node") throw new HttpError(403, "only Galahad himself uses a Mac this way, in a session you allowed");
+      const mac = p.kind === "node" ? null : screenMac(input.on);
+      return onScreen(p, mac?.id, routes.screenUse.path, { action: input.action }, async (screen) => {
+        // Checked here, on the Mac itself, from its own copy of the log: no session you allowed, nothing is done.
+        const session = activeScreenSession(ctx.store.screenSessions(), ctx.identity.id, Date.now());
+        if (!session) throw new HttpError(423, `${ctx.nodeName} isn't his now: no session you allowed is running here (he asks first; you answer)`);
+        const by = `by Galahad, session ${session.id}`;
+        const said = { node: ctx.identity.id, nodeName: ctx.nodeName, session: session.id };
+        if (input.action.do === "run") {
+          const command = input.action.command;
+          // Your tripwires hold here as on his quests: a refused command isn't run; one that halts ends the session.
+          const trip = tripOf(rulesInForce(), command);
+          if (trip) {
+            ledgerTrip(`screen.${session.id}`, trip, command, false, `${ctx.nodeName} itself`);
+            if (trip.does === "halt") ctx.store.emit(ctx.identity, "screen.ended", { id: session.id });
+            const why = `Not run: your liege's tripwire "${trip.rule}" ${trip.does === "halt" ? "halts the work, so this session on the Mac is over" : "refuses this command"} (${trip.why}).`;
+            return { ...said, ran: { exitCode: -1, stdout: "", stderr: why, durationMs: 0, truncated: false } };
+          }
+          const ran = await screen.command(command, input.action.timeoutSec ?? 120);
+          ctx.ledger?.({ class: "modify", resource: "screen", target: ctx.nodeName, verdict: "allow", detail: `run ${clip(redact(command.split("\n")[0] ?? ""), 160, 40)} → exit ${ran.exitCode} · ${by}`.slice(0, 300) });
+          return { ...said, ran: { ...ran, stdout: redact(ran.stdout), stderr: redact(ran.stderr) } };
+        }
+        const view = await screen.act(input.action);
+        const did = screenDid(input.action);
+        if (did) ctx.ledger?.({ class: "modify", resource: "screen", target: ctx.nodeName, verdict: "allow", detail: `${did} · ${by}`.slice(0, 300) });
+        return { ...said, view, ...(screen.front ? { front: screen.front } : {}) };
+      });
+    },
+    askScreen: (input, p) => {
+      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself asks to use a Mac itself, in your conversation with him");
+      const mac = screenMac(input.on);
+      // One ask waits at a time on a Mac: asked again, it is the same card, not a second.
+      const waiting = screenSessionViews().find((s) => s.node === mac.id && s.state === "waiting");
+      if (waiting) return { session: waiting };
+      const id = `sc_${randomId(16)}`;
+      ctx.store.emit(ctx.identity, "screen.asked", { id, node: mac.id, why: redact(input.why).slice(0, 500), minutes: input.minutes });
+      ctx.ledger?.({ class: "modify", resource: "screen", target: mac.name, verdict: "ask", reason: "a session on a Mac's own screen is yours to allow", detail: `session ${id}, ${input.minutes} minutes, asked by Galahad` });
+      return { session: screenSessionOf(id) };
+    },
+    decideScreen: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "a session on a Mac's own screen is yours alone to allow");
+      const session = screenSessionOf(input.id);
+      if (session.state !== "waiting") throw new HttpError(409, session.state === "lapsed" ? "it waited too long: no answer is no, and he asks again when he still needs it" : "it was answered already");
+      ctx.store.emit(ctx.identity, "screen.decided", { id: input.id, verdict: input.allow ? "allowed" : "denied" }, { trust: "owner", ...(p.kind === "client" ? { via: p.device } : {}) });
+      ctx.ledger?.({ class: "modify", resource: "screen", target: session.nodeName, verdict: input.allow ? "approved" : "deny", reason: input.allow ? `you allowed it for ${session.minutes} minutes` : "you said no", detail: `session ${input.id}` });
+      return { session: screenSessionOf(input.id) };
+    },
+    endScreen: (input, p) => {
+      if (!isOwner(p) && !leadsTeam(p)) throw new HttpError(403, "a session is ended by you, or by Galahad himself");
+      const session = screenSessionOf(input.id);
+      if (session.state === "ended") return { session };
+      ctx.store.emit(ctx.identity, "screen.ended", { id: input.id });
+      ctx.ledger?.({ class: "modify", resource: "screen", target: session.nodeName, verdict: "allow", reason: isOwner(p) ? "you ended it" : "he was done", detail: `session ${input.id} ended` });
+      return { session: screenSessionOf(input.id) };
     },
     postTeamMessage: (input, p) => { ownerOnly(p); return { message: teamOf().post(input, p.kind === "admin" ? { kind: "admin" } : { kind: "client", device: p.device }) }; },
     createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },

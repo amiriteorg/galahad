@@ -25,6 +25,9 @@ import {
   type RouteName,
   routes,
   type SandboxView,
+  type ScreenSessionView,
+  type ScreenUse,
+  type ScreenUseAction,
   SKILL_ID,
   SKILL_LIMITS,
   SKILL_STATES,
@@ -761,6 +764,92 @@ export const TOOLS: GalahadTool[] = [
     async run(api, { command, timeoutSec }) {
       const result = await api.call<ExecResult>("computerExec", { command, ...(timeoutSec ? { timeoutSec } : {}) });
       return formatExec(result, "your computer");
+    },
+  }),
+
+  // ---- A Mac itself (docs/MAC.md, M4): its real screen, its apps and a shell as its user, in a session you allowed ----
+  tool({
+    name: "mac",
+    title: "Use the Mac itself",
+    description:
+      "Use a Mac of your liege's itself, the whole machine (its real screen, its apps, a shell as its user), only in a session they allowed. First `ask`, saying why and for how many minutes: a card goes to their devices, and nothing of the Mac is yours until they let you; say in your reply that you asked, and use it once they've answered. Then each step answers with a picture of its screen: `look`; `click` or `move` at a place in that picture (x across, y down, in its points); `scroll` up or down; `type` text; `key` (Return, Tab, Escape, BackSpace, Down, and chords: super+space opens Spotlight, super is the ⌘ key); `open` an http(s) address in its browser; `app` to open an app by its name (Safari, Xcode, Terminal); `run` a zsh command as its user in its home (two minutes unless you ask for longer, fifteen at most; your liege's tripwires hold). `end` when you're done. Its account holds your liege's own keys: do there only the work they asked for. Work in a repository belongs with a knight (team_give); this is for what needs the Mac itself.",
+    input: {
+      do: z.enum(["ask", "look", "click", "move", "scroll", "type", "key", "open", "app", "run", "end"]).describe("What to do"),
+      why: z.string().min(3).max(500).describe("ask: what you need the Mac for, in a sentence your liege reads on the card").optional(),
+      minutes: z.number().int().min(1).max(120).describe("ask: for how long (default 30)").optional(),
+      x: z.number().int().min(0).max(10_000).describe("click, move: across, in the picture's points").optional(),
+      y: z.number().int().min(0).max(10_000).describe("click, move: down, in the picture's points").optional(),
+      button: z.enum(["left", "right", "middle", "double"]).describe("click: which (default left; double is a double click)").optional(),
+      direction: z.enum(["up", "down"]).describe("scroll: which way").optional(),
+      times: z.number().int().min(1).max(50).describe("scroll: how many turns of the wheel (default 3)").optional(),
+      text: z.string().min(1).max(2000).describe("type: the text").optional(),
+      keys: z.array(z.string().regex(/^[A-Za-z0-9_+]{1,40}$/)).min(1).max(8).describe("key: the keys or chords, in order").optional(),
+      address: z.string().max(2000).regex(/^https?:\/\//).describe("open: an http(s) address").optional(),
+      name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$/).describe("app: the app's name").optional(),
+      command: z.string().min(1).max(100_000).describe("run: a zsh command, as the Mac's user, in its home").optional(),
+      timeoutSec: z.number().int().min(1).max(900).describe("run: how long it may run, in seconds (default 120)").optional(),
+      on: z.string().max(100).describe("Which Mac, where your liege has more than one that lends you its screen").optional(),
+    },
+    routes: ["askScreen", "screenUse", "endScreen", "screenSessions"],
+    flow: "egress",
+    own: true,
+    async run(api, args) {
+      const at = args.on ? { on: args.on } : {};
+      const clock = (ms: number) => new Date(ms).toISOString().slice(11, 16);
+      if (args.do === "ask") {
+        if (!args.why) return "Say why: what you need the Mac for, in a sentence your liege reads on the card.";
+        const { session } = await api.call<{ session: ScreenSessionView }>("askScreen", { ...at, why: args.why, minutes: args.minutes ?? 30 });
+        if (session.state === "allowed") return `${session.nodeName} is yours until ${clock(session.until!)} UTC: look, then work.`;
+        return `Asked: a card is on your liege's devices to let you use ${session.nodeName} itself for ${session.minutes} minutes (they answer by ${clock(session.answerBy)} UTC; no answer is no). Nothing of it is yours until they do: say so in your reply, and look once they've answered.`;
+      }
+      if (args.do === "end") {
+        const { sessions } = await api.call<{ sessions: ScreenSessionView[] }>("screenSessions");
+        const mine = sessions.find((s) => s.state === "allowed" && (!args.on || s.nodeName === args.on || s.node === args.on));
+        if (!mine) return "No session of yours is running on a Mac.";
+        await api.call("endScreen", { id: mine.id });
+        return `Ended: ${mine.nodeName} is no longer yours.`;
+      }
+      const missing = (what: string) => `${args.do} needs ${what}.`;
+      let action: ScreenUseAction;
+      switch (args.do) {
+        case "look":
+          action = { do: "look" };
+          break;
+        case "click":
+        case "move":
+          if (args.x === undefined || args.y === undefined) return missing("x and y, a place in the picture");
+          action = args.do === "click" ? { do: "click", x: args.x, y: args.y, ...(args.button ? { button: args.button } : {}) } : { do: "move", x: args.x, y: args.y };
+          break;
+        case "scroll":
+          if (!args.direction) return missing("a direction, up or down");
+          action = { do: "scroll", direction: args.direction, ...(args.times ? { times: args.times } : {}) };
+          break;
+        case "type":
+          if (!args.text) return missing("the text");
+          action = { do: "type", text: args.text };
+          break;
+        case "key":
+          if (!args.keys?.length) return missing("the keys");
+          action = { do: "key", keys: args.keys };
+          break;
+        case "open":
+          if (!args.address) return missing("an http(s) address");
+          action = { do: "open", address: args.address };
+          break;
+        case "app":
+          if (!args.name) return missing("the app's name");
+          action = { do: "app", name: args.name };
+          break;
+        case "run":
+          if (!args.command) return missing("a command");
+          action = { do: "run", command: args.command, ...(args.timeoutSec ? { timeoutSec: args.timeoutSec } : {}) };
+          break;
+      }
+      const used = await api.call<ScreenUse>("screenUse", { ...at, action });
+      if (used.ran) return formatExec(used.ran, `${used.nodeName} itself`);
+      const view = used.view!;
+      const where = `${used.nodeName} · ${view.width}×${view.height} points${used.front ? ` · in front: ${used.front}` : ""}`;
+      return { text: where, images: [{ mediaType: view.shot.mediaType, data: view.shot.data, alt: `The screen of ${used.nodeName}` }] };
     },
   }),
 

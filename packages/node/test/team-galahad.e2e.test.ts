@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ChatStreamEvent, clientIdFromKey, type LedgerEntry, type RouteName, routes, type Scope, signRequest, TEAM_LIMITS, type TeamOverview, type TeamRoomView, type TeamSnapshot, type TurnView, utf8 } from "@galahad/core";
+import { type ChatStreamEvent, clientIdFromKey, type LedgerEntry, type RouteName, routes, type Scope, type ScreenSessionView, signRequest, TEAM_LIMITS, type TeamOverview, type TeamRoomView, type TeamSnapshot, type TurnView, utf8 } from "@galahad/core";
 import { requestPairing, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { z } from "zod";
@@ -10,6 +10,7 @@ import { ARM_DEFAULT_SCOPES } from "../src/arms.ts";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { type HelperRun, MacScreen, type ShellRun } from "../src/mac-screen.ts";
 import { chatTools, type GalahadTool, TOOLS, toolsFor } from "../src/tools.ts";
 import { freePort } from "./ports.ts";
 
@@ -24,6 +25,18 @@ const home = new Home(join(root, "node"));
 const port = freePort();
 const caps: Capabilities = { os: "linux", arch: "x64", hostname: "team-test", cores: 4, cpu: "test", memoryGb: 8, hasBattery: false, gpu: [], docker: false, vm: { kvm: false, tools: [] }, tools: [], localModels: [], tailscale: null };
 let daemon: Daemon;
+/** A Mac's own screen and shell, played by stand-ins: what each was asked to do. */
+const onTheMac: string[][] = [];
+const macHelper: HelperRun = async (args) => {
+  onTheMac.push(args);
+  if (args[0] === "status") return { code: 0, stdout: '{"width":1512,"height":948,"record":true,"control":true,"front":"Safari: Galahad"}', stderr: "" };
+  if (args[0] === "shot") return { code: 0, stdout: "SlBFRw==", stderr: "" };
+  return { code: 0, stdout: "", stderr: "" };
+};
+const macShell: ShellRun = async (command) => {
+  onTheMac.push(["run", command]);
+  return { exitCode: 0, stdout: "hi\n", stderr: "", durationMs: 3, truncated: false };
+};
 
 const sse = (...chunks: object[]) => () => new Response(chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
 const say = (text: string) => sse({ choices: [{ delta: { content: text } }] });
@@ -63,7 +76,7 @@ async function settled(): Promise<TeamSnapshot> {
   return state;
 }
 // His own tools: the ones to the knights, his own computer, giving a VM more, and proposing a fact about you.
-const OWN = ["about_you", "computer", "team", "team_give", "team_grow", "team_message", "team_recruit"];
+const OWN = ["about_you", "computer", "mac", "team", "team_give", "team_grow", "team_message", "team_recruit"];
 /** One of your own devices, paired with these scopes: its requests are signed, as a phone's are. */
 async function pairDevice(name: string, scopes: Scope[]) {
   const keys = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
@@ -85,7 +98,7 @@ beforeAll(async () => {
   const { identity, keystore } = await home.createIdentity("file"); const mind = new MindStore(home.mindPath);
   const fleet = foundFleet(mind, identity, { fleetName: "roundtable", nodeName: "keep" }); mind.close();
   home.writeConfig({ v: 1, name: "keep", fleet, port, keystore, advertise: "127.0.0.1" });
-  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, shutdownGraceMs: 100 });
+  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, shutdownGraceMs: 100, screen: new MacScreen(macHelper, { settleMs: 0, shell: macShell }) });
   await api("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${model.port}/v1` });
   for (const role of ["planner", "engineer"]) await api("setRoster", { role, models: ["stand-in/m"] });
   await api("saveTeammate", { id: "ada", name: "Ada", instructions: "Implement small, verified changes.", role: "engineer" });
@@ -252,8 +265,9 @@ test("within what your device may do: one that may not command the team itself g
   const listed = await lead("chat", { messages: [{ role: "user", content: "Who do you have?" }] });
   expect(listed.status).toBe(200);
   const events = (await listed.text()).split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)) as ChatStreamEvent);
-  // (His computer is a sandbox, and giving a VM more is a sandbox's: only from a device that may use sandboxes, which this one may not.)
-  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN.filter((name) => name !== "computer" && name !== "team_grow"));
+  // (His computer is a sandbox, giving a VM more is a sandbox's, and so is using a Mac itself: only from a device that may
+  // use sandboxes, which this one may not.)
+  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN.filter((name) => !["computer", "mac", "team_grow"].includes(name)));
   expect(results(events)).toEqual([expect.objectContaining({ name: "team", ok: true })]);
 });
 
@@ -323,3 +337,45 @@ test("asked for work in your conversation, he gives it to the Roundtable: the kn
   expect(task.room).toBe((await api<{ room: { id: string } }>("directTeammate", { id: "rev" })).room.id);
   await settled();
 });
+
+test("the Mac itself: he asks, and nothing of it is his until you let him; then each step answers with its screen, your tripwires hold on his commands, and he ends it", async () => {
+  // Asked in your conversation: a card for you; nothing done on the Mac yet.
+  script = [callTool("mac", { do: "ask", why: "Build the iOS app in Xcode and read its errors", minutes: 20 }), say("I asked to use the Mac.")];
+  await ask("Can you build the iOS app on the Mac mini?");
+  expect(told("mac")).toStartWith("Asked: a card is on your liege's devices to let you use keep itself for 20 minutes");
+  const [asked] = (await api<{ sessions: ScreenSessionView[] }>("screenSessions")).sessions;
+  expect(asked).toMatchObject({ state: "waiting", minutes: 20, why: "Build the iOS app in Xcode and read its errors" });
+  // Before you answer, he can't look, let alone click.
+  onTheMac.length = 0;
+  script = [callTool("mac", { do: "look" }), say("Waiting for you.")];
+  await ask("Go on.");
+  expect(told("mac")).toContain("isn't his now");
+  expect(onTheMac).toEqual([]);
+  // You let him: each step does one thing, and answers with a picture of the screen.
+  await api("decideScreen", { id: asked!.id, allow: true });
+  script = [callTool("mac", { do: "click", x: 100, y: 200 }), say("Clicked.")];
+  await ask("Go ahead.");
+  expect(told("mac")).toStartWith("keep · 1512×948 points · in front: Safari: Galahad");
+  expect(onTheMac).toContainEqual(["click", "100", "200", "left"]);
+  // His commands meet your tripwires as his quests' do.
+  await api("setRule", { name: "no-rm", does: "refuse", words: ["rm"] });
+  onTheMac.length = 0;
+  script = [callTool("mac", { do: "run", command: "rm -rf ~/Projects" }), say("Not allowed.")];
+  await ask("Clean up the projects folder.");
+  expect(told("mac")).toContain('Not run: your liege\'s tripwire "no-rm" refuses this command');
+  expect(onTheMac).toEqual([]);
+  script = [callTool("mac", { do: "run", command: "echo hi" }), say("Done.")];
+  await ask("Say hi on the Mac.");
+  expect(onTheMac).toEqual([["run", "echo hi"]]);
+  expect(told("mac")).toContain("keep itself · exit 0");
+  // Each thing done is a line of the session's; then he ends it, and it is his no longer.
+  const lines = (await api<{ entries: LedgerEntry[] }>("ledger")).entries.filter((e) => e.resource === "screen").map((e) => e.detail);
+  expect(lines).toContainEqual(`click 100 200 left · by Galahad, session ${asked!.id}`);
+  expect(lines).toContainEqual(`run echo hi → exit 0 · by Galahad, session ${asked!.id}`);
+  script = [callTool("mac", { do: "end" }), say("Done with the Mac.")];
+  await ask("That's all.");
+  expect(told("mac")).toBe("Ended: keep is no longer yours.");
+  expect((await api<{ sessions: ScreenSessionView[] }>("screenSessions")).sessions[0]!.state).toBe("ended");
+  await api("removeRule", { name: "no-rm" });
+});
+

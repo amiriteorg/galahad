@@ -1,4 +1,4 @@
-import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, SecretRequestView } from "@galahad/core";
+import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, ScreenSessionView, SecretRequestView } from "@galahad/core";
 import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { BrowserIdentity } from "./identity.ts";
@@ -32,6 +32,9 @@ export interface Live {
   secretRequests: Signal<SecretRequestView[]>;
   /** The oath's outbox: actions waiting for your answer, and recently decided ones. */
   actions: Signal<ActionView[]>;
+  /** His asks to use a Mac itself, and his sessions there. */
+  screenSessions: Signal<ScreenSessionView[]>;
+  refreshScreenSessions(): Promise<void>;
   /** What the heartbeat found, dismissed ones included (the Inbox shows the open ones). */
   notices: Signal<NoticeView[]>;
   /** Loops Galahad drafted when you asked for one in chat, waiting for you to add or dismiss. */

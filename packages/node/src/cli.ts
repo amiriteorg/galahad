@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenStatus, type ScreenView, type TrialView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TrialView } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -328,6 +328,9 @@ Maintenance
                                   a Mac's own screen, for Galahad (a Mac whose node runs from the Galahad app): its
                                   size and what macOS lets him do with it; allow shows macOS's prompts on that Mac
                                   (you turn both on there, once); look saves a picture of it
+  screen sessions | screen approve|deny|end <session>
+                                  his asks to use a Mac itself (each asks you first, for so many minutes from your
+                                  answer): where each stands, your answer, and ending one sooner
   firewall [status|rules|install|remove]
                                   a Mac's sandbox firewall (pf, from a helper of root's): a gateway sandbox reaches
                                   the gateway alone, an online one the internet, never the Mac or your networks; no
@@ -1016,7 +1019,28 @@ Next:
         console.log(`${out}: ${view.width}×${view.height}`);
         return;
       }
-      fail("usage: galahad screen [status|allow|look] [--on <node>] [--out shot.jpg]");
+      if (sub === "sessions") {
+        const { sessions } = await admin.call<{ sessions: ScreenSessionView[] }>("screenSessions");
+        if (!sessions.length) console.log("He hasn't asked to use a Mac itself.");
+        for (const s of sessions) {
+          const until = s.state === "allowed" && s.until ? ` · his until ${new Date(s.until).toLocaleTimeString()}` : s.state === "waiting" ? ` · answer by ${new Date(s.answerBy).toLocaleTimeString()}` : "";
+          console.log(`${s.id}  ${s.state.padEnd(8)} ${s.nodeName} · ${s.minutes} minutes${until}\n  ${dim(s.why)}`);
+        }
+        return;
+      }
+      if (sub === "approve" || sub === "deny") {
+        if (!rest[0]) fail(`usage: galahad screen ${sub} <session>`);
+        const { session } = await admin.call<{ session: ScreenSessionView }>("decideScreen", { id: rest[0], allow: sub === "approve" });
+        console.log(session.state === "allowed" ? `Allowed: Galahad may use ${session.nodeName} itself until ${new Date(session.until!).toLocaleTimeString()}. galahad screen end ${session.id} ends it sooner.` : "Said no: nothing of it is his.");
+        return;
+      }
+      if (sub === "end") {
+        if (!rest[0]) fail("usage: galahad screen end <session>");
+        await admin.call("endScreen", { id: rest[0] });
+        console.log("Ended: nothing of that Mac is his now.");
+        return;
+      }
+      fail("usage: galahad screen [status|allow|look] [--on <node>] [--out shot.jpg] | screen sessions | screen approve|deny|end <session>");
       return;
     }
 

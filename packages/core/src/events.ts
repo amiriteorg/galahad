@@ -55,6 +55,10 @@ export const LoopName = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,39}$/, "lowerca
 export const ConnectorId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, "lowercase letters, digits and - (max 40)");
 export const NoticeKey = z.string().min(1).max(160).regex(/^[A-Za-z0-9._:-]+$/);
 export const ActionId = z.string().regex(/^a_[A-Za-z0-9_-]{22}$/);
+/** A session on a Mac's own screen that Galahad asked for (docs/MAC.md, M4). */
+export const ScreenSessionId = z.string().regex(/^sc_[A-Za-z0-9_-]{22}$/);
+/** The longest a session on a Mac's own screen is allowed for at once, in minutes. */
+export const SCREEN_SESSION_MAX_MINUTES = 120;
 export const ArtifactId = z.string().regex(/^art_[A-Za-z0-9_-]{22}$/);
 export const ArtifactFile = z.strictObject({
   path: z.string().min(1).max(512),
@@ -190,6 +194,16 @@ export const Bodies = {
   "action.decided": z.strictObject({ id: ActionId, verdict: z.enum(["approved", "denied"]), note: z.string().max(500).optional() }),
   /** The receipt, written once by the node that asked, after it sent the request exactly once. */
   "action.done": z.strictObject({ id: ActionId, ok: z.boolean(), status: z.number().int().optional(), receipt: z.string().max(2000) }),
+
+  /**
+   * Galahad asks to use a Mac's own screen and shell (docs/MAC.md, M4): which Mac (`node`), what for, for how many
+   * minutes. Filed by a full node; nothing is his until you allow it.
+   */
+  "screen.asked": z.strictObject({ id: ScreenSessionId, node: DeviceRef, why: z.string().min(1).max(500), minutes: z.number().int().min(1).max(SCREEN_SESSION_MAX_MINUTES) }),
+  /** Your answer, your word alone: allowed (for its minutes, from this answer) or not. The first answer stands. */
+  "screen.decided": z.strictObject({ id: ScreenSessionId, verdict: z.enum(["allowed", "denied"]) }),
+  /** A session over before its time: ended by you, or by him once he's done. Once. */
+  "screen.ended": z.strictObject({ id: ScreenSessionId }),
   /** A standing order: your answer in advance to calls that match it (see orders.ts). Immutable: revoke and sign anew. */
   "order.set": OrderTerms.extend({ id: OrderId }),
   "order.revoked": z.strictObject({ id: OrderId }),

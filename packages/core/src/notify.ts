@@ -173,6 +173,26 @@ export function actionItem(a: { id: string; connector: string; tool: string; sta
   };
 }
 
+/** A node's name, as yours: plain, short. Another name says "a Mac". */
+const NODE_NAME = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/;
+
+/**
+ * Galahad asks to use a Mac itself (docs/MAC.md, M4): which Mac (its node's name, which you gave it) and for how long,
+ * never what for (his words). Like an approval, it settles a moment first: one you answered at once isn't told.
+ */
+export function screenItem(s: { id: string; nodeName: string; minutes: number; state: string; askedAt: number }, now: number): NotifyItem | null {
+  if (s.state !== "waiting" || now - s.askedAt < ACTION_SETTLE_MS) return null;
+  return {
+    key: `screen:${s.id}`,
+    kind: "approval",
+    alert: false,
+    title: "Galahad asks your approval",
+    body: `To use ${NODE_NAME.test(s.nodeName) ? s.nodeName : "a Mac"} itself for ${s.minutes} minutes: your answer is in the Inbox.`,
+    open: "inbox",
+    needs: ["mind:read"],
+  };
+}
+
 /**
  * A key he asked for. Neither its name nor what it's for is shown: whoever asked (an agent may) chose both, and a
  * name is words enough to say something ("call-this-number-now"). The Inbox says which.

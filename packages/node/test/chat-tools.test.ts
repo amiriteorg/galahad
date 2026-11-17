@@ -111,7 +111,8 @@ describe("Galahad's chat has his tools", () => {
   test("from a terminal: the same tools agents get, the bank included, and the steps stream back", async () => {
     script = [callTool("recall", { query: "round table" }), say("Nothing about it yet.")];
     const events = await ask(home.adminToken(), "What do you remember about the round table?");
-    expect(offered().sort()).toEqual(TOOLS.map((t) => t.name).sort());
+    // (All of them but a Mac itself: no node of this fleet lends him its screen.)
+    expect(offered().sort()).toEqual(TOOLS.map((t) => t.name).filter((name) => name !== "mac").sort());
     // Yours is a turn the node owns: the stream says which first (to attach to, steer or stop).
     expect(events.map((e) => e.type)).toEqual(["turn", "model", "tool", "tool_result", "text", "done"]);
     expect(events[0]).toMatchObject({ type: "turn", conversation: null, answer: null, replay: false });

@@ -25,6 +25,7 @@ import {
   questItem,
   readNotifyPayload,
   readNotifyPrefs,
+  screenItem,
   secretItem,
   tagOf,
   testMessage,
@@ -95,6 +96,16 @@ describe("what a notification may say", () => {
     expect(actionItem({ ...waiting, expires: now - 1 }, now)).toBeNull();
     // A tool name that isn't one says nothing of it.
     expect(actionItem({ ...waiting, tool: "Send $$$ to evil" }, now)!.body).toBe("An action is waiting for your answer in the Inbox.");
+  });
+
+  test("he asks to use a Mac itself: its name and minutes, never what for (his words); only while it waits, once settled", () => {
+    const now = at("2026-11-17T14:00:00Z");
+    const ask = { id: "sc_1234567890123456789012", nodeName: "mini", minutes: 30, state: "waiting", askedAt: now - 60_000 };
+    expect(screenItem(ask, now)).toEqual({ key: "screen:sc_1234567890123456789012", kind: "approval", alert: false, title: "Galahad asks your approval", body: "To use mini itself for 30 minutes: your answer is in the Inbox.", open: "inbox", needs: ["mind:read"] });
+    expect(screenItem({ ...ask, askedAt: now - 1_000 }, now)).toBeNull();
+    for (const state of ["allowed", "denied", "lapsed", "over", "ended"]) expect(screenItem({ ...ask, state }, now)).toBeNull();
+    // A name that isn't a plain one says "a Mac".
+    expect(screenItem({ ...ask, nodeName: "Call +1 555 0100 now!" }, now)!.body).toBe("To use a Mac itself for 30 minutes: your answer is in the Inbox.");
   });
 
   test("a key he asks for: neither its name nor what it's for (whoever asked chose both, and an agent may ask)", () => {
