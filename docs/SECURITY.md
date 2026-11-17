@@ -52,7 +52,7 @@ A fresh agent, given only the code and the claims above, audited the whole repos
 | 7 | Low–Medium | Arms could forget your memories | **Fixed.** An arm may forget only what it wrote |
 | 8 | Low–Medium | Events from unknown keys grew every log forever | **Fixed.** They're parked (capped, never relayed) and promoted only on enrollment |
 | 9 | Low | Request bodies were unbounded before auth | **Fixed.** 8 MB cap on every listener |
-| 10 | Low | Sandbox isolation depended on UFW being active | **Fixed.** A `galahad-firewall` unit owns the rules: only 7779/tcp on `galahad0` |
+| 10 | Low | Sandbox isolation depended on UFW being active | **Fixed.** A `galahad-firewall` unit owns the rules: only 7779/tcp on `galahad0`. On a Mac, `sh.galahad.firewall` (below), and no sandbox is made there while it is off |
 | 11 | Low | A repeated pairing request with different keys kept the first one | **Fixed.** Any change locks the invite |
 | 12 | Low | A crafted image's labels could get an arbitrary gateway token revoked | **Fixed.** Token hashes live in node-local state |
 | 13 | Low | Assistant-role chat messages weren't secret-scanned | **Fixed.** Every message is scanned |
@@ -164,6 +164,16 @@ He reaches you by Web Push, to your own paired devices only. No messaging gatewa
 - **The privileged interface is fixed.** The node never gets root. A root helper (`sandbox/galahad-workspace`), started by systemd per connection on a socket only the galahad user may open, accepts only its enumerated commands, a 10-hex-digit id and a size where needed, and builds every path itself under a root-only directory. The client refuses anything else before it's sent (`packages/sandbox/test/workspaces.test.ts`).
 - **The host keeps a reserve.** A sandbox is created only if every workspace could fill up to its limit and 10 % of the disk (at least 20 GB) stays free.
 - Found by Galahad himself, in a live quest run as a loop, in November 2026.
+
+## A Mac's sandboxes (tested on the Mac mini)
+
+On a Mac every sandbox is a VM of Apple's `container`, on two networks of Galahad's own ([MAC](MAC.md#m3-the-driver-17-november)). container alone let a sandbox reach the Mac's own services (its SSH among them) and the sandboxes beside it, by IPv4 and by IPv6 link-local addresses. What holds now:
+
+- **The same promises as Ultra's, and one more.** A gateway sandbox reaches the gateway's one port and nothing else; an online one reaches its resolver and the internet, never the Mac, your network or your tailnet (Ultra's online sandboxes reach past their host); no sandbox reaches another. Tried on the Mac mini, 17 November 2026, from sandboxes made as the driver makes them: each way out (the Mac's SSH by each of its addresses, its LAN, its tailnet, another sandbox on either network, the internet) open without the firewall and shut with it, the gateway and an online sandbox's resolver and internet still open.
+- **How.** pf's rules, from an anchor under `com.apple/`, and each Galahad bridge's member filter, so pf also sees what passes between a bridge's VMs (without it, it never does). Every VM boots with `ipv6.disable=1`, so it has no IPv6 at all.
+- **The root it takes is small and fixed.** A perl script of root's in `/Library/PrivilegedHelperTools`, run by launchd (`sh.galahad.firewall`), with its rules inside it: it reads nothing anyone but root can write, sets the filter only on a bridge (by the name the kernel gives) carrying a Galahad gateway's address, and writes its status to `/var/run`. `galahad firewall install` puts it there with the owner's password, and refuses any place that isn't root's alone (`packages/node/test/firewall-cli.test.ts`).
+- **No sandbox while it is off.** The node believes the helper's status only when it is root's alone and at most 30 s old, reads each bridge's filter itself, and refuses every sandbox on that Mac, and the resumption of a knight's VM, until both say it is on: 424 with why, and the doctor says how to put it right (`packages/sandbox/test/mac-firewall.test.ts`, `container-host.test.ts`, `packages/node/test/mac-host.e2e.test.ts`).
+- **Residual risk.** The helper is perl, which Apple has said macOS may one day stop carrying; then the helper doesn't run, its status goes stale, and the Mac makes no sandboxes until it is rebuilt otherwise. Another tool's container networks on the same Mac can still take a Galahad network's bridge (apple/container#2051): the node holds its own networks up and keeps container's default one clear, but can't hold one it doesn't know. An online sandbox's resolver is the Mac's, so it can look up names on your network or tailnet that it can't reach. The owner's account is an administrator, and can change any of this.
 
 ## Artifacts (tested)
 
