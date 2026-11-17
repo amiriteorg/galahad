@@ -23,6 +23,9 @@ struct KnightEditor: View {
     /// It leads the Roundtable (it is your primary knight), as the node is told when it is saved.
     @State private var leads: Bool
     @State private var roles: [String: Knights.RoleInfo]?
+    /// Its own models, in the order they are tried; the toggles offered, in an order kept while you edit (nil: none offered).
+    @State private var own: [String]
+    @State private var offered: [Knights.ModelChoice]?
     @State private var working = false
     @State private var problem: String?
 
@@ -38,6 +41,7 @@ struct KnightEditor: View {
         _repository = State(initialValue: existing?.repository ?? "")
         _harness = State(initialValue: existing?.harness ?? "native")
         _role = State(initialValue: existing?.role ?? "engineer")
+        _own = State(initialValue: existing?.models ?? [])
         _dailyTurns = State(initialValue: existing?.dailyTurns ?? 40)
         _enabled = State(initialValue: existing?.enabled ?? true)
         _leads = State(initialValue: existing.map { session.primary == $0.id } ?? false)
@@ -155,6 +159,23 @@ struct KnightEditor: View {
                     Text("Choosing a harness doesn't install it or sign it in: that is done in the knight's VM. \(roles.map { Knights.roleLine(role: role, spec: $0[role]) + "." } ?? "The role picks its models from your Models settings.")")
                 }
 
+                if let offered, !offered.isEmpty {
+                    Section {
+                        ForEach(offered) { choice in
+                            Toggle(isOn: Binding(get: { own.contains(choice.ref) }, set: { own = Knights.toggle(own, choice.ref, on: $0) })) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(choice.ref).font(.callout.monospaced())
+                                    Text(choice.on.isEmpty ? "Through its provider" : "Runs on \(choice.on.joined(separator: ", "))").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Models")
+                    } footer: {
+                        Text("\(Knights.modelsLine(own: own, role: role, spec: roles?[role])). A local model runs on the node that serves it, for a knight on Galahad's own harness: a vendor's coding tool can't use one.")
+                    }
+                }
+
                 Section {
                     Stepper(value: $dailyTurns, in: 0...1000, step: 5) {
                         LabeledContent("A day") { Text("\(dailyTurns) turns and jobs").monospacedDigit() }
@@ -183,7 +204,11 @@ struct KnightEditor: View {
                         .disabled(working || trimmedName.isEmpty)
                 }
             }
-            .task { roles = await session.roles() }
+            .task {
+                roles = await session.roles()
+                // (The order is kept while you edit: what you turn on goes last, and nothing moves under your finger.)
+                if let choices = await session.knightModels() { offered = Knights.modelChoices(choices, own: own) }
+            }
         }
         .sheetSize(width: 600, height: 720)
     }
@@ -193,11 +218,14 @@ struct KnightEditor: View {
         working = true
         defer { working = false }
         let address = repository.trimmingCharacters(in: .whitespacesAndNewlines)
-        let input = KnightInput(
+        var input = KnightInput(
             id: handle, name: trimmedName, instructions: instructions, repository: address.isEmpty ? nil : address,
             harness: harness, role: role, enabled: enabled, dailyTurns: dailyTurns,
             avatar: AvatarLook.profile(look: look, temperament: AvatarLook.temperament(id: handle, profile: existing?.avatar))
         )
+        // Its own models, to a node that knows them: none is its role's again.
+        input.models = own.isEmpty ? nil : own
+        input.sendModels = offered != nil || !(existing?.models ?? []).isEmpty
         let knight: Teammate
         do {
             knight = try await session.save(knight: input)

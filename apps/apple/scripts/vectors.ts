@@ -26,7 +26,7 @@ import { noticeFrom } from "../../web/src/lib/notices.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
-import { knightRoleLine, knightRoles, removalPlan, teamSpeaker, teammateId } from "../../web/src/lib/team.ts";
+import { knightModelChoices, knightModelsLine, knightRoleLine, knightRoles, knightWorksOn, removalPlan, teamSpeaker, teammateId, toggleKnightModel } from "../../web/src/lib/team.ts";
 import { budgetFrom } from "../../web/src/lib/give.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, keptDiffers, shownAgain, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
@@ -332,6 +332,7 @@ const knightRoster = {
   planner: { models: ["a/p"], forKnights: true }, eyes: { models: ["a/v"], forKnights: false }, engineer: { models: ["a/e"], forKnights: true },
   swift: { models: [], forKnights: true }, "cheap-coder": { models: ["a/c"], forKnights: true }, fold: { models: ["a/x"], forKnights: false },
 };
+const knightModelOffer = [{ ref: "deepseek/deepseek-v4-pro", on: [] as string[] }, { ref: "ollama/mimo-v2.6:9b", on: ["mini"] }, { ref: "ollama/qwen3.8:27b", on: ["mini", "ultra"] }];
 const knightForms = {
   handles: [
     ["Ada", []], ["Owner", []], ["Galahad", []], ["System", ["system-2"]], ["Áda", ["ada", "ada-2"]], ["123", []], ["研究", []],
@@ -366,6 +367,25 @@ const knightForms = {
     { role: "reviewer", spec: knightRoster.reviewer },
     { role: "made-up" },
   ].map((c) => ({ ...c, line: knightRoleLine(c.role, c.spec) })),
+  // A knight's own models: the toggles offered, one turned on or off, and what it works on in a line and in a word or two.
+  modelChoices: [
+    { choices: knightModelOffer },
+    { choices: knightModelOffer, own: ["ollama/qwen3.8:27b", "gone/model"] },
+    { choices: [] as { ref: string; on: string[] }[], own: ["ollama/mimo-v2.6:9b"] },
+  ].map((c) => ({ ...c, offered: knightModelChoices(c.choices, c.own) })),
+  modelToggles: [
+    { own: ["a/1"], ref: "a/2", on: true }, { own: ["a/1", "a/2"], ref: "a/1", on: false }, { own: ["a/1"], ref: "a/1", on: true },
+    { own: ["a/0", "a/1", "a/2", "a/3", "a/4", "a/5", "a/6", "a/7"], ref: "a/8", on: true }, { own: [] as string[], ref: "a/1", on: false },
+  ].map((c) => ({ ...c, after: toggleKnightModel(c.own, c.ref, c.on) })),
+  modelLines: [
+    { own: ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"], role: "engineer", spec: knightRoster.engineer },
+    { own: ["ollama/mimo-v2.6:9b"], role: "frontend", spec: knightRoster.frontend },
+    { own: [] as string[], role: "engineer", spec: knightRoster.engineer },
+    { own: [] as string[], role: "made-up" },
+  ].map((c) => ({ ...c, line: knightModelsLine(c.own, c.role, c.spec) })),
+  worksOn: [
+    { role: "engineer" }, { role: "engineer", models: ["ollama/mimo-v2.6:9b"] }, { role: "planner", models: ["orcarouter/anthropic/claude-opus-5.5", "ollama/qwen3.8:27b"] }, { role: "swift", models: [] as string[] },
+  ].map((c) => ({ ...c, words: knightWorksOn(c) })),
   profiles: core.AVATAR_LOOKS.flatMap((look) => core.AVATAR_TEMPERAMENTS.map((temperament) => ({ look: look.id, temperament, profile: core.lookProfile(look.id, temperament) }))),
   temperaments: [
     { id: "ada" }, { id: "bors" }, { id: "x" }, { id: "knight-123" }, { id: "percival-2" },

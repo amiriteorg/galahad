@@ -430,7 +430,7 @@ private struct KnightAbout: View {
                             Portrait(drawing: look, size: 96, expression: row?.expression ?? "idle", id: knight.id, temper: AvatarLook.temperament(id: knight.id, profile: knight.avatar))
                             VStack(alignment: .leading, spacing: Space.s1) {
                                 Text(knight.name).font(.title2.bold())
-                                Text(knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)
+                                Text(knight.models?.isEmpty == false ? Knights.worksOn(role: knight.role.capitalized, models: knight.models) : knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)
                                 if let row { Text(row.line).font(.subheadline).foregroundStyle(row.needs ? Color.siege : .primary) }
                             }
                         }

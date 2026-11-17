@@ -102,6 +102,10 @@ struct Vectors: Decodable {
         struct RoleCase: Decodable { let roster: [String: Knights.RoleInfo]; let current: String?; let roles: [String] }
         struct RoleLine: Decodable { let role: String; let spec: Knights.RoleInfo?; let line: String }
         struct Budget: Decodable { let text: String; let usd: Double?; let error: String? }
+        struct ModelChoices: Decodable { let choices: [Knights.ModelChoice]; let own: [String]?; let offered: [Knights.ModelChoice] }
+        struct ModelToggle: Decodable { let own: [String]; let ref: String; let on: Bool; let after: [String] }
+        struct ModelLine: Decodable { let own: [String]; let role: String; let spec: Knights.RoleInfo?; let line: String }
+        struct WorksOn: Decodable { let role: String; let models: [String]?; let words: String }
         let handles: [Handle]
         let removals: [Removal]
         let profiles: [Profile]
@@ -109,6 +113,10 @@ struct Vectors: Decodable {
         let roles: [RoleCase]
         let roleLines: [RoleLine]
         let budgets: [Budget]
+        let modelChoices: [ModelChoices]
+        let modelToggles: [ModelToggle]
+        let modelLines: [ModelLine]
+        let worksOn: [WorksOn]
     }
 
     struct KeyCases: Decodable {

@@ -37,6 +37,35 @@ struct KnightsTests {
         }
     }
 
+    @Test func aKnightsOwnModelsAreThePWAs() {
+        #expect(!vectors.knightForms.modelChoices.isEmpty)
+        for item in vectors.knightForms.modelChoices {
+            #expect(Knights.modelChoices(item.choices, own: item.own ?? []) == item.offered, "\(item.own ?? [])")
+        }
+        for item in vectors.knightForms.modelToggles {
+            #expect(Knights.toggle(item.own, item.ref, on: item.on) == item.after, "\(item.ref) \(item.on)")
+        }
+        for item in vectors.knightForms.modelLines {
+            #expect(Knights.modelsLine(own: item.own, role: item.role, spec: item.spec) == item.line, "\(item.own)")
+        }
+        for item in vectors.knightForms.worksOn {
+            #expect(Knights.worksOn(role: item.role, models: item.models) == item.words, "\(item.models ?? [])")
+        }
+    }
+
+    @Test func aKnightsModelsAreSentOnlyToANodeThatKnowsThem() throws {
+        let look = AvatarLook.profile(look: "bors", temperament: "lively")
+        var input = KnightInput(id: "ada", name: "Ada", instructions: "", repository: nil, harness: "native", role: "engineer", enabled: true, dailyTurns: 40, avatar: look)
+        let without = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any]
+        #expect(without?["models"] == nil)
+        input.sendModels = true
+        let cleared = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any]
+        #expect(cleared?["models"] is NSNull)
+        input.models = ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"]
+        let chosen = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any]
+        #expect(chosen?["models"] as? [String] == ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"])
+    }
+
     @Test func aTasksBudgetIsReadAsThePWAReadsIt() {
         #expect(!vectors.knightForms.budgets.isEmpty)
         for item in vectors.knightForms.budgets {

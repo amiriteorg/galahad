@@ -15,12 +15,16 @@ struct KnightInput: Encodable, Sendable, Equatable {
     var repository: String?
     var harness: String
     var role: String
+    /// Its own models, in order, in place of its role's; nil: its role's (sent as null). Sent only when `sendModels`:
+    /// a node too old to know them would refuse the field.
+    var models: [String]? = nil
+    var sendModels = false
     var enabled: Bool
     var dailyTurns: Int
     /// The drawing it wears (`AvatarLook.profile`).
     var avatar: AvatarProfile
 
-    enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, enabled, dailyTurns, avatar }
+    enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, models, enabled, dailyTurns, avatar }
 
     func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -30,6 +34,7 @@ struct KnightInput: Encodable, Sendable, Equatable {
         try c.encode(repository, forKey: .repository)
         try c.encode(harness, forKey: .harness)
         try c.encode(role, forKey: .role)
+        if sendModels { try c.encode(models, forKey: .models) }
         try c.encode(enabled, forKey: .enabled)
         try c.encode(dailyTurns, forKey: .dailyTurns)
         try c.encode(avatar, forKey: .avatar)
@@ -107,6 +112,44 @@ enum Knights {
         guard let first = spec.models.first else { return "\(role) has no model yet: put one on it on the Models page" }
         let more = spec.models.count > 1 ? " (then \(spec.models.count - 1) more)" : ""
         return "Its work runs on \(first)\(more); its plan and the independent review stay the planner's and the reviewer's"
+    }
+
+    /// A model you may set a knight to work on (`GET /api/team/models`): its ref, and the nodes that serve it, when a local runtime does.
+    struct ModelChoice: Decodable, Sendable, Hashable, Identifiable {
+        let ref: String
+        let on: [String]
+        var id: String { ref }
+    }
+
+    /// The most models of its own a knight works on (core's `TeammateModels`).
+    static let modelsMax = 8
+
+    /// The models offered as toggles: the ones it works on first, in their order (one the node no longer offers
+    /// included, so it can be turned off), then the rest as the node lists them (lib/team.ts' `knightModelChoices`).
+    static func modelChoices(_ choices: [ModelChoice], own: [String] = []) -> [ModelChoice] {
+        let byRef = Dictionary(choices.map { ($0.ref, $0) }, uniquingKeysWith: { first, _ in first })
+        return own.map { byRef[$0] ?? ModelChoice(ref: $0, on: []) } + choices.filter { !own.contains($0.ref) }
+    }
+
+    /// Its own models with one turned on (last, as it is tried after the others; eight at most) or off (`toggleKnightModel`).
+    static func toggle(_ own: [String], _ ref: String, on: Bool) -> [String] {
+        if !on { return own.filter { $0 != ref } }
+        return own.contains(ref) || own.count >= modelsMax ? own : own + [ref]
+    }
+
+    /// What a knight with models of its own works on, in a line; none: its role's (`knightModelsLine`).
+    static func modelsLine(own: [String], role: String, spec: RoleInfo?) -> String {
+        guard let first = own.first else { return "None chosen: it works on its role's models. \(roleLine(role: role, spec: spec))" }
+        let more = own.count > 1 ? " (then \(own.count - 1) more, in the order you turned them on)" : ""
+        return "Its work runs on \(first)\(more), in place of its role's; its plan and the independent review stay the planner's and the reviewer's"
+    }
+
+    /// What a knight works on, in a word or two: its role, and its own first model when it has some (`knightWorksOn`).
+    static func worksOn(role: String, models: [String]?) -> String {
+        guard let first = models?.first else { return role }
+        let name = first.firstIndex(of: "/").map { String(first[first.index(after: $0)...]) } ?? first
+        let more = (models?.count ?? 0) > 1 ? " +\((models?.count ?? 0) - 1)" : ""
+        return "\(role) · on \(name)\(more)"
     }
 
     /// A new knight's handle, from its name: lowercase letters, digits and hyphens, never a reserved one or one taken

@@ -237,6 +237,14 @@ import Observation
     }
 
     /// The model roles your Models page has, each with whether a model answers for it (nil: this device may not read them).
+    /// The models a knight may be set to work on: the roster's, and each local one a node of the fleet serves, and where.
+    /// Nil: a device that may not read them, or a node too old to say (its knights then keep their role's).
+    func knightModels() async -> [Knights.ModelChoice]? {
+        struct Choices: Decodable { let models: [Knights.ModelChoice] }
+        guard can("mind:read"), let choices = try? await client.get("/api/team/models", as: Choices.self).models else { return nil }
+        return choices
+    }
+
     func roles() async -> [String: Knights.RoleInfo]? {
         struct Roster: Decodable { let roster: [String: Knights.RoleInfo] }
         guard can("mind:read"), let roster = try? await client.get("/api/roster", as: Roster.self).roster else { return nil }

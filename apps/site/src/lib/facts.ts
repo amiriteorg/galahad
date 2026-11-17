@@ -93,7 +93,7 @@ export const PHASING = {
     { state: "built", what: "Cheaper coding plans", line: "Twelve plans as presets, each used only as far as its vendor's terms allow." },
     { state: "built", what: "His own computer", line: "A VM with a desktop that is his, kept between conversations." },
     { state: "built", what: "What he knows of you", line: "Facts he proposes and you keep, sent with every answer." },
-    { state: "built", what: "Roles you make", line: "Choose the models each knight works on; the reviewer stays independent." },
+    { state: "built", what: "Roles you make", line: "Choose the models each knight works on, a local one on whichever of your machines serves it; the reviewer stays independent." },
     { state: "built", what: "A budget per task", line: "A task sees what it has spent and stops when it is, a coding tool's own calls included." },
     { state: "built", what: "Audited, not capped", line: "A knight's run has no limit of time or commands; an independent audit keeps it on its task and getting closer." },
     { state: "built", what: "Photos and files in chat", line: "Send him a screenshot, a log or a file of code, from any app or the terminal." },

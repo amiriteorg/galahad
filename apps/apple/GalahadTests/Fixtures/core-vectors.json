@@ -2665,6 +2665,244 @@
         "line": "made-up isn't on your roster: the engineer's models do its work"
       }
     ],
+    "modelChoices": [
+      {
+        "choices": [
+          {
+            "ref": "deepseek/deepseek-v4-pro",
+            "on": []
+          },
+          {
+            "ref": "ollama/mimo-v2.6:9b",
+            "on": [
+              "mini"
+            ]
+          },
+          {
+            "ref": "ollama/qwen3.8:27b",
+            "on": [
+              "mini",
+              "ultra"
+            ]
+          }
+        ],
+        "offered": [
+          {
+            "ref": "deepseek/deepseek-v4-pro",
+            "on": []
+          },
+          {
+            "ref": "ollama/mimo-v2.6:9b",
+            "on": [
+              "mini"
+            ]
+          },
+          {
+            "ref": "ollama/qwen3.8:27b",
+            "on": [
+              "mini",
+              "ultra"
+            ]
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "ref": "deepseek/deepseek-v4-pro",
+            "on": []
+          },
+          {
+            "ref": "ollama/mimo-v2.6:9b",
+            "on": [
+              "mini"
+            ]
+          },
+          {
+            "ref": "ollama/qwen3.8:27b",
+            "on": [
+              "mini",
+              "ultra"
+            ]
+          }
+        ],
+        "own": [
+          "ollama/qwen3.8:27b",
+          "gone/model"
+        ],
+        "offered": [
+          {
+            "ref": "ollama/qwen3.8:27b",
+            "on": [
+              "mini",
+              "ultra"
+            ]
+          },
+          {
+            "ref": "gone/model",
+            "on": []
+          },
+          {
+            "ref": "deepseek/deepseek-v4-pro",
+            "on": []
+          },
+          {
+            "ref": "ollama/mimo-v2.6:9b",
+            "on": [
+              "mini"
+            ]
+          }
+        ]
+      },
+      {
+        "choices": [],
+        "own": [
+          "ollama/mimo-v2.6:9b"
+        ],
+        "offered": [
+          {
+            "ref": "ollama/mimo-v2.6:9b",
+            "on": []
+          }
+        ]
+      }
+    ],
+    "modelToggles": [
+      {
+        "own": [
+          "a/1"
+        ],
+        "ref": "a/2",
+        "on": true,
+        "after": [
+          "a/1",
+          "a/2"
+        ]
+      },
+      {
+        "own": [
+          "a/1",
+          "a/2"
+        ],
+        "ref": "a/1",
+        "on": false,
+        "after": [
+          "a/2"
+        ]
+      },
+      {
+        "own": [
+          "a/1"
+        ],
+        "ref": "a/1",
+        "on": true,
+        "after": [
+          "a/1"
+        ]
+      },
+      {
+        "own": [
+          "a/0",
+          "a/1",
+          "a/2",
+          "a/3",
+          "a/4",
+          "a/5",
+          "a/6",
+          "a/7"
+        ],
+        "ref": "a/8",
+        "on": true,
+        "after": [
+          "a/0",
+          "a/1",
+          "a/2",
+          "a/3",
+          "a/4",
+          "a/5",
+          "a/6",
+          "a/7"
+        ]
+      },
+      {
+        "own": [],
+        "ref": "a/1",
+        "on": false,
+        "after": []
+      }
+    ],
+    "modelLines": [
+      {
+        "own": [
+          "ollama/mimo-v2.6:9b",
+          "deepseek/deepseek-v4-pro"
+        ],
+        "role": "engineer",
+        "spec": {
+          "models": [
+            "a/e"
+          ],
+          "forKnights": true
+        },
+        "line": "Its work runs on ollama/mimo-v2.6:9b (then 1 more, in the order you turned them on), in place of its role's; its plan and the independent review stay the planner's and the reviewer's"
+      },
+      {
+        "own": [
+          "ollama/mimo-v2.6:9b"
+        ],
+        "role": "frontend",
+        "spec": {
+          "models": [
+            "orcarouter/anthropic/claude-opus-5.5",
+            "deepseek/deepseek-v4-pro"
+          ],
+          "forKnights": true
+        },
+        "line": "Its work runs on ollama/mimo-v2.6:9b, in place of its role's; its plan and the independent review stay the planner's and the reviewer's"
+      },
+      {
+        "own": [],
+        "role": "engineer",
+        "spec": {
+          "models": [
+            "a/e"
+          ],
+          "forKnights": true
+        },
+        "line": "None chosen: it works on its role's models. Its work runs on a/e; its plan and the independent review stay the planner's and the reviewer's"
+      },
+      {
+        "own": [],
+        "role": "made-up",
+        "line": "None chosen: it works on its role's models. made-up isn't on your roster: the engineer's models do its work"
+      }
+    ],
+    "worksOn": [
+      {
+        "role": "engineer",
+        "words": "engineer"
+      },
+      {
+        "role": "engineer",
+        "models": [
+          "ollama/mimo-v2.6:9b"
+        ],
+        "words": "engineer · on mimo-v2.6:9b"
+      },
+      {
+        "role": "planner",
+        "models": [
+          "orcarouter/anthropic/claude-opus-5.5",
+          "ollama/qwen3.8:27b"
+        ],
+        "words": "planner · on anthropic/claude-opus-5.5 +1"
+      },
+      {
+        "role": "swift",
+        "models": [],
+        "words": "swift"
+      }
+    ],
     "profiles": [
       {
         "look": "kay",

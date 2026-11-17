@@ -38,6 +38,8 @@ struct Teammate: Decodable, Sendable, Identifiable {
     let name: String
     let instructions: String
     let role: String
+    /// Its own models, in place of its role's, in order (absent: its role's).
+    var models: [String]? = nil
     let harness: String
     let enabled: Bool
     let dailyTurns: Int
