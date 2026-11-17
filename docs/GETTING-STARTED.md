@@ -335,6 +335,14 @@ bun galahad sandbox setup          # `sandbox setup status` says what holds, cha
 bun galahad firewall               # whether the firewall is on; `firewall rules`, what it lets through
 ```
 
+**A Mac itself, for Galahad.** On a Mac that is his to use (a Mac mini), he can work on the Mac itself: its real screen, its apps and a shell as its user, for work that needs a Mac (Xcode, Safari, an app). Turn it on there once: `galahad screen allow` shows macOS's prompts, and in System Settings → Privacy & Security you turn Galahad on in Screen & System Audio Recording and in Accessibility. Then, in your conversation with him, he asks to use it for so many minutes, saying why; your Inbox (and a notification) has the card, and nothing of the Mac is his until you let him. Each step he takes answers him with a picture of the screen, his commands meet your tripwires, and you end it whenever you like. Its account holds the node's keys, so let a session only for work you want done that way ([SECURITY](SECURITY.md#a-mac-itself-for-galahad-tested)).
+
+```sh
+bun galahad screen                 # its size, and what macOS lets him do with it
+bun galahad screen look            # a picture of it, saved (screen.jpg)
+bun galahad screen sessions        # his asks and sessions; screen approve|deny|end <session>
+```
+
 Each sandbox's `/work` is its own disk of `--disk` GB (20 by default), so a runaway job fills its workspace and never the server's disk. Limits need the small root helper that `deploy.sh --sudo` installs; without it, workspaces are unlimited and the heartbeat warns you. The node also keeps the image in use, so cleanup tools that prune unused images (Coolify's nightly cleanup) leave it alone, and it rebuilds the image if it's gone anyway.
 
 ### Give Galahad a quest
