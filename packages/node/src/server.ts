@@ -174,7 +174,7 @@ import { TeamService, TeamError } from "./team.ts";
 import type { TeamAsker, TeamStore } from "./team-store.ts";
 import { galahadInRoom, harnessReadiness, quote, TEAM_COMMAND_SECONDS, TEAM_TASK_MINUTES, teamRuntime, withGateway } from "./team-runtime.ts";
 import { APPLE_PUSH, APPLE_PUSH_SECRET, appleProviderToken, storedApplePushKey } from "./apns-send.ts";
-import { type MacScreen, ScreenError, screenDid } from "./mac-screen.ts";
+import { inputRefused, type MacScreen, ScreenError, screenDid } from "./mac-screen.ts";
 import { galahadRevision } from "./revision.ts";
 import { githubRepo } from "./quest-cli.ts";
 import type { Terminals } from "./terminals.ts";
@@ -2041,6 +2041,13 @@ export function createApp(ctx: AppContext) {
           const ran = await screen.command(command, input.action.timeoutSec ?? 120);
           ctx.ledger?.({ class: "modify", resource: "screen", target: ctx.nodeName, verdict: "allow", detail: `run ${clip(redact(command.split("\n")[0] ?? ""), 160, 40)} → exit ${ran.exitCode} · ${by}`.slice(0, 300) });
           return { ...said, ran: { ...ran, stdout: redact(ran.stdout), stderr: redact(ran.stderr) } };
+        }
+        // A question of macOS's on the screen is yours to answer, and your settings, keys and passwords are yours: his
+        // input never reaches them (your own taking over does).
+        const refused = inputRefused(input.action, await screen.status(), ctx.nodeName);
+        if (refused) {
+          ctx.ledger?.({ class: "modify", resource: "screen", target: ctx.nodeName, verdict: "deny", reason: refused.slice(0, 200), detail: `${screenDid(input.action) ?? input.action.do} · ${by}`.slice(0, 300) });
+          throw new HttpError(409, refused);
         }
         const view = await screen.act(input.action);
         const did = screenDid(input.action);

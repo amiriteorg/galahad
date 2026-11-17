@@ -105,7 +105,7 @@ describe("a Mac's own screen", () => {
     expect(daemon.store.activeDevice(daemon.identity.id)?.profile?.caps?.screen).toBe(true);
     const status = await admin<ScreenStatus>("screen", {});
     expect(status.status).toBe(200);
-    expect(status.body).toEqual({ node: daemon.identity.id, width: 1512, height: 948, record: true, control: true, front: "Finder" });
+    expect(status.body).toEqual({ node: daemon.identity.id, width: 1512, height: 948, record: true, control: true, front: "Finder", frontId: "", asking: null });
     // Asking macOS's leave shows its prompts on that Mac, and says where things stand.
     expect((await admin<ScreenStatus>("screenAllow", {})).body.control).toBe(true);
     expect(asked.some((a) => a[0] === "allow")).toBe(true);

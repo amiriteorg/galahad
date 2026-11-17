@@ -265,6 +265,10 @@ export interface ScreenStatus {
   control: boolean;
   /** The app in front, and its window's title where macOS lets Galahad read it. */
   front: string;
+  /** The app in front's bundle id. */
+  frontId?: string;
+  /** A question of macOS's on the screen (a permission's consent, a password), by the process showing it; null: none. */
+  asking?: string | null;
 }
 
 /** A picture of a screen, as a knight's desktop and a Mac's own give it: JPEG, at the screen's size. */

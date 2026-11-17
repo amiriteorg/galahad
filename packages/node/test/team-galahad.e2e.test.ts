@@ -27,9 +27,11 @@ const caps: Capabilities = { os: "linux", arch: "x64", hostname: "team-test", co
 let daemon: Daemon;
 /** A Mac's own screen and shell, played by stand-ins: what each was asked to do. */
 const onTheMac: string[][] = [];
+/** A question of macOS's on the Mac's screen, while the test says there is one. */
+let macAsking: string | null = null;
 const macHelper: HelperRun = async (args) => {
   onTheMac.push(args);
-  if (args[0] === "status") return { code: 0, stdout: '{"width":1512,"height":948,"record":true,"control":true,"front":"Safari: Galahad"}', stderr: "" };
+  if (args[0] === "status") return { code: 0, stdout: JSON.stringify({ width: 1512, height: 948, record: true, control: true, front: "Safari: Galahad", frontId: "com.apple.Safari", ...(macAsking ? { asking: macAsking } : {}) }), stderr: "" };
   if (args[0] === "shot") return { code: 0, stdout: "SlBFRw==", stderr: "" };
   return { code: 0, stdout: "", stderr: "" };
 };
@@ -357,6 +359,14 @@ test("the Mac itself: he asks, and nothing of it is his until you let him; then 
   await ask("Go ahead.");
   expect(told("mac")).toStartWith("keep · 1512×948 points · in front: Safari: Galahad");
   expect(onTheMac).toContainEqual(["click", "100", "200", "left"]);
+  // While macOS asks a question on the screen, it is yours to answer: he may look, never click it away.
+  macAsking = "UserNotificationCenter";
+  onTheMac.length = 0;
+  script = [callTool("mac", { do: "click", x: 851, y: 414 }), say("A question of macOS's is in the way.")];
+  await ask("Click Allow on that.");
+  expect(told("mac")).toContain("macOS is asking a question on keep's screen (UserNotificationCenter): it is your liege's to answer");
+  expect(onTheMac.some((a) => a[0] === "click")).toBe(false);
+  macAsking = null;
   // His commands meet your tripwires as his quests' do.
   await api("setRule", { name: "no-rm", does: "refuse", words: ["rm"] });
   onTheMac.length = 0;

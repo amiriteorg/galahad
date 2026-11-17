@@ -126,6 +126,21 @@ export function screenArgs(action: ScreenAction): string[] | null {
   }
 }
 
+/** Apps that are your liege's alone: their settings, their keys and their passwords. Galahad's input never reaches them. */
+export const OWNERS_APPS = new Set(["com.apple.systempreferences", "com.apple.keychainaccess", "com.apple.Passwords"]);
+
+/**
+ * Why Galahad's own input (a click, a key, typing, the pointer, scrolling) may not reach the screen as it stands: a
+ * question of macOS's is on it (a consent, a password: yours to answer, at the Mac), or an app of yours alone is in
+ * front. Null: it may. Your own taking over is never stopped by this.
+ */
+export function inputRefused(action: ScreenAction, status: Pick<ScreenStatus, "asking" | "frontId" | "front">, mac: string): string | null {
+  if (!["click", "move", "scroll", "type", "key"].includes(action.do)) return null;
+  if (status.asking) return `macOS is asking a question on ${mac}'s screen (${status.asking}): it is your liege's to answer, at the Mac, never yours. Look again later, or tell them it waits.`;
+  if (status.frontId && OWNERS_APPS.has(status.frontId)) return `${status.front || "That app"} is in front on ${mac}: your liege's settings, keys and passwords are theirs alone. Open another app first.`;
+  return null;
+}
+
 /** What a thing done on the screen says in the ledger: what was done, and of typing only how much. */
 export function screenDid(action: ScreenAction): string | null {
   switch (action.do) {
@@ -171,7 +186,15 @@ export class MacScreen {
   async status(): Promise<Omit<ScreenStatus, "node">> {
     const said = JSON.parse(await this.helper(["status"])) as Partial<Omit<ScreenStatus, "node">>;
     if (typeof said.width !== "number" || typeof said.height !== "number") throw new ScreenError(502, "the screen's helper didn't say its size");
-    return { width: said.width, height: said.height, record: said.record === true, control: said.control === true, front: typeof said.front === "string" ? said.front.slice(0, 200) : "" };
+    return {
+      width: said.width,
+      height: said.height,
+      record: said.record === true,
+      control: said.control === true,
+      front: typeof said.front === "string" ? said.front.slice(0, 200) : "",
+      frontId: typeof said.frontId === "string" ? said.frontId.slice(0, 200) : "",
+      asking: typeof said.asking === "string" ? said.asking.slice(0, 100) : null,
+    };
   }
 
   /** Shows macOS's own prompts on this Mac's screen (or lists the app in System Settings), for you to answer there. */

@@ -193,11 +193,24 @@ enum MacScreen {
     // MARK: What the node runs
 
     /// What the node reads of it, as one line of JSON: the screen's size in points, whether macOS lets Galahad record
-    /// it and control it, and what is in front.
+    /// it and control it, what is in front (and its bundle id), and a question of macOS's on the screen, if one is.
     static func status() -> String {
-        struct Status: Encodable { let width: Int; let height: Int; let record: Bool; let control: Bool; let front: String }
-        let status = Status(width: Int(size.width), height: Int(size.height), record: mayRecord, control: mayControl, front: front())
+        struct Status: Encodable { let width: Int; let height: Int; let record: Bool; let control: Bool; let front: String; let frontId: String; let asking: String? }
+        let status = Status(width: Int(size.width), height: Int(size.height), record: mayRecord, control: mayControl, front: front(), frontId: NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "", asking: asking())
         return (try? String(decoding: JSONEncoder().encode(status), as: UTF8.self)) ?? "{}"
+    }
+
+    /// The processes macOS asks its questions through: a permission's consent, Accessibility's, a password, Gatekeeper's.
+    static let presenters: Set<String> = ["UserNotificationCenter", "universalAccessAuthWarn", "SecurityAgent", "CoreServicesUIAgent", "coreautha", "LocalAuthenticationRemoteService"]
+
+    /// A question of macOS's on the screen now (a window of one of its presenters'): the presenter, or nil.
+    static func asking() -> String? {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        for window in windows {
+            if let owner = window[kCGWindowOwnerName as String] as? String, presenters.contains(owner) { return owner }
+            if let pid = window[kCGWindowOwnerPID as String] as? pid_t, let name = NSRunningApplication(processIdentifier: pid)?.executableURL?.lastPathComponent, presenters.contains(name) { return name }
+        }
+        return nil
     }
 
     static let usage = "usage: Galahad --desktop status | allow | shot | click <x> <y> [left|right|middle|double] | move <x> <y> | scroll <up|down> [times] | type <base64> | key <key>… | open <address|app> | front"

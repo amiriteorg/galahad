@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { type HelperRun, MacScreen, ScreenError, screenArgs, screenDid, screenHelper } from "../src/mac-screen.ts";
+import type { ScreenAction } from "@galahad/core";
+import { type HelperRun, inputRefused, MacScreen, ScreenError, screenArgs, screenDid, screenHelper } from "../src/mac-screen.ts";
 
 /*
  * A Mac's own screen, for Galahad (mac-screen.ts): the app's own binary does the looking and the pointer and keys, so
@@ -52,7 +53,7 @@ function standIn(answers: Partial<Record<string, { code: number; stdout?: string
 describe("the screen", () => {
   test("says its size in points, what macOS allows, and what is in front", async () => {
     const { run } = standIn();
-    expect(await new MacScreen(run).status()).toEqual({ width: 1512, height: 948, record: true, control: true, front: "Safari: Galahad" });
+    expect(await new MacScreen(run).status()).toEqual({ width: 1512, height: 948, record: true, control: true, front: "Safari: Galahad", frontId: "", asking: null });
   });
 
   test("one thing done, then a picture of what it did, at the screen's own size", async () => {
@@ -60,6 +61,21 @@ describe("the screen", () => {
     const view = await new MacScreen(run, { settleMs: 0 }).act({ do: "click", x: 700, y: 400 });
     expect(asked).toEqual([["click", "700", "400", "left"], ["status"], ["shot"]]);
     expect(view).toEqual({ shot: { mediaType: "image/jpeg", data: "SlBFRw==" }, width: 1512, height: 948 });
+  });
+
+  test("his input never answers macOS's questions, nor reaches your settings, keys or passwords; looking and opening still may", () => {
+    const calm = { asking: null, frontId: "com.apple.Safari", front: "Safari" };
+    expect(inputRefused({ do: "click", x: 1, y: 1 }, calm, "mini")).toBeNull();
+    const asked = { ...calm, asking: "UserNotificationCenter" };
+    const input: ScreenAction[] = [{ do: "click", x: 1, y: 1 }, { do: "type", text: "y" }, { do: "key", keys: ["Return"] }, { do: "scroll", direction: "down" }, { do: "move", x: 2, y: 2 }];
+    for (const action of input) {
+      expect(inputRefused(action, asked, "mini")).toStartWith("macOS is asking a question on mini's screen (UserNotificationCenter): it is your liege's to answer");
+    }
+    expect(inputRefused({ do: "look" }, asked, "mini")).toBeNull();
+    expect(inputRefused({ do: "app", name: "Safari" }, asked, "mini")).toBeNull();
+    for (const frontId of ["com.apple.systempreferences", "com.apple.keychainaccess", "com.apple.Passwords"]) {
+      expect(inputRefused({ do: "click", x: 1, y: 1 }, { asking: null, frontId, front: "Systemindstillinger" }, "mini")).toStartWith("Systemindstillinger is in front on mini: your liege's settings, keys and passwords are theirs alone");
+    }
   });
 
   test("what macOS doesn't allow yet is refused with its words (424); a helper that failed, 502", async () => {
