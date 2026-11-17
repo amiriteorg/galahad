@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { type AttachmentRef, type ChatStreamEvent, chatStateWords, plainLine, plainStream, plainText, type ConversationSummary, type ConversationView, holdWords, questInHand, type QuestView, type QueuedMessage, type QueueHold, type TurnLimits, type TurnView } from "@galahad/core";
+import { type AttachmentRef, type ChatStreamEvent, chatStateWords, pictureType, textOf, plainLine, plainStream, plainText, type ConversationSummary, type ConversationView, holdWords, questInHand, type QuestView, type QueuedMessage, type QueueHold, type TurnLimits, type TurnView } from "@galahad/core";
 import type { NodeClient } from "./quest-cli.ts";
-import { pictureType, textOf } from "./uploads.ts";
 
 /*
  * Turns, queues and quests in hand, from a terminal. A turn started here runs on the

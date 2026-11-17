@@ -89,6 +89,8 @@ import {
   readRule,
   ruleOf,
   type RuleView,
+  pictureType,
+  textOf,
 } from "@galahad/core";
 import {
   AGENTS,
@@ -142,7 +144,7 @@ import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./a
 import { chatTools, type ToolApi, toolsFor } from "./tools.ts";
 import { type ChatStore, type ChatStory, foldAt, type KeptSummary, type QueuedBy, type Waits } from "./chats.ts";
 import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
-import { pictureType, textOf, UploadError, type Uploads, withAttachments } from "./uploads.ts";
+import { UploadError, type Uploads, withAttachments } from "./uploads.ts";
 import { GatewaySpend } from "./gateway-spend.ts";
 import { pricesOf, type UsageStore } from "./usage.ts";
 import type { QuestBoard } from "./quests.ts";

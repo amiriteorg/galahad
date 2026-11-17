@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ATTACHMENT_LIMITS, ATTACHMENT_TYPES } from "./attachments.ts";
 import { AgentLabel, ConnectorArgs, ToolName } from "./connectors.ts";
 import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity } from "./events.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
@@ -49,11 +50,8 @@ const ModelRef = z.string().min(3).max(256);
  * their bytes say), which a model that sees is shown, and text (UTF-8: a log, a file of code, notes), which goes with
  * the message fenced as data, its name saying what it is. Each is kept on the node by the SHA-256 of its bytes.
  */
-export const ATTACHMENT_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "text/plain"] as const;
 export const AttachmentType = z.enum(ATTACHMENT_TYPES);
 export type AttachmentType = z.infer<typeof AttachmentType>;
-/** At most so many with a message; a picture up to 5 MB (the apps send photos smaller), a text up to 256 KB. */
-export const ATTACHMENT_LIMITS = { perMessage: 8, imageBytes: 5 * 1024 * 1024, textBytes: 256 * 1024 } as const;
 /** A file's name as you gave it: no folders, no control characters. */
 export const AttachmentName = z.string().trim().min(1).max(200).regex(/^[^/\\\u0000-\u001f\u007f]+$/, "a file's name, without folders");
 export const AttachmentId = z.string().regex(/^[a-f0-9]{64}$/);

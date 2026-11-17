@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AttachmentRef, ATTACHMENT_LIMITS, ChatMessage } from "@galahad/core";
-import { pictureType, textOf, UPLOAD_IDLE_MS, UploadError, Uploads, withAttachments } from "../src/uploads.ts";
+import { type AttachmentRef, ATTACHMENT_LIMITS, ChatMessage, pictureType, textOf } from "@galahad/core";
+import { UPLOAD_IDLE_MS, UploadError, Uploads, withAttachments } from "../src/uploads.ts";
 
 /*
  * What you attach to your messages (uploads.ts): kept by the SHA-256 of their bytes in a folder of the node's own,

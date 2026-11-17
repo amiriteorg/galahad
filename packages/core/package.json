@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./attachments": "./src/attachments.ts",
     "./avatar": "./src/avatar.ts",
     "./blocks": "./src/blocks.ts",
     "./bytes": "./src/bytes.ts",

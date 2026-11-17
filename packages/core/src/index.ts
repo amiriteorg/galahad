@@ -1,4 +1,5 @@
 export * from "./api.ts";
+export * from "./attachments.ts";
 export * from "./avatar.ts";
 export * from "./archive.ts";
 export * from "./bank.ts";
