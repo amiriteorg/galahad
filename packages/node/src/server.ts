@@ -2411,19 +2411,20 @@ export function createApp(ctx: AppContext) {
       }
     },
     teamModels: () => {
-      // What you may set a knight to work on: each model the roster names (wildcards aside), each local model a full
-      // node of the fleet serves (an embedder aside), with the nodes that serve it, and any a knight works on already.
+      // What you may set a knight to work on: each model the roster names, each local model a full node of the fleet
+      // serves, with the nodes that serve it, and any a knight works on already; never a wildcard, an embedder or the
+      // decider's (they can't do a knight's work).
       const found = new Map<string, Set<string>>();
       const add = (ref: string, node?: string) => {
-        if (ref.includes("*")) return;
+        if (ref.includes("*") || isEmbeddingModel(ref)) return;
         const at = found.get(ref) ?? new Set<string>();
         if (node) at.add(node);
         found.set(ref, at);
       };
-      for (const spec of Object.values(roster(ctx.store))) for (const ref of spec?.models ?? []) add(ref);
+      for (const [role, spec] of Object.entries(roster(ctx.store))) if (role !== "decider" && role !== "embedder") for (const ref of spec?.models ?? []) add(ref);
       for (const d of ctx.store.devices()) {
         if (d.kind !== "node" || d.role !== "full") continue;
-        for (const r of localModelsOf(d.profile?.caps)) for (const m of r.models) if (!isEmbeddingModel(m)) add(`${r.runtime}/${m}`, d.name);
+        for (const r of localModelsOf(d.profile?.caps)) for (const m of r.models) add(`${r.runtime}/${m}`, d.name);
       }
       for (const t of ctx.team ? teamOf().store.teammates() : []) for (const ref of t.models ?? []) add(ref);
       return { models: [...found].map(([ref, on]) => ({ ref, on: [...on].sort() })) };

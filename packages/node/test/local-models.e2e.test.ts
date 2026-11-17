@@ -103,10 +103,13 @@ test("a model call on ultra for a model only the mini's Ollama serves is answere
 
 test("what you may set a knight to work on: the roster's models, then each local one a node serves and where; never an embedder or a wildcard", async () => {
   expect((await admin(homeA, portA)("setRoster", { role: "swift", models: ["ollama/*", "deepseek/deepseek-flash"] })).status).toBe(200);
+  // (What can't do a knight's work isn't offered: the archive's embedder, the decider's decision model.)
+  expect((await admin(homeA, portA)("setRoster", { role: "embedder", models: ["ollama/qwen3-embedding:0.6b"] })).status).toBe(200);
+  expect((await admin(homeA, portA)("setRoster", { role: "decider", models: ["cloudflare-ai/typesafe/jev"] })).status).toBe(200);
   const { models } = (await (await admin(homeA, portA)("teamModels")).json()) as { models: { ref: string; on: string[] }[] };
   expect(models).toContainEqual({ ref: "deepseek/deepseek-flash", on: [] });
   expect(models).toContainEqual({ ref: "ollama/mimo-v2.6:9b", on: ["mini"] });
-  expect(models.some((m) => m.ref.includes("*") || m.ref.includes("embedding"))).toBe(false);
+  expect(models.some((m) => m.ref.includes("*") || m.ref.includes("embedding") || m.ref.includes("jev"))).toBe(false);
 });
 
 test("a node's local runtime is asked by full nodes alone, and only for a model it serves", async () => {
