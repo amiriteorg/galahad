@@ -3,7 +3,7 @@ import type { NotifyPayload, QuestView } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
 import { type NotifyOptions, NotifyService, type NotifySources } from "../src/notify.ts";
 import { NotifyStore } from "../src/notify-store.ts";
-import type { PushSender, PushTarget } from "../src/push-send.ts";
+import type { PushOutcome, PushSender, PushTarget } from "../src/push-send.ts";
 
 /*
  * The notifier with stand-ins for everything around it: what happened on the node (a
@@ -11,7 +11,7 @@ import type { PushSender, PushTarget } from "../src/push-send.ts";
  * it ended. The whole path over HTTP, with a stand-in push service, is notify.e2e.test.ts.
  */
 
-function harness(over: { devices?: { id: string; name: string; kind: "node" | "client"; scopes: string[] }[] } = {}) {
+function harness(over: { devices?: { id: string; name: string; kind: "node" | "client"; scopes: string[] }[]; answer?: (target: PushTarget) => PushOutcome | undefined } = {}) {
   let now = Date.UTC(2026, 10, 12, 12, 0, 0);
   const sent: { to: string; payload: NotifyPayload }[] = [];
   const devices = over.devices ?? [{ id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read", "chat", "vault:read"] }];
@@ -25,7 +25,7 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
     publicKey: async () => "key",
     send: async (target: PushTarget, payload: NotifyPayload) => {
       sent.push({ to: target.endpoint, payload });
-      return { ok: true, gone: false, status: 201, error: null, attempts: 1 };
+      return over.answer?.(target) ?? { ok: true, gone: false, status: 201, error: null, attempts: 1 };
     },
   } as unknown as PushSender;
   const sources: NotifySources = {
@@ -50,6 +50,7 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
   };
   return {
     service,
+    db,
     sent,
     quest,
     ledger,
@@ -153,5 +154,18 @@ describe("the iPhone app", () => {
     expect(() => h.service.subscribeApple("c_phone", { token: TOKEN, environment: "production" })).toThrow(/another paired device's/);
     // A build from Xcode answers to Apple's development service, and says so.
     expect(h.service.subscribeApple("c_iphone", { token: TOKEN, environment: "development" })).toMatchObject({ service: "Apple (a development build)" });
+  });
+
+  test("one whose token answers on Apple's other service than it said is kept there after the first message that arrives", async () => {
+    // As the sender answers when a TestFlight build said it was a development one: taken on Apple's own service.
+    const answer = (target: PushTarget): PushOutcome | undefined =>
+      target.endpoint.startsWith("apns:development:") ? { ok: true, gone: false, status: 200, error: null, attempts: 2, endpoint: target.endpoint.replace("apns:development:", "apns:production:") } : undefined;
+    const h = harness({ devices: [{ id: "c_iphone", name: "iPhone app", kind: "client", scopes }], answer });
+    h.service.subscribeApple("c_iphone", { token: TOKEN, environment: "development" });
+    expect(await h.service.test("c_iphone")).toEqual({ sent: [{ device: "iPhone app", ok: true, error: null }] });
+    expect(h.db.subscription("c_iphone")).toMatchObject({ endpoint: `apns:production:${TOKEN}`, service: "Apple" });
+    h.advance(60_000);
+    await h.service.test("c_iphone");
+    expect(h.sent.at(-1)?.to).toBe(`apns:production:${TOKEN}`);
   });
 });

@@ -17,12 +17,19 @@ struct PushTests {
     }
 
     @Test func theServiceIsTheOneTheProfileNames() {
-        #expect(Push.environment(profile: profile("production")) == "production")
-        #expect(Push.environment(profile: profile("development")) == "development")
-        // No profile (the simulator), one without push, or one that can't be read: Apple's development service.
-        #expect(Push.environment(profile: nil) == "development")
-        #expect(Push.environment(profile: profile(nil)) == "development")
-        #expect(Push.environment(profile: Data("not a profile".utf8)) == "development")
+        for simulator in [false, true] {
+            #expect(Push.environment(profile: profile("production"), simulator: simulator) == "production")
+            #expect(Push.environment(profile: profile("development"), simulator: simulator) == "development")
+            // One without push, or one that can't be read: Apple's development service.
+            #expect(Push.environment(profile: profile(nil), simulator: simulator) == "development")
+            #expect(Push.environment(profile: Data("not a profile".utf8), simulator: simulator) == "development")
+        }
+    }
+
+    @Test func withNoProfileATestFlightBuildIsProductionsAndTheSimulatorDevelopments() {
+        // TestFlight and the App Store take the profile out: their tokens are Apple's own service's.
+        #expect(Push.environment(profile: nil, simulator: false) == "production")
+        #expect(Push.environment(profile: nil, simulator: true) == "development")
     }
 
     @Test func theTokenIsLowercaseHex() {

@@ -176,7 +176,6 @@ export class ApplePushSender {
     } catch (error) {
       return { ok: false, gone: false, status: null, error: `this node's Apple push key can't sign: ${String((error as Error).message).slice(0, 120)}`, attempts: 0 };
     }
-    const origin = this.o.origins?.[device.environment] ?? APPLE_PUSH[device.environment];
     const headers: http2.OutgoingHttpHeaders = {
       ":method": "POST",
       ":path": `/3/device/${device.token}`,
@@ -189,26 +188,42 @@ export class ApplePushSender {
       "apns-collapse-id": b64u(sha256Bytes(utf8(safe.tag))).slice(0, 32),
       "content-type": "application/json",
     };
-    const service = device.environment === "production" ? "Apple's push service" : "Apple's development push service";
+    const body = applePayload(safe);
+    const first = await this.attempt(device.environment, headers, body, signal);
+    // A token Apple's other service made (an app that told its node the wrong one: a TestFlight build said to be a
+    // development one, or the other way round) is a BadDeviceToken here: asked there once, and kept there when it is taken.
+    if (first.reason === "BadDeviceToken") {
+      const other: ApplePushEnvironment = device.environment === "production" ? "development" : "production";
+      const second = await this.attempt(other, headers, body, signal);
+      if (second.outcome.ok) return { ...second.outcome, attempts: first.outcome.attempts + second.outcome.attempts, endpoint: appleEndpoint(other, device.token) };
+      if (!second.outcome.gone) return first.outcome;
+    }
+    return first.outcome;
+  }
+
+  /** One message to one of Apple's two services, tried again when it's busy or failing; with Apple's reason when it said one. */
+  private async attempt(environment: ApplePushEnvironment, headers: http2.OutgoingHttpHeaders, body: string, signal?: AbortSignal): Promise<{ outcome: PushOutcome; reason: string | null }> {
+    const origin = this.o.origins?.[environment] ?? APPLE_PUSH[environment];
+    const service = environment === "production" ? "Apple's push service" : "Apple's development push service";
     let last: PushOutcome = { ok: false, gone: false, status: null, error: `${service} couldn't be reached`, attempts: 0 };
     for (let attempts = 1; ; attempts++) {
       let retryAfterMs: number | null = null;
       try {
-        const answer = await this.ask(origin, headers, applePayload(safe), signal);
-        if (answer.status === 200) return { ok: true, gone: false, status: 200, error: null, attempts };
+        const answer = await this.ask(origin, headers, body, signal);
+        if (answer.status === 200) return { outcome: { ok: true, gone: false, status: 200, error: null, attempts }, reason: null };
         const why = answer.reason ? `${answer.status} ${answer.reason}` : String(answer.status);
-        if (answer.status === 410 || (answer.status === 400 && GONE.has(answer.reason ?? ""))) return { ok: false, gone: true, status: answer.status, error: `${service} no longer knows this iPhone for the app (${why})`, attempts };
+        if (answer.status === 410 || (answer.status === 400 && GONE.has(answer.reason ?? ""))) return { outcome: { ok: false, gone: true, status: answer.status, error: `${service} no longer knows this iPhone for the app (${why})`, attempts }, reason: answer.reason };
         // A refused token is made again next time (the key may have been replaced, or the clock was off).
         if (answer.status === 403 && KEY_REFUSED.has(answer.reason ?? "")) this.token = null;
         last = { ok: false, gone: false, status: answer.status, error: `${service} answered ${why}`, attempts };
-        if (answer.status !== 429 && answer.status < 500) return last;
+        if (answer.status !== 429 && answer.status < 500) return { outcome: last, reason: answer.reason };
         retryAfterMs = answer.retryAfterMs;
       } catch {
-        if (signal?.aborted) return { ...last, attempts };
+        if (signal?.aborted) return { outcome: { ...last, attempts }, reason: null };
         last = { ok: false, gone: false, status: null, error: `${service} couldn't be reached`, attempts };
       }
       const pause = RETRY_MS[attempts - 1];
-      if (pause === undefined || signal?.aborted) return { ...last, attempts };
+      if (pause === undefined || signal?.aborted) return { outcome: { ...last, attempts }, reason: null };
       await this.sleep(retryAfterMs ?? pause);
     }
   }

@@ -30,6 +30,9 @@ export interface PushOutcome {
   /** In words that are safe to show and log: the service by name and its status, never the endpoint. */
   error: string | null;
   attempts: number;
+  /** Where it was taken, when that isn't where the subscription is kept (an iPhone's token on Apple's other service):
+   * the subscription is kept there from now on. */
+  endpoint?: string;
 }
 
 export interface PushSenderOptions {

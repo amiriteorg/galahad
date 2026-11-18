@@ -118,6 +118,26 @@ describe("a notification to the iPhone app", () => {
     apple.close();
   });
 
+  test("a token Apple's other service made is asked there once, and kept there when it is taken", async () => {
+    const { sender: apple } = sender();
+    // A TestFlight build that told its node it was a development one: the sandbox doesn't know its token.
+    const target = { endpoint: appleEndpoint("development", TOKEN), p256dh: "", auth: "" };
+    answers = [{ status: 400, reason: "BadDeviceToken" }, { status: 200 }];
+    expect(await apple.send(target, PAYLOAD, DELIVERY)).toEqual({ ok: true, gone: false, status: 200, error: null, attempts: 2, endpoint: appleEndpoint("production", TOKEN) });
+    expect(seen).toHaveLength(2);
+    // Unknown on both: gone.
+    answers = [{ status: 400, reason: "BadDeviceToken" }, { status: 400, reason: "BadDeviceToken" }];
+    expect(await apple.send(target, PAYLOAD, DELIVERY)).toMatchObject({ ok: false, gone: true, status: 400 });
+    // The other service failing otherwise leaves the first answer standing; any other refusal isn't asked again.
+    answers = [{ status: 400, reason: "BadDeviceToken" }, { status: 403, reason: "InvalidProviderToken" }];
+    expect(await apple.send(target, PAYLOAD, DELIVERY)).toMatchObject({ ok: false, gone: true, status: 400 });
+    seen.length = 0;
+    answers = [{ status: 410, reason: "Unregistered" }];
+    expect(await apple.send(target, PAYLOAD, DELIVERY)).toMatchObject({ ok: false, gone: true, status: 410 });
+    expect(seen).toHaveLength(1);
+    apple.close();
+  });
+
   test("busy or failing: tried again, twice at most, after the pause Apple asks for", async () => {
     const { sender: apple, pauses } = sender();
     const target = { endpoint: appleEndpoint("production", TOKEN), p256dh: "", auth: "" };

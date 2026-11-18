@@ -8,8 +8,16 @@ import UserNotifications
 @MainActor @Observable final class PushCenter {
     static let shared = PushCenter()
 
-    /// Which of Apple's push services this build answers to (its provisioning profile says).
-    let environment = Push.environment(profile: Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision").flatMap { try? Data(contentsOf: $0) })
+    /// Which of Apple's push services this build answers to (its provisioning profile says, when it carries one).
+    let environment = Push.environment(profile: Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision").flatMap { try? Data(contentsOf: $0) }, simulator: PushCenter.simulator)
+
+    private static var simulator: Bool {
+        #if targetEnvironment(simulator)
+        true
+        #else
+        false
+        #endif
+    }
     private(set) var token: String?
     /// Where a tapped notification asked to go, until MainView has gone there.
     var opened: Push.Destination?

@@ -123,6 +123,12 @@ export class NotifyStore {
     return this.subscription(device)!;
   }
 
+  /** This device's subscription answered at another endpoint than kept (an iPhone's token on Apple's other service): kept
+   * there from now on. */
+  move(device: string, endpoint: string, service: string): void {
+    this.db.query("UPDATE subscriptions SET endpoint = ?, service = ?, updated_at = ? WHERE device = ?").run(endpoint, service, this.now(), device);
+  }
+
   remove(device: string): boolean {
     return this.db.query("DELETE FROM subscriptions WHERE device = ?").run(device).changes > 0;
   }

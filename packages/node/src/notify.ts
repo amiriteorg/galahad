@@ -34,9 +34,12 @@ import type { MindStore } from "@galahad/mind";
 import type { LedgerEntryInput } from "@galahad/sandbox";
 import type { KeptSummary } from "./chats.ts";
 import type { NotifyStore, Subscription } from "./notify-store.ts";
-import { appleEndpoint } from "./apns-send.ts";
+import { appleEndpoint, type ApplePushEnvironment, appleTarget } from "./apns-send.ts";
 import type { PushDelivery, PushOutcome, PushTarget } from "./push-send.ts";
 import type { LiveTurn } from "./turns.ts";
+
+/** An iPhone's subscription's service, in words: Apple's, or its development service (a build from Xcode). */
+const appleService = (environment: ApplePushEnvironment): string => (environment === "production" ? "Apple" : "Apple (a development build)");
 
 /*
  * He comes to you. The node's own events become notifications on the owner's paired
@@ -345,7 +348,15 @@ export class NotifyService {
       // The browser unsubscribed, or the app was removed: the push service has forgotten it, and so does the node.
       this.o.db.remove(to.sub.device);
       this.o.log(`notifications: ${to.name}'s subscription is gone at its push service; removed`);
-    } else if (outcome.ok) this.o.db.mark(to.sub.device, { ok: true });
+    } else if (outcome.ok) {
+      // Taken at another endpoint than kept (an iPhone's token on Apple's other service): kept there from now on.
+      const moved = outcome.endpoint && outcome.endpoint !== to.sub.endpoint ? appleTarget(outcome.endpoint) : null;
+      if (moved) {
+        this.o.db.move(to.sub.device, outcome.endpoint!, appleService(moved.environment));
+        this.o.log(`notifications: ${to.name}'s iPhone answers on Apple's ${moved.environment} service; kept there`);
+      }
+      this.o.db.mark(to.sub.device, { ok: true });
+    }
     else this.o.db.mark(to.sub.device, { ok: false, error: outcome.error ?? "the send failed" });
     return outcome.ok;
   }
@@ -410,7 +421,7 @@ export class NotifyService {
       if (this.o.mind.activeDevice(owner)) throw new NotifyError(409, "that iPhone's token is another paired device's; turn notifications off there first, or revoke that device");
       this.o.db.remove(owner);
     }
-    const kept = this.o.db.put(device, { endpoint, p256dh: "", auth: "", service: input.environment === "production" ? "Apple" : "Apple (a development build)" });
+    const kept = this.o.db.put(device, { endpoint, p256dh: "", auth: "", service: appleService(input.environment) });
     this.nudge();
     return this.deviceView(kept, paired.name);
   }

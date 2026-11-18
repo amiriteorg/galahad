@@ -4,11 +4,13 @@ import Foundation
 /// node takes it, and where a tap leads. The node sends them (packages/node/src/apns-send.ts); what a payload may open
 /// is core's fixed list (notify-payload.ts), and anything else opens the Inbox.
 enum Push {
-    /// The service this build's provisioning profile names: `production` for TestFlight and the App Store, `development`
-    /// for a build from Xcode. With no profile at all (the simulator), development.
-    static func environment(profile: Data?) -> String {
-        guard let profile,
-              let start = profile.range(of: Data("<?xml".utf8)),
+    /// The service this build's tokens are for. A build from Xcode carries its provisioning profile, which names it
+    /// (`development`; an ad hoc build's, `production`). A build from TestFlight or the App Store carries none: Apple takes
+    /// it out, and its tokens are `production`'s. The simulator carries none either, and its tokens are `development`'s.
+    /// (A TestFlight build once said `development` here, so its node asked the wrong service and dropped the iPhone.)
+    static func environment(profile: Data?, simulator: Bool) -> String {
+        guard let profile else { return simulator ? "development" : "production" }
+        guard let start = profile.range(of: Data("<?xml".utf8)),
               let end = profile.range(of: Data("</plist>".utf8), in: start.lowerBound..<profile.endIndex),
               let plist = try? PropertyListSerialization.propertyList(from: profile[start.lowerBound..<end.upperBound], format: nil) as? [String: Any],
               let entitlements = plist["Entitlements"] as? [String: Any],
