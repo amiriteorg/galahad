@@ -31,7 +31,45 @@ export interface ProjectView {
   name: string;
   instructions: string;
   repo: string | null;
+  /** Where its work is kept on his computer (`projectCheckout`): the Build view's files, changes and branch are that folder's. */
+  checkout: string;
   updatedAt: number;
+}
+
+/** A project's checkout on Galahad's computer: one folder per project, under /work. */
+export const projectCheckout = (id: string): string => `/work/projects/${id}`;
+
+/** A branch's name as git takes one (its own check runs too): letters, digits and . _ / -, never starting with - . or /. */
+export const BranchName = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^(?![-./])[A-Za-z0-9._/-]+$/, "letters, digits and . _ / -")
+  .refine((name) => !name.includes("..") && !name.endsWith("/") && !name.endsWith(".") && !name.endsWith(".lock"), "not a branch name git takes");
+/** The Build view's git, yours alone, on a project's checkout: its state, a branch to switch to or start, a commit, the first clone. */
+export const ProjectGitInput = z.strictObject({ id: ProjectId });
+export const ProjectBranchInput = z.strictObject({ id: ProjectId, branch: BranchName, create: z.boolean().default(false) });
+export const ProjectCommitInput = z.strictObject({ id: ProjectId, message: z.string().trim().min(1).max(2000) });
+
+/** A project's checkout as git has it (`POST /api/projects/git`). */
+export interface ProjectGitView {
+  checkout: string;
+  /** missing: no folder yet (Set up clones it); not-a-repository: a folder git doesn't know. */
+  state: "ready" | "missing" | "not-a-repository";
+  /** Null when detached, or not ready. */
+  branch: string | null;
+  head: string | null;
+  /** Its branches, the latest worked on first. */
+  branches: string[];
+  /** Files changed or new, not yet committed. */
+  changed: number;
+  upstream: string | null;
+  ahead: number | null;
+  behind: number | null;
+  /** origin's address, with any credentials in it taken out. */
+  remote: string | null;
+  /** Its latest commits, newest first. */
+  log: { sha: string; subject: string; at: number }[];
 }
 
 /** One step of an answer, as the chat streamed it (kept with the answer). */

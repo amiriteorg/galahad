@@ -24,6 +24,7 @@ import {
   type QueueHold,
   type TurnView,
   type ProjectView,
+  projectCheckout,
   type StoredStep,
   SyncRequest,
   titleFrom,
@@ -158,6 +159,7 @@ import { type ChatStore, type ChatStory, foldAt, type KeptSummary, type QueuedBy
 import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
 import { filesFor, UploadError, type Uploads, withAttachments } from "./uploads.ts";
 import { CHANGES_SCRIPT, changesView, fileView, filesView, KEPT_FROM_VIEW, LIST_SCRIPT, LookError, READ_SCRIPT } from "./workspace-look.ts";
+import { actionDone, BRANCH_SCRIPT, CLONE_SCRIPT, CLONE_TIMEOUT, COMMIT_SCRIPT, GIT_SCRIPT, GIT_TIMEOUT, gitView } from "./project-git.ts";
 import { GatewaySpend } from "./gateway-spend.ts";
 import { pricesOf, type UsageStore } from "./usage.ts";
 import type { QuestBoard } from "./quests.ts";
@@ -948,15 +950,27 @@ export function createApp(ctx: AppContext) {
     return ctx.store
       .lwwPrefix<{ id: string; name: string; instructions: string; repo?: string }>("project:")
       .filter((e) => e.value)
-      .map((e) => ({ id: e.value!.id, name: e.value!.name, instructions: e.value!.instructions, repo: e.value!.repo ?? null, updatedAt: Number(e.hlc.slice(0, 15)) }));
+      .map((e) => ({ id: e.value!.id, name: e.value!.name, instructions: e.value!.instructions, repo: e.value!.repo ?? null, checkout: projectCheckout(e.value!.id), updatedAt: Number(e.hlc.slice(0, 15)) }));
   }
 
-  /** A project's context for an answer: its name, repository, your instructions, and what was remembered in it. */
+  /** A project by its id, or a 404. */
+  function projectNamed(id: string): ProjectView {
+    const project = projectsView().find((x) => x.id === id);
+    if (!project) throw new HttpError(404, `no project ${id}`);
+    return project;
+  }
+
+  /** A project's context for an answer: its name, repository, its checkout on his computer, your instructions, and what was remembered in it. */
   function projectContext(project: ProjectView): string {
     const memories = ctx.store.memoriesTagged(`project:${project.id}`, 10);
+    // Where its work happens, when he has a computer to keep it on: the Build view shows that folder's files, changes and branch.
+    const computer = ctx.team?.store.computer() ?? null;
     return [
       `You are working in your liege's project "${project.name}" (${project.id}). What you remember in this conversation is tagged with it.`,
       project.repo ? `Its repository: ${project.repo}` : null,
+      computer
+        ? `Its checkout on your computer is ${projectCheckout(project.id)}: work on it there (clone ${project.repo ? "its repository" : "or start it"} there first if the folder isn't there yet), on a branch of its own for each piece of work, and leave your changes uncommitted until your liege asks you to commit; they review them as they stand.`
+        : null,
       project.instructions ? `Your liege's instructions for this project (follow them unless they conflict with your oath):\n${project.instructions}` : null,
       memories.length ? fenceMemories("What you remember about it:", memories) : null,
     ]
@@ -1754,10 +1768,10 @@ export function createApp(ctx: AppContext) {
    * One look into a knight's workspace (workspace-look.ts): a fixed script and its arguments (a path, a task's worktree),
    * run as the knight's own VM user, never through a shell. Yours alone: the routes that ask are owner-only.
    */
-  async function lookInWorkspace(id: string, script: string, args: string[], signal: AbortSignal): Promise<string> {
+  async function lookInWorkspace(id: string, script: string, args: string[], signal: AbortSignal, timeoutSec = 30): Promise<string> {
     const seat = seatOf(id);
     if (!seat.workspace) throw new HttpError(424, noVm(id));
-    const ran = await inProcess(teammatePrincipal(seat.id), signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: seat.workspace.node, id: seat.workspace.id, cmd: ["python3", "-c", script, ...args], timeoutSec: 30 });
+    const ran = await inProcess(teammatePrincipal(seat.id), signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: seat.workspace.node, id: seat.workspace.id, cmd: ["python3", "-c", script, ...args], timeoutSec });
     if (ran.exitCode !== 0) throw new HttpError(502, `the workspace couldn't be read: ${redact(ran.stderr || ran.stdout).trim().slice(0, 300) || `it ended with ${ran.exitCode}`}`);
     return ran.stdout;
   }
@@ -2353,9 +2367,10 @@ export function createApp(ctx: AppContext) {
       const team = teamOf();
       const mine = input.id === TEAM_GALAHAD ? [] : team.tasksIn({ teammate: input.id }, ["proposed", "queued", "running", "done", "failed", "stopped", "interrupted"]);
       if (input.task && !mine.some((t) => t.id === input.task)) throw new HttpError(404, "no such task of this knight's");
-      const task = input.task ?? (mine.find((t) => t.status === "running") ?? [...mine].sort((a, b) => b.updatedAt - a.updatedAt).find((t) => t.status !== "proposed" && t.status !== "queued"))?.id ?? null;
-      const root = task ? `/work/tasks/${task}` : "/work/repo";
-      const kept = task ? `/work/.agent/base/${task}` : "";
+      const task = input.path ? null : input.task ?? (mine.find((t) => t.status === "running") ?? [...mine].sort((a, b) => b.updatedAt - a.updatedAt).find((t) => t.status !== "proposed" && t.status !== "queued"))?.id ?? null;
+      // A path named is that repository as it stands (a project's checkout); else the task's worktree, or the knight's repository.
+      const root = input.path ? input.path.replace(/\/$/, "") : task ? `/work/tasks/${task}` : "/work/repo";
+      const kept = !input.path && task ? `/work/.agent/base/${task}` : "";
       return looked(async () => changesView(await lookInWorkspace(input.id, CHANGES_SCRIPT, [root, kept], req.signal), input.id, task, root));
     },
     teamWorkspace: async (input, p, req) => {
@@ -2840,6 +2855,39 @@ export function createApp(ctx: AppContext) {
         ...(repo ? { repo } : {}),
       });
       return { project: projectsView().find((x) => x.id === input.id)! };
+    },
+    // The Build view's git (project-git.ts), yours alone: each a fixed script in his computer, on the project's checkout.
+    projectGit: async (input, p, req) => {
+      ownerOnly(p);
+      const project = projectNamed(input.id);
+      return looked(async () => gitView(await lookInWorkspace(TEAM_GALAHAD, GIT_SCRIPT, [project.checkout], req.signal, GIT_TIMEOUT), project.checkout));
+    },
+    projectBranch: async (input, p, req) => {
+      ownerOnly(p);
+      const project = projectNamed(input.id);
+      return looked(async () => {
+        actionDone(await lookInWorkspace(TEAM_GALAHAD, BRANCH_SCRIPT, [project.checkout, input.branch, input.create ? "1" : "0"], req.signal, GIT_TIMEOUT));
+        return gitView(await lookInWorkspace(TEAM_GALAHAD, GIT_SCRIPT, [project.checkout], req.signal, GIT_TIMEOUT), project.checkout);
+      });
+    },
+    projectCommit: async (input, p, req) => {
+      ownerOnly(p);
+      const project = projectNamed(input.id);
+      // What goes into a commit's message is yours and stays in the repository's history: no keys in it.
+      guardAgainstSecrets(input.message);
+      return looked(async () => {
+        actionDone(await lookInWorkspace(TEAM_GALAHAD, COMMIT_SCRIPT, [project.checkout, input.message], req.signal, GIT_TIMEOUT));
+        return gitView(await lookInWorkspace(TEAM_GALAHAD, GIT_SCRIPT, [project.checkout], req.signal, GIT_TIMEOUT), project.checkout);
+      });
+    },
+    projectClone: async (input, p, req) => {
+      ownerOnly(p);
+      const project = projectNamed(input.id);
+      if (!project.repo) throw new HttpError(409, "this project has no repository to clone: give it one, or ask Galahad to start it");
+      return looked(async () => {
+        actionDone(await lookInWorkspace(TEAM_GALAHAD, CLONE_SCRIPT, [project.checkout, project.repo!], req.signal, CLONE_TIMEOUT));
+        return gitView(await lookInWorkspace(TEAM_GALAHAD, GIT_SCRIPT, [project.checkout], req.signal, GIT_TIMEOUT), project.checkout);
+      });
     },
     removeProject: (input) => {
       if (!projectsView().some((x) => x.id === input.id)) throw new HttpError(404, `no project ${input.id}`);

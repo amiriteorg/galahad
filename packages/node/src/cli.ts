@@ -25,7 +25,7 @@ import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCom
 import { ABOUT_YOU_TAG, chatStateWords, checkFacts, type MemoryView, type ModelCheck } from "@galahad/core";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
-import type { BankStatusView, ConversationSummary, ConversationView, ProjectView, ProviderView } from "@galahad/core";
+import type { BankStatusView, ConversationSummary, ConversationView, ProjectGitView, ProjectView, ProviderView, TeamChangesView } from "@galahad/core";
 import { runWithToken } from "./run-tool.ts";
 import { streamedError } from "./server.ts";
 import { priceCommand, trialCommand, usageCommand, UsageError } from "./trial-commands.ts";
@@ -152,6 +152,9 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   write one yourself, or a new version of one (yours: he never edits them)
   skills budget [<tokens a day>]  what he may spend a day distilling skills from passed quests (0: off)
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
+  project git|changes|clone <id> · project branch <id> <name> [--new] · project commit <id> --message "…"
+                                  a project's checkout on his computer, as the Mac's Build view has it: its branch and
+                                  commits, what changed, its first clone, a branch to switch to or start, a commit
   token mint --label opencode [--providers deepseek,anthropic] [--ttl 60] [--max 1000]
 
 Work
@@ -623,6 +626,9 @@ async function main(): Promise<void> {
       // roundtable changes <knight> [--task <id>] [--files]: a task of its by name, and the files without the diff.
       task: { type: "string" },
       files: { type: "boolean" },
+      // project commit <id> --message "…" · project branch <id> <name> [--new]
+      message: { type: "string" },
+      new: { type: "boolean" },
       "poll-ms": { type: "string" },
       // The archive's filters and ideas.
       trust: { type: "string" },
@@ -1241,6 +1247,36 @@ Next:
 
     case "project": {
       const admin = new Admin(home);
+      if (sub === "git" || sub === "branch" || sub === "commit" || sub === "clone" || sub === "changes") {
+        const id = rest[0];
+        if (!id) fail(`usage: galahad project ${sub} <id>${sub === "branch" ? " <name> [--new]" : sub === "commit" ? ' --message "…"' : ""}`);
+        if (sub === "changes") {
+          const { projects } = await admin.call<{ projects: ProjectView[] }>("projects");
+          const project = projects.find((p) => p.id === id);
+          if (!project) fail(`no project ${id}`);
+          const changes = await admin.call<TeamChangesView>("teamChanges", { id: "galahad", path: project!.checkout });
+          if (!changes.files.length && !changes.untracked.length) console.log(`Nothing changed in ${project!.checkout} since its last commit.`);
+          for (const f of changes.files) console.log(`  ${f.status}  ${f.path}${f.added === null ? dim("  binary") : dim(`  +${f.added} −${f.removed}`)}`);
+          for (const f of changes.untracked) console.log(`  ?  ${f}`);
+          return;
+        }
+        const view =
+          sub === "git"
+            ? await admin.call<ProjectGitView>("projectGit", { id })
+            : sub === "clone"
+              ? await admin.call<ProjectGitView>("projectClone", { id })
+              : sub === "branch"
+                ? await admin.call<ProjectGitView>("projectBranch", { id, branch: rest[1] ?? fail("usage: galahad project branch <id> <name> [--new]"), create: flags.new === true })
+                : await admin.call<ProjectGitView>("projectCommit", { id, message: str("message") ?? fail('usage: galahad project commit <id> --message "…"') });
+        if (view.state === "missing") console.log(`${view.checkout} isn't there yet: galahad project clone ${id}, or ask Galahad to start it.`);
+        else if (view.state === "not-a-repository") console.log(`${view.checkout} is there, but it isn't a git repository.`);
+        else {
+          const against = view.upstream ? dim(` · ${view.ahead ?? 0} ahead, ${view.behind ?? 0} behind ${view.upstream}`) : "";
+          console.log(`${bold(view.branch ?? "(no branch)")} at ${view.head ?? "?"} · ${view.changed ? `${view.changed} changed` : "nothing to commit"}${against}  ${dim(view.checkout)}`);
+          for (const c of view.log.slice(0, 5)) console.log(dim(`  ${c.sha}  ${c.subject}`));
+        }
+        return;
+      }
       if (sub === "rm") {
         if (!rest[0]) fail("usage: galahad project rm <id>");
         if (!flags.yes && !confirm(`Remove project ${rest[0]}? Its chats stay, outside any project.`)) return;

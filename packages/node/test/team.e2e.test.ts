@@ -238,4 +238,26 @@ test("real API: a knight's workspace is yours alone to look into; one with no VM
   expect((await request("teamFiles", { id: "ada", path: "/work/../etc" })).status).toBe(400);
   expect((await request("teamFile", { id: "ada", path: "/work/.galahad-gateway.json" })).status).toBe(403);
   expect((await request("teamChanges", { id: "ada", task: "task-000000000000" })).status).toBe(404);
+  // A repository by its path (a project's checkout): under /work only, and a task or a path, never both.
+  expect((await request("teamChanges", { id: "ada", path: "/etc" })).status).toBe(400);
+  expect((await request("teamChanges", { id: "ada", path: "/work/../etc" })).status).toBe(400);
+  expect((await request("teamChanges", { id: "ada", task: "task-000000000000", path: "/work/projects/site" })).status).toBe(400);
+  expect((await request("teamChanges", { id: "ada", path: "/work/projects/site" }, token)).status).toBe(403);
+});
+
+test("real API: a project's git is yours alone; an unknown project, a name git won't take, a clone with nothing to clone and a key in a message are refused", async () => {
+  await api("setProject", { id: "site", name: "The site" });
+  const { token } = await api("mintArm", { label: "brancher", scopes: ["chat", "mind:read", "sandbox"] });
+  for (const [name, input] of [["projectGit", { id: "site" }], ["projectBranch", { id: "site", branch: "fix" }], ["projectCommit", { id: "site", message: "Fix" }], ["projectClone", { id: "site" }]] as const) {
+    expect((await request(name, input, token)).status).toBe(403);
+  }
+  expect((await request("projectGit", { id: "nowhere" })).status).toBe(404);
+  expect((await request("projectBranch", { id: "site", branch: "a..b" })).status).toBe(400);
+  expect((await request("projectClone", { id: "site" })).status).toBe(409);
+  expect((await request("projectCommit", { id: "site", message: `Add sk-ant-api03-${"A".repeat(93)}AA` })).status).toBe(422);
+  // He has no computer yet: said, with how to make one.
+  const none = await request("projectGit", { id: "site" });
+  expect(none.status).toBe(424);
+  expect(((await none.json()) as { error: string }).error).toContain("Galahad has no computer yet");
+  await api("removeProject", { id: "site" });
 });

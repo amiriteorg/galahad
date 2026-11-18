@@ -16,7 +16,7 @@ import { PricedModel, PriceSchema, SpendLines, type TrialSpent, UsageBudgetInput
 import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
-import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
+import { ConversationId, ProjectBranchInput, ProjectCommitInput, ProjectGitInput, ProjectId, ProjectInput } from "./chats.ts";
 import { TeammateInput, TeamArrangeInput, TeamChangesInput, TeamEngramInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
@@ -654,6 +654,14 @@ export const routes = {
   /** A project's instructions steer Galahad, so setting one is yours (brain:write: never an agent's). */
   setProject: { method: "POST", path: "/api/projects", scope: "brain:write", input: ProjectInput },
   removeProject: { method: "POST", path: "/api/projects/remove", scope: "brain:write", input: z.strictObject({ id: ProjectId }) },
+  /** The Build view's git on a project's checkout on his computer (docs/BUILD.md), yours alone: how it stands. */
+  projectGit: { method: "POST", path: "/api/projects/git", scope: "sandbox", input: ProjectGitInput },
+  /** Switch its checkout to a branch, or start one where it stands. */
+  projectBranch: { method: "POST", path: "/api/projects/branch", scope: "sandbox", input: ProjectBranchInput },
+  /** Commit everything changed or new in its checkout. */
+  projectCommit: { method: "POST", path: "/api/projects/commit", scope: "sandbox", input: ProjectCommitInput },
+  /** Clone its repository into its checkout, the first time. */
+  projectClone: { method: "POST", path: "/api/projects/clone", scope: "sandbox", input: ProjectGitInput },
   createInvite: {
     method: "POST",
     path: "/api/invites",

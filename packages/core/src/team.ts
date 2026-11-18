@@ -325,7 +325,14 @@ export const WorkPath = z
 /** A knight's workspace looked into (its VM's, or `galahad` for his computer): a folder, a file, or what a task changed. */
 export const TeamFilesInput = z.strictObject({ id: z.string().min(1).max(32), path: WorkPath.default("/work") });
 export const TeamFileInput = z.strictObject({ id: z.string().min(1).max(32), path: WorkPath });
-export const TeamChangesInput = z.strictObject({ id: z.string().min(1).max(32), task: TeamTaskId.optional() });
+export const TeamChangesInput = z
+  .strictObject({
+    id: z.string().min(1).max(32),
+    task: TeamTaskId.optional(),
+    /** The repository at this path instead (a project's checkout on his computer), changed since its last commit. */
+    path: WorkPath.optional(),
+  })
+  .refine((input) => !(input.task && input.path), "a task or a path, not both");
 
 export interface TeamFileEntry {
   name: string;
