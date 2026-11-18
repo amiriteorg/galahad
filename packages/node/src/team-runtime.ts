@@ -157,10 +157,12 @@ export const withGateway = (command: string): string => {
  * repository as it is now, fetched through the read-only gateway with the lease that is in the VM (never a token
  * in a command), in a worktree of the task's own. The commit it started from is written down, with whether the
  * fetch came through (`fetched`) or the clone had to do as it was (`stale`), and printed. A task taken up again
- * finds its worktree and what was written; one from before this was written says `unknown`.
+ * finds its worktree and what was written; one from before this was written says `unknown`. A fix to a pull
+ * request (`<branch>`, a third argument) starts on that branch as fetched, or not at all.
  */
 const REPO_TASK_START = `import json,os,subprocess,sys
 root, kept, repo = sys.argv[1], sys.argv[2], '/work/repo'
+branch = sys.argv[3] if len(sys.argv) > 3 else ''
 git = lambda *a: subprocess.run(['git','-C',repo,*a],capture_output=True)
 if not os.path.isdir(root):
     how = 'fetched'
@@ -171,6 +173,9 @@ if not os.path.isdir(root):
     except Exception:
         how = 'stale'
     start = 'origin/HEAD' if git('rev-parse','--verify','--quiet','origin/HEAD').returncode == 0 else 'HEAD'
+    if branch:
+        start = 'refs/remotes/origin/'+branch
+        if git('rev-parse','--verify','--quiet',start+'^{commit}').returncode: sys.exit('the branch '+branch+' is not in the repository'+(' (it could not be fetched)' if how == 'stale' else ''))
     made = git('worktree','add','--detach',root,start)
     if made.returncode: sys.exit('could not make the worktree: '+made.stderr.decode()[-300:])
     os.makedirs(os.path.dirname(kept),exist_ok=True)
@@ -448,7 +453,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const root = `/work/tasks/${task.id}`;
       const sessionFile = `/work/.agent/sessions/${task.id}.${teammate.harness}`;
       const setup = teammate.repository
-        ? `python3 -c ${quote(REPO_TASK_START)} ${quote(root)} ${quote(`/work/.agent/base/${task.id}`)}`
+        ? `python3 -c ${quote(REPO_TASK_START)} ${quote(root)} ${quote(`/work/.agent/base/${task.id}`)}${task.fix ? ` ${quote(task.fix.branch)}` : ""}`
         : `mkdir -p ${quote(root)}`;
       const ready = await deps.exec(teammate, setup, teammate.repository ? 420 : 120, ctx.signal);
       if (ready.exitCode !== 0) throw new Error(`Workspace not ready: ${redact(ready.stderr || ready.stdout)}`);
@@ -561,7 +566,10 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
           try {
             const artifact = await deps.keep(teammate, out, `${task.title} · ${teammate.id} · ${verified ? "verified" : "not verified"}`);
             changes = { artifact, files, base };
-            changed = `Changes: ${count}, kept as ${artifact}. ${verified ? `A pull request, on your word: galahad ship ${artifact} --title ${JSON.stringify(task.title)}` : "Not verified: read them before you ship them."}`;
+            const offer = task.fix
+              ? `Offered to you as a push onto ${task.fix.branch}, where it began: the pull request updates once you approve it.`
+              : `A pull request, on your word: galahad ship ${artifact} --title ${JSON.stringify(task.title)}`;
+            changed = `Changes: ${count}, kept as ${artifact}. ${verified ? offer : "Not verified: read them before you ship them."}`;
           } catch (error) {
             changed = `Changes: ${count}, but they could not be kept: ${redact(String((error as Error).message ?? error)).slice(0, 200)}`;
           }

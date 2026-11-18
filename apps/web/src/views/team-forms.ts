@@ -400,3 +400,24 @@ export async function setEngram(ctx: Ctx, on: boolean): Promise<boolean> {
     return true;
   } catch (error) { if (!isAbort(error)) toast("Couldn't change the notes store", { tone: "error", description: errorMessage(error) }); return false; }
 }
+
+/** Failing checks back to the knight whose work it was (PLAN #29): one switch for every knight here. Turning it on says first what it does. */
+export async function setCiBack(ctx: Ctx, on: boolean): Promise<boolean> {
+  if (on) {
+    const ok = await confirmAction({
+      title: "Give failing checks back?",
+      body: [
+        h("p", {}, "When a pull request of a knight's work fails its checks, that knight gets the fix as a task on the pull request's branch, without asking you: once for each commit that failed, three times at most, within Galahad's daily giving."),
+        h("p", {}, "Its fix is checked by its gates and an independent reviewer, and pushing it onto the branch still waits for your approval."),
+      ],
+      confirmLabel: "Turn on",
+    });
+    if (!ok) return false;
+  }
+  try {
+    await ctx.api.post("/api/team/ci", { on });
+    toast(on ? "Failing checks go back to the knight" : "Failing checks stay yours", { tone: "info" });
+    await ctx.live.refreshTeam();
+    return true;
+  } catch (error) { if (!isAbort(error)) toast("Couldn't change it", { tone: "error", description: errorMessage(error) }); return false; }
+}

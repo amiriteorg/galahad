@@ -14,6 +14,11 @@ import type { NativeTool } from "./connectors.ts";
  * then the node, with the connector's key on its pinned origin (api.github.com),
  * commits the files on a new branch with GitHub's Git Data API and opens the pull
  * request. A branch that already exists is never touched.
+ *
+ * `github.ship.update` is the one exception, for a fix to a pull request already shipped
+ * (ci-back.ts): its commit goes on top of the branch, and only when the branch stands
+ * exactly where the fixing work began; the branch is moved forward, never forced, and
+ * the pull request on it updates. Like a ship, it asks you first.
  */
 
 const Sha = z.string().regex(/^[0-9a-f]{40}$/);
@@ -41,7 +46,7 @@ export const SHIP_LIMITS = { bytes: 50 * 2 ** 20 };
 
 export interface ShipDeps {
   /** One request to api.github.com, with the connector's key. */
-  github(method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; json: any }>;
+  github(method: "GET" | "POST" | "PATCH", path: string, body?: unknown): Promise<{ status: number; json: any }>;
   /** The kept work, if this node holds it: its file list and a file's bytes. */
   artifact(id: string): { files: { path: string; size: number }[]; read(path: string): Uint8Array } | null;
 }
@@ -63,15 +68,16 @@ export function sameRepository(remote: string, owner: string, repo: string): boo
   return !!m && m[1]!.toLowerCase() === owner.toLowerCase() && m[2]!.toLowerCase() === repo.toLowerCase();
 }
 
-export async function shipToGitHub(deps: ShipDeps, args: Record<string, ArgValue>): Promise<ShipResult> {
+/** A shipment to GitHub: on a new branch with its pull request, or (`update`) on top of the branch it began on. */
+export async function shipToGitHub(deps: ShipDeps, args: Record<string, ArgValue>, update = false): Promise<ShipResult> {
   try {
-    return await ship(deps, args);
+    return await ship(deps, args, update);
   } catch (error) {
     return { ok: false, status: 500, receipt: `nothing more was shipped: ${String((error as Error).message ?? error).slice(0, 500)}` };
   }
 }
 
-async function ship(deps: ShipDeps, args: Record<string, ArgValue>): Promise<ShipResult> {
+async function ship(deps: ShipDeps, args: Record<string, ArgValue>, update: boolean): Promise<ShipResult> {
   const owner = String(args.owner);
   const repo = String(args.repo);
   const branch = String(args.branch);
@@ -98,15 +104,22 @@ async function ship(deps: ShipDeps, args: Record<string, ArgValue>): Promise<Shi
   }
   if (bytes > SHIP_LIMITS.bytes) return fail(413, `the shipment is ${Math.round(bytes / 2 ** 20)} MB; at most ${SHIP_LIMITS.bytes / 2 ** 20} MB`);
 
-  // Where it goes: never onto an existing branch.
+  // Where it goes: never onto an existing branch; an update only onto its own, standing exactly where the work began.
   const existing = await deps.github("GET", `${at}/git/ref/heads/${refPath(branch)}`);
-  if (existing.status === 200) return fail(409, `${owner}/${repo} already has a branch ${branch}; a shipment never touches an existing branch`);
-  if (existing.status !== 404) return fail(existing.status, `couldn't check for the branch ${branch}: ${existing.status}`);
   let base = args.base === undefined ? "" : String(args.base);
-  if (!base) {
-    const info = await deps.github("GET", at);
-    if (info.status !== 200) return fail(info.status, `couldn't read ${owner}/${repo}: ${info.status}`);
-    base = String(info.json.default_branch ?? "main");
+  if (update) {
+    if (existing.status === 404) return fail(404, `${owner}/${repo} has no branch ${branch} to push onto`);
+    if (existing.status !== 200) return fail(existing.status, `couldn't read the branch ${branch}: ${existing.status}`);
+    const now = String(existing.json?.object?.sha ?? "");
+    if (now !== shipment.base) return fail(409, `${branch} has moved since the work began (from ${shipment.base.slice(0, 12)} to ${now.slice(0, 12) || "nothing"}): nothing was pushed`);
+  } else {
+    if (existing.status === 200) return fail(409, `${owner}/${repo} already has a branch ${branch}; a shipment never touches an existing branch`);
+    if (existing.status !== 404) return fail(existing.status, `couldn't check for the branch ${branch}: ${existing.status}`);
+    if (!base) {
+      const info = await deps.github("GET", at);
+      if (info.status !== 200) return fail(info.status, `couldn't read ${owner}/${repo}: ${info.status}`);
+      base = String(info.json.default_branch ?? "main");
+    }
   }
   const from = await deps.github("GET", `${at}/git/commits/${shipment.base}`);
   if (from.status !== 200) return fail(from.status, `${owner}/${repo} doesn't have the commit the work started from (${shipment.base.slice(0, 12)})`);
@@ -128,9 +141,18 @@ async function ship(deps: ShipDeps, args: Record<string, ArgValue>): Promise<Shi
   const body = args.body === undefined ? "" : String(args.body);
   const commit = await deps.github("POST", `${at}/git/commits`, { message: body ? `${title}\n\n${body}` : title, tree: String(made.json.sha), parents: [shipment.base] });
   if (commit.status !== 201) return fail(commit.status, `couldn't commit: ${commit.status}`);
-  const ref = await deps.github("POST", `${at}/git/refs`, { ref: `refs/heads/${branch}`, sha: String(commit.json.sha) });
-  if (ref.status !== 201) return fail(ref.status, `couldn't create the branch ${branch}: ${ref.status}`);
   const changed = `${shipment.files.length} file${shipment.files.length === 1 ? "" : "s"}`;
+  const sha = String(commit.json.sha);
+  if (update) {
+    // Forward only: GitHub refuses a move that isn't one (the branch moved since it was read), and nothing is forced.
+    const moved = await deps.github("PATCH", `${at}/git/refs/heads/${refPath(branch)}`, { sha, force: false });
+    if (moved.status !== 200) return fail(moved.status, `committed ${changed} (${sha.slice(0, 12)}), but ${branch} wasn't moved onto it: ${String(moved.json?.message ?? moved.status).slice(0, 300)}`);
+    const open = await deps.github("GET", `${at}/pulls?head=${seg(owner)}:${seg(branch)}&state=open&per_page=1`);
+    const pr = open.status === 200 && Array.isArray(open.json) ? open.json[0] : undefined;
+    return { ok: true, status: 200, ...(pr?.html_url ? { url: String(pr.html_url) } : {}), receipt: `${changed} pushed onto ${branch}, commit ${sha.slice(0, 12)}${pr ? `: pull request #${pr.number} updated, ${pr.html_url}` : ""}` };
+  }
+  const ref = await deps.github("POST", `${at}/git/refs`, { ref: `refs/heads/${branch}`, sha });
+  if (ref.status !== 201) return fail(ref.status, `couldn't create the branch ${branch}: ${ref.status}`);
   const pr = await deps.github("POST", `${at}/pulls`, { title, head: branch, base, ...(body ? { body } : {}), ...(args.draft === true ? { draft: true } : {}) });
   if (pr.status !== 201) {
     const why = Array.isArray(pr.json?.errors) ? pr.json.errors.map((e: any) => e.message ?? e.code).join("; ") : (pr.json?.message ?? pr.status);
@@ -140,8 +162,8 @@ async function ship(deps: ShipDeps, args: Record<string, ArgValue>): Promise<Shi
   return { ok: true, status: 201, url, receipt: `pull request #${pr.json.number}: ${url} (${changed} on ${branch} into ${base}, commit ${String(commit.json.sha).slice(0, 12)})` };
 }
 
-/** github.ship as the connector service runs it: GitHub through `send` (the pinned origin and key), the work from this node's artifacts. */
-export function shipNative(artifacts: ArtifactStore): NativeTool {
+/** github.ship (or, `update`, github.ship.update) as the connector service runs it: GitHub through `send` (the pinned origin and key), the work from this node's artifacts. */
+export function shipNative(artifacts: ArtifactStore, update = false): NativeTool {
   return async (manifest, args, send) => {
     const started = performance.now();
     const origin = new URL(manifest.origin).origin;
@@ -156,7 +178,7 @@ export function shipNative(artifacts: ArtifactStore): NativeTool {
             url: url.toString(),
             headers: { ...(manifest.headers ?? {}) },
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-            class: method === "GET" ? "read" : "create",
+            class: method === "GET" ? "read" : method === "PATCH" ? "modify" : "create",
             target: `${method} ${url.pathname}`,
           });
           let json: any = null;
@@ -182,6 +204,7 @@ export function shipNative(artifacts: ArtifactStore): NativeTool {
         },
       },
       args,
+      update,
     );
     return { ok: result.ok, status: result.status, contentType: "text/plain", body: result.receipt, truncated: false, durationMs: Math.round(performance.now() - started) };
   };

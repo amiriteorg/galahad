@@ -37,7 +37,7 @@ export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): 
 /** What a task changed in its repository and where that is kept (`galahad ship <artifact>` opens a pull request from it). Empty when it kept nothing. */
 export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
-const usage = "galahad roundtable [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad roundtable [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | ci [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
 
 /** A size as a person says one. */
 const bytesWord = (bytes: number) => (bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`);
@@ -246,6 +246,15 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     print(engram
       ? "The notes store (Engram) is on. A knight's task is given it when the knight's VM has the pinned Engram, and says which it was. Notes stay in that VM: they are leads a task checks, never his memory."
       : "The notes store (Engram) is off. What knights kept stays in each VM, unused, under /work/.memory/engram.");
+    return;
+  }
+  // A pull request of a knight's work that fails its checks: given back to that knight, outside an outcome too (PLAN #29).
+  if (sub === "ci") {
+    if (args.length > 1 || (args.length === 1 && args[0] !== "on" && args[0] !== "off")) throw new Error("usage: galahad roundtable ci [on|off]");
+    const on = args.length ? (await api.call<{ ci: boolean }>("teamCi", { on: args[0] === "on" })).ci : (await api.call<TeamSnapshot>("team")).ciBack === true;
+    print(on
+      ? "Failing checks go back to the knight whose work it was: a fix on the pull request's branch, once for each commit that failed and three times at most, within Galahad's daily giving. Pushing a fix still waits for your approval. Turn it off with: galahad roundtable ci off"
+      : "Failing checks stay yours, except in an outcome, which gives them back on its own within its budget. Turn it on with: galahad roundtable ci on");
     return;
   }
   // (A knight by either word: `teammate` is what the command took before it was called knights.)

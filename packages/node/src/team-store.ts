@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, type TeamTrailEntry, TeamWorkspace,
   type Teammate, type TeamRoom, type TeamMessage, type TeamTask, type TeamDelivery, type TeamSnapshot, type TeamRoomView, type TeamWorkStatus, type TeamOverview,
-  TeamOutcomeInput, type TeamOutcomeStatus,
+  TeamOutcomeInput, type TeamOutcomeStatus, type TeamTaskFix,
 } from "../../core/src/team.ts";
 import { type InterventionKind, type NorthStar, northStar } from "../../core/src/interventions.ts";
 
@@ -187,6 +187,13 @@ export class TeamStore {
   setEngram(raw: boolean): boolean {
     const on = teamInput(z.boolean(), raw);
     this.db.query("INSERT INTO team_settings(key,value) VALUES('engram',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(on ? "on" : "off");
+    return on;
+  }
+  /** Whether failing checks go back to the knight whose work it was when no outcome gives them back (PLAN #29): off until you turn it on. */
+  ciBack(): boolean { return this.db.query<DocRow, []>("SELECT value FROM team_settings WHERE key='ci'").get()?.value === "on"; }
+  setCiBack(raw: boolean): boolean {
+    const on = teamInput(z.boolean(), raw);
+    this.db.query("INSERT INTO team_settings(key,value) VALUES('ci',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(on ? "on" : "off");
     return on;
   }
   /** A room's story so far: what its knights summed up of the conversation before `through` (a message's id), so a
@@ -566,7 +573,7 @@ export class TeamStore {
     this.db.query("INSERT INTO team_jobs(id,kind,room,teammate,chain_id,status,data,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(key, kind, room, teammate, chain, status, JSON.stringify(data), at, at);
     return key;
   }
-  createTask(raw: TeamTaskInput, by: { teammate?: string; chainId?: string; givenBy?: string } = {}): TeamTask {
+  createTask(raw: TeamTaskInput, by: { teammate?: string; chainId?: string; givenBy?: string; fix?: TeamTaskFix } = {}): TeamTask {
     const input = teamInput(TeamTaskInput, raw);
     teamText([input.title, input.goal, ...(input.gates ?? [])].join("\n"));
     return this.db.transaction(() => {
@@ -587,14 +594,26 @@ export class TeamStore {
       const chain = by.chainId ?? this.chain(room);
       // A knight's task is proposed to you: it is written down where it was asked for, and waits for your approval.
       const proposed = by.teammate ? { proposedBy: by.teammate } : {};
-      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...(input.outcome ? { outcome: input.outcome } : {}), ...proposed }, by.teammate ? "proposed" : "queued");
+      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...(input.outcome ? { outcome: input.outcome } : {}), ...(by.fix ? { fix: by.fix } : {}), ...proposed }, by.teammate ? "proposed" : "queued");
       return this.task(key)!;
     })();
+  }
+  /** The task whose kept work this is (an artifact's id), if it was this node's knights'. */
+  taskOfWork(artifact: string): TeamTask | null {
+    const row = this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE kind='task' AND json_extract(data,'$.changes.artifact') = ? ORDER BY seq DESC LIMIT 1").get(artifact);
+    return row ? this.taskOf(row) : null;
+  }
+  /** The fixes given for a pull request's branch (PLAN #29), the first first. */
+  fixesOf(owner: string, repo: string, branch: string): TeamTask[] {
+    return this.db
+      .query<JobRow, [string, string, string]>("SELECT * FROM team_jobs WHERE kind='task' AND lower(json_extract(data,'$.fix.owner')) = lower(?) AND lower(json_extract(data,'$.fix.repo')) = lower(?) AND json_extract(data,'$.fix.branch') = ? ORDER BY seq")
+      .all(owner, repo, branch)
+      .map((row) => this.taskOf(row));
   }
   private jobRow(id: string): JobRow | null { return this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE id = ?").get(id); }
   job(id: string): TeamJob | null { const row = this.jobRow(id); return row ? jobOf(row) : null; }
   private taskOf(row: JobRow): TeamTask {
-    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "givenBy" | "proposedBy" | "interventions" | "outcome">;
+    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "changes" | "givenBy" | "proposedBy" | "interventions" | "outcome" | "fix">;
     return { ...data, id: row.id, room: row.room, assignee: row.teammate, chainId: row.chain_id, status: row.status, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   task(id: string): TeamTask | null { const row = this.jobRow(id); return row?.kind === "task" ? this.taskOf(row) : null; }
@@ -645,7 +664,7 @@ export class TeamStore {
     const removed = this.removed().map(({ id, name, removedAt }) => { const conversations = direct.filter((room) => room.members.includes(id)).map((room) => room.id); return { id, name, removedAt, ...(conversations.length ? { conversations } : {}) }; });
     const computer = this.computer();
     const { order, primary } = this.arrangement();
-    return { northStar: this.northStar(this.now() - 30 * 86_400_000), teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(computer ? { computer } : {}), order, primary, seen: this.seen() };
+    return { northStar: this.northStar(this.now() - 30 * 86_400_000), teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(this.ciBack() ? { ciBack: true } : {}), ...(computer ? { computer } : {}), order, primary, seen: this.seen() };
   }
   /** When you last looked at each knight's page (`knight:<id>`) and each room (`room:<id>`), on any device. */
   seen(): Record<string, number> {

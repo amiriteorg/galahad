@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { type ActionView, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
-import { CI_NO_CHECKS_MS, CI_WATCH_FOR_MS, CiWatch, ciVerdict, type ShippedPull, shippedPulls } from "../src/ci-watch.ts";
+import { CI_NO_CHECKS_MS, CI_WATCH_FOR_MS, CiWatch, type CiWatchOptions, ciVerdict, type ShippedPull, shippedPulls } from "../src/ci-watch.ts";
 
 /* After you ship: the node that shipped follows the pull request's checks, and a failure waits in your Inbox. */
 
@@ -50,18 +50,28 @@ describe("which pull requests are followed", () => {
   const at = () => 1_000;
 
   test("each ship this node sent that went through, with its repository, branch and pull request", () => {
-    expect(shippedPulls([ship()], "n_here", at)).toEqual([{ action: "a_ship1", owner: "amiriteorg", repo: "galahad", branch: "galahad/units", pr: 12, at: 1_000 }]);
+    expect(shippedPulls([ship()], "n_here", at)).toEqual([{ action: "a_ship1", connector: "github", owner: "amiriteorg", repo: "galahad", branch: "galahad/units", artifact: "art_x", pr: 12, at: 1_000 }]);
+    // Through an owner's own GitHub connector too: followed through that one.
+    expect(shippedPulls([ship({ connector: "github-amiriteorg" })], "n_here", at)).toEqual([expect.objectContaining({ connector: "github-amiriteorg" })]);
+  });
+
+  test("a fix pushed onto a shipped branch is the same pull request, followed from the push", () => {
+    const when: Record<string, number> = { a_ship1: 1_000, a_fix1: 9_000 };
+    const fix = ship({ id: "a_fix1", tool: "ship.update", args: { owner: "amiriteorg", repo: "galahad", branch: "galahad/units", artifact: "art_fix", title: "Fix" }, receipt: "1 file pushed onto galahad/units, commit 9f2c1d0e4b7a: pull request #12 updated" });
+    expect(shippedPulls([fix, ship()], "n_here", (id) => when[id] ?? null)).toEqual([{ action: "a_ship1", connector: "github", owner: "amiriteorg", repo: "galahad", branch: "galahad/units", artifact: "art_x", pr: 12, at: 9_000 }]);
+    // Another branch is another pull request.
+    expect(shippedPulls([ship(), ship({ id: "a_ship2", args: { owner: "amiriteorg", repo: "galahad", branch: "galahad/other", artifact: "art_y", title: "Other" } })], "n_here", at)).toHaveLength(2);
   });
 
   test("not another node's, not one that failed or waits for you, not any other call", () => {
-    for (const other of [ship({ node: "n_other" }), ship({ state: "failed" }), ship({ state: "waiting" }), ship({ tool: "pr.create" }), ship({ connector: "forge" })]) {
+    for (const other of [ship({ node: "n_other" }), ship({ state: "failed" }), ship({ state: "waiting" }), ship({ tool: "pr.create" }), ship({ connector: "forge" }), ship({ connector: "githubby" })]) {
       expect(shippedPulls([other], "n_here", at)).toEqual([]);
     }
   });
 });
 
 describe("following the checks", () => {
-  function harness(shipped: ShippedPull[]) {
+  function harness(shipped: ShippedPull[], back?: CiWatchOptions["back"]) {
     const identity = newNodeIdentity();
     const store = new MindStore(":memory:");
     foundFleet(store, identity, { fleetName: "camelot", nodeName: "here" });
@@ -69,23 +79,59 @@ describe("following the checks", () => {
     let checks: unknown = { total_count: 0, check_runs: [] };
     const annotations: Record<number, unknown> = {};
     const calls: string[] = [];
+    const through = new Set<string>();
+    const logs: string[] = [];
     const watch = new CiWatch({
       store,
       identity,
       local: new Database(":memory:"),
       shipped: () => shipped,
-      call: async (tool, args) => {
+      call: async (tool, args, connector) => {
         calls.push(`${tool} ${JSON.stringify(args)}`);
+        through.add(connector);
         const body = tool === "checks" ? checks : (annotations[args.check_run_id as number] ?? []);
         return { ok: true, status: 200, body: JSON.stringify(body) };
       },
+      ...(back ? { back } : {}),
       now: () => now,
-      log: () => {},
+      log: (line) => logs.push(line),
     });
     const notices = () => store.lwwPrefix<{ title: string; body: string; severity: string; source: string } | null>("notice:ci:").map((entry) => entry.value).filter(Boolean);
-    return { store, watch, calls, notices, set: (next: unknown) => (checks = next), annotate: (id: number, list: unknown) => (annotations[id] = list), at: (ms: number) => (now = ms) };
+    return { store, watch, calls, through, logs, notices, set: (next: unknown) => (checks = next), annotate: (id: number, list: unknown) => (annotations[id] = list), at: (ms: number) => (now = ms) };
   }
-  const pull: ShippedPull = { action: "a_ship1", owner: "amiriteorg", repo: "galahad", branch: "galahad/units", pr: 12, at: 5 * 60_000 };
+  const pull: ShippedPull = { action: "a_ship1", connector: "github", owner: "amiriteorg", repo: "galahad", branch: "galahad/units", artifact: "art_x", pr: 12, at: 5 * 60_000 };
+  const failed = (id: number, name: string, sha: string) => ({ ...run(id, name, "completed", "failure"), head_sha: sha });
+
+  test("what became of a failure is said in its notice, after the count and before what CI reported; the commit and what failed are what decides it", async () => {
+    const asked: unknown[] = [];
+    const h = harness([{ ...pull, connector: "github-amiriteorg" }], (shippedPull, failure) => {
+      asked.push({ shippedPull, failure });
+      return "Given back to @kay as task task_1: once its fix is verified, pushing it waits for your approval.";
+    });
+    h.set({ total_count: 2, check_runs: [failed(7, "test", "a".repeat(40)), run(8, "lint", "completed", "success")] });
+    h.annotate(7, [{ path: "src/importer.ts", start_line: 14, message: "Expected 3, received 2" }]);
+    await h.watch.tick();
+    expect(h.notices()[0]!.body).toBe("1 of 2 checks failed: test.\nGiven back to @kay as task task_1: once its fix is verified, pushing it waits for your approval.\nsrc/importer.ts:14 Expected 3, received 2");
+    expect(asked).toEqual([{ shippedPull: expect.objectContaining({ action: "a_ship1" }), failure: { head: "a".repeat(40), failing: ["test"], lines: ["src/importer.ts:14 Expected 3, received 2"] } }]);
+    // Every read went through the connector it was shipped by.
+    expect([...h.through]).toEqual(["github-amiriteorg"]);
+  });
+
+  test("a failure is told however its giving back goes: without the commit nothing is asked, and a giving back that breaks is logged", async () => {
+    let asked = 0;
+    const quiet = harness([pull], () => (asked++, "never said"));
+    quiet.set({ total_count: 1, check_runs: [run(7, "test", "completed", "failure")] });
+    await quiet.watch.tick();
+    expect(asked).toBe(0);
+    expect(quiet.notices()[0]!.body).toBe("1 of 1 checks failed: test.");
+    const broken = harness([pull], () => {
+      throw new Error("the team store is closed");
+    });
+    broken.set({ total_count: 1, check_runs: [failed(7, "test", "b".repeat(40))] });
+    await broken.watch.tick();
+    expect(broken.notices()[0]!.body).toBe("1 of 1 checks failed: test.");
+    expect(broken.logs).toContain("ci: amiriteorg/galahad galahad/units: not given back (the team store is closed)");
+  });
 
   test("a failure waits in the Inbox, naming the pull request, each failing check, and what it reported against the code", async () => {
     const h = harness([pull]);

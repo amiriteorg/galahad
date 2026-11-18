@@ -49,6 +49,8 @@ export const ToolClass = z.enum(["read", "create", "modify", "outward", "delete"
 export const NATIVE_TOOLS = {
   /** Commit a quest's kept changes on a new branch and open a pull request (GitHub's Git Data API). */
   "github.ship": "https://api.github.com",
+  /** A fix to a pull request already shipped: one commit on top of its branch, moved forward from exactly where the fix began. */
+  "github.ship.update": "https://api.github.com",
   /** Mail (the node's mail.ts): a search reads each message's headers; a message is read as its words; a reply is
    *  drafted in its thread; nothing comes back as raw MIME. */
   "gmail.search": "https://gmail.googleapis.com",

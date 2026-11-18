@@ -29,7 +29,7 @@ import { noteSaid, seatFace, tableOf } from "./roster.ts";
 import { openConsole } from "./sandboxes.ts";
 import { desktopViewer, type DesktopViewer } from "./desktop.ts";
 import { liveTrail, type LiveTrail, taskCard } from "./task-card.ts";
-import { controlTeam, editKnight, editNotes, editRoom, giveTask, growVm, provisionVm, remakeVm, removeKnight, setEngram } from "./team-forms.ts";
+import { controlTeam, editKnight, editNotes, editRoom, giveTask, growVm, provisionVm, remakeVm, removeKnight, setCiBack, setEngram } from "./team-forms.ts";
 import { openTerminal } from "./terminal.ts";
 import { openWorkspace } from "./workspace.ts";
 
@@ -499,6 +499,33 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
                     h("div", { class: "grow" }, h("strong", { class: "small" }, "Engram, for every knight on this node"), h("p", { class: "meta" }, notes.text)),
                     badge(notes.badge, notes.tone),
                     canEdit ? button(notes.badge === "Off" ? "Turn on" : "Turn off", { size: "sm", onClick: () => void setEngram(ctx, notes.badge === "Off").then((changed) => changed && !scope.disposed && void refreshWorkspace(person.id)) }) : null,
+                  ),
+                ),
+              ),
+            )
+          : null,
+        person.repository && snapshot
+          ? section(
+              "Pull requests",
+              {},
+              h(
+                "div",
+                { class: "card" },
+                h(
+                  "div",
+                  { class: "rows" },
+                  h(
+                    "div",
+                    { class: "item" },
+                    icon("repeat", { size: 16 }),
+                    h(
+                      "div",
+                      { class: "grow" },
+                      h("strong", { class: "small" }, "Failing checks back to the knight, for every knight on this node"),
+                      h("p", { class: "meta" }, snapshot.ciBack ? "On: a fix goes back on the pull request's branch, and its push waits for you." : "Off: failing checks are yours, except in an outcome, which gives its own back."),
+                    ),
+                    badge(snapshot.ciBack ? "On" : "Off", snapshot.ciBack ? "ok" : "neutral"),
+                    canEdit ? button(snapshot.ciBack ? "Turn off" : "Turn on", { size: "sm", onClick: () => void setCiBack(ctx, !snapshot?.ciBack) }) : null,
                   ),
                 ),
               ),

@@ -265,6 +265,33 @@ test("knights engram says whether the notes store is on, and turns it on or off 
   expect(asked).toHaveLength(before);
 });
 
+test("roundtable ci says whether failing checks go back to the knight, and turns it on or off by the one route for it", async () => {
+  const lines: string[] = [];
+  const asked: { name: RouteName; input: unknown }[] = [];
+  let on = false;
+  const api = {
+    async call<T>(name: RouteName, input?: unknown): Promise<T> {
+      asked.push({ name, input });
+      if (name === "team") return { teammates: [], rooms: [], tasks: [], deliveries: [], ...(on ? { ciBack: true } : {}) } as T;
+      if (name === "teamCi") { on = (input as { on: boolean }).on; return { ci: on } as T; }
+      throw new Error(`unexpected call: ${name}`);
+    },
+  };
+  const say = (line: string) => lines.push(line);
+  await teamCommand(api, "ci", [], {}, say);
+  expect(lines.at(-1)).toBe("Failing checks stay yours, except in an outcome, which gives them back on its own within its budget. Turn it on with: galahad roundtable ci on");
+  await teamCommand(api, "ci", ["on"], {}, say);
+  expect(asked.at(-1)).toEqual({ name: "teamCi", input: { on: true } });
+  expect(lines.at(-1)).toStartWith("Failing checks go back to the knight whose work it was: a fix on the pull request's branch");
+  expect(lines.at(-1)).toContain("Pushing a fix still waits for your approval.");
+  await teamCommand(api, "ci", ["off"], {}, say);
+  expect(asked.at(-1)).toEqual({ name: "teamCi", input: { on: false } });
+  expect(lines.at(-1)).toStartWith("Failing checks stay yours");
+  const before = asked.length;
+  await expect(teamCommand(api, "ci", ["maybe"], {}, say)).rejects.toThrow(/galahad roundtable ci \[on\|off\]/);
+  expect(asked).toHaveLength(before);
+});
+
 test("knights provision --remake has a knight's VM made again from its image as it is now, by its own route, and says what was kept", async () => {
   const lines: string[] = [];
   const asked: { name: RouteName; input: unknown }[] = [];

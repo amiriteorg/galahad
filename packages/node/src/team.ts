@@ -3,7 +3,7 @@ import {
   TEAM_GALAHAD, TEAM_LIMITS, TeamControlInput, TeamRoomId, type TeamSayInput, TeammateId,
   type Teammate, type TeammateInput, type TeamRecruitInput, type TeamRoom, type TeamRoomInput, type TeamPostInput, type TeamWorkspace,
   type TeamMessage, type TeamTask, type TeamTaskChanges, type TeamTaskInput, type TeamTaskRecord, type TeamTrailEntry, type TeamSnapshot, type TeamRoomView, type TeamOverview, type TeamSeenInput,
-  type InterventionKind, type TeamWorkStatus,
+  type InterventionKind, type TeamWorkStatus, type TeamTaskFix,
 } from "../../core/src/team.ts";
 import { TeamStore, TeamError, teamInput, teamOutput, teamText, type TeamAnswer, type TeamAsker, type TeamJob, type TeamSelection } from "./team-store.ts";
 
@@ -145,6 +145,8 @@ export class TeamService {
   setComputer(binding: TeamWorkspace | null): TeamWorkspace | null { this.accepting(); const saved = this.store.setComputer(binding); this.changed(); return saved; }
   /** The VMs' notes store, for every knight here: a task reads the switch as it starts, so one that is running is not changed. */
   setEngram(on: boolean): boolean { this.accepting(); const set = this.store.setEngram(on); this.changed(); return set; }
+  /** Whether failing checks go back to the knight whose work it was, outside an outcome too (ci-back.ts reads it when they fail). */
+  setCiBack(on: boolean): boolean { this.accepting(); const set = this.store.setCiBack(on); this.changed(); return set; }
   planWorkspace(id: string, node: string): Teammate {
     this.accepting();
     this.steady(id);
@@ -187,7 +189,7 @@ export class TeamService {
     this.changed(); this.kick();
     return message;
   }
-  createTask(input: TeamTaskInput, givenBy?: string): TeamTask { this.accepting(); const task = this.store.createTask(input, givenBy ? { givenBy } : {}); this.changed(); this.kick(); return task; }
+  createTask(input: TeamTaskInput, givenBy?: string, fix?: TeamTaskFix): TeamTask { this.accepting(); const task = this.store.createTask(input, { ...(givenBy ? { givenBy } : {}), ...(fix ? { fix } : {}) }); this.changed(); this.kick(); return task; }
 
   start(): void {
     if (this.running) return;

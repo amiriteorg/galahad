@@ -40,6 +40,7 @@ import { cheapestRole, computeUpkeep, type LoopTaskDeps, lookAround, loopExecuto
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { LoopDrafts } from "./loop-drafts.ts";
 import { ConnectorRequests } from "./connector-requests.ts";
+import { giveBack } from "./ci-back.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { WakeWatcher } from "./wakes.ts";
 import { TelegramGateway } from "./telegram.ts";
@@ -418,7 +419,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
 
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
-  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}), natives: { "github.ship": shipNative(artifacts), ...gmailNatives, ...outlookNatives, ...cloudflareNatives } });
+  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}), natives: { "github.ship": shipNative(artifacts), "github.ship.update": shipNative(artifacts, true), ...gmailNatives, ...outlookNatives, ...cloudflareNatives } });
   const taskDeps: LoopTaskDeps = {
     bank,
     store,
@@ -709,11 +710,13 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       const hlc = store.lww(`action-done:${id}`)?.hlc;
       return hlc ? decodeHlc(hlc).ms : null;
     }),
-    call: async (tool, args) => {
-      const outcome = await connectors.call({ connector: "github", tool, args }, { kind: "agent", by: "ci-watch" });
-      if (outcome.status !== "done") throw new Error(`github.${tool} asked for approval, which a read never does`);
+    call: async (tool, args, connector) => {
+      const outcome = await connectors.call({ connector, tool, args }, { kind: "agent", by: "ci-watch" });
+      if (outcome.status !== "done") throw new Error(`${connector}.${tool} asked for approval, which a read never does`);
       return outcome.result;
     },
+    // A knight's work that fails its checks may go back to that knight (ci-back.ts).
+    back: (pull, failure) => giveBack({ store: team.store, service: () => team.service, outcomes: () => team.outcomes }, pull, failure),
   });
   if (opts.ciWatchMs !== false) ciWatch.start(opts.ciWatchMs);
   // A node that just joined (or whose body, ceiling or benchmark changed while it was down) measures itself now.

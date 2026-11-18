@@ -44,12 +44,17 @@ const SHIPMENT = shipmentFiles(
   { "src/units.ts": "export const k = 1e3;\n", "bin/run": "#!/bin/sh\nbun src/units.ts\n" },
 );
 
-function fakeGitHub(options: { branchExists?: boolean; prFails?: boolean } = {}) {
+function fakeGitHub(options: { branchExists?: boolean; prFails?: boolean; heads?: Record<string, string>; moveFails?: boolean } = {}) {
   const calls: { method: string; path: string; body?: any }[] = [];
   let blobs = 0;
   const github: ShipDeps["github"] = async (method, path, body) => {
     calls.push({ method, path, ...(body === undefined ? {} : { body }) });
-    if (method === "GET" && path.includes("/git/ref/heads/")) return { status: options.branchExists ? 200 : 404, json: {} };
+    if (method === "GET" && path.includes("/git/ref/heads/")) {
+      const at = options.heads?.[path.split("/git/ref/heads/")[1]!];
+      return at ? { status: 200, json: { object: { sha: at } } } : { status: options.branchExists ? 200 : 404, json: {} };
+    }
+    if (method === "PATCH" && path.includes("/git/refs/heads/")) return options.moveFails ? { status: 422, json: { message: "Update is not a fast forward" } } : { status: 200, json: {} };
+    if (method === "GET" && path.split("?")[0]!.endsWith("/pulls")) return { status: 200, json: [{ number: 7, html_url: "https://github.com/amiriteorg/shipyard/pull/7" }] };
     if (method === "GET" && path === "/repos/amiriteorg/shipyard") return { status: 200, json: { default_branch: "main" } };
     if (method === "GET" && path === `/repos/amiriteorg/shipyard/git/commits/${BASE}`) return { status: 200, json: { tree: { sha: "f".repeat(40) } } };
     if (path.endsWith("/git/blobs")) return { status: 201, json: { sha: String(++blobs).padStart(40, "b") } };
@@ -129,6 +134,44 @@ describe("shipping to GitHub", () => {
     expect(result.ok).toBe(false);
     expect(result.receipt).toContain("committed 3 files on galahad/units");
     expect(result.receipt).toContain("No commits between main and galahad/units");
+  });
+
+  const UPDATE = { owner: "amiriteorg", repo: "shipyard", artifact: "art_AAAAAAAAAAAAAAAAAAAAAA", branch: "galahad/units", title: "Fix the failing checks", body: "Made by @kay." };
+
+  test("a fix goes on top of the branch it began on: one commit on where the branch stands, the branch moved forward (never forced), the pull request on it named", async () => {
+    const gh = fakeGitHub({ heads: { "galahad/units": BASE } });
+    const result = await shipToGitHub({ github: gh.github, artifact: kept(SHIPMENT) }, UPDATE, true);
+    expect(result).toMatchObject({ ok: true, status: 200, url: "https://github.com/amiriteorg/shipyard/pull/7" });
+    expect(result.receipt).toBe(`3 files pushed onto galahad/units, commit ${"c".repeat(12)}: pull request #7 updated, https://github.com/amiriteorg/shipyard/pull/7`);
+    expect(gh.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      "GET /repos/amiriteorg/shipyard/git/ref/heads/galahad/units",
+      `GET /repos/amiriteorg/shipyard/git/commits/${BASE}`,
+      "POST /repos/amiriteorg/shipyard/git/blobs",
+      "POST /repos/amiriteorg/shipyard/git/blobs",
+      "POST /repos/amiriteorg/shipyard/git/trees",
+      "POST /repos/amiriteorg/shipyard/git/commits",
+      "PATCH /repos/amiriteorg/shipyard/git/refs/heads/galahad/units",
+      "GET /repos/amiriteorg/shipyard/pulls?head=amiriteorg:galahad%2Funits&state=open&per_page=1",
+    ]);
+    expect(gh.posts().find((c) => c.path.endsWith("/git/commits"))!.body).toEqual({ message: "Fix the failing checks\n\nMade by @kay.", tree: "e".repeat(40), parents: [BASE] });
+    expect(gh.calls.find((c) => c.method === "PATCH")!.body).toEqual({ sha: "c".repeat(40), force: false });
+  });
+
+  test("a branch that moved since the fix began, or that isn't there, is never pushed onto", async () => {
+    const moved = fakeGitHub({ heads: { "galahad/units": "d".repeat(40) } });
+    const result = await shipToGitHub({ github: moved.github, artifact: kept(SHIPMENT) }, UPDATE, true);
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(result.receipt).toBe(`galahad/units has moved since the work began (from ${BASE.slice(0, 12)} to ${"d".repeat(12)}): nothing was pushed`);
+    expect(moved.calls.filter((c) => c.method !== "GET")).toEqual([]);
+    const gone = fakeGitHub();
+    expect(await shipToGitHub({ github: gone.github, artifact: kept(SHIPMENT) }, UPDATE, true)).toMatchObject({ ok: false, status: 404 });
+    expect(gone.calls.filter((c) => c.method !== "GET")).toEqual([]);
+  });
+
+  test("a move GitHub refuses (it wasn't forward) says what was committed, and that the branch stayed where it was", async () => {
+    const result = await shipToGitHub({ github: fakeGitHub({ heads: { "galahad/units": BASE }, moveFails: true }).github, artifact: kept(SHIPMENT) }, UPDATE, true);
+    expect(result.ok).toBe(false);
+    expect(result.receipt).toBe(`committed 3 files (${"c".repeat(12)}), but galahad/units wasn't moved onto it: Update is not a fast forward`);
   });
 
   test("a file that fails its check stops the shipment", async () => {
@@ -255,7 +298,7 @@ describe("the gate, end to end", () => {
   const port = freePort();
   const TOKEN = "github_pat_FAKEFAKEFAKEFAKE0000_fakefakefakefakefakefakefakefakefakefakefakefake";
   const seen: { method: string; url: string; auth: string | null }[] = [];
-  const gh = fakeGitHub();
+  const gh = fakeGitHub({ heads: { "galahad/fixing": BASE } });
   let daemon: Daemon;
   let armToken: string;
   let artifact: string;
@@ -277,7 +320,7 @@ describe("the gate, end to end", () => {
       const url = new URL(String(input));
       seen.push({ method: init?.method ?? "GET", url: url.toString(), auth: new Headers(init?.headers).get("authorization") });
       if (url.origin !== "https://api.github.com") return new Response("{}", { status: 404 });
-      const answer = await gh.github((init?.method ?? "GET") as "GET" | "POST", url.pathname, init?.body ? JSON.parse(String(init.body)) : undefined);
+      const answer = await gh.github((init?.method ?? "GET") as "GET" | "POST" | "PATCH", url.pathname, init?.body ? JSON.parse(String(init.body)) : undefined);
       return Response.json(answer.json, { status: answer.status });
     }) as typeof fetch;
     daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, fetch: fakeFetch });
@@ -333,5 +376,24 @@ describe("the gate, end to end", () => {
     const bad = await send(armToken, "callConnector", { connector: "github", tool: "ship", args: { ...ARGS, artifact, branch: "main" } });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/branch doesn't match/);
+  });
+
+  test("a fix onto its pull request's branch goes through the same gate: it waits for you; approved, the branch moves forward once and no new pull request opens", async () => {
+    const fix = { owner: "amiriteorg", repo: "shipyard", artifact, branch: "galahad/fixing", title: "Fix the failing checks" };
+    const asked = await send(armToken, "callConnector", { connector: "github", tool: "ship.update", args: fix, why: "its checks failed" });
+    expect(asked.body).toMatchObject({ status: "asked", class: "outward", target: "PATCH /repos/amiriteorg/shipyard/git/refs/heads/galahad%2Ffixing (ship.update)" });
+    const before = seen.length;
+    expect((await send(home.adminToken(), "decideAction", { id: asked.body.action, approve: true })).status).toBe(200);
+    const action = ((await send(home.adminToken(), "actions")).body.actions as ActionView[]).find((a) => a.id === asked.body.action)!;
+    expect(action.state).toBe("done");
+    expect(action.receipt).toBe(`200 3 files pushed onto galahad/fixing, commit ${"c".repeat(12)}: pull request #7 updated, https://github.com/amiriteorg/shipyard/pull/7`);
+    const sent = seen.slice(before);
+    expect(sent.filter((s) => s.method === "PATCH").map((s) => s.url)).toEqual(["https://api.github.com/repos/amiriteorg/shipyard/git/refs/heads/galahad/fixing"]);
+    expect(sent.some((s) => s.method === "POST" && (s.url.endsWith("/pulls") || s.url.endsWith("/git/refs")))).toBe(false);
+    expect(sent.every((s) => s.url.startsWith("https://api.github.com/") && s.auth === `Bearer ${TOKEN}`)).toBe(true);
+    // Never onto a branch that isn't Galahad's own.
+    const main = await send(armToken, "callConnector", { connector: "github", tool: "ship.update", args: { ...fix, branch: "main" } });
+    expect(main.status).toBe(400);
+    expect(main.body.error).toMatch(/branch doesn't match/);
   });
 });

@@ -8,9 +8,11 @@ import type { MindStore } from "@galahad/mind";
  * every few minutes (github.checks: a read, logged like any other, never asked about). Once every check has ended:
  *   all passed: nothing to tell, and a failure it told you about is cleared (a later push fixed it); it stops looking;
  *   one failed: a notice in your Inbox names the pull request and each failing check, with what each reported
- *     against the code (github.check.annotations: the file, the line, the message), for you or a knight to fix.
- * It writes nothing to GitHub and sends nothing anywhere. What CI printed is someone else's text: it is shown as
- * data, bounded, and a line that looks like a key is left out.
+ *     against the code (github.check.annotations: the file, the line, the message), for you or a knight to fix;
+ *     where the work was a knight's, it may go back to that knight, and the notice says whether (ci-back.ts).
+ * A fix pushed onto the branch keeps it followed, under the same notice. It writes nothing to GitHub and sends
+ * nothing anywhere. What CI printed is someone else's text: it is shown as data, bounded, and a line that looks
+ * like a key is left out.
  */
 
 export const CI_WATCH_EVERY_MS = 3 * 60_000;
@@ -25,27 +27,41 @@ const ANNOTATED = 3;
 const LINES = 6;
 
 export interface ShippedPull {
-  /** The approved ship (an action id). */
+  /** The approved ship (an action id): the branch's first. */
   action: string;
+  /** The GitHub connector it went through (github, or github-<owner>). */
+  connector: string;
   owner: string;
   repo: string;
   branch: string;
+  /** The work it shipped (an artifact's id). */
+  artifact: string;
   /** Its pull request's number, from the ship's receipt. */
   pr: number | null;
-  /** When it was shipped. */
+  /** When it was shipped, or a fix last pushed onto it. */
   at: number;
 }
 
-/** The pull requests this node shipped: each approved ship that went through, with its repository, branch and number. */
+/**
+ * The pull requests this node shipped: each approved ship that went through, with its repository, branch and number.
+ * One branch is one pull request: its first ship names it, and a fix pushed onto it since (ship.update) keeps it followed from then.
+ */
 export function shippedPulls(actions: ActionView[], node: string, doneAt: (action: string) => number | null): ShippedPull[] {
-  return actions.flatMap((action) => {
-    if (action.connector !== "github" || action.tool !== "ship" || action.state !== "done" || action.node !== node) return [];
-    const { owner, repo, branch } = action.args as { owner?: unknown; repo?: unknown; branch?: unknown };
+  const ships = actions.flatMap((action) => {
+    if (!/^github(-[a-z0-9-]+)?$/.test(action.connector) || (action.tool !== "ship" && action.tool !== "ship.update") || action.state !== "done" || action.node !== node) return [];
+    const { owner, repo, branch, artifact } = action.args as { owner?: unknown; repo?: unknown; branch?: unknown; artifact?: unknown };
     const at = doneAt(action.id);
-    if (typeof owner !== "string" || typeof repo !== "string" || typeof branch !== "string" || at === null) return [];
+    if (typeof owner !== "string" || typeof repo !== "string" || typeof branch !== "string" || typeof artifact !== "string" || at === null) return [];
     const pr = Number(/pull request #(\d+)/.exec(action.receipt ?? "")?.[1]) || null;
-    return [{ action: action.id, owner, repo, branch, pr, at }];
+    return [{ action: action.id, connector: action.connector, owner, repo, branch, artifact, pr, at }];
   });
+  const pulls = new Map<string, ShippedPull>();
+  for (const ship of ships.sort((a, b) => a.at - b.at)) {
+    const key = `${ship.owner.toLowerCase()}/${ship.repo.toLowerCase()}/${ship.branch}`;
+    const first = pulls.get(key);
+    pulls.set(key, first ? { ...first, at: ship.at, pr: first.pr ?? ship.pr } : ship);
+  }
+  return [...pulls.values()];
 }
 
 export interface CheckRun {
@@ -53,6 +69,15 @@ export interface CheckRun {
   name: string;
   status: string;
   conclusion: string | null;
+  /** The commit it ran on. */
+  head?: string;
+}
+
+/** A pull request's failure as the notice says it: the commit, the failing checks, and what they reported (as data). */
+export interface CiFailure {
+  head: string;
+  failing: string[];
+  lines: string[];
 }
 
 export type CiVerdict = { state: "running" } | { state: "none" } | { state: "passed"; total: number } | { state: "failed"; total: number; failing: CheckRun[] };
@@ -71,8 +96,10 @@ export interface CiWatchOptions {
   local: Database;
   /** The pull requests to follow (shippedPulls over the outbox). */
   shipped: () => ShippedPull[];
-  /** One GitHub read through the connector (github.<tool>), as the node's own. */
-  call: (tool: "checks" | "check.annotations", args: Record<string, string | number>) => Promise<{ ok: boolean; status: number; body: string }>;
+  /** One GitHub read through the connector the pull request was shipped by (<connector>.<tool>), as the node's own. */
+  call: (tool: "checks" | "check.annotations", args: Record<string, string | number>, connector: string) => Promise<{ ok: boolean; status: number; body: string }>;
+  /** Whether its failure goes back to the knight whose work it was: what the notice says of that (ci-back.ts), or nothing. */
+  back?: (pull: ShippedPull, failure: CiFailure) => string | null;
   now?: () => number;
   log: (message: string) => void;
 }
@@ -133,12 +160,13 @@ export class CiWatch {
   }
 
   private async checks(pull: ShippedPull): Promise<CheckRun[]> {
-    const result = await this.o.call("checks", { owner: pull.owner, repo: pull.repo, ref: pull.branch, per_page: 100 });
+    const result = await this.o.call("checks", { owner: pull.owner, repo: pull.repo, ref: pull.branch, per_page: 100 }, pull.connector);
     if (!result.ok) throw new Error(`GitHub answered ${result.status}`);
     const runs = (JSON.parse(result.body) as { check_runs?: unknown[] }).check_runs ?? [];
     return runs.flatMap((raw) => {
-      const r = raw as { id?: unknown; name?: unknown; status?: unknown; conclusion?: unknown };
-      return typeof r.id === "number" && typeof r.name === "string" && typeof r.status === "string" ? [{ id: r.id, name: r.name, status: r.status, conclusion: typeof r.conclusion === "string" ? r.conclusion : null }] : [];
+      const r = raw as { id?: unknown; name?: unknown; status?: unknown; conclusion?: unknown; head_sha?: unknown };
+      if (typeof r.id !== "number" || typeof r.name !== "string" || typeof r.status !== "string") return [];
+      return [{ id: r.id, name: r.name, status: r.status, conclusion: typeof r.conclusion === "string" ? r.conclusion : null, ...(typeof r.head_sha === "string" && /^[0-9a-f]{40}$/.test(r.head_sha) ? { head: r.head_sha } : {}) }];
     });
   }
 
@@ -146,7 +174,7 @@ export class CiWatch {
   private async annotations(pull: ShippedPull, failing: CheckRun[]): Promise<string[]> {
     const lines: string[] = [];
     for (const run of failing.slice(0, ANNOTATED)) {
-      const result = await this.o.call("check.annotations", { owner: pull.owner, repo: pull.repo, check_run_id: run.id, per_page: LINES });
+      const result = await this.o.call("check.annotations", { owner: pull.owner, repo: pull.repo, check_run_id: run.id, per_page: LINES }, pull.connector);
       if (!result.ok) continue;
       for (const raw of JSON.parse(result.body) as unknown[]) {
         const a = raw as { path?: unknown; start_line?: unknown; message?: unknown };
@@ -161,8 +189,17 @@ export class CiWatch {
   private async tell(pull: ShippedPull, total: number, failing: CheckRun[]): Promise<void> {
     const key = `ci:${pull.action}`;
     const title = `CI failed on ${pull.owner}/${pull.repo}${pull.pr ? `#${pull.pr}` : ` (${pull.branch})`}`;
-    const names = failing.map((run) => run.name).join(", ");
-    const body = [`${failing.length} of ${total} checks failed: ${names}.`, ...(await this.annotations(pull, failing))].join("\n").slice(0, 600);
+    const names = failing.map((run) => run.name);
+    const lines = await this.annotations(pull, failing);
+    // (What became of it comes before what CI said, so a long report never cuts it off.)
+    const head = failing.find((run) => run.head)?.head;
+    let back: string | null = null;
+    try {
+      if (head) back = this.o.back?.(pull, { head, failing: names, lines }) ?? null;
+    } catch (error) {
+      this.o.log(`ci: ${pull.owner}/${pull.repo} ${pull.branch}: not given back (${(error as Error).message})`);
+    }
+    const body = [`${failing.length} of ${total} checks failed: ${names.join(", ")}.`, ...(back ? [back] : []), ...lines].join("\n").slice(0, 600);
     const current = this.o.store.lww<{ title: string; body: string; severity: string } | null>(`notice:${key}`)?.value;
     if (current && current.title === title && current.body === body && current.severity === "warn") return;
     this.o.store.emit(this.o.identity, "notice.raised", { key, severity: "warn", title, body, source: "ci", at: this.now() });

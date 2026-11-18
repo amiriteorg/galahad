@@ -183,6 +183,7 @@ import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfAc
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
 import { OutcomeError, OutcomeRunner } from "./outcomes.ts";
+import { offerFix } from "./ci-back.ts";
 import { randomBytes } from "node:crypto";
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
 import type { ConnectorRequest, ConnectorRequests } from "./connector-requests.ts";
@@ -2179,7 +2180,11 @@ export function createApp(ctx: AppContext) {
       log: ctx.log,
     });
     team.outcomes = outcomes;
-    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, answer: answerInRoom, timeoutMs: 15 * 60_000, taskTimeoutMs: null, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit, onTaskEnded: (task) => { if (task.outcome) outcomes.nudge(); } });
+    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, answer: answerInRoom, timeoutMs: 15 * 60_000, taskTimeoutMs: null, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit, onTaskEnded: (task) => {
+      if (task.outcome) outcomes.nudge();
+      // A fix to a pull request that ended verified is offered to you as a push onto its branch, as its knight's (ci-back.ts).
+      if (task.fix) void offerFix({ call: (input) => ctx.connectors.call(input, { kind: "agent", by: teammateLabel(task.assignee) }), note: (id, text) => team.service?.noteTask(id, text), log: ctx.log }, task);
+    } });
     ctx.team.service.start();
     outcomes.start();
   }
@@ -2364,6 +2369,7 @@ export function createApp(ctx: AppContext) {
     },
     teamMemory: (input, p) => { ownerOnly(p); return { teammate: teamOf().remember(input.id, input.text) }; },
     teamEngram: (input, p) => { ownerOnly(p); return { engram: teamOf().setEngram(input.on) }; },
+    teamCi: (input, p) => { ownerOnly(p); return { ci: teamOf().setCiBack(input.on) }; },
     /* Removing a worker is yours alone (never his: he only adds), and for good. One that has a VM goes only together
      * with it, when you say so and from a device that may destroy a sandbox: the destroy is your own request, approved
      * as that device's. Whether it has one is asked of its host, never assumed: a VM made just before a crash may

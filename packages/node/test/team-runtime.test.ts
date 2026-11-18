@@ -775,7 +775,7 @@ const BASE = "0123456789abcdef0123456789abcdef01234567";
 const KEPT = "art_AAAAAAAAAAAAAAAAAAAAAA";
 /** A command as the shell reads it once its outer quoting is undone (each quote inside a quoted argument is written '\\''). */
 const plain = (command: string): string => command.replaceAll("'\\''", "'");
-function repoTask(options: { start?: string; changed?: number; reviewer?: string; keepFails?: boolean } = {}) {
+function repoTask(options: { start?: string; changed?: number; reviewer?: string; keepFails?: boolean; task?: TeamTask } = {}) {
   const knight: Teammate = { ...member, repository: "https://github.com/you/project" };
   const kept: { path: string; label: string }[] = [];
   const commands: string[] = [];
@@ -794,8 +794,18 @@ function repoTask(options: { start?: string; changed?: number; reviewer?: string
       return KEPT;
     },
   });
-  return { knight, kept, commands, run: () => f.runtime.executeTask(knight, task, f.context), bodies: f.bodies };
+  return { knight, kept, commands, run: () => f.runtime.executeTask(knight, options.task ?? task, f.context), bodies: f.bodies };
 }
+
+test("a fix to a pull request's failing checks starts on that pull request's branch, and its verified work is offered as a push onto it, not as a new pull request", async () => {
+  const fix = { ...task, title: "Fix the failing checks on you/project#12", fix: { connector: "github", owner: "you", repo: "project", branch: "galahad/units", pr: 12, head: BASE } };
+  const t = repoTask({ task: fix });
+  const outcome = await t.run();
+  // The branch is the start script's third argument (it starts there as fetched, or not at all).
+  expect(plain(t.commands[0]!)).toEndWith(` '/work/tasks/${task.id}' '/work/.agent/base/${task.id}' 'galahad/units'`);
+  expect(outcome.output).toContain(`Changes: 2 files, kept as ${KEPT}. Offered to you as a push onto galahad/units, where it began: the pull request updates once you approve it.`);
+  expect(outcome.output).not.toContain("galahad ship");
+});
 
 test("a knight's task in a repository starts from the repository as it is now, in a worktree of its own, and the start is kept for the task", async () => {
   const t = repoTask();

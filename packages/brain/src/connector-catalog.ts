@@ -184,6 +184,22 @@ export const CATALOG: Record<string, CatalogEntry> = {
           },
           class: "outward",
         },
+        "ship.update": {
+          description:
+            "Push a fix onto a pull request's galahad/… branch: one commit on top, only while the branch stands where the fixing work began, never forced. The pull request updates. Others see it: Galahad asks first, unless a standing order covers it.",
+          native: "github.ship.update",
+          method: "PATCH",
+          path: "/repos/{owner}/{repo}/git/refs/heads/{branch}",
+          params: {
+            owner,
+            repo,
+            artifact: { type: "string", pattern: "art_[A-Za-z0-9_-]{22}", required: true, description: "The kept work holding the fix's shipment (ship/manifest.json)" },
+            branch: { type: "string", pattern: "galahad/[A-Za-z0-9._-]{1,80}(/[A-Za-z0-9._-]{1,80})?", required: true, description: "The pull request's branch, which the fix began on" },
+            title: { type: "string", required: true, description: "The commit's first line" },
+            body: { type: "string" },
+          },
+          class: "outward",
+        },
         "issue.comment": {
           description: "Comment on an issue or pull request. Others see it: Galahad asks first.",
           method: "POST",

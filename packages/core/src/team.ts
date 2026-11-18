@@ -226,6 +226,8 @@ export type TeamRemoveInput = z.infer<typeof TeamRemoveInput>;
  * tools are the code's, and a knight's project is its repository's name or its own handle. */
 export const TeamEngramInput = z.strictObject({ on: z.boolean() });
 export type TeamEngramInput = z.infer<typeof TeamEngramInput>;
+/** Whether a pull request's failing checks go back to the knight whose work it was when no outcome gives them back (PLAN #29). */
+export const TeamCiInput = z.strictObject({ on: z.boolean() });
 
 /** What a knight's Workspace is told of the notes store: the node's switch, and whether this VM has the pinned binary. */
 export interface TeamEngramStatus {
@@ -375,6 +377,23 @@ export interface TeamTask {
   interventions?: Partial<Record<InterventionKind, number>>;
   /** The outcome it is a step of (PLAN #43); absent: none. */
   outcome?: string;
+  /** The pull request whose failing checks it fixes (PLAN #29); absent: none. */
+  fix?: TeamTaskFix;
+}
+
+/**
+ * A pull request a task fixes (PLAN #29, the node's ci-back.ts): its checks failed on `head`, so the knight whose work it
+ * was starts on its branch, and its verified fix is offered to you as a push onto that branch (github.ship.update).
+ */
+export interface TeamTaskFix {
+  /** The GitHub connector it was shipped through. */
+  connector: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  pr: number | null;
+  /** The commit whose checks failed. */
+  head: string;
 }
 
 /** A path in a knight's workspace (its VM's /work): absolute, under /work, with no `.` or `..` in it. */
@@ -464,6 +483,8 @@ export interface TeamSnapshot {
   removed?: (Pick<Teammate, "id" | "name" | "removedAt"> & { conversations?: string[] })[];
   /** The notes store's switch, said only when it is on (absent: off, which is also what a node from before it says). */
   engram?: boolean;
+  /** Failing checks go back to the knight whose work it was, outside an outcome too (PLAN #29): said only when on. */
+  ciBack?: boolean;
   /** Galahad's own computer, when he has one: his persistent VM, made and watched as a knight's is (under his handle). */
   computer?: TeamWorkspace;
   /** Your order of the knights (`teammates` comes in it already; absent from an older node). */
