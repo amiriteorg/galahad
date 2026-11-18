@@ -189,7 +189,8 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
       if (!loops.length) console.log('No loops yet. Try: galahad loop add morning --cron "0 7 * * 1-5" --tz Europe/Copenhagen --quest "…"');
       for (const loop of loops) {
         const state = loop.enabled ? (loop.running ? bold("running") : "on") : dim("paused");
-        console.log(`  ${bold(loop.name.padEnd(16))} ${state.padEnd(tty ? 7 : 7)}  ${loop.schedule}${loop.tz !== "UTC" ? ` (${loop.tz})` : ""} on ${loop.onName ?? loop.on.slice(0, 12)}`);
+        const when_ = loop.schedule === "never" ? "only when woken" : `${loop.schedule}${loop.tz !== "UTC" ? ` (${loop.tz})` : ""}`;
+        console.log(`  ${bold(loop.name.padEnd(16))} ${state.padEnd(tty ? 7 : 7)}  ${when_} on ${loop.onName ?? loop.on.slice(0, 12)}`);
         console.log(`  ${" ".repeat(16)} ${dim(describeTask(loop.task))}${loop.problem ? `  ${bold(loop.problem)}` : ""}`);
         if (loop.wakes.length) console.log(`  ${" ".repeat(16)} ${dim(describeWakes(loop.wakes, loop.cooldownMs))}`);
         console.log(`  ${" ".repeat(16)} ${dim(`next ${loop.enabled ? when(loop.next) : "—"}`)}${loop.last ? dim(` · last ${MARK[loop.last.status]} ${loop.last.summary.split("\n")[0]!.slice(0, 80)}`) : ""}`);
