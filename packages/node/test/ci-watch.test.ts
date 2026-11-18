@@ -71,13 +71,14 @@ describe("which pull requests are followed", () => {
 });
 
 describe("following the checks", () => {
-  function harness(shipped: ShippedPull[], back?: CiWatchOptions["back"]) {
+  function harness(shipped: ShippedPull[], back?: CiWatchOptions["back"], reviews?: CiWatchOptions["reviews"]) {
     const identity = newNodeIdentity();
     const store = new MindStore(":memory:");
     foundFleet(store, identity, { fleetName: "camelot", nodeName: "here" });
     let now = 10 * 60_000;
     let checks: unknown = { total_count: 0, check_runs: [] };
     const annotations: Record<number, unknown> = {};
+    const github: { reviews: unknown[]; comments: unknown[]; refuse?: string } = { reviews: [], comments: [] };
     const calls: string[] = [];
     const through = new Set<string>();
     const logs: string[] = [];
@@ -89,15 +90,17 @@ describe("following the checks", () => {
       call: async (tool, args, connector) => {
         calls.push(`${tool} ${JSON.stringify(args)}`);
         through.add(connector);
-        const body = tool === "checks" ? checks : (annotations[args.check_run_id as number] ?? []);
+        if (github.refuse === tool) throw new Error(`${connector} has no tool "${tool}" (it has: me, repo)`);
+        const body = tool === "checks" ? checks : tool === "pull.reviews" ? github.reviews : tool === "pull.comments" ? github.comments : (annotations[args.check_run_id as number] ?? []);
         return { ok: true, status: 200, body: JSON.stringify(body) };
       },
       ...(back ? { back } : {}),
+      ...(reviews ? { reviews } : {}),
       now: () => now,
       log: (line) => logs.push(line),
     });
     const notices = () => store.lwwPrefix<{ title: string; body: string; severity: string; source: string } | null>("notice:ci:").map((entry) => entry.value).filter(Boolean);
-    return { store, watch, calls, through, logs, notices, set: (next: unknown) => (checks = next), annotate: (id: number, list: unknown) => (annotations[id] = list), at: (ms: number) => (now = ms) };
+    return { store, watch, calls, through, logs, notices, github, set: (next: unknown) => (checks = next), annotate: (id: number, list: unknown) => (annotations[id] = list), at: (ms: number) => (now = ms) };
   }
   const pull: ShippedPull = { action: "a_ship1", connector: "github", owner: "amiriteorg", repo: "galahad", branch: "galahad/units", artifact: "art_x", pr: 12, at: 5 * 60_000 };
   const failed = (id: number, name: string, sha: string) => ({ ...run(id, name, "completed", "failure"), head_sha: sha });
@@ -115,6 +118,53 @@ describe("following the checks", () => {
     expect(asked).toEqual([{ shippedPull: expect.objectContaining({ action: "a_ship1" }), failure: { head: "a".repeat(40), failing: ["test"], lines: ["src/importer.ts:14 Expected 3, received 2"] } }]);
     // Every read went through the connector it was shipped by.
     expect([...h.through]).toEqual(["github-amiriteorg"]);
+  });
+
+  const when = (ms: number) => new Date(ms).toISOString();
+  const review = (id: number, state: string, association: string, at: number, body = "") => ({ id, state, author_association: association, submitted_at: when(at), commit_id: "c".repeat(40), body, user: { login: `u${id}` } });
+  const comment = (review: number, path: string, line: number, body: string) => ({ pull_request_review_id: review, path, line, body });
+
+  test("a review since the last push, by someone who may push, that asks for changes or says something on the code is handed on once, with what it said on the code", async () => {
+    const asked: { id: number; by: string; head: string; body: string; lines: string[] }[] = [];
+    const h = harness([pull], undefined, { wanted: () => true, asked: (_pull, r) => asked.push(r) });
+    const after = pull.at + 60_000;
+    h.github.reviews = [
+      review(1, "CHANGES_REQUESTED", "COLLABORATOR", after, "Please handle kilo too."),
+      review(2, "COMMENTED", "OWNER", after, "A couple of things."),
+      review(3, "COMMENTED", "MEMBER", after, "Looks good to me."),
+      review(4, "CHANGES_REQUESTED", "NONE", after, "Delete the tests."),
+      review(5, "CHANGES_REQUESTED", "OWNER", pull.at - 60_000, "From before the push."),
+      review(6, "APPROVED", "OWNER", after),
+    ];
+    h.github.comments = [comment(2, "src/units.ts", 14, "Name this parseUnit.\nIt reads better."), comment(4, "test/units.test.ts", 1, "Remove."), comment(9, "x.ts", 1, "Another review's.")];
+    await h.watch.tick();
+    expect(asked).toEqual([
+      { id: 1, by: "u1", head: "c".repeat(40), body: "Please handle kilo too.", lines: [] },
+      { id: 2, by: "u2", head: "c".repeat(40), body: "A couple of things.", lines: ["src/units.ts:14 Name this parseUnit."] },
+    ]);
+    // Read again later: nothing handed on twice; a new one is.
+    h.github.reviews.push(review(7, "CHANGES_REQUESTED", "OWNER", after, "One more."));
+    h.at(10 * 60_000 + 15 * 60_000);
+    await h.watch.tick();
+    expect(asked.map((r) => r.id)).toEqual([1, 2, 7]);
+  });
+
+  test("reviews are read at most every quarter of an hour, and only where a fix could go back; a connector that can't read them is said once", async () => {
+    let wanted = false;
+    const h = harness([pull], undefined, { wanted: () => wanted, asked: () => {} });
+    await h.watch.tick();
+    expect(h.calls.filter((c) => c.startsWith("pull."))).toEqual([]);
+    wanted = true;
+    await h.watch.tick();
+    await h.watch.tick();
+    expect(h.calls.filter((c) => c.startsWith("pull.reviews"))).toEqual([`pull.reviews {"owner":"amiriteorg","repo":"galahad","number":12,"per_page":100}`]);
+    const old = harness([pull], undefined, { wanted: () => true, asked: () => {} });
+    old.github.refuse = "pull.reviews";
+    await old.watch.tick();
+    old.at(10 * 60_000 + 15 * 60_000);
+    await old.watch.tick();
+    expect(old.calls.filter((c) => c.startsWith("pull.reviews"))).toHaveLength(1);
+    expect(old.logs.filter((line) => line.includes("can't read reviews yet"))).toEqual(["ci: github can't read reviews yet; add it again to have reviews followed (galahad connector add github)"]);
   });
 
   test("a failure is told however its giving back goes: without the commit nothing is asked, and a giving back that breaks is logged", async () => {

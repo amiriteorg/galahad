@@ -40,7 +40,7 @@ import { cheapestRole, computeUpkeep, type LoopTaskDeps, lookAround, loopExecuto
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { LoopDrafts } from "./loop-drafts.ts";
 import { ConnectorRequests } from "./connector-requests.ts";
-import { giveBack } from "./ci-back.ts";
+import { giveBack, reviewBack, wantsReviews } from "./ci-back.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { WakeWatcher } from "./wakes.ts";
 import { TelegramGateway } from "./telegram.ts";
@@ -701,6 +701,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   telegram.start();
   notify.start();
   // After you ship: this node follows each pull request it shipped until its checks end (ci-watch.ts).
+  const ciBack = { store: team.store, service: () => team.service, outcomes: () => team.outcomes };
   const ciWatch = new CiWatch({
     store,
     identity,
@@ -715,8 +716,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       if (outcome.status !== "done") throw new Error(`${connector}.${tool} asked for approval, which a read never does`);
       return outcome.result;
     },
-    // A knight's work that fails its checks may go back to that knight (ci-back.ts).
-    back: (pull, failure) => giveBack({ store: team.store, service: () => team.service, outcomes: () => team.outcomes }, pull, failure),
+    // A knight's work that fails its checks, or that a review asks changes of, may go back to that knight (ci-back.ts).
+    back: (pull, failure) => giveBack(ciBack, pull, failure),
+    reviews: { wanted: (pull) => wantsReviews(ciBack, pull), asked: (pull, review) => reviewBack(ciBack, pull, review) },
   });
   if (opts.ciWatchMs !== false) ciWatch.start(opts.ciWatchMs);
   // A node that just joined (or whose body, ceiling or benchmark changed while it was down) measures itself now.

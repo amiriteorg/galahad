@@ -85,10 +85,11 @@ of its own; "roundtable", "squires" and "team" are the same command)
   roundtable engram [on|off]         the VMs' notes store (Engram): say whether it is on, or turn it on or off.
                                     On, a knight's harness can search and keep notes in its own VM, where the
                                     VM's image has the pinned Engram; off (the default), nothing is given
-  roundtable ci [on|off]             failing checks on a pull request of a knight's work: say whether they go back
-                                    to that knight, or turn it on or off. On, it gets the fix on that branch (once a
-                                    failing commit, three at most) and you approve the push; off (the default), they
-                                    are yours, though an outcome gives its own back within its budget
+  roundtable ci [on|off]             failing checks, or a review asking for changes, on a pull request of a knight's
+                                    work: say whether they go back to that knight, or turn it on or off. On, it gets
+                                    the fix on that branch (once a failing commit or review, three at most) and you
+                                    approve the push; off (the default), they are yours, though an outcome gives its
+                                    own back within its budget
   roundtable order <knight,knight,...>  your order of the knights, on every device (those not named come after)
   roundtable primary <knight|galahad>   who leads the Roundtable: it answers what you say to a room without a name
   roundtable avatar <id> [--look kay|gaheris|percival|palamedes|gawain|tristan|lancelot|bedivere|bors|gareth]

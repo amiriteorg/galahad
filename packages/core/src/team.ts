@@ -392,8 +392,10 @@ export interface TeamTaskFix {
   repo: string;
   branch: string;
   pr: number | null;
-  /** The commit whose checks failed. */
+  /** The commit whose checks failed, or that the review was on. */
   head: string;
+  /** The review it answers, by its id (absent: it fixes failing checks). */
+  review?: number;
 }
 
 /** A path in a knight's workspace (its VM's /work): absolute, under /work, with no `.` or `..` in it. */

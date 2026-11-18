@@ -248,13 +248,13 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
       : "The notes store (Engram) is off. What knights kept stays in each VM, unused, under /work/.memory/engram.");
     return;
   }
-  // A pull request of a knight's work that fails its checks: given back to that knight, outside an outcome too (PLAN #29).
+  // A pull request of a knight's work that fails its checks, or that a review asks changes of: given back to that knight, outside an outcome too (PLAN #29).
   if (sub === "ci") {
     if (args.length > 1 || (args.length === 1 && args[0] !== "on" && args[0] !== "off")) throw new Error("usage: galahad roundtable ci [on|off]");
     const on = args.length ? (await api.call<{ ci: boolean }>("teamCi", { on: args[0] === "on" })).ci : (await api.call<TeamSnapshot>("team")).ciBack === true;
     print(on
-      ? "Failing checks go back to the knight whose work it was: a fix on the pull request's branch, once for each commit that failed and three times at most, within Galahad's daily giving. Pushing a fix still waits for your approval. Turn it off with: galahad roundtable ci off"
-      : "Failing checks stay yours, except in an outcome, which gives them back on its own within its budget. Turn it on with: galahad roundtable ci on");
+      ? "Failing checks, and reviews that ask for changes, go back to the knight whose work it was: a fix on the pull request's branch, once for each commit that failed or review, three times at most, within Galahad's daily giving. Pushing a fix still waits for your approval. Turn it off with: galahad roundtable ci off"
+      : "Failing checks and reviews stay yours, except in an outcome, which gives them back on its own within its budget. Turn it on with: galahad roundtable ci on");
     return;
   }
   // (A knight by either word: `teammate` is what the command took before it was called knights.)
