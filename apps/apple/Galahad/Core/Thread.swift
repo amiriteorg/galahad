@@ -301,3 +301,17 @@ struct ChatThread: Equatable, Sendable {
         turns[at].steps.append(next)
     }
 }
+
+/// A tool's step as a work log shows it (T3 Code's activity log): the command it ran, when it ran one, and what came back.
+/// A step's detail is the tool's input as JSON, then " → " and what it answered (the PWA's lib/turns.ts).
+enum WorkLog {
+    static func parts(_ detail: String?) -> (command: String?, answer: String?) {
+        guard let detail, !detail.isEmpty else { return (nil, nil) }
+        let split = detail.range(of: "} → ")
+        let input = split.map { String(detail[..<$0.lowerBound]) + "}" } ?? detail
+        let answer = split.map { String(detail[$0.upperBound...]) }
+        let fields = (try? JSONSerialization.jsonObject(with: Data(input.utf8))) as? [String: Any]
+        let command = (fields?["command"] as? String).map { $0.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init) ?? $0 }
+        return (command?.isEmpty == false ? command : nil, answer?.isEmpty == false ? answer : nil)
+    }
+}

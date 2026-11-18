@@ -7,7 +7,11 @@ struct WorkspaceView: View {
     let session: Session
     let id: String
     let name: String
-    @State private var shown: Shown = .files
+    /// Where it starts: its /work, or a project's checkout (the Build view's), whose changes are that repository's own.
+    var root = "/work"
+    /// Changed when what it shows may have (an answer ended, a commit): its changes are read again, where you are kept.
+    var refresh = 0
+    @State private var shown: Shown
     /// Where you are in it, over its top (a folder, a file, a diff): its own stack, never the page's, so in a column
     /// beside a conversation it moves within the column.
     @State private var path: [WorkspaceItem] = []
@@ -16,6 +20,16 @@ struct WorkspaceView: View {
     @Environment(\.workspaceColumn) private var column
 
     enum Shown: String, CaseIterable { case files = "Files", changes = "Changes" }
+
+    /// `startOn`: Files, or Changes (the Build window's: what he changed comes first there).
+    init(session: Session, id: String, name: String, root: String = "/work", refresh: Int = 0, startOn: Shown = .files) {
+        self.session = session
+        self.id = id
+        self.name = name
+        self.root = root
+        self.refresh = refresh
+        _shown = State(initialValue: startOn)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,8 +44,8 @@ struct WorkspaceView: View {
                 case .diff(_, let text): CodeLines(text: text, lang: "diff")
                 case nil:
                     switch shown {
-                    case .files: FolderView(session: session, id: id, path: "/work", open: open)
-                    case .changes: ChangesView(session: session, id: id, open: open)
+                    case .files: FolderView(session: session, id: id, path: root, open: open)
+                    case .changes: ChangesView(session: session, id: id, path: root == "/work" ? nil : root, refresh: refresh, open: open)
                     }
                 }
             }
@@ -80,7 +94,15 @@ enum WorkspaceItem: Hashable {
     }
 }
 
+/// A chat as a thread of a project in the Build window (docs/BUILD.md): its project's name, and the branch it works on.
+struct BuildThread: Equatable {
+    let project: String
+    let branch: String?
+}
+
 extension EnvironmentValues {
+    /// Set by the Build window: the chat there is a project's thread, which the window titles and has the tools of.
+    @Entry var buildThread: BuildThread? = nil
     /// The workspace column beside this page, when what holds the page hosts one (an iPad's or a Mac's split view, a
     /// Mac's window): shown or not. Absent (an iPhone): a page shows its workspace as a sheet of its own.
     @Entry var workspaceColumn: Binding<Bool>? = nil
@@ -298,6 +320,9 @@ private struct WorkspaceFile: View {
 private struct ChangesView: View {
     let session: Session
     let id: String
+    /// A repository by its path (a project's checkout), instead of the knight's task's.
+    var path: String? = nil
+    var refresh = 0
     let open: (WorkspaceItem) -> Void
     @State private var changes: TeamChangesView?
     @State private var problem: String?
@@ -362,7 +387,7 @@ private struct ChangesView: View {
         }
         .overlay { if changes == nil, problem == nil { ProgressView() } }
         .refreshable { await load() }
-        .task { await load() }
+        .task(id: refresh) { await load() }
     }
 
     private func heading(_ changes: TeamChangesView) -> String {
@@ -371,9 +396,9 @@ private struct ChangesView: View {
     }
 
     private func load() async {
-        struct Ask: Encodable { let id: String }
+        struct Ask: Encodable { let id: String; let path: String? }
         do {
-            changes = try await session.client.post("/api/team/changes", Ask(id: id), as: TeamChangesView.self)
+            changes = try await session.client.post("/api/team/changes", Ask(id: id, path: path), as: TeamChangesView.self)
             problem = nil
         } catch {
             problem = "Its changes couldn't be read: \(error.localizedDescription)"

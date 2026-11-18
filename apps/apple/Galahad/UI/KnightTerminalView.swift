@@ -216,8 +216,14 @@ struct TerminalScreen: NSViewRepresentable {
     private var queue: TerminalInputQueue?
     /// What it showed lately, as text, for the addresses in it.
     private var lately = ""
+    /// A folder to start in (a project's checkout): typed as a `cd` into a terminal this opened, never into one already
+    /// open, where something may be running.
+    let startIn: String?
 
-    init(sandbox: String) { self.sandbox = sandbox }
+    init(sandbox: String, startIn: String? = nil) {
+        self.sandbox = sandbox
+        self.startIn = startIn
+    }
 
     func type(_ data: String) { if !ended { queue?.type(data) } }
 
@@ -232,11 +238,13 @@ struct TerminalScreen: NSViewRepresentable {
         // The emulator fits itself first, so the shell starts at the size it is shown at.
         for _ in 0..<50 where bridge.size == nil { try? await Task.sleep(for: .milliseconds(100)) }
         let opened: TerminalRecord
+        var fresh = false
         do {
             struct Listed: Decodable { let terminals: [TerminalRecord] }
             struct Open: Encodable { let sandbox: String; let size: TerminalSize }
             struct Opened: Decodable { let terminal: TerminalRecord }
             let open = try await client.get("/api/terminals", as: Listed.self).terminals.first { $0.sandbox == sandbox && $0.exitCode == nil }
+            fresh = open == nil
             if let open { opened = open } else { opened = try await client.post("/api/terminals", Open(sandbox: sandbox, size: bridge.size ?? TerminalSize(cols: 80, rows: 24)), as: Opened.self).terminal }
         } catch {
             status = error.localizedDescription
@@ -267,6 +275,10 @@ struct TerminalScreen: NSViewRepresentable {
                         lately = ""
                         if let size = bridge.size { queue.resize(size) }
                         status = ""
+                        if fresh, let startIn {
+                            fresh = false
+                            queue.type("cd '\(startIn.replacingOccurrences(of: "'", with: "'\\''"))' && clear\r")
+                        }
                     }
                     switch event {
                     case .output(let data):

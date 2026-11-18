@@ -22,6 +22,13 @@ struct GalahadMacApp: App {
         // A `galahad:` link comes here, to joining.
         .handlesExternalEvents(matching: ["galahad"])
 
+        // Build: a workbench with Galahad, T3 Code's (docs/BUILD.md).
+        Window("Build", id: MacApp.build) {
+            MacBuildRoot(mac: mac)
+        }
+        .defaultSize(width: 1360, height: 860)
+        .handlesExternalEvents(matching: [])
+
         WindowGroup(for: PlaceWindow.self) { $window in
             MacWindowRoot(mac: mac, window: window)
         }
@@ -47,6 +54,8 @@ struct GalahadMacApp: App {
     static let shared = MacApp()
     /// The main window's id.
     static let main = "main"
+    /// The Build window's id (docs/BUILD.md).
+    static let build = "build"
 
     let app = AppModel()
     /// The first run, on a Mac that isn't a node and an app that isn't paired.
@@ -201,6 +210,13 @@ struct MacCommands: Commands {
             }
             .keyboardShortcut("k")
             .disabled(mac.session?.can("fleet:admin") != true || mac.session?.rows.isEmpty != false)
+            Divider()
+            Button("Build with Galahad") {
+                openWindow(id: MacApp.build)
+                NSApplication.shared.activate()
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .disabled(mac.session == nil)
         }
         CommandGroup(before: .sidebar) {
             place("Galahad", .galahad, "1")

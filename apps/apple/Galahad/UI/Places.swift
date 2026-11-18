@@ -80,6 +80,9 @@ struct PlacesSidebar<Foot: View>: View {
                 }
                 .padding(.vertical, Space.line)
                 .tag(Place.roundtable)
+                #if os(macOS)
+                BuildRow()
+                #endif
                 ForEach(head, id: \.self) { id in seat(id, rows) }
             }
             if !rest.isEmpty {
@@ -340,3 +343,20 @@ private struct ChatWindow: View {
         }
     }
 }
+
+#if os(macOS)
+/// The Build window, from the sidebar: a workbench with Galahad (docs/BUILD.md), in a window of its own.
+private struct BuildRow: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button {
+            openWindow(id: MacApp.build)
+        } label: {
+            Label("Build", systemImage: "hammer")
+        }
+        .buttonStyle(.plain)
+        .help("Build with Galahad (⇧⌘B)")
+    }
+}
+#endif

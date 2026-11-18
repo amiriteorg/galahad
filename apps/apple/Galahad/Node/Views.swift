@@ -300,6 +300,39 @@ struct TeamChangesView: Decodable, Sendable {
     var redacted: Bool? = nil
 }
 
+/// A project (core's ProjectView): its name, Galahad's instructions for it, its repository, and its checkout on his computer.
+struct ProjectView: Decodable, Sendable, Identifiable, Equatable, Hashable {
+    let id: String
+    let name: String
+    let instructions: String
+    let repo: String?
+    /// Where its work is kept on his computer (nil from a node from before the Build view).
+    var checkout: String? = nil
+    let updatedAt: Double
+}
+
+/// A project's checkout as git has it (`POST /api/projects/git`).
+struct ProjectGitView: Decodable, Sendable, Equatable {
+    struct Commit: Decodable, Sendable, Equatable, Hashable {
+        let sha: String
+        let subject: String
+        let at: Double
+    }
+    let checkout: String
+    /// ready · missing (not cloned yet) · not-a-repository
+    let state: String
+    let branch: String?
+    let head: String?
+    let branches: [String]
+    /// Files changed or new, not yet committed.
+    let changed: Int
+    let upstream: String?
+    let ahead: Int?
+    let behind: Int?
+    let remote: String?
+    let log: [Commit]
+}
+
 /// This period's model calls on the node at your prices, against your budget (`GET /api/usage/meter`).
 struct UsageMeter: Decodable, Sendable, Equatable {
     struct Top: Decodable, Sendable, Equatable, Hashable {

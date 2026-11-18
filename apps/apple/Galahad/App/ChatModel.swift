@@ -10,6 +10,10 @@ struct ChatRequest: Encodable, Sendable {
         var attachments: [AttachmentRef]?
     }
     let role: String
+    /// A model of your choosing for this answer (the Build view's), instead of the role's first.
+    var model: String?
+    /// A new conversation's project (the Build view's thread): its instructions, and his checkout of it, go with every answer.
+    var project: String?
     /// A new conversation, kept in your history from its first message.
     var save: Bool?
     /// The kept conversation this message continues: the node holds what was said, so only the message goes.
@@ -32,6 +36,10 @@ struct ChatRequest: Encodable, Sendable {
     private(set) var thread = ChatThread()
     /// The kept chat on screen (nil: a new one, until the node keeps it).
     private(set) var conversation: String?
+    /// A new chat's project, when it is a Build thread: sent with its first message, after which the node keeps it.
+    var project: String?
+    /// A model of your choosing for what you send (nil: the role's own, first to last).
+    var model: String?
     private(set) var title: String?
     /// The turn under way, by its id on the node.
     private(set) var turn: String?
@@ -94,7 +102,7 @@ struct ChatRequest: Encodable, Sendable {
         outbox.sent()
         sent += 1
         thread.begin(question: text, role: role, attachments: files)
-        let request = ChatRequest(role: role, save: conversation == nil ? true : nil, conversation: conversation, messages: [.init(role: "user", content: text, attachments: files.isEmpty ? nil : files)])
+        let request = ChatRequest(role: role, model: model, project: conversation == nil ? project : nil, save: conversation == nil ? true : nil, conversation: conversation, messages: [.init(role: "user", content: text, attachments: files.isEmpty ? nil : files)])
         watch(client.events("/api/chat", request))
     }
 
@@ -109,7 +117,7 @@ struct ChatRequest: Encodable, Sendable {
         thread.cut(at: at)
         sent += 1
         thread.begin(question: question.content, role: role, attachments: question.attachments ?? [])
-        let request = ChatRequest(role: role, conversation: conversation, messages: [.init(role: "user", content: question.content, attachments: question.attachments)], retry: true)
+        let request = ChatRequest(role: role, model: model, conversation: conversation, messages: [.init(role: "user", content: question.content, attachments: question.attachments)], retry: true)
         watch(client.events("/api/chat", request))
     }
 

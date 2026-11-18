@@ -13,6 +13,8 @@ struct ChatView: View {
     @State private var inTerminal = false
     @State private var inFiles = false
     @Environment(\.workspaceColumn) private var workspaceColumn
+    /// A thread of a project in the Build window, which titles it and has its tools (nil: Galahad's chat).
+    @Environment(\.buildThread) private var build
     @Environment(\.composerWanted) private var composerWanted
 
     init(session: Session, chat: ChatModel? = nil) {
@@ -60,15 +62,16 @@ struct ChatView: View {
         .safeAreaInset(edge: .bottom) {
             Composer(chat: chat, client: session.client, composing: $composing)
         }
-        .navigationTitle("Galahad")
+        .navigationTitle(build?.project ?? "Galahad")
         .inlineTitle()
         // A conversation has the screen to itself, as in Messages.
         .hidingTabBar()
         #if os(macOS)
-        // On a Mac, the window's own title and its subtitle.
-        .navigationSubtitle(chat.title ?? session.galahad.text)
+        // On a Mac, the window's own title and its subtitle (a Build thread's: its title, and the branch it works on).
+        .navigationSubtitle(build.map { [chat.title ?? "New thread", $0.branch].compactMap { $0 }.joined(separator: " · ") } ?? chat.title ?? session.galahad.text)
         #endif
         .toolbar {
+            if build == nil {
             #if os(iOS)
             ToolbarItem(placement: .principal) {
                 TimelineTitle(title: "Galahad", line: chat.title ?? session.galahad.text, needs: chat.title == nil && session.galahad.tone == .warn)
@@ -103,6 +106,7 @@ struct ChatView: View {
                     Label("New chat", systemImage: "square.and.pencil")
                 }
                 .disabled(chat.answering || chat.thread.isEmpty)
+            }
             }
         }
         .navigationDestination(isPresented: $watching) {
@@ -170,9 +174,7 @@ struct MessageRow: View {
                 Portrait(drawing: "galahad", size: Metrics.speakerFace)
                 VStack(alignment: .leading, spacing: Space.s2) {
                     ForEach(Array(turn.steps.enumerated()).filter { $0.element.tool != nil }, id: \.offset) { _, step in
-                        Label(step.text, systemImage: step.state == .active ? "gearshape" : step.state == .done ? "checkmark.circle" : "exclamationmark.circle")
-                            .font(.caption)
-                            .foregroundStyle(step.state == .warn || step.state == .error ? Color.siege : .secondary)
+                        StepLine(step: step)
                     }
                     if !turn.content.isEmpty {
                         MarkdownView(turn.content)
@@ -273,5 +275,36 @@ struct Composer: View {
                 }
             }
         }
+    }
+}
+
+/// A tool's step in his answer, as a work log: what he used, the command it ran (when it ran one), and the first lines of
+/// what came back.
+private struct StepLine: View {
+    let step: ChatThread.Step
+
+    var body: some View {
+        let (command, answer) = WorkLog.parts(step.detail)
+        VStack(alignment: .leading, spacing: Space.line) {
+            Label {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                    Text(step.text)
+                    if let command {
+                        Text(command).font(.caption.monospaced()).foregroundStyle(.primary).lineLimit(1).truncationMode(.tail).textSelection(.enabled)
+                    }
+                }
+            } icon: {
+                Image(systemName: step.state == .active ? "gearshape" : step.state == .done ? "checkmark.circle" : "exclamationmark.circle")
+            }
+            if command != nil, let answer {
+                Text(answer)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .padding(.leading, Space.s4 + Space.s1)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(step.state == .warn || step.state == .error ? Color.siege : .secondary)
     }
 }

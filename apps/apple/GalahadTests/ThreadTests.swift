@@ -41,3 +41,21 @@ struct ThreadTests {
         #expect(thread == before)
     }
 }
+
+/// A tool's step as the work log shows it: its command and what came back, from the step's detail (lib/turns.ts' form).
+struct WorkLogTests {
+    @Test func aCommandAndWhatCameBack() {
+        let ran = WorkLog.parts(#"{"command":"bun test test/auth","timeoutSec":120} → 14 pass, 0 fail"#)
+        #expect(ran.command == "bun test test/auth")
+        #expect(ran.answer == "14 pass, 0 fail")
+        // A command of several lines shows its first; a step still running has no answer yet.
+        #expect(WorkLog.parts(#"{"command":"cd /work\ngit status"}"#).command == "cd /work")
+        #expect(WorkLog.parts(#"{"command":"ls"}"#).answer == nil)
+    }
+
+    @Test func aToolWithoutACommandShowsNone() {
+        #expect(WorkLog.parts(#"{"query":"redirects"} → 3 results"#).command == nil)
+        #expect(WorkLog.parts(nil).command == nil)
+        #expect(WorkLog.parts("not json").command == nil)
+    }
+}
