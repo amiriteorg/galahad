@@ -80,6 +80,13 @@ export const MCP_TOOL_CLASSES: Readonly<Record<string, readonly (readonly [patte
   ],
 };
 
+/**
+ * Servers on the reviewed list that hold what is yours alone (your company's books): installed as Galahad's alone, so
+ * only he and the knights you allow may call them (`galahad connector allow <id> <knight>`), and private as your mail
+ * and your bank are, so what one answer reads of them goes nowhere but their own tools.
+ */
+export const MCP_ALONE: ReadonlySet<string> = new Set(["dinero"]);
+
 /** What the reviewed list proposes for a server's tool (MCP_TOOL_CLASSES), or null where it proposes nothing. */
 export function libraryClass(proposed: readonly (readonly [string, ToolClass])[] | undefined, remote: string): ToolClass | null {
   const name = remote.toLowerCase();

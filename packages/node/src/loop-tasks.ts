@@ -1,5 +1,7 @@
 import { type ChatStreamEvent, type NodeIdentity, redact, retriedRuns, type RouteName, routes, SELF_ACTION_RESOURCE, spendLabel, type Usage } from "@galahad/core";
+import type { Database } from "bun:sqlite";
 import type { BankService } from "./bank/service.ts";
+import { bilagSummary, copyBilag, type Mailbox } from "./bilag.ts";
 import { chat, commandsRun, excerpt, installedConnector, installedConnectors, keyState, onPlan, parseRef, planOf, resolveProvider, roster, sseData } from "@galahad/brain";
 import type { SyncEngine } from "@galahad/link";
 import type { MindStore, Vault } from "@galahad/mind";
@@ -44,6 +46,8 @@ export interface LoopTaskDeps {
   now?: () => number;
   fetch?: typeof fetch;
   bank?: BankService;
+  /** This node's own database (local.db): where the bilag copied to Drive are kept track of (bilag.ts). */
+  local?: Database;
   /* ---- self-action (set by the daemon) ---- */
   /** Start a run of one of this node's loops now (self-action's retry). */
   runLoop?: (name: string) => void;
@@ -367,6 +371,17 @@ export function loopExecutor(deps: LoopTaskDeps) {
       case "tell":
         // What woke it is told by the runner (Woken by …); the notice is raised when the run is recorded (daemon).
         return { status: "ok", summary: task.text ?? (ctx.woken.length ? "" : "It's time.") };
+      case "bilag": {
+        // The mail that woke it, by its mailbox and id (wakes.ts names a mail's event mail:<mailbox>:<id>).
+        const mails = ctx.woken.flatMap((event) => {
+          const m = /^mail:(gmail|outlook):(.+)$/.exec(event.id);
+          return m ? [{ mailbox: m[1] as Mailbox, id: m[2]! }] : [];
+        });
+        if (!mails.length) return { status: "ok", summary: "Nothing to copy: it copies the bilag in the mail that wakes it (to copy older mail's: galahad bilag copy)." };
+        if (!deps.local) return { status: "failed", summary: "This node keeps no record of bilag copied, so it copies none." };
+        const report = await copyBilag({ transfer: (connector, step) => deps.connectors.transfer(connector, step), local: deps.local, tz: loop.tz }, mails, task.folder);
+        return { status: report.failed.length ? "attention" : "ok", summary: bilagSummary(report) };
+      }
       case "call": {
         const outcome = await deps.connectors.call(
           { connector: task.connector, tool: task.tool, args: task.args ?? {} },

@@ -7,6 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { ConnectorLibraryView, ConnectorView, McpIndexEntry, RouteName } from "@galahad/core";
 import { routes } from "@galahad/core";
+import { installedConnector } from "@galahad/brain";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { z } from "zod";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -178,6 +179,18 @@ test("the library: hosted MCP servers listed before they're added, and one added
   expect(added.body.discovered).toMatchObject({ needsSignIn: true, tools: 0 });
   expect(added.body.connector).toMatchObject({ installed: true, kind: "mcp", url: "https://mcp.linear.app/mcp", oauth: { provider: "mcp" }, key: "missing" });
   expect((await admin("setConnector", { id: "nothing-like-it" })).status).toBe(404);
+});
+
+test("the library: your company's books (Dinero) are added as Galahad's alone and private, and stay so when added again", async () => {
+  const added = await admin("setConnector", { id: "dinero" });
+  expect(added.status).toBe(200);
+  expect(added.body.connector).toMatchObject({ installed: true, kind: "mcp", url: "https://mcp.dinero.dk/", oauth: { provider: "mcp" }, private: true });
+  const stored = () => installedConnector(daemon.store, "dinero")!;
+  expect(stored()).toMatchObject({ access: { only: "galahad", allowed: [] }, private: true });
+  // A knight you allow may; added again, the one you allowed still may.
+  expect((await admin("setConnectorAccess", { id: "dinero", agent: "team.abc.bors", allow: true })).status).toBe(200);
+  expect((await admin("setConnector", { id: "dinero" })).status).toBe(200);
+  expect(stored().access).toEqual({ only: "galahad", allowed: ["team.abc.bors"] });
 });
 
 test("the library: the reviewed list and the index, searched; one added by its id takes its key, or signs in, as the index says", async () => {

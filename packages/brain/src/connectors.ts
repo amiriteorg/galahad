@@ -115,23 +115,27 @@ export function authFor(vault: Vault, manifest: ConnectorManifest): { headers: R
   return { headers: { [manifest.auth.header!]: key }, key };
 }
 
+/** The connector's key on a request's headers, as the vault allows it: an access token where it signs in. Returns the key. */
+async function signRequest(ctx: SendContext, manifest: ConnectorManifest, headers: Headers): Promise<string | null> {
+  if (manifest.auth?.scheme === "oauth") {
+    // Signed in as you: a short-lived access token for this call, never the sign-in itself.
+    if (keyState(ctx.vault, manifest) === "wrong-origin") throw new ConnectorError(`the secret "${manifest.auth.secret}" is pinned to another origin; it is never sent to ${manifest.origin}`);
+    const key = await accessToken({ vault: ctx.vault, ...(ctx.fetch ? { fetch: ctx.fetch } : {}), ...ctx.oauth }, manifest).catch((error: Error) => {
+      throw new ConnectorError(error.message);
+    });
+    headers.set("authorization", `Bearer ${key}`);
+    return key;
+  }
+  const auth = authFor(ctx.vault, manifest);
+  for (const [name, value] of Object.entries(auth.headers)) headers.set(name, value);
+  return auth.key;
+}
+
 export async function sendConnectorRequest(ctx: SendContext, manifest: ConnectorManifest, request: BuiltRequest): Promise<ConnectorResult> {
   const headers = new Headers({ accept: "application/json", "user-agent": "galahad/0.1 (+https://galahad.bot)" });
   for (const [name, value] of Object.entries(request.headers)) headers.set(name, value);
   if (request.body !== undefined) headers.set("content-type", "application/json");
-  let key: string | null;
-  if (manifest.auth?.scheme === "oauth") {
-    // Signed in as you: a short-lived access token for this call, never the sign-in itself.
-    if (keyState(ctx.vault, manifest) === "wrong-origin") throw new ConnectorError(`the secret "${manifest.auth.secret}" is pinned to another origin; it is never sent to ${manifest.origin}`);
-    key = await accessToken({ vault: ctx.vault, ...(ctx.fetch ? { fetch: ctx.fetch } : {}), ...ctx.oauth }, manifest).catch((error: Error) => {
-      throw new ConnectorError(error.message);
-    });
-    headers.set("authorization", `Bearer ${key}`);
-  } else {
-    const auth = authFor(ctx.vault, manifest);
-    for (const [name, value] of Object.entries(auth.headers)) headers.set(name, value);
-    key = auth.key;
-  }
+  const key = await signRequest(ctx, manifest, headers);
 
   const started = performance.now();
   const timeout = AbortSignal.timeout(ctx.timeoutMs ?? 30_000);
@@ -154,6 +158,56 @@ export async function sendConnectorRequest(ctx: SendContext, manifest: Connector
     truncated: truncated || clipped,
     durationMs: Math.round(performance.now() - started),
   };
+}
+
+/** A file's bytes moved to or from a connector (transferConnectorBytes): what came back, whole. */
+export interface Transferred {
+  ok: boolean;
+  status: number;
+  contentType: string | null;
+  /** Where the answer points on (a resumable upload's address), when it says. */
+  location: string | null;
+  bytes: Uint8Array;
+}
+
+/**
+ * Bytes to or from a connector's own origin, with its key, for the node's own work that no model sees (the bilag
+ * copier): a file's bytes as the body, and an answer of up to `max` bytes, read whole. More than `max` is refused,
+ * never cut: a cut file is a broken one. The same fences as a call: the pinned origin, no redirects, the key only
+ * where the vault pinned it, a timeout.
+ */
+export async function transferConnectorBytes(
+  ctx: SendContext,
+  manifest: ConnectorManifest,
+  request: { method: "GET" | "POST" | "PUT"; url: string; headers?: Record<string, string>; body?: Uint8Array | string; max: number },
+): Promise<Transferred> {
+  if (new URL(request.url).origin !== new URL(manifest.origin).origin) throw new ConnectorError(`refusing a request off ${manifest.label}'s origin`);
+  const headers = new Headers({ accept: "*/*", "user-agent": "galahad/0.1 (+https://galahad.bot)" });
+  for (const [name, value] of Object.entries(request.headers ?? {})) headers.set(name, value);
+  await signRequest(ctx, manifest, headers);
+  const timeout = AbortSignal.timeout(ctx.timeoutMs ?? 120_000);
+  const response = await (ctx.fetch ?? fetch)(request.url, {
+    method: request.method,
+    headers,
+    ...(request.body === undefined ? {} : { body: typeof request.body === "string" ? request.body : new Uint8Array(request.body) }),
+    redirect: "manual",
+    signal: ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout,
+  });
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = response.body?.getReader();
+  for (;;) {
+    if (!reader) break;
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > request.max) {
+      await reader.cancel().catch(() => {});
+      throw new ConnectorError(`${manifest.label}'s answer is over ${Math.round(request.max / 2 ** 20)} MB: not taken`);
+    }
+    chunks.push(value);
+  }
+  return { ok: response.ok, status: response.status, contentType: response.headers.get("content-type"), location: response.headers.get("location"), bytes: new Uint8Array(Buffer.concat(chunks)) };
 }
 
 /** A short, human-sized excerpt of a result for ledgers, receipts and run summaries. */

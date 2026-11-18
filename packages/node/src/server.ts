@@ -102,6 +102,7 @@ import {
   screenSessionView,
   activeScreenSession,
   MCP_LIBRARY,
+  MCP_ALONE,
   MCP_TOOL_CLASSES,
   mcpLibraryEntry,
   searchLibrary,
@@ -185,6 +186,7 @@ import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.t
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
 import { OutcomeError, OutcomeRunner } from "./outcomes.ts";
 import { offerFix } from "./ci-back.ts";
+import type { BilagService } from "./bilag.ts";
 import { ShipManifest } from "./ship.ts";
 import { randomBytes } from "node:crypto";
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
@@ -252,6 +254,8 @@ export interface AppContext {
   telegram?: TelegramGateway | null;
   /** Connectors agents asked you for, waiting for you to add one or dismiss the request (node-local). */
   connectorRequests: ConnectorRequests;
+  /** Bilag copied from your mail to Google Drive (bilag.ts): what was copied, and copying what came before the loop's wakes. */
+  bilag?: BilagService;
   /** The heartbeat's checks, run here and now (no writes). */
   heartbeatCheck: () => Promise<FindingView[]>;
   /** The doctor: one look at this node's whole installation (doctor.ts). It changes nothing. */
@@ -3563,6 +3567,16 @@ export function createApp(ctx: AppContext) {
       if (input.draft) ctx.loopDrafts.remove(input.draft);
       return { loop: loopViews().find((l) => l.name === input.name), ...(hookSecret ? { hookSecret } : {}) };
     },
+    bilag: (_input, p) => {
+      ownerOnly(p);
+      if (!ctx.bilag) throw new HttpError(503, "this node keeps no record of bilag");
+      return ctx.bilag.status();
+    },
+    bilagCopy: (input, p) => {
+      ownerOnly(p);
+      if (!ctx.bilag) throw new HttpError(503, "this node copies no bilag");
+      return connectorErrors(() => ctx.bilag!.copy(input));
+    },
     loopHook: (input) => {
       const loop = loopRecords(ctx.store).find((l) => l.name === input.name);
       if (!loop) throw new HttpError(404, `no loop "${input.name}"`);
@@ -3677,7 +3691,7 @@ export function createApp(ctx: AppContext) {
           const description = shelved.description.length > 300 ? `${shelved.description.slice(0, 299).replace(/\s+\S*$/, "")}…` : shelved.description;
           // (The reviewed list's own proposal of its tools' classes, where it has one: Dinero's is the owner's ruling.)
           const proposed = Object.hasOwn(MCP_TOOL_CLASSES, shelved.id) ? MCP_TOOL_CLASSES[shelved.id] : undefined;
-          const installed = await connectorErrors(() => ctx.connectors.installMcp(input.id, { url: shelved.url, label: shelved.label.slice(0, 64), description, ...key, ...(proposed ? { proposed } : {}) }));
+          const installed = await connectorErrors(() => ctx.connectors.installMcp(input.id, { url: shelved.url, label: shelved.label.slice(0, 64), description, ...key, ...(proposed ? { proposed } : {}), ...(MCP_ALONE.has(shelved.id) ? { alone: true } : {}) }));
           ctx.connectorRequests.resolve(input.id);
           return { connector: connectorViews().find((c) => c.id === input.id), discovered: installed };
         }

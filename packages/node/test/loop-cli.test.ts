@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import type { LoopDraftView, RouteName } from "@galahad/core";
-import { loopCommand, parseWake } from "../src/loop-cli.ts";
+import { describeTask, loopCommand, parseWake } from "../src/loop-cli.ts";
 
 /* `galahad loop drafts`, `loop add --draft` and `loop dismiss` at a terminal, against what the node would answer. */
 
@@ -127,11 +127,20 @@ test("a draft with something to wake it is listed with it, and added with it", a
   expect(asked.at(-1)!.input).toMatchObject({ schedule: "never", wakes: woken.wakes, cooldownMs: 30 * 60_000, draft: woken.id });
 });
 
+test("a loop that copies bilag to Drive: --bilag, into --folder when you give one", async () => {
+  const { api, asked } = node();
+  await printed(() => loopCommand(api, "add", ["books"], { wake: ["gmail has:attachment faktura", "outlook faktura"], bilag: true }));
+  expect(asked.at(-1)!.input).toMatchObject({ name: "books", schedule: "never", task: { kind: "bilag" }, wakes: [{ kind: "mail", connector: "gmail" }, { kind: "mail", connector: "outlook" }] });
+  await printed(() => loopCommand(api, "add", ["books2"], { wake: ["gmail faktura"], bilag: true, folder: "Regnskab" }));
+  expect(asked.at(-1)!.input).toMatchObject({ task: { kind: "bilag", folder: "Regnskab" } });
+  expect(describeTask({ kind: "bilag", folder: "Regnskab" })).toBe("copy the bilag in the mail that wakes it to Google Drive (Regnskab/<year>/<month>)");
+});
+
 test("a loop that tells you: --tell, and your words with --say", async () => {
   const { api, asked } = node();
   await printed(() => loopCommand(api, "add", ["boss-mail"], { wake: ["gmail from:boss@example.com"], say: "Your boss wrote" }));
   expect(asked.at(-1)!.input).toMatchObject({ name: "boss-mail", schedule: "never", task: { kind: "tell", text: "Your boss wrote" }, wakes: [{ kind: "mail", connector: "gmail", query: "from:boss@example.com" }] });
   await printed(() => loopCommand(api, "add", ["plants"], { cron: "0 9 * * 1", tell: true }));
   expect(asked.at(-1)!.input).toMatchObject({ name: "plants", schedule: "0 9 * * 1", task: { kind: "tell" } });
-  await expect(loopCommand(api, "add", ["both"], { every: "1h", tell: true, heartbeat: true })).rejects.toThrow(/give one of --heartbeat, --quest, --call or --tell/);
+  await expect(loopCommand(api, "add", ["both"], { every: "1h", tell: true, heartbeat: true })).rejects.toThrow(/give one of --heartbeat, --quest, --call, --tell or --bilag/);
 });

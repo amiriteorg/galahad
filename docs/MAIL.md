@@ -25,9 +25,9 @@ Galahad can read and write your mail in Gmail and in Outlook (Outlook.com and Mi
 ## Gmail: register your app with Google
 
 1. In [Google Cloud](https://console.cloud.google.com), make a project (say, "Galahad mail").
-2. **APIs & Services → Library**: enable the **Gmail API**.
-3. **Google Auth Platform** (the OAuth consent screen): get started with an app name ("Galahad") and your address; the audience is **External**.
-4. **Data access**: add the scopes `https://www.googleapis.com/auth/gmail.modify`, `openid` and `.../auth/userinfo.email`.
+2. **APIs & Services → Library**: enable the **Gmail API** (and the **Google Drive API**, for bilag copied to Drive: [BOOKS.md](BOOKS.md)).
+3. **Google Auth Platform** (the OAuth consent screen): get started with an app name ("Galahad") and your address; the audience is **External**, or **Internal** on Google Workspace (only your organization's accounts sign in, and nothing expires or needs Google's review: steps 5's warning and its seven days don't apply).
+4. **Data access**: add the scopes `https://www.googleapis.com/auth/gmail.modify`, `openid` and `.../auth/userinfo.email` (and `.../auth/drive.file` for Drive: Galahad then sees only the files it makes there).
 5. **Audience**: **publish the app** (In production). A sign-in to an app left in Testing ends after seven days. Google shows an app it hasn't verified with a warning on its consent page; as its only user, go on through **Advanced**.
 6. **Clients → Create client**: **Web application**, with this **authorized redirect URI**: the address you open Galahad at, then `/oauth/callback` (the Gmail card in Connectors shows it exactly, e.g. `https://keep.example.ts.net/oauth/callback`).
 7. Copy its **client ID** and **client secret**.

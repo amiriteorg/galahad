@@ -52,6 +52,7 @@ const KIND: Record<LoopTask["kind"], { label: string; icon: IconName }> = {
   quest: { label: "Quest", icon: "compass" },
   call: { label: "Connector", icon: "plug" },
   tell: { label: "Tell me", icon: "bell" },
+  bilag: { label: "Bilag", icon: "archive" },
 };
 
 const PRESETS: { label: string; schedule: string }[] = [
@@ -96,6 +97,7 @@ export function describeTask(task: LoopTask | null): string {
     return `Quest, ${NETWORK[task.network]?.label.toLowerCase() ?? task.network}: ${clip(task.goal, 160)}${gates}`;
   }
   if (task.kind === "tell") return `Tells you${task.text ? `: ${clip(task.text, 160)}` : ", with what woke it"}: a notice in your Inbox, and your loop's name on your phone.`;
+  if (task.kind === "bilag") return `Copies the receipts and invoices attached to the mail that wakes it into Google Drive, ${task.folder ?? "Bilag"}/<year>/<month>. No model; nothing is deleted or sent.`;
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${String(v)}`).join(" ");
   return `Calls ${task.connector}.${task.tool}${args ? ` ${clip(args, 120)}` : ""}`;
 }
@@ -352,7 +354,14 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     h("p", { class: "small muted" }, "No model, no sandbox: each run is a notice in your Inbox with what woke it, and your phone says this loop's name. Put it with something to wake it (\"tell me when my boss emails\"), or a schedule for a reminder."),
     field("What to say (optional)", tellText),
   );
-  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel, tell: tellPanel };
+  const bilagFolder = h("input", { class: "input", type: "text", autocomplete: "off", maxlength: 60, placeholder: "Bilag", value: task0?.kind === "bilag" ? (task0.folder ?? "") : "" });
+  const bilagPanel = h(
+    "div",
+    { class: "stack" },
+    h("p", { class: "small muted" }, "No model: each receipt or invoice attached to the mail that wakes it (a PDF, a picture, an XML e-invoice) is copied as it is into Google Drive, by year and month, named by the day it came and who sent it. Give it mail to wake it, from Gmail, Outlook or both; nothing is deleted or sent, and Galahad sees only the files it makes in your Drive."),
+    field("Folder in your Drive (optional)", bilagFolder),
+  );
+  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel, tell: tellPanel, bilag: bilagPanel };
   const showKind = () => {
     for (const [k, panel] of Object.entries(panels)) panel.hidden = k !== kind;
   };
@@ -386,6 +395,11 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
       const text = tellText.value.trim();
       if (findSecrets(text).length) return { problem: "That looked like a key. Loops are shared in plaintext; keys belong in the vault.", focus: tellText };
       return { task: { kind: "tell", ...(text ? { text } : {}) } };
+    }
+    if (kind === "bilag") {
+      const folder = bilagFolder.value.trim();
+      if (/[/\\]/.test(folder)) return { problem: "A folder's name, without slashes.", focus: bilagFolder };
+      return { task: { kind: "bilag", ...(folder ? { folder } : {}) } };
     }
     if (!connectorSelect.value) return { problem: "Choose a connector.", focus: connectorSelect };
     if (!toolSelect.value || !args) return { problem: "Choose a tool.", focus: toolSelect };

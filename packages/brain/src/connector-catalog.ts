@@ -341,4 +341,26 @@ export const CATALOG: Record<string, CatalogEntry> = {
       private: true,
     },
   },
+  // Bilag copied from your mail (node bilag.ts), the owner's word of 18 November 2026. drive.file alone: Galahad sees
+  // and makes only its own files there, never the rest of your Drive.
+  gdrive: {
+    keyHelp: "it signs in with Google, through the app you registered for Gmail with the Google Drive API on and the drive.file scope added (docs/BOOKS.md)",
+    manifest: {
+      id: "gdrive",
+      label: "Google Drive",
+      description: "Bilag Galahad copies from your mail into your Drive (Bilag/<year>/<month>). It sees only the files it made there, never the rest of your Drive. Galahad's alone.",
+      origin: "https://www.googleapis.com",
+      auth: { secret: "gdrive", scheme: "oauth", oauth: { provider: "google", scopes: ["https://www.googleapis.com/auth/drive.file", "openid", "email"] } },
+      tools: {
+        files: {
+          description: "The files Galahad made in your Drive, the bilag it copied among them: give fields (files(id,name,webViewLink,createdTime)), orderBy (createdTime desc) and q, Drive's search words (name contains 'Telia').",
+          method: "GET",
+          path: "/drive/v3/files",
+          params: { q: { type: "string", description: "Drive's search words, e.g. name contains 'Telia' and trashed = false" }, fields: { type: "string" }, orderBy: { type: "string" }, pageSize: { type: "integer" } },
+          class: "read",
+        },
+      },
+      access: { only: "galahad", allowed: [] },
+    },
+  },
 };

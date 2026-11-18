@@ -37,6 +37,8 @@ import {
   mergeMcpTools,
   type OAuthEndpoints,
   sendConnectorRequest,
+  type Transferred,
+  transferConnectorBytes,
 } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { LedgerEntryInput } from "@galahad/sandbox";
@@ -189,6 +191,32 @@ export class ConnectorService {
       detail: `${caller.kind === "owner" ? "by you" : `by ${caller.by}`} · ${excerpt(result, 300)}`.slice(0, 2000),
     });
     return { status: "done", class: request.class, target: request.target, result, ...(manifest.private ? { private: true as const } : {}) };
+  }
+
+  /**
+   * Bytes to or from a connector, for the node's own work that no model sees (bilag.ts): a read or a create only,
+   * through the oath like any call, and each one a line in the ledger. Never an agent's: no tool reaches this.
+   */
+  async transfer(connector: string, step: { method: "GET" | "POST" | "PUT"; path: string; headers?: Record<string, string>; body?: Uint8Array | string; class: "read" | "create"; why: string; max: number }): Promise<Transferred> {
+    const manifest = this.manifest(connector);
+    const origin = new URL(manifest.origin).origin;
+    // A path on the connector's own origin (its base path first), or a whole address there (a resumable upload's).
+    const url = step.path.startsWith("https://") ? new URL(step.path) : new URL(`${manifest.basePath ?? ""}${step.path}`, origin);
+    if (url.origin !== origin) throw new ConnectorCallError(400, `refusing a request off ${manifest.label}'s origin`);
+    const resource = `connector.${manifest.id}`;
+    const target = `${step.method} ${url.pathname}`.slice(0, 256);
+    const decision = decide({ class: step.class, resource, target });
+    if (decision.verdict !== "allow") throw new ConnectorCallError(403, decision.verdict === "deny" ? decision.reason : `${manifest.label}: ${step.class} would ask`);
+    const ctx = { vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}), oauth: { save: this.keepRotated, ...(this.o.oauthEndpoints ? { endpoints: this.o.oauthEndpoints } : {}) } };
+    let moved: Transferred;
+    try {
+      moved = await transferConnectorBytes(ctx, manifest, { method: step.method, url: url.toString(), ...(step.headers ? { headers: step.headers } : {}), ...(step.body === undefined ? {} : { body: step.body }), max: step.max });
+    } catch (error) {
+      if (error instanceof ConnectorError) throw new ConnectorCallError(424, error.message);
+      throw new ConnectorCallError(502, `${manifest.label} unreachable: ${(error as Error).name === "TimeoutError" ? "timed out" : redact(String((error as Error).message ?? error))}`);
+    }
+    this.o.ledger({ class: step.class, resource, target, verdict: "allow", reason: decision.reason, detail: `by the node: ${step.why} · ${moved.status}, ${moved.bytes.length} bytes`.slice(0, 2000) });
+    return moved;
   }
 
   /** One that signs in keeps a rotated sign-in sealed and pinned as before. */
@@ -420,6 +448,8 @@ export class ConnectorService {
       classes?: Record<string, ConnectorManifest["tools"][string]["class"]>;
       /** The reviewed library's proposal for its tools (core MCP_TOOL_CLASSES). */
       proposed?: readonly (readonly [string, ConnectorManifest["tools"][string]["class"]])[];
+      /** Galahad's alone and private (core MCP_ALONE): only he and the agents you allow may call it. */
+      alone?: boolean;
     },
   ): Promise<{ server: string | null; tools: number; needsKey: boolean; needsSignIn?: boolean } & MergeReport> {
     let url: URL;
@@ -454,6 +484,9 @@ export class ConnectorService {
       mcp: { path: url.pathname || "/", ...(only?.length ? { only } : {}) },
       // Another address is another server: nothing carries over.
       tools: same ? previous!.tools : {},
+      // Yours alone stays so, with the agents you allowed, however it is installed again.
+      ...(previous?.access ? { access: previous.access } : input.alone ? { access: { only: "galahad" as const, allowed: [] } } : {}),
+      ...(input.alone || previous?.private ? { private: true } : {}),
     };
     const base = ConnectorManifest.safeParse(draft);
     if (!base.success) throw new ConnectorCallError(400, base.error.issues.map((i) => `${i.path.join(".") || "connector"}: ${i.message}`).join("; "));

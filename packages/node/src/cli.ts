@@ -14,6 +14,7 @@ import { activeDevicesMatching } from "./devices.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, selfActionCommand, statusLine } from "./loop-cli.ts";
+import { BILAG_QUERY } from "./bilag.ts";
 import { runMcpServer } from "./mcp.ts";
 import { archiveCommand } from "./archive-cli.ts";
 import { keyAddCommand, keyElsewhereLine } from "./key-cli.ts";
@@ -63,6 +64,11 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     he owns it for days or weeks: plans it in its own room, gives those knights
                                     tasks on his own within its budget, reports daily, asks you there
   outcome pause|resume|stop <id>   stopping it stops its waiting work
+  bilag                            receipts and invoices copied from your mail to Google Drive: how many, the latest,
+                                    and what is left to set up (docs/BOOKS.md)
+  bilag on [--folder Bilag]        a loop that copies each new mail's bilag on its own, woken by Gmail, Outlook or both
+  bilag copy --from gmail|outlook [--query "…"] [--folder Bilag]
+                                    copy the bilag of mail that came before, a batch at a time until none is left
   roundtable files <knight> [/work/path]  a folder of its workspace (its VM's /work; galahad: his computer's)
   roundtable read <knight> </work/path>  one file of it (anything like a key redacted)
   roundtable changes <knight> [--task <id>] [--files]  what its latest task (or that one) changed: files, then the diff
@@ -556,6 +562,10 @@ async function main(): Promise<void> {
       cooldown: { type: "string" },
       // A loop that tells you: --tell, with your words --say "…".
       say: { type: "string" },
+      // Bilag to Google Drive: a loop's --bilag [--folder Bilag]; galahad bilag copy --from gmail|outlook [--query "…"].
+      bilag: { type: "boolean" },
+      folder: { type: "string" },
+      query: { type: "string" },
       // An outcome he owns: outcome add "<title>" --goal "…" --knight id… --budget-usd 20 [--done "…"] [--report-hour 9].
       goal: { type: "string" },
       done: { type: "string" },
@@ -1918,6 +1928,56 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "notify":
       await notifyCommand(new Admin(home), sub, rest, flags);
       return;
+    case "bilag": {
+      // Bilag from your mail to Google Drive (bilag.ts): copied by the node itself, the owner's word of 18 November 2026.
+      const admin = new Admin(home);
+      if (sub === "copy") {
+        const from = str("from");
+        if (from !== "gmail" && from !== "outlook") fail('usage: galahad bilag copy --from gmail|outlook [--query "…"] [--folder Bilag]');
+        let page: string | undefined;
+        const total = { copied: 0, already: 0, skipped: 0, failed: 0, mails: 0 };
+        do {
+          const batch = await admin.call<{ copied: { name: string; folder: string }[]; already: number; skipped: number; failed: string[]; found: number; next: string | null }>("bilagCopy", {
+            from,
+            ...(str("query") ? { query: str("query") } : {}),
+            ...(str("folder") ? { folder: str("folder") } : {}),
+            ...(page ? { page } : {}),
+          });
+          for (const c of batch.copied) console.log(`  ✓ ${c.folder}/${c.name}`);
+          for (const why of batch.failed) console.log(dim(`  ✗ ${why}`));
+          total.copied += batch.copied.length;
+          total.already += batch.already;
+          total.skipped += batch.skipped;
+          total.failed += batch.failed.length;
+          total.mails += batch.found;
+          page = batch.next ?? undefined;
+          if (page) console.log(dim(`  … ${total.mails} mails looked at so far`));
+        } while (page);
+        console.log(`${bold(`${total.copied} bilag copied`)} from ${total.mails} mails${total.already ? `; ${total.already} copied before` : ""}${total.skipped ? `; ${total.skipped} attachments weren't bilag` : ""}${total.failed ? `; ${total.failed} mails couldn't be copied` : ""}.`);
+        return;
+      }
+      const { connectors } = await admin.call<{ connectors: { id: string; installed: boolean; key: string }[] }>("connectors");
+      const ready = (id: string) => connectors.some((c) => c.id === id && c.installed && c.key === "ready");
+      if (sub === "on") {
+        const mail = (["gmail", "outlook"] as const).filter(ready);
+        if (!ready("gdrive") || !mail.length) fail(`connect Google Drive and at least one of Gmail and Outlook first (${[!ready("gdrive") ? "gdrive" : null, ...(mail.length ? [] : ["gmail", "outlook"])].filter(Boolean).join(", ")}: docs/BOOKS.md)`);
+        const { loop } = await admin.call<{ loop: { name: string } }>("setLoop", {
+          name: "bilag",
+          schedule: "never",
+          task: { kind: "bilag", ...(str("folder") ? { folder: str("folder") } : {}) },
+          wakes: mail.map((connector) => ({ kind: "mail", connector, query: BILAG_QUERY[connector] })),
+        });
+        console.log(`Loop ${bold(loop.name)}: new mail in ${mail.join(" and ")} that holds a receipt or an invoice wakes it, and its bilag go to Google Drive (${str("folder") ?? "Bilag"}/<year>/<month>). Mail already there: galahad bilag copy --from ${mail[0]}`);
+        return;
+      }
+      if (sub) fail("usage: galahad bilag [on | copy --from gmail|outlook]");
+      const status = await admin.call<{ copied: number; latest: { name: string; link: string | null; at: number }[] }>("bilag");
+      console.log(`${bold(`${status.copied} bilag`)} copied to Google Drive`);
+      for (const b of status.latest) console.log(`  ${new Date(b.at).toLocaleDateString()}  ${b.name}${b.link ? dim(`  ${b.link}`) : ""}`);
+      const missing = ["gdrive", "gmail", "outlook"].filter((id) => !ready(id));
+      if (missing.length) console.log(dim(`\nNot connected yet: ${missing.join(", ")} (docs/BOOKS.md says how).`));
+      return;
+    }
     case "outcome":
     case "outcomes": {
       const admin = new Admin(home);

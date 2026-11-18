@@ -161,8 +161,24 @@ export const LoopTask = z.discriminatedUnion("kind", [
    * model, no sandbox: "tell me when my boss emails", or a reminder on a schedule. `text`: what to say, in your words.
    */
   z.strictObject({ kind: z.literal("tell"), text: z.string().trim().min(1).max(200).optional() }),
+  /**
+   * Copy bilag to Google Drive (the owner's word, 18 November 2026): each receipt or invoice attached to the mail that
+   * woke it (its mail wakes), as it is, into <folder>/<year>/<month> (Bilag unless you name another). No model: the
+   * node's own work (node bilag.ts), each copy a line in the ledger, nothing deleted or sent.
+   */
+  z.strictObject({ kind: z.literal("bilag"), folder: z.string().trim().min(1).max(60).regex(/^[^/\\\u0000-\u001f]+$/, "a folder's name, without slashes").optional() }),
 ]);
 export type LoopTask = z.infer<typeof LoopTask>;
+
+/** Copying the bilag of mail a search finds (bilagCopy): which mailbox, its search words (receipts' and invoices' by default), a batch's size, where the last batch left off. */
+export const BilagCopyInput = z.strictObject({
+  from: z.enum(["gmail", "outlook"]),
+  query: z.string().trim().min(1).max(500).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  page: z.string().min(1).max(2000).optional(),
+  folder: z.string().trim().min(1).max(60).regex(/^[^/\\\u0000-\u001f]+$/, "a folder's name, without slashes").optional(),
+});
+export type BilagCopyInput = z.infer<typeof BilagCopyInput>;
 
 /** What wakes a loop on GitHub: a workflow run that failed, a push to the repository, a new issue or a new pull request. */
 export const GITHUB_WAKE_EVENTS = ["ci.failed", "pushed", "issue.opened", "pr.opened"] as const;
@@ -909,6 +925,10 @@ export const routes = {
    * Setting a loop's first webhook makes one and shows it the same way.
    */
   loopHook: { method: "POST", path: "/api/loops/hook", scope: "brain:write", input: z.strictObject({ name: LoopName }) },
+  /** The bilag copied to Google Drive from your mail (node bilag.ts): how many, and the latest. Yours alone: they're your company's. */
+  bilag: { method: "GET", path: "/api/bilag", scope: "fleet:admin", input: null },
+  /** Copy the bilag of mail a search finds (what came before a bilag loop's wakes), a batch a call: `next` goes on. */
+  bilagCopy: { method: "POST", path: "/api/bilag/copy", scope: "fleet:admin", input: BilagCopyInput },
   loopDrafts: { method: "GET", path: "/api/loops/drafts", scope: "mind:read", input: null },
   /** Telegram (PLAN #19): whether a bot of yours talks to Galahad through this node, and which account it answers. */
   telegram: { method: "GET", path: "/api/telegram", scope: "mind:read", input: null },

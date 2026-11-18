@@ -41,6 +41,7 @@ import { LoopRunner, loopRecords } from "./loops.ts";
 import { LoopDrafts } from "./loop-drafts.ts";
 import { ConnectorRequests } from "./connector-requests.ts";
 import { giveBack, reviewBack, wantsReviews } from "./ci-back.ts";
+import { BilagService } from "./bilag.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { WakeWatcher } from "./wakes.ts";
 import { TelegramGateway } from "./telegram.ts";
@@ -438,6 +439,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     fetch: opts.fetch,
     compute,
     spent: upkeepSpent,
+    local,
   };
   // This node's own upkeep of its compute, one look at a time: it measures itself when that's due.
   let upkeeping: Promise<unknown> | null = null;
@@ -600,6 +602,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     loopDrafts,
     telegram,
     connectorRequests,
+    // Bilag from your mail to Google Drive, copied by the node itself (bilag.ts), read in this node's time zone.
+    bilag: new BilagService({ transfer: (connector, step) => connectors.transfer(connector, step), local, tz: () => Intl.DateTimeFormat().resolvedOptions().timeZone }),
     heartbeatCheck: () => lookAround(taskDeps),
     bank,
     chats,
