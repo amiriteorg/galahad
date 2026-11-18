@@ -67,6 +67,24 @@ Galahad declined a model screening risky actions on purpose: what needs you stay
 
 Since 16 November, among the five: Rakazo 0.12 can hand coding work to a T3 Code environment over MCP and stops a loop whose tool keeps returning the same result [R14]; OpenMausBot's new bots on a Mac or Windows work on "This computer" by default (0.1.165) and it caps spend per day and month [M11]; Hermes Agent's subagents survive a restart [H14]; Dots is on by default for eligible Enterprise, Edu and Healthcare workspaces from 18 November and can reach a local computer while the ChatGPT app is open [D10][D11]. Nothing new from Grok Bot was confirmed.
 
+## Devin Bots, 18 November
+
+Cognition launched **Devin Bots** on 17 November 2026 [C1][C3]: "a persistent agent with its own memory and tools that can lead multiple Devins in parallel". You give a Bot an *outcome* to own; it plans the work, starts a child Devin session for each piece (each on a machine of its own), watches them, judges what came back and decides what's next, for days or weeks [C1][C2]. It is Cognition's answer to OpenAI's Dots and Anthropic's Claude Duet (a proactive agent in research preview for Pro and Max subscribers since 21 October [U1]), and it is not tied to one lab's models [C3].
+
+| | Devin Bots | Galahad |
+|---|---|---|
+| **The unit** | A Bot owns an outcome or a standing responsibility; a Devin session is one task [C1] | Knights with a lasting job and a VM each, led by Galahad in rooms; a task is one quest. No object yet for an outcome owned over weeks |
+| **Where it runs** | Cognition's cloud: a machine per child session, network policy per host, admins choose the repositories and tools a Bot reaches [C2][C3][C4] | Your own machines: a microVM per knight behind its own firewall, keys sealed and never in a VM |
+| **Checking the work** | CI, Devin Review, screenshot tests, before-and-after videos, recorded user flows; teams choose what a human reviews and what merges on its own [C1][C3] | Gates that must pass and an independent reviewer on every quest, an auditor on long runs; a pull request's CI followed after a ship |
+| **What needs you** | A "Needs you" list of decisions, PRs to review or merge, permission requests, reports and FYIs, each answered, snoozed or dismissed [C2] | The Inbox: approvals, notices, drafts, key and connector requests, dismissed by you |
+| **What starts work** | Schedules and events from Slack, Teams, GitHub (issues, PRs, reviews, check runs, pushes), GitLab, Linear, Jira, Pylon, PagerDuty, and signed webhooks; a preflight filter (a model or a script), 50 runs an hour by default, a spend cap per session [C4] | Schedules, signed webhooks, new mail, GitHub's failed runs and pushes (PLAN #13); a burst within a cooldown is one run |
+| **Reach** | Its own Slack app, iMessage, the web app and an iOS app [C1][C2] | The PWA, iPhone, iPad and Mac apps, Telegram |
+| **Memory and access** | Memory files it writes (preferences, corrections, project details), shared with whoever may use it; its own connections and secrets, asking before it takes on new access [C2] | One shared memory, each knight's own notes, what he knows of you; connectors his alone unless you allow an agent |
+| **Scale it reports** | The Android version of Devin's app in 44 days: 1,134 merged PRs, 344,651 lines of Kotlin, 2,841 screenshot tests, from 183 messages (one per six PRs); a studio run by about 20 Bots and one person, from 50 to 1,900 PRs a week [C1] | Eight tasks of its own in its trials; it doesn't yet count its own north star (#28) |
+| **Price** | Counts toward a Devin plan's usage like any session [C2]; no price of its own published [C3] | Your machines and your keys or plans; dollars per task shown |
+
+What it shows Galahad: the outcome a lead owns over weeks (a plan, tasks fanned out to knights in parallel, results judged, a daily report, decisions sent to you) is the next layer above knights and quests, and the pieces are here. Cognition counts the number Galahad's mandate is built on, human messages per merged change (183 for 1,134). And its triggers, its "Needs you" kinds and its recordings of the work being tested are each a step past Galahad's.
+
 ## Where Galahad leads, and where it trails
 
 **Leads.** Each knight's work is in a VM of its own, on hardware you own: of the eight others, none keeps every agent's work apart by default (the coding consoles run on your host or in a worktree; Grok Bot's bots share one computer). Work counts as done only through gates and an independent reviewer, and an auditor watches a long run. Keys are sealed and pinned, and no model or VM ever holds one. Pairing is signed per request; an approval is your word on a card, never a model's score. Local models on any node serve the whole fleet, and any model or coding plan serves any role. It is small enough to read: about 85,000 lines against Hermes Agent's 1.2 million (the [site](https://galahad.sh/#scale) draws them to scale).
@@ -75,7 +93,7 @@ Since 16 November, among the five: Rakazo 0.12 can hand coding work to a T3 Code
 
 ## Sources
 
-Read on 16 November 2026; T, A, O, H14, R14, M11, D10 and D11 on 18 November.
+Read on 16 November 2026; T, A, O, H14, R14, M11, D10 and D11 on 18 November; C and U1 on 18 November (Devin Bots launched the day before).
 
 - **T1** https://github.com/pingdotgg/t3code (README), https://t3.codes
 - **T2** https://github.com/pingdotgg/t3code/releases/tag/v0.1.10
@@ -146,3 +164,8 @@ Read on 16 November 2026; T, A, O, H14, R14, M11, D10 and D11 on 18 November.
 - **D4** https://learn.chatgpt.com/docs/enterprise/dots-security
 - **D6** https://community.openai.com/t/fresh-dots-updates-create-in-the-mobile-app-delegate-to-codex/1404834
 - **D9** https://siliconangle.com/2026/09/29/openai-launches-dots-always-on-ai-agents-in-chatgpt-with-their-own-cloud-computers/
+- **C1** https://devin.ai/blog/introducing-devin-bots
+- **C2** https://docs.devin.ai/work-with-devin/bots
+- **C3** https://fortune.com/2026/11/17/exclusive-cognition-bets-on-devin-bots-coding-agents-in-challenge-to-anthropics-duet-and-openais-dots/
+- **C4** https://docs.devin.ai/product-guides/automations
+- **U1** https://9to5mac.com/2026/10/21/anthropic-takes-on-chatgpt-dots-and-meta-muse-with-claude-duet/
