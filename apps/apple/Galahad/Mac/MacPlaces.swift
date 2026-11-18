@@ -16,6 +16,8 @@ struct MacPlaces: View {
                 // Each place starts at its own root.
                 .id(mac.place)
                 .environment(\.composerWanted, $mac.composerWanted)
+                // A knight's workspace (his computer's, beside his chat) in a column of its own.
+                .workspaceColumn(session: session, seat: mac.place.workspaceSeat(session))
         }
         .sheet(isPresented: $mac.giving) { GiveSheet(session: session) }
         .task { await session.refresh() }

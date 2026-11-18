@@ -14,8 +14,9 @@ struct KnightView: View {
     @Environment(\.dismiss) private var leave
     @State private var watching = false
     @State private var inTerminal = false
-    /// Its workspace beside the conversation (an inspector; a sheet on an iPhone).
+    /// Its workspace as a sheet (an iPhone); beside the conversation where what holds it hosts a column for it.
     @State private var inWorkspace = false
+    @Environment(\.workspaceColumn) private var workspaceColumn
 
     init(session: Session, id: String) {
         self.session = session
@@ -107,8 +108,12 @@ struct KnightView: View {
             // over, and a terminal in it.
             if let knight, knight.workspace != nil, session.can("sandbox") {
                 ToolbarItem(placement: .barTrailing) {
-                    Button { inWorkspace.toggle() } label: { Label("Workspace", systemImage: inWorkspace ? "folder.fill" : "folder") }
-                        .accessibilityIdentifier("workspace")
+                    Button {
+                        if let workspaceColumn { workspaceColumn.wrappedValue.toggle() } else { inWorkspace = true }
+                    } label: {
+                        Label("Workspace", systemImage: workspaceColumn?.wrappedValue == true ? "folder.fill" : "folder")
+                    }
+                    .accessibilityIdentifier("workspace")
                 }
                 ToolbarItem(placement: .barTrailing) {
                     Menu {
@@ -135,7 +140,7 @@ struct KnightView: View {
         .cover(isPresented: $inTerminal) {
             if let knight { KnightTerminalView(session: session, knight: VMSeat(knight)) }
         }
-        .workspacePanel(isPresented: $inWorkspace) { WorkspaceView(session: session, id: id, name: name) }
+        .sheet(isPresented: $inWorkspace) { WorkspaceView(session: session, id: id, name: name) }
         .sheet(isPresented: $about) {
             KnightAbout(session: session, id: id, row: row, look: look) { leave() }
         }

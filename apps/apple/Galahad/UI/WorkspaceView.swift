@@ -8,67 +8,61 @@ struct WorkspaceView: View {
     let id: String
     let name: String
     @State private var shown: Shown = .files
+    /// Where you are in it, over its top (a folder, a file, a diff): its own stack, never the page's, so in a column
+    /// beside a conversation it moves within the column.
+    @State private var path: [WorkspaceItem] = []
     @Environment(\.dismiss) private var dismiss
+    /// Hosted as a column beside the page: its page's button closes it, so it has no Done of its own.
+    @Environment(\.workspaceColumn) private var column
 
     enum Shown: String, CaseIterable { case files = "Files", changes = "Changes" }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, Space.s4)
+                .padding(.vertical, Space.s2)
+            Divider()
             Group {
-                switch shown {
-                case .files: FolderView(session: session, id: id, path: "/work")
-                case .changes: ChangesView(session: session, id: id)
-                }
-            }
-            .navigationDestination(for: WorkspaceItem.self) { item in
-                switch item {
-                case .folder(let path): FolderView(session: session, id: id, path: path)
-                case .file(let path): WorkspaceFile(session: session, id: id, path: path)
-                case .diff(let title, let text): CodeLines(text: text, lang: "diff").navigationTitle(title).inlineTitle()
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("Show", selection: $shown) {
-                        ForEach(Shown.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                switch path.last {
+                case .folder(let at): FolderView(session: session, id: id, path: at, open: open)
+                case .file(let at): WorkspaceFile(session: session, id: id, path: at)
+                case .diff(_, let text): CodeLines(text: text, lang: "diff")
+                case nil:
+                    switch shown {
+                    case .files: FolderView(session: session, id: id, path: "/work", open: open)
+                    case .changes: ChangesView(session: session, id: id, open: open)
                     }
-                    .pickerStyle(.segmented)
-                    .fixedSize()
-                    .accessibilityLabel("\(name)'s workspace")
                 }
-                #if os(iOS)
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-                #endif
             }
+            // Each page its own: a folder opened after another reads its own entries.
+            .id(path.last)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .accessibilityLabel("\(name)'s workspace")
     }
-}
 
-extension View {
-    /// A workspace beside what it belongs to: a column of its own on an iPad or a Mac (an inspector), a sheet on an
-    /// iPhone (where an inspector in a pushed page kept the page from being pushed at all, seen on iOS 27).
-    func workspacePanel<Panel: View>(isPresented: Binding<Bool>, @ViewBuilder panel: @escaping () -> Panel) -> some View {
-        modifier(WorkspacePanel(isPresented: isPresented, panel: panel))
-    }
-}
+    private func open(_ item: WorkspaceItem) { path.append(item) }
 
-private struct WorkspacePanel<Panel: View>: ViewModifier {
-    @Binding var isPresented: Bool
-    let panel: () -> Panel
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var width
-    #endif
-
-    func body(content: Content) -> some View {
-        #if os(iOS)
-        if width == .regular {
-            content.inspector(isPresented: $isPresented) { panel().inspectorColumnWidth(min: 320, ideal: 440, max: 720) }
-        } else {
-            content.sheet(isPresented: $isPresented) { panel() }
+    @ViewBuilder private var header: some View {
+        HStack(spacing: Space.s2) {
+            if let top = path.last {
+                Button { path.removeLast() } label: { Label("Back", systemImage: "chevron.backward").labelStyle(.iconOnly).frame(width: 32, height: 32) }
+                    .buttonStyle(.borderless)
+                    .keyboardShortcut("[", modifiers: .command)
+                Text(top.title).font(.headline).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: Space.s2)
+            } else {
+                Picker("Show", selection: $shown) {
+                    ForEach(Shown.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                Spacer(minLength: Space.s2)
+            }
+            if column == nil { Button("Done") { dismiss() }.fontWeight(.semibold) }
         }
-        #else
-        content.inspector(isPresented: $isPresented) { panel().inspectorColumnWidth(min: 320, ideal: 440, max: 720) }
-        #endif
+        .frame(minHeight: 36)
     }
 }
 
@@ -77,13 +71,88 @@ enum WorkspaceItem: Hashable {
     case folder(String)
     case file(String)
     case diff(title: String, text: String)
+
+    var title: String {
+        switch self {
+        case .folder(let path), .file(let path): String(path.split(separator: "/").last ?? "Workspace")
+        case .diff(let title, _): title
+        }
+    }
 }
+
+extension EnvironmentValues {
+    /// The workspace column beside this page, when what holds the page hosts one (an iPad's or a Mac's split view, a
+    /// Mac's window): shown or not. Absent (an iPhone): a page shows its workspace as a sheet of its own.
+    @Entry var workspaceColumn: Binding<Bool>? = nil
+}
+
+extension View {
+    /// The workspace column beside the pages of a navigation stack, hosted outside the stack, as an inspector belongs:
+    /// inside the stack it took a page's own bar away on an iPad and kept a page from being pushed on an iPhone (iOS 27).
+    /// `seat`: whose workspace, for the page shown (none: no column).
+    func workspaceColumn(session: Session, seat: WorkspaceSeat?) -> some View {
+        modifier(WorkspaceColumn(session: session, seat: seat))
+    }
+}
+
+/// Whose workspace a page can show beside it: a knight's, or Galahad's computer's (`galahad`).
+struct WorkspaceSeat: Equatable {
+    let id: String
+    let name: String
+}
+
+extension Place {
+    /// The workspace beside this place: a knight's, or his computer's beside Galahad's chat.
+    @MainActor func workspaceSeat(_ session: Session) -> WorkspaceSeat? {
+        switch self {
+        case .knight(let id): WorkspaceSeat(id: id, name: session.teammate(id)?.name ?? id)
+        case .galahad: WorkspaceSeat(id: "galahad", name: "Galahad")
+        default: nil
+        }
+    }
+}
+
+private struct WorkspaceColumn: ViewModifier {
+    let session: Session
+    let seat: WorkspaceSeat?
+    @State private var shown = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var width
+    #endif
+
+    private var hosts: Bool {
+        #if os(iOS)
+        seat != nil && width == .regular
+        #else
+        seat != nil
+        #endif
+    }
+
+    func body(content: Content) -> some View {
+        if hosts {
+            content
+                .environment(\.workspaceColumn, $shown)
+                .inspector(isPresented: $shown) {
+                    if let seat {
+                        WorkspaceView(session: session, id: seat.id, name: seat.name)
+                            .id(seat.id)
+                            .environment(\.workspaceColumn, $shown)
+                            .inspectorColumnWidth(min: 320, ideal: 440, max: 720)
+                    }
+                }
+        } else {
+            content
+        }
+    }
+}
+
 
 /// A folder of the workspace: folders first, then files with their sizes; each opens where it is.
 private struct FolderView: View {
     let session: Session
     let id: String
     let path: String
+    let open: (WorkspaceItem) -> Void
     @State private var view: TeamFilesView?
     @State private var problem: String?
 
@@ -95,7 +164,9 @@ private struct FolderView: View {
             if let view {
                 ForEach(view.entries, id: \.name) { entry in
                     let full = path == "/work" ? "/work/\(entry.name)" : "\(path)/\(entry.name)"
-                    NavigationLink(value: entry.kind == "dir" ? WorkspaceItem.folder(full) : WorkspaceItem.file(full)) {
+                    Button {
+                        open(entry.kind == "dir" ? .folder(full) : .file(full))
+                    } label: {
                         HStack(spacing: Space.s3) {
                             Image(systemName: entry.kind == "dir" ? "folder.fill" : entry.kind == "link" ? "arrowshape.turn.up.right" : "doc.text")
                                 .foregroundStyle(entry.kind == "dir" ? AnyShapeStyle(Color.ink) : AnyShapeStyle(.secondary))
@@ -105,8 +176,11 @@ private struct FolderView: View {
                             if entry.kind == "file" {
                                 Text(AttachedView.size(entry.size)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             }
+                            Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                         }
+                        .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
                     .disabled(entry.kind == "other")
                 }
                 if view.more {
@@ -121,8 +195,6 @@ private struct FolderView: View {
                 ProgressView()
             }
         }
-        .navigationTitle(path == "/work" ? "Workspace" : String(path.split(separator: "/").last ?? "Folder"))
-        .inlineTitle()
         .refreshable { await load() }
         .task { await load() }
     }
@@ -189,11 +261,10 @@ private struct WorkspaceFile: View {
                     .background(.bar)
             }
         }
-        .navigationTitle(name)
-        .inlineTitle()
-        .toolbar {
+        .safeAreaInset(edge: .top, spacing: 0) {
             if let text = file?.text {
-                ToolbarItemGroup(placement: .primaryAction) {
+                HStack(spacing: Space.s4) {
+                    Spacer()
                     if markdown {
                         Toggle(isOn: $source) { Label("Source", systemImage: "chevron.left.forwardslash.chevron.right") }
                     } else {
@@ -201,6 +272,11 @@ private struct WorkspaceFile: View {
                     }
                     ShareLink(item: text) { Label("Share", systemImage: "square.and.arrow.up") }
                 }
+                .toggleStyle(.button)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .padding(.horizontal, Space.s4)
+                .padding(.vertical, Space.s1)
             }
         }
         .task { await load() }
@@ -222,6 +298,7 @@ private struct WorkspaceFile: View {
 private struct ChangesView: View {
     let session: Session
     let id: String
+    let open: (WorkspaceItem) -> Void
     @State private var changes: TeamChangesView?
     @State private var problem: String?
 
@@ -235,7 +312,9 @@ private struct ChangesView: View {
                 Section {
                     ForEach(changes.files, id: \.self) { file in
                         let part = parts.first { $0.path == file.path }
-                        NavigationLink(value: WorkspaceItem.diff(title: file.path, text: part?.text ?? "")) {
+                        Button {
+                            if let part { open(.diff(title: file.path, text: part.text)) }
+                        } label: {
                             HStack(spacing: Space.s3) {
                                 Text(file.status)
                                     .font(.caption.monospaced().weight(.bold))
@@ -249,9 +328,12 @@ private struct ChangesView: View {
                                 } else {
                                     Text("binary").foregroundStyle(.secondary)
                                 }
+                                Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                             }
                             .font(.caption.monospacedDigit())
+                            .contentShape(.rect)
                         }
+                        .buttonStyle(.plain)
                         .disabled(part == nil)
                     }
                     ForEach(changes.untracked, id: \.self) { file in
@@ -269,15 +351,16 @@ private struct ChangesView: View {
                     else if changes.redacted == true { Text("Something that looked like a key was redacted.") }
                 }
                 if !changes.diff.isEmpty {
-                    NavigationLink(value: WorkspaceItem.diff(title: "The whole diff", text: changes.diff)) {
-                        Label("The whole diff", systemImage: "doc.plaintext")
+                    Button {
+                        open(.diff(title: "The whole diff", text: changes.diff))
+                    } label: {
+                        Label("The whole diff", systemImage: "doc.plaintext").contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
         .overlay { if changes == nil, problem == nil { ProgressView() } }
-        .navigationTitle("Changes")
-        .inlineTitle()
         .refreshable { await load() }
         .task { await load() }
     }

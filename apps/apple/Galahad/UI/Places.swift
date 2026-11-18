@@ -299,6 +299,16 @@ struct PlaceWindowView: View {
             case .room(let id): RoomView(session: session, id: id)
             }
         }
+        .workspaceColumn(session: session, seat: seat)
+    }
+
+    /// The workspace a window's page can show beside it: a knight's, or his computer's beside a chat of Galahad's.
+    private var seat: WorkspaceSeat? {
+        switch window {
+        case .chat: WorkspaceSeat(id: "galahad", name: "Galahad")
+        case .knight(let id): WorkspaceSeat(id: id, name: session.teammate(id)?.name ?? id)
+        case .room: nil
+        }
     }
 }
 

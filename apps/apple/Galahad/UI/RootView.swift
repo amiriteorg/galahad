@@ -133,6 +133,8 @@ struct SplitPlaces: View {
                 // Each place starts at its own root.
                 .id(place)
                 .environment(\.composerWanted, $composerWanted)
+                // A knight's workspace (his computer's, beside his chat) in a column of its own.
+                .workspaceColumn(session: session, seat: place.workspaceSeat(session))
         }
         .sheet(isPresented: $giving) { GiveSheet(session: session) }
         .focusedSceneValue(\.placeActions, PlaceActions(go: { place = $0 }, newChat: newChat, give: mayGive ? { giving = true } : nil))

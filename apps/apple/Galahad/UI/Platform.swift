@@ -187,7 +187,9 @@ extension View {
     func keyboard(_ keyboard: Keyboard) -> some View { keyboardType(keyboard == .url ? .URL : .decimalPad) }
     func inlineTitle() -> some View { navigationBarTitleDisplayMode(.inline) }
     /// A conversation has the screen to itself, as in Messages.
-    func hidingTabBar() -> some View { toolbar(.hidden, for: .tabBar) }
+    /// A conversation has an iPhone's screen to itself, as in Messages. An iPad has no tab bar to hide (its places are a
+    /// sidebar), and hiding one there took the page's own bar away, title and buttons (seen on iPadOS 27).
+    func hidingTabBar() -> some View { modifier(HidingTabBar()) }
     func cover<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
         fullScreenCover(isPresented: isPresented, content: content)
     }
@@ -197,6 +199,15 @@ extension View {
     func readingWidth() -> some View { modifier(ReadingWidth()) }
     /// A field drawn by what holds it (a message box's glass, a quiet fill): an iPhone's field draws nothing of its own.
     func plainField() -> some View { self }
+}
+
+/// The tab bar hidden on an iPhone (compact width) only.
+private struct HidingTabBar: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var width
+
+    func body(content: Content) -> some View {
+        if width == .compact { content.toolbar(.hidden, for: .tabBar) } else { content }
+    }
 }
 
 /// A conversation kept to a reading width in the middle of a wide window (a regular width); a narrow one's whole column
