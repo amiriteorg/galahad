@@ -283,7 +283,7 @@ export function artifactsAdapter(artifacts: Pick<ArtifactStore, "list" | "filesO
 // ---- Chats -------------------------------------------------------------------------
 
 /** Tools whose results are strangers' words: an answer that used one carries them. */
-const OUTSIDE_TOOLS = new Set(["web_search", "connector_call", "sandbox_run", "sandbox_exec", "artifact_read", "archive_read", "archive_search", "recall", "decide"]);
+const OUTSIDE_TOOLS = new Set(["web_search", "connector_tool", "connector_call", "sandbox_run", "sandbox_exec", "artifact_read", "archive_read", "archive_search", "recall", "decide"]);
 /** The bank's tools: a chat that called one is never archived (it's flagged, too; this is the second lock). */
 const BANK_TOOL = /^bank_/;
 

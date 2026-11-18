@@ -308,7 +308,7 @@ Notifications (he comes to you: Web Push to your own paired devices, encrypted t
   notify off <device>             remove a device's subscription
 
 Connectors (manifests, not code: keys stay in the vault; outward and delete ask you)
-  connector ls | connector tools <id> | connector rm <id>
+  connector ls | connector tools <id> [tool] | connector rm <id>
   connector library [words] [--auth sign-in|key|open] [--category "…"] [--sort popular|name|updated] [--limit 30]
                                                   hosted MCP servers: Galahad's reviewed list and the index at mcp.galahad.sh
   connector add github|cloudflare|home-assistant [--origin url] | connector add --manifest file.json

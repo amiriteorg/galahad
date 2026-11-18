@@ -100,6 +100,12 @@ export function libraryClass(proposed: readonly (readonly [string, ToolClass])[]
 /** A library entry by its id, or null. */
 export const mcpLibraryEntry = (id: string): McpLibraryEntry | null => MCP_LIBRARY.find((entry) => entry.id === id) ?? null;
 
+/** The reviewed list's entry for the server at this address (a trailing slash aside), whatever it was added as. */
+export const reviewedMcp = (url: string): McpLibraryEntry | null => {
+  const at = url.replace(/\/+$/, "");
+  return MCP_LIBRARY.find((entry) => entry.url.replace(/\/+$/, "") === at) ?? null;
+};
+
 /** The reviewed list as the index's entries: listed first, whatever the index says. */
 export const reviewedEntries = (): McpIndexEntry[] =>
   MCP_LIBRARY.map((e) => ({ id: e.id, label: e.label, description: e.description, url: e.url, site: e.site, category: e.category, auth: e.auth, rank: null, registry: "", updated: "", reviewed: true }));

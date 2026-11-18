@@ -167,6 +167,7 @@ describe("galahad mcp (official MCP client over stdio)", () => {
         "connector_call",
         // Asking installs nothing: the request waits for you (chat-tools.test.ts).
         "connector_request",
+        "connector_tool",
         "connectors",
         "decide",
         "fleet",

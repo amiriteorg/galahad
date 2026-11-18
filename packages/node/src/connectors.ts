@@ -10,10 +10,14 @@ import {
   ConnectorError,
   ConnectorManifest,
   type ConnectorRequest,
+  type ConnectorToolDefinition,
   decide,
   decodeHlc,
   findSecrets,
+  isMcpTool,
   MAX_CLOCK_DRIFT_MS,
+  MCP_ALONE,
+  MCP_TOOL_CLASSES,
   MAX_ORDER_DAYS,
   mayCall,
   type NativeName,
@@ -24,13 +28,16 @@ import {
   type OrderView,
   randomId,
   redact,
+  reviewedMcp,
   toolDigest,
 } from "@galahad/core";
 import {
   callMcpTool,
   type ConnectorResult,
+  describeMcpTool,
   discoverMcpTools,
   excerpt,
+  fitMcpTools,
   installedConnector,
   keyState,
   type MergeReport,
@@ -191,6 +198,43 @@ export class ConnectorService {
       detail: `${caller.kind === "owner" ? "by you" : `by ${caller.by}`} · ${excerpt(result, 300)}`.slice(0, 2000),
     });
     return { status: "done", class: request.class, target: request.target, result, ...(manifest.private ? { private: true as const } : {}) };
+  }
+
+  /**
+   * One tool's whole definition, before a call: an MCP server's read from it now (its full description and its nested
+   * argument schema, which connectors lists only in short) and held to the pin it was installed with; a template's as
+   * installed. Only the connector and the tool go to the server, and the request is a line in the ledger.
+   */
+  async describe(input: { connector: string; tool: string }, caller: Caller): Promise<ConnectorToolDefinition> {
+    const manifest = this.manifest(input.connector);
+    if (caller.kind === "agent" && !mayCall(manifest.access, caller.by)) {
+      throw new ConnectorCallError(403, `${manifest.label} is Galahad's alone: ask your liege to let you use it (connector_request), and use it once they do`);
+    }
+    const tool = Object.hasOwn(manifest.tools, input.tool) ? manifest.tools[input.tool]! : null;
+    if (!tool) throw new ConnectorCallError(404, `${manifest.id} has no tool "${input.tool}" (it has: ${Object.keys(manifest.tools).join(", ") || "none yet"})`);
+    const view = { connector: manifest.id, tool: input.tool, class: tool.class, asks: tool.class === "outward" || tool.class === "delete" };
+    if (!isMcpTool(tool)) {
+      const properties = Object.fromEntries(Object.entries(tool.params ?? {}).map(([name, p]) => [name, { type: p.type, ...(p.description ? { description: p.description } : {}), ...(p.enum ? { enum: p.enum } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) }]));
+      const required = Object.entries(tool.params ?? {}).filter(([name, p]) => p.required || tool.path.includes(`{${name}}`)).map(([name]) => name);
+      return { ...view, description: tool.description, input: { type: "object", properties, ...(required.length ? { required } : {}) }, changed: false };
+    }
+    let live: Awaited<ReturnType<typeof describeMcpTool>>;
+    try {
+      live = await describeMcpTool({ vault: this.o.vault, ...(this.o.fetch ? { fetch: this.o.fetch } : {}), oauth: { save: this.keepRotated } }, manifest, tool.remote);
+    } catch (error) {
+      if (error instanceof ConnectorError) throw new ConnectorCallError(424, error.message);
+      throw new ConnectorCallError(502, `${manifest.label} unreachable: ${redact(String((error as Error).message ?? error))}`);
+    }
+    if (!live) throw new ConnectorCallError(404, `${manifest.label} no longer has ${tool.remote}: galahad connector refresh ${manifest.id} lists what it has now`);
+    this.o.ledger({ class: "read", resource: `connector.${manifest.id}`, target: `tools/list ${tool.remote}`.slice(0, 256), verdict: "allow", reason: "a tool's whole definition, before a call", detail: caller.kind === "owner" ? "by you" : `by ${caller.by}` });
+    const text = live.description.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, " ").trim();
+    const schema = JSON.stringify(live.inputSchema ?? {});
+    return {
+      ...view,
+      description: text.length > 8000 ? `${text.slice(0, 7999)}…` : text,
+      input: schema.length > 24_000 ? { note: `its schema is ${schema.length} characters; the first 24,000 follow`, schema: schema.slice(0, 24_000) } : (live.inputSchema ?? {}),
+      changed: live.schema !== tool.schema,
+    };
   }
 
   /**
@@ -463,6 +507,11 @@ export class ConnectorService {
     }
     const previous = installedConnector(this.o.store, id);
     if (previous && !previous.mcp) throw new ConnectorCallError(409, `${id} is a request-template connector, not an MCP server`);
+    // A server on the reviewed list is held to its review however it comes in: by its id or its address, listed again,
+    // or listed by itself once you've signed in (its classes after yours; Galahad's alone where the list says so).
+    const reviewed = reviewedMcp(url.toString());
+    const proposed = input.proposed ?? (reviewed && Object.hasOwn(MCP_TOOL_CLASSES, reviewed.id) ? MCP_TOOL_CLASSES[reviewed.id] : undefined);
+    const alone = input.alone ?? (reviewed ? MCP_ALONE.has(reviewed.id) : false);
     const same = previous && previous.origin === url.origin && previous.mcp!.path === (url.pathname || "/");
     const auth =
       input.auth === "none"
@@ -485,8 +534,8 @@ export class ConnectorService {
       // Another address is another server: nothing carries over.
       tools: same ? previous!.tools : {},
       // Yours alone stays so, with the agents you allowed, however it is installed again.
-      ...(previous?.access ? { access: previous.access } : input.alone ? { access: { only: "galahad" as const, allowed: [] } } : {}),
-      ...(input.alone || previous?.private ? { private: true } : {}),
+      ...(previous?.access ? { access: previous.access } : alone ? { access: { only: "galahad" as const, allowed: [] } } : {}),
+      ...(alone || previous?.private ? { private: true } : {}),
     };
     const base = ConnectorManifest.safeParse(draft);
     if (!base.success) throw new ConnectorCallError(400, base.error.issues.map((i) => `${i.path.join(".") || "connector"}: ${i.message}`).join("; "));
@@ -520,15 +569,15 @@ export class ConnectorService {
       }
       throw new ConnectorCallError(502, `${base.data.label} unreachable: ${redact(String((error as Error).message ?? error))}`);
     }
-    const { tools, report } = mergeMcpTools(discovered.tools, same ? previous!.tools : {}, { ...(only ? { only } : {}), ...(input.classes ? { classes: input.classes } : {}), ...(input.proposed ? { proposed: input.proposed } : {}) });
-    if (Object.keys(tools).length > 64) {
-      throw new ConnectorCallError(413, `${base.data.label} has ${Object.keys(tools).length} tools; install up to 64 with only (the ones you need)`);
+    const { tools: merged, report } = mergeMcpTools(discovered.tools, same ? previous!.tools : {}, { ...(only ? { only } : {}), ...(input.classes ? { classes: input.classes } : {}), ...(proposed ? { proposed } : {}) });
+    if (Object.keys(merged).length > 64) {
+      throw new ConnectorCallError(413, `${base.data.label} has ${Object.keys(merged).length} tools; install up to 64 with only (the ones you need)`);
     }
+    // A big server's tools in short, so they fit in the mind: connector_tool reads each one whole from its server.
+    const tools = fitMcpTools(merged, (t) => JSON.stringify({ ...base.data, tools: t }).length);
+    if (!tools) throw new ConnectorCallError(413, `${base.data.label}'s tool list is too large to keep in the mind, even in short; install fewer with only`);
     const manifest = ConnectorManifest.safeParse({ ...base.data, tools });
     if (!manifest.success) throw new ConnectorCallError(400, manifest.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).slice(0, 5).join("; "));
-    if (JSON.stringify(manifest.data).length > 48 * 1024) {
-      throw new ConnectorCallError(413, `${base.data.label}'s tool list is too large to keep in the mind; install fewer with only`);
-    }
     this.o.store.emit(this.o.identity, "connector.set", { id, manifest: manifest.data as unknown as Record<string, unknown> });
     this.o.ledger({
       class: "modify",
@@ -536,7 +585,7 @@ export class ConnectorService {
       target: id,
       verdict: "allow",
       reason: previous ? "refreshed an MCP server's tools" : "installed an MCP server",
-      detail: `${url.origin}${url.pathname} · ${Object.keys(tools).length} tools${report.changed.length ? ` · changed: ${report.changed.join(", ")}` : ""}`.slice(0, 2000),
+      detail: `${url.origin}${url.pathname} · ${Object.keys(tools).length} tools${tools !== merged ? ", in short" : ""}${report.changed.length ? ` · changed: ${report.changed.join(", ")}` : ""}`.slice(0, 2000),
     });
     return { server: discovered.server, tools: Object.keys(tools).length, needsKey: false, ...report };
   }

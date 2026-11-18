@@ -47,6 +47,8 @@ Its tools come classed as your ruling says, and you can change any of them (`gal
 - **Without asking:** reading anything, and creating drafts of vouchers, invoices, offers and credit notes, with the contacts, products and files they need.
 - **Asks you first:** booking, registering a payment, sending, changing what is there, and deleting.
 
+Dinero's tools come with long guidance of their own (which VAT account a sale goes on, whether an amount includes VAT). Galahad keeps them in short and reads each one whole from Dinero before he calls it, so that guidance is what he works from.
+
 Dinero's own advice stands: check the work. Its server can't catch a model's mistakes, and booking is permanent. Take Galahad's access away in Dinero under **Konto → Brugerprofil → Gå til Visma Connect → Autoriserede applikationer**.
 
 ## Banks

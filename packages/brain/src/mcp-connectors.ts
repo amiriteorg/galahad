@@ -139,6 +139,9 @@ function summarizeSchema(schema: unknown): { params: DiscoveredTool["params"] } 
   return { params };
 }
 
+/** What a tool is pinned by: the digest of its server's definition (its name, description and input schema). */
+const pinOf = (tool: { name: string; description?: string; inputSchema?: unknown }): string => sha256B64u(canonical({ name: tool.name, description: tool.description ?? null, inputSchema: (tool.inputSchema ?? null) as Json }));
+
 /** List the server's tools (all pages, at most 500). */
 export async function discoverMcpTools(ctx: McpContext, manifest: ConnectorManifest): Promise<{ server: string | null; tools: DiscoveredTool[] }> {
   const { value } = await withMcp(ctx, manifest, async (client, timeout) => {
@@ -156,7 +159,7 @@ export async function discoverMcpTools(ctx: McpContext, manifest: ConnectorManif
             ...(typeof annotations.readOnlyHint === "boolean" ? { readOnly: annotations.readOnlyHint } : {}),
             ...(typeof annotations.destructiveHint === "boolean" ? { destructive: annotations.destructiveHint } : {}),
           },
-          schema: sha256B64u(canonical({ name: tool.name, description: tool.description ?? null, inputSchema: (tool.inputSchema ?? null) as Json })),
+          schema: pinOf(tool),
         });
       }
       cursor = listed.nextCursor;
@@ -164,6 +167,22 @@ export async function discoverMcpTools(ctx: McpContext, manifest: ConnectorManif
     }
     const info = client.getServerVersion();
     return { server: info ? `${info.name} ${info.version}`.slice(0, 128) : null, tools };
+  });
+  return value;
+}
+
+/** One tool as its server defines it now: its whole description, its input schema and its pin; null if it has none by that name. */
+export async function describeMcpTool(ctx: McpContext, manifest: ConnectorManifest, remote: string): Promise<{ description: string; inputSchema: unknown; schema: string } | null> {
+  const { value } = await withMcp(ctx, manifest, async (client, timeout) => {
+    let cursor: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const listed = await client.listTools(cursor ? { cursor } : undefined, { timeout });
+      const tool = listed.tools.find((t) => t.name === remote);
+      if (tool) return { description: tool.description ?? tool.title ?? tool.name, inputSchema: tool.inputSchema ?? null, schema: pinOf(tool) };
+      cursor = listed.nextCursor;
+      if (!cursor) break;
+    }
+    return null;
   });
   return value;
 }
@@ -210,6 +229,27 @@ export async function callMcpTool(ctx: McpContext, manifest: ConnectorManifest, 
     durationMs: Math.round(performance.now() - started),
     mcp: true,
   };
+}
+
+/** As much of one connector as the mind keeps (an event is at most 64 KB): its manifest's JSON, in characters. */
+export const MCP_TOOLS_BUDGET = 48 * 1024;
+
+/**
+ * A big server's tools as the mind can keep them: their descriptions shortened, step by step, until the whole fits in
+ * `budget` (as `size` measures it). Names, classes, pins and arguments stay as they are, and connector_tool reads any
+ * tool in full from its server. Null when even the shortest won't fit.
+ */
+export function fitMcpTools(tools: Record<string, McpTool>, size: (tools: Record<string, McpTool>) => number, budget = MCP_TOOLS_BUDGET): Record<string, McpTool> | null {
+  if (size(tools) <= budget) return tools;
+  for (const [about, each] of [[400, 160], [240, 80], [160, 0], [100, 0]] as const) {
+    const fitted: Record<string, McpTool> = {};
+    for (const [name, tool] of Object.entries(tools)) {
+      const params = tool.params && Object.fromEntries(Object.entries(tool.params).map(([k, { description, ...param }]) => [k, each && description ? { ...param, description: clip(description, each) } : param]));
+      fitted[name] = { ...tool, description: clip(tool.description, about), ...(params ? { params } : {}) };
+    }
+    if (size(fitted) <= budget) return fitted;
+  }
+  return null;
 }
 
 export interface MergeOptions {

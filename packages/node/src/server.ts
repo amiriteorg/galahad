@@ -180,7 +180,7 @@ import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import { handleGitGateway } from "./git-gateway.ts";
 import { BankError, type BankService } from "./bank/service.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
-import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
+import { type Caller, ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
@@ -1322,6 +1322,13 @@ export function createApp(ctx: AppContext) {
       throw error;
     }
   };
+  /** Who reaches a connector: you (a device of yours), or an agent: a coding agent's arm, or another node. */
+  const connectorCaller = (p: Principal): Caller =>
+    p.kind === "admin" || p.kind === "client"
+      ? { kind: "owner", device: p.device }
+      : p.kind === "arm"
+        ? { kind: "agent", by: `arm:${p.label}`, quest: armQuest(p.label!) }
+        : { kind: "agent", by: `node:${ctx.store.device(p.device)?.name ?? p.device}` };
 
   type ChatInput = z.infer<NonNullable<(typeof routes)["chat"]["input"]>>;
 
@@ -2164,7 +2171,7 @@ export function createApp(ctx: AppContext) {
       told: (member, given, t) => tellYou(t.rule, `${armQuest(teammateLabel(member.id))}.${given.id}`, t.command, t.exitCode, `${member.name}'s task ${given.id}`),
       tools: (member, signal) => {
         const p = teammatePrincipal(member.id);
-        const allowed = new Set(["recall", "remember", "skills", "skill_read", "connectors", "connector_call", "connector_request", "archive_search", "archive_read", "fleet", "compute", "ledger", "notices"]);
+        const allowed = new Set(["recall", "remember", "skills", "skill_read", "connectors", "connector_tool", "connector_call", "connector_request", "archive_search", "archive_read", "fleet", "compute", "ledger", "notices"]);
         return chatTools(toolsFor(p.scopes).filter((t) => allowed.has(t.name)), inProcess(p, signal), explain);
       },
     });
@@ -3723,15 +3730,10 @@ export function createApp(ctx: AppContext) {
       connectorErrors(() =>
         ctx.connectors.call(
           input,
-          (p.kind === "admin" || p.kind === "client") && ask
-            ? { kind: "agent", by: "quest", ...(ask.quest ? { quest: ask.quest } : {}) }
-            : p.kind === "admin" || p.kind === "client"
-            ? { kind: "owner", device: p.device }
-            : p.kind === "arm"
-              ? { kind: "agent", by: `arm:${p.label}`, quest: armQuest(p.label!) }
-              : { kind: "agent", by: `node:${ctx.store.device(p.device)?.name ?? p.device}` },
+          (p.kind === "admin" || p.kind === "client") && ask ? { kind: "agent", by: "quest", ...(ask.quest ? { quest: ask.quest } : {}) } : connectorCaller(p),
         ),
       ),
+    connectorTool: (input, p) => connectorErrors(() => ctx.connectors.describe(input, connectorCaller(p))),
     actions: (): { actions: ActionView[] } => ({ actions: ctx.connectors.actions() }),
     decideAction: (input, p) => {
       // Only you decide: never another node, never an agent (arms can't hold fleet:admin anyway).

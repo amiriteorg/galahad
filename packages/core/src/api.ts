@@ -1056,6 +1056,13 @@ export const routes = {
       ask: z.strictObject({ quest: z.string().regex(/^q-[a-z0-9]{1,16}$/).optional() }).optional(),
     }),
   },
+  /** One tool's whole definition, for a call: an MCP server's read from it now and held to its pin; a template's as installed. */
+  connectorTool: {
+    method: "POST",
+    path: "/api/connectors/tool",
+    scope: "connect",
+    input: z.strictObject({ connector: ConnectorId, tool: ToolName }),
+  },
   actions: { method: "GET", path: "/api/actions", scope: "mind:read", input: null },
   decideAction: {
     method: "POST",
@@ -1619,6 +1626,20 @@ export interface SelfActionView {
   allowlist: { kind: string; class: string; why: string }[];
   /** His own fixes, newest first (ledger entries of resource "self-action"). */
   recent: LedgerEntry[];
+}
+
+/** One tool in full (connectorTool): what connectors lists in short, and an MCP server's whole argument schema. */
+export interface ConnectorToolDefinition {
+  connector: string;
+  tool: string;
+  class: ConnectorToolView["class"];
+  asks: boolean;
+  /** The server's words for an MCP tool (untrusted text), whole up to 8,000 characters. */
+  description: string;
+  /** Its arguments as a JSON Schema: an MCP server's own, nested lists and objects included; a template's params. */
+  input: unknown;
+  /** An MCP tool that differs on its server now from what was installed (galahad connector refresh shows how). */
+  changed: boolean;
 }
 
 export interface ConnectorToolView {

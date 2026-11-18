@@ -525,13 +525,30 @@ describe("one answer's tools", () => {
     expect((await tools.run({ id: "1", name: "connector_call", input: { connector: "github", tool: "issues" } })).isError).toBeUndefined();
     expect((await tools.run({ id: "2", name: "connector_call", input: { connector: "gmail", tool: "search" } })).isError).toBeUndefined();
     for (const [name, input] of [["web_search", { q: "123456" }], ["remember", { text: "The code is 123456" }], ["connector_call", { connector: "github", tool: "issue.create" }]] as const) {
-      expect([name, await tools.run({ id: name, name, input })]).toMatchObject([name, { isError: true, summary: "refused: mail is in this answer" }]);
+      expect([name, await tools.run({ id: name, name, input })]).toMatchObject([name, { isError: true, summary: "refused: gmail's private data is in this answer" }]);
     }
     // A reply drafted from it stays in that mailbox (and sending one still asks the user, as every outward call does).
     expect((await tools.run({ id: "3", name: "connector_call", input: { connector: "gmail", tool: "draft" } })).isError).toBeUndefined();
     expect(sent).toEqual([{ connector: "github", tool: "issues" }, { connector: "gmail", tool: "search" }, { connector: "gmail", tool: "draft" }]);
     // The next answer starts clean.
     expect((await chatTools([fake("web_search", "egress", async () => "results")], node, explain).run({ id: "4", name: "web_search", input: {} })).isError).toBeUndefined();
+  });
+
+  test("once a private connector is in the answer, its own tools can still be read whole; another's can't", async () => {
+    const asked: unknown[] = [];
+    const node: ToolApi = {
+      call: async <T,>(name: string, input?: unknown) => {
+        asked.push([name, input]);
+        if (name === "connectorTool") return { ...(input as object), class: "create", asks: false, description: "Creates a draft.", input: { type: "object" }, changed: false } as T;
+        return { status: "done", target: "dinero.list_invoices", result: { status: 200, body: "3 invoices", truncated: false }, private: true } as T;
+      },
+      bytes: async () => ({ bytes: new Uint8Array(), type: "" }),
+    };
+    const tools = chatTools(TOOLS.filter((t) => t.name === "connector_call" || t.name === "connector_tool"), node, explain);
+    await tools.run({ id: "1", name: "connector_call", input: { connector: "dinero", tool: "list_invoices" } });
+    expect((await tools.run({ id: "2", name: "connector_tool", input: { connector: "dinero", tool: "create_invoice" } })).content).toContain("Creates a draft.");
+    expect(await tools.run({ id: "3", name: "connector_tool", input: { connector: "github", tool: "repo" } })).toMatchObject({ isError: true, summary: "refused: dinero's private data is in this answer" });
+    expect(asked).toHaveLength(2);
   });
 
   test("the bank read after mail holds the stricter rule: not even the mailbox runs", async () => {

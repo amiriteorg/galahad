@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type ActionView, type ArgValue, type ConnectorLibraryView, type ConnectorRequestView, type ConnectorView, describeWake, type FindingView, GITHUB_WAKE_EVENTS, type LoopDraftView, type LoopRunView, type LoopTask, type LoopView, type LoopWake, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
+import { type ActionView, type ArgValue, type ConnectorLibraryView, type ConnectorRequestView, type ConnectorToolDefinition, type ConnectorView, describeWake, type FindingView, GITHUB_WAKE_EVENTS, type LoopDraftView, type LoopRunView, type LoopTask, type LoopView, type LoopWake, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
 import { CATALOG } from "@galahad/brain";
 
 /*
@@ -543,6 +543,14 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
       return;
     }
     case "tools": {
+      // One tool named: that one whole, as its server defines it now.
+      const [id, named] = rest[1] ? [rest[0], rest[1]] : (rest[0] ?? "").split(/\.(.+)/);
+      if (id && named) {
+        const t = await api.call<ConnectorToolDefinition>("connectorTool", { connector: id, tool: named });
+        console.log(`  ${bold(`${t.connector}.${t.tool}`)}  ${t.asks ? bold(`(${t.class}: asks you)`) : dim(`(${t.class})`)}${t.changed ? `\n  ${bold("It differs on its server now from what you installed:")} galahad connector refresh ${t.connector} shows how.` : ""}`);
+        console.log(`\n${t.description}\n\n${JSON.stringify(t.input, null, 2)}`);
+        return;
+      }
       const { connectors } = await api.call<{ connectors: ConnectorView[] }>("connectors");
       const c = connectors.find((x) => x.id === rest[0]);
       if (!c) throw new Error(`no connector "${rest[0]}"`);
