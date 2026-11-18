@@ -2,9 +2,11 @@
 
 **A place in the iPhone and iPad app where Galahad teaches you what you choose. He checks everything he shows you before you see it, and brings it back until you know it.** The owner asked for it on 18 November 2026: "start thinking about and planning out a learning section/edification. highly optimized for the ios app and ipadOS app. Making Galahad the ultimate tutor, being able to create beautiful visualizations, graphs, figures, displays, challenges, and much more. plan it out first. research learning and education strategies specifically for mid to high IQ people with adhd/autism, people who are lazy and unmotivated."
 
-Status: designed 18 November 2026; nothing is built. Building waits on the owner's answers to the [questions at the end](#questions-for-the-owner). The research it rests on, with every source, is in [LEARN-EVIDENCE](LEARN-EVIDENCE.md).
+Status: designed 18 November 2026, and the owner answered its questions the same day ([their answers](#the-owners-answers)): two learners, many subjects, €50 a month, the MIT-licensed libraries, and no new tab. Nothing is built yet; phase 1 is next. The research it rests on, with every source, is in [LEARN-EVIDENCE](LEARN-EVIDENCE.md).
 
 ## Who it's for
+
+**Two learners to begin with: the owner, and the owner's sister, who is 13 ([Two learners](#two-learners)).** The research was asked for the first kind, and much of it was done with the second: the interleaving, personalisation and tutoring trials below were run with students of her age.
 
 **A capable, curious adult whose attention follows interest.** They see the why quickly, and tire fast of what they already know. They are slow to start anything that looks like a chore, and put off by noise, pressure and things that move. Some people like this have ADHD or are autistic, or both, and many were never told.
 
@@ -45,13 +47,45 @@ Status: designed 18 November 2026; nothing is built. Building waits on the owner
 - **Knights.** A knight can prepare a whole course while you're away (written, checked and reviewed) and leave it in your Inbox.
 - **The meter.** Making and reviewing lessons costs model calls. They go on the usage meter, under your budget (`galahad usage budget`).
 
-## The shape: iPhone and iPad first
+## Two learners
 
-**Learn is one place: a tab on the iPhone and a place in the iPad's sidebar.** The Mac gets it later. The PWA draws the same blocks, more simply, and the terminal has `galahad learn`.
+**Learn has two learners from the start: the owner, and the owner's sister, who is 13 and learns on an iPad** (the owner's word, 18 November 2026: "for others too, my sister 13yo"). Each has their own space: subjects, lessons, review and progress are kept by learner, never mixed.
+
+- **Her iPad sees only Learn.** It is paired to the owner's node like any device, but with one scope, `learn`: it can't see the owner's chats, Inbox, approvals, keys, knights, mail or bank, and can't talk to Galahad with his tools. The app on it opens straight into her Learn.
+- **Her tutor has no tools but the checker.** No computer, no connectors, no web, no memory of the owner's: it teaches from the lesson and her answers.
+- **What the owner sees of hers:** her subjects and how she is doing (what she has learned, what is due), not her conversations with the tutor, unless she shares one. The owner runs the node, so nothing on it is hidden from them in principle; the app says so to her.
+- **Age-aware.** A learner has an age band; hers sets the tutor's words, its examples and what it won't go into ([A young learner](#a-young-learner)).
+
+## A young learner
+
+**Both model providers the roster uses allow products for minors, with conditions, and Learn meets them by design.**
+
+- **Anthropic** (its guidance for organizations serving minors, dated 16 March 2026): age assurance so only intended users get in, content moderation and filtering, monitoring and reporting, guidance for minors on safe use, Anthropic's child-safety system prompt where offered, compliance with child-safety and privacy law, and telling the user they are talking to an AI ([source](https://support.claude.com/en/articles/9307344-responsible-use-of-anthropic-s-models-guidelines-for-organizations-serving-minors)).
+- **OpenAI** (its under-18 API guidance): no personal data of a child under 13, or under the age of digital consent where they live, without zero data retention; age-appropriate content filters; monitoring with an escalation path for high-risk exchanges ([source](https://developers.openai.com/api/docs/guides/safety-checks/under-18-api-guidance)).
+- **A personal subscription is for its holder.** Her tutoring never runs on a coding plan or a consumer subscription; only on API keys whose terms allow it, or on local models.
+
+What Learn does for her:
+
+- **Her words stay home by default.** Her live tutor and the grading of her short answers run on the local models on the owner's Mac mini, so nothing she types leaves the family's machines. Her lessons are written by the strongest model from the topic and her level alone, never from what she said, and checked in the Lab like anyone's.
+- **Filtered, both ways.** Her questions and the tutor's answers pass a content check for her age before they are shown; the tutor runs with a child-safety system prompt and keeps to the subject.
+- **An escalation path.** If an exchange touches harm to herself or others, the tutor answers with care, points her to a trusted adult, and the owner gets an Inbox notice that something needs a look (not the conversation itself).
+- **Told plainly.** Her first screen says Galahad is an AI, what is kept and where, and who can see what.
+- **Her parents.** Since she is 13, they should know what it is and agree; that is for the family, and Learn doesn't pretend to check it.
+
+## The shape: no new tab
+
+**Learn lives where each learner already is, not in a fourth tab** (the owner's word: "some other way to engage with it").
+
+- **For the owner, through Galahad.** "Teach me…" in his chat starts a subject; Learn This on any message makes questions from it. When review is due or a lesson he prepared is ready, his chat opens with a card for it ("Review · 3 minutes"), and his ring turns green, as it does for a new answer. A lesson opens as a page of its own from the card.
+- **For her, the whole app.** Her iPad's app opens into her Learn home: Today, her subjects, and "Teach me…". There is nothing else on it.
+- **For both, a widget** with one question on the Home Screen or the Lock Screen, and a nudge only if asked for (phase 2).
+- The Mac gets Learn later, as a window, as Build is. The PWA draws the same blocks, more simply, and the terminal has `galahad learn`.
 
 ### Today
 
 **What's worth doing now, in minutes.** Today shows two to four options, always one light and one deep, so you choose what fits the day; Learn never asks about your focus or your health. After a gap of days it says welcome back and offers three minutes that pick up where you were, and the rest waits. Nothing counts what's overdue: no "214 due", no red badge.
+
+Her iPad's home, and the page a card in Galahad's chat opens to:
 
 ```
 +-----------------------------------+
@@ -74,8 +108,6 @@ Status: designed 18 November 2026; nothing is built. Building waits on the owner
 | Swift concurrency    2 of 9 known |
 | Teach me something...             |
 |                                   |
-+-----------------------------------+
-| Roundtable   Learn   Inbox   More |
 +-----------------------------------+
 ```
 
@@ -235,10 +267,13 @@ The five kinds it has stay as they are: `chart`, `stats`, `choices`, `steps` and
 ### Core
 
 - `packages/core/src/learn.ts`: the contracts, in zod, and the new blocks' readers in `blocks.ts`'s style.
+- **Learners.** `learn.learner.set` names a learner (the owner, or another person), their age band, which models may hear their words (any, or local only) and the devices that are theirs. Every other event below carries its learner.
+- **A scope, `learn`**, for a device that may do nothing else: the Learn routes, as its learner. The owner's devices reach Learn with the scopes they have.
 - The events:
 
 | Event | What it holds | Kept as |
 |---|---|---|
+| `learn.learner.set` | A learner: name, age band, models allowed (any, or local only), their devices | Last writer wins, by learner |
 | `learn.subject.set` | A subject: its name, what you want to do with it, your interests, the context you allowed | Last writer wins, by subject |
 | `learn.lesson.kept` | A lesson: its blocks, its checks and their results, the models that wrote and reviewed it | Once, by lesson |
 | `learn.item.set` | A question kept for review: its prompt, its key, its check, its topic | Last writer wins, by item |
@@ -251,16 +286,18 @@ The five kinds it has stay as they are: `chart`, `stats`, `choices`, `steps` and
 
 ### Routes
 
-Each lives in `packages/core/src/api.ts` with one existing scope. The live tutor uses the chat route as it is (scope `chat`).
+Each lives in `packages/core/src/api.ts` with the scope `learn`, which the owner's devices hold too, and acts as the learner the device belongs to. A lesson's live tutor has a route of its own in the same scope, without the chat route's tools.
 
 | Route | What it does | Scope |
 |---|---|---|
-| `GET /api/learn/today` | What Today offers, sized in minutes | `mind:read` |
-| `POST /api/learn/subjects` | A subject started or changed | `mind:write` |
-| `POST /api/learn/lessons/make` | A lesson made, checked and reviewed for a subject | `mind:write` |
-| `POST /api/learn/lessons/get` | A lesson to show, its blocks without their keys | `mind:read` |
-| `POST /api/learn/answer` | An answer checked: its feedback, and the help it opens | `mind:write` |
-| `POST /api/learn/settings` | Your two settings and the nudge | `mind:write` |
+| `GET /api/learn/today` | What Today offers, sized in minutes | `learn` |
+| `POST /api/learn/subjects` | A subject started or changed | `learn` |
+| `POST /api/learn/lessons/make` | A lesson made, checked and reviewed for a subject | `learn` |
+| `POST /api/learn/lessons/get` | A lesson to show, its blocks without their keys | `learn` |
+| `POST /api/learn/answer` | An answer checked: its feedback, and the help it opens | `learn` |
+| `POST /api/learn/tutor` | A question about the lesson, answered with no tools | `learn` |
+| `POST /api/learn/settings` | Your two settings and the nudge | `learn` |
+| `POST /api/learn/learners` | A learner named, their age band, models and devices (the owner's alone) | `fleet:admin` |
 
 **The key stays on the node until it's earned.** A question reaches your device without its answer, and your answer goes to the node to be checked. The solution comes back only after attempts. There is nothing to peek at in the page and nothing to talk the tutor out of, because it isn't there.
 
@@ -272,6 +309,7 @@ As in the trials, the thing measured can't write its marks: whether an answer he
   - It runs on the planner's models until you hire its own, as the `fold` chore runs on the swift role's models until you do (`packages/brain/src/roster.ts`).
   - The owner prefers the strongest models, and a trial sweep (`galahad trial sweep`) will say which teach best.
   - A short answer is graded on the tutor's or the swift role's models, and its grade is labelled a judgment, never "verified".
+- **The budget.** €50 a month for all of Learn, both learners (the owner's word). It is a stop, not only a line: when the month's spend reaches it, new lessons and the live tutor wait until next month or until the owner raises it, and Learn says so; review and lessons already made go on, as they need no model. Learn's spend shows on the usage meter as its own line.
 - **The checker.** Fixed Python scripts run in a Lab sandbox, each with its input as arguments and never through a shell, as `packages/node/src/project-git.ts` runs git in his computer. They check:
   - an expression against its key (SymPy);
   - a number against its tolerance and units (Pint);
@@ -293,11 +331,12 @@ As in the trials, the thing measured can't write its marks: whether an answer he
 ### The apps
 
 - **Apple:**
-  - a Learn place (`Place` gains `.learn`; on the iPhone, a tab beside the Roundtable, the Inbox and More);
-  - the blocks' views;
+  - Learn's cards in Galahad's chat and its pages (no tab), and, on a device whose only scope is `learn`, the app opening into Learn;
+  - the blocks' views, maths typeset with SwiftMath (MIT, approved by the owner on 18 November);
   - PencilKit for sketches and handwriting.
 
-  Phase 2 adds a WidgetKit extension that shows the next question from an App Group container the app writes, so the widget holds no key. Typesetting maths needs a renderer: SwiftMath (MIT) natively, or KaTeX in a sealed web view. That is a dependency, so it is the owner's to approve.
+  Phase 2 adds a WidgetKit extension that shows the next question from an App Group container the app writes, so the widget holds no key.
+- **The schedule** is ts-fsrs (MIT, approved by the owner; 6.0.0, released 28 October 2026), on the node.
 - **The PWA** draws the same blocks in SVG, with pointer events for sketches.
 - **The terminal:** `galahad learn` shows Today, runs review for text and number questions, and shows a lesson as text.
 - **The docs:** this page, [ARCHITECTURE](ARCHITECTURE.md) and the [plan](PLAN.md), as each part is built.
@@ -348,15 +387,17 @@ Never counted as success: minutes in the app, sessions, streaks, practice scores
 
 **Each phase is usable on its own, and told by its own measure.** Teaching comes first. Getting you started comes second, because dosage is what limits every learning product ([§8](LEARN-EVIDENCE.md#8-products-each-gets-something-right-and-misses-this-learner-somewhere)). The rest follows.
 
-1. **The core loop, on one subject.**
-   - **It adds:** the Learn place on the iPhone and the iPad, and Today; a subject started from "Teach me…", with its topics and a placement check; and lessons of text and maths, `figure`, `predict`, `question` (a choice, a number, an expression) and `worked`.
+1. **The core loop, for two learners, in the checkable subjects (maths, physics, programming).**
+   - **It adds:** learners and the `learn` scope, so her iPad opens into her Learn and nothing else; Today, in Galahad's chat for the owner and as her home; a subject started from "Teach me…", with its topics and a placement check; and lessons of text and maths, `figure`, `predict`, `question` (a choice, a number, an expression) and `worked`; the young-learner safeguards; the €50 budget.
    - **It also adds:** review on FSRS within your minutes; checks in the Lab, and the reviewer, before anything is shown; the live tutor; `galahad learn`; and the PWA's first view.
    - **Told by:** the scorecard's free parts and the tutor suite, then your own recall at the horizon after a few weeks.
 2. **Starting without trying.** The widget, the nudge you ask for with its plan, welcome back after a gap, and review credit for earlier topics. Told by returns after a gap, and by how many starts come from the widget and the nudge.
 3. **Hands on the figure.** `explore`, sketched predictions, handwriting with the Pencil, labelling and ordering, geometry and graphs. Told by the parity vectors, and by transfer on topics taught with them.
 4. **Challenges, and your own world.** Code run in a sandbox, challenges with real payoffs, examples from your projects and connectors (asked for, and shown), and `sheet`. Told by challenges finished, and by transfer.
 5. **Courses from a knight.** A whole subject made by a knight while you're away, the subject drawn as a still map, and FSRS fitted to your history (`learn.params.set`). Told by the quest's checks and review, and by recall against FSRS's prediction before and after fitting.
-6. **Open subjects, simulations and the Mac.** Subjects with no computable answer (history, philosophy), with every claim sourced, quoted and checked against its source; free-form simulations as sealed pages; and Learn on the Mac. Told by the claims the reviewer finds unsupported, held at 0.
+6. **Subjects checked another way, simulations and the Mac.** Biology's descriptive parts, with every claim sourced, quoted and checked against its source; design, where the learner makes something and the tutor's critique against a rubric is labelled a judgment, never "checked"; free-form simulations as sealed pages; and Learn on the Mac. Told by the claims the reviewer finds unsupported, held at 0.
+
+**The subjects the owner named, and how each is checked:** maths, physics and programming by a program from phase 1 (SymPy, Pint, tests run); civil engineering and robotics by the Lab's own tools (statics and structures with units, kinematics and control simulated) from phase 3; biology's quantitative side (genetics, population models, kinetics) by a program, its descriptive side by sources (phase 6); design by judgment, labelled (phase 6). A subject outside these is taken on in whichever of the three ways fits it, and says which.
 
 Not taken:
 
@@ -366,16 +407,23 @@ Not taken:
 
 ## Privacy and limits
 
-- **What you got wrong stays on your machines**, in the mind on your node. Model providers see a lesson's content and your answers as they see any chat; grading on a local model keeps your answers at home.
+- **What you got wrong stays on your machines**, in the mind on your node. Model providers see a lesson's content and your answers as they see any chat; grading on a local model keeps your answers at home, and for the sister it is the rule ([A young learner](#a-young-learner)).
 - **Learn keeps what you answered, never who you are:** no traits, no health, no diagnosis.
 - **Nothing is built to hold you in the app**, in keeping with the EU AI Act's Article 5 ([§5](LEARN-EVIDENCE.md#5-motivation-value-and-return-beat-pressure-and-points)).
 - **It claims to treat nothing.**
 
-## Questions for the owner
+## The owner's answers
 
-1. **What first?** One subject, to build phase 1 on and to measure it with. In mathematics, statistics, physics and programming every answer can be checked; languages and history need sources instead (phase 6).
-2. **You alone, or others on your node?** Learn is designed for one learner. A second (family, a friend) needs a learner of their own and their own share of the mind, which is a bigger change.
-3. **A budget for Learn?** Phase 1 measures what a lesson costs to make and review. A monthly line for Learn on the usage meter would keep it in sight.
-4. **Dependencies to approve.** Two are needed: a maths typesetter in the app (SwiftMath, MIT, or KaTeX in a sealed web view), and FSRS, either as our own code from the published formulas or as ts-fsrs (MIT). Checking needs nothing new, because the Lab already carries SymPy and Pint.
-5. **Learn as a tab on the iPhone?** A fourth tab, between the Roundtable and the Inbox, makes a start one tap. The other way is a row in More.
-6. **What did "displays" mean?** It could be a topic's page to keep (`sheet`), a subject's map, or a screen in your home (an iPad on a stand, a Home Assistant dashboard) showing what you're learning.
+On 18 November 2026:
+
+1. **Subjects:** "Physics Maths Bio Robotics Civil engineering Programming Design and much more." Phase 1 takes the ones a program can check (maths, physics, programming); the rest follow by how each is checked ([Phases](#phases)).
+2. **Learners:** "for others too, my sister 13yo. She uses an iPad." ([Two learners](#two-learners), [A young learner](#a-young-learner).)
+3. **Budget:** €50 a month, as a stop ([The node](#the-node)).
+4. **Dependencies:** the MIT-licensed ones: ts-fsrs for the schedule and SwiftMath for maths (both checked MIT on 18 November).
+5. **A tab:** no, "some other way to engage with it" ([The shape](#the-shape-no-new-tab)).
+6. **"Displays":** no particular meaning; the figures, explorables and sheets cover it.
+
+Still open, with what Learn does until the owner says otherwise:
+
+- **Her tutor's models.** Local only (her words never leave home), or the strongest API model under the safeguards above. Learn starts with local only.
+- **What the owner sees of hers.** Learn starts with progress, not conversations.
