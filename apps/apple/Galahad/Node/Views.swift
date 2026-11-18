@@ -248,3 +248,54 @@ func hlcDate(_ hlc: String) -> Date? {
     guard let ms = Double(hlc.split(separator: ".").first ?? ""), ms > 0 else { return nil }
     return Date(timeIntervalSince1970: ms / 1000)
 }
+
+/// A folder of a knight's workspace (`POST /api/team/files`): folders first.
+struct TeamFilesView: Decodable, Sendable {
+    struct Entry: Decodable, Sendable, Hashable {
+        let name: String
+        /// dir · file · link · other
+        let kind: String
+        let size: Int
+        let modified: Double
+    }
+    let id: String
+    let path: String
+    let entries: [Entry]
+    /// There were more than its first two thousand entries.
+    let more: Bool
+}
+
+/// One file of a knight's workspace (`POST /api/team/file`): text (anything like a key redacted), a picture, or what it is.
+struct TeamFileView: Decodable, Sendable {
+    let path: String
+    let size: Int
+    /// text · image · binary · large
+    let kind: String
+    var text: String? = nil
+    /// A picture's bytes, base64.
+    var data: String? = nil
+    var type: String? = nil
+    var redacted: Bool? = nil
+    /// Only its beginning is here.
+    var cut: Bool? = nil
+}
+
+/// What a knight's task changed in its repository (`POST /api/team/changes`).
+struct TeamChangesView: Decodable, Sendable {
+    struct File: Decodable, Sendable, Hashable {
+        let path: String
+        /// git's letter: A, M, D, T
+        let status: String
+        let added: Int?
+        let removed: Int?
+    }
+    let task: String?
+    let path: String?
+    let base: String?
+    let head: String?
+    let files: [File]
+    let untracked: [String]
+    let diff: String
+    let cut: Bool
+    var redacted: Bool? = nil
+}

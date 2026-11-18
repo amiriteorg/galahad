@@ -316,6 +316,67 @@ export interface TeamTask {
   interventions?: Partial<Record<InterventionKind, number>>;
 }
 
+/** A path in a knight's workspace (its VM's /work): absolute, under /work, with no `.` or `..` in it. */
+export const WorkPath = z
+  .string()
+  .max(1024)
+  .regex(/^\/work(\/[^/\u0000]+)*\/?$/, "a path under /work")
+  .refine((path) => !path.split("/").some((part) => part === "." || part === ".."), "a path with no . or .. in it");
+/** A knight's workspace looked into (its VM's, or `galahad` for his computer): a folder, a file, or what a task changed. */
+export const TeamFilesInput = z.strictObject({ id: z.string().min(1).max(32), path: WorkPath.default("/work") });
+export const TeamFileInput = z.strictObject({ id: z.string().min(1).max(32), path: WorkPath });
+export const TeamChangesInput = z.strictObject({ id: z.string().min(1).max(32), task: TeamTaskId.optional() });
+
+export interface TeamFileEntry {
+  name: string;
+  kind: "dir" | "file" | "link" | "other";
+  size: number;
+  modified: number;
+}
+/** A folder of a knight's workspace: its entries, folders first (`more`: there were more than the first two thousand). */
+export interface TeamFilesView {
+  id: string;
+  path: string;
+  entries: TeamFileEntry[];
+  more: boolean;
+}
+/**
+ * One file of a knight's workspace: text (anything like a key redacted), a picture (base64), or what it is: `binary`, or
+ * `large` (a picture too big to show here). `cut`: only its beginning is here.
+ */
+export interface TeamFileView {
+  id: string;
+  path: string;
+  size: number;
+  modified: number;
+  kind: "text" | "image" | "binary" | "large";
+  text?: string;
+  data?: string;
+  type?: string;
+  redacted?: boolean;
+  cut?: boolean;
+}
+export interface TeamChangedFile {
+  path: string;
+  /** git's letter: A added, M modified, D deleted, T type changed. */
+  status: string;
+  added: number | null;
+  removed: number | null;
+}
+/** What a task changed in its repository: from the commit it started at (`base`), or HEAD with none; the diff redacted. */
+export interface TeamChangesView {
+  id: string;
+  task: string | null;
+  path: string | null;
+  base: string | null;
+  head: string | null;
+  files: TeamChangedFile[];
+  untracked: string[];
+  diff: string;
+  cut: boolean;
+  redacted?: boolean;
+}
+
 /** One line of what a task did, as it happened: its number in order (from 1), when, and the line (redacted, cut if long). */
 export interface TeamTrailEntry {
   n: number;

@@ -17,7 +17,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectId, ProjectInput } from "./chats.ts";
-import { TeammateInput, TeamArrangeInput, TeamEngramInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
+import { TeammateInput, TeamArrangeInput, TeamChangesInput, TeamEngramInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
@@ -293,6 +293,12 @@ export const routes = {
   /** His work for the Roundtable: the knight best suited to it takes it, as when you give one; within his allowance for the day. */
   giveToTeam: { method: "POST", path: "/api/team/galahad-give", scope: "mind:write", input: TeamGiveInput },
   teamWorkspace: { method: "POST", path: "/api/team/workspace", scope: "sandbox", input: z.strictObject({ id: z.string().min(1).max(32) }) },
+  /** A folder of a knight's workspace (its VM's /work; `galahad`: his computer's), read; yours alone. */
+  teamFiles: { method: "POST", path: "/api/team/files", scope: "sandbox", input: TeamFilesInput },
+  /** One file of a knight's workspace, read: text with anything like a key redacted, a picture, or what it is. */
+  teamFile: { method: "POST", path: "/api/team/file", scope: "sandbox", input: TeamFileInput },
+  /** What a knight's task changed in its repository (its latest task with none named): the files and the diff. */
+  teamChanges: { method: "POST", path: "/api/team/changes", scope: "sandbox", input: TeamChangesInput },
   provisionTeammate: {
     method: "POST", path: "/api/team/provision", scope: "fleet:admin",
     input: z.strictObject({

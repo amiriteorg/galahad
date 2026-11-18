@@ -1,4 +1,4 @@
-import { interventionWords, plainLine, plainText, type Prices, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate } from "@galahad/core";
+import { interventionWords, plainLine, plainText, type Prices, type TeamChangesView, type TeamFilesView, type TeamFileView, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate } from "@galahad/core";
 import { AVATAR_LOOKS, lookProfile, resolveAvatar, withBodyColor } from "@galahad/core/avatar";
 
 interface Api { call<T>(name: RouteName, input?: unknown): Promise<T> }
@@ -38,6 +38,9 @@ export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): 
 export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
 const usage = "galahad roundtable [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
+
+/** A size as a person says one. */
+const bytesWord = (bytes: number) => (bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`);
 
 export async function teamCommand(api: Api, sub: string | undefined, args: string[], flags: Flags, write: (s: string) => void = console.log, confirm: (question: string) => boolean = () => false, columns?: number): Promise<void> {
   // (Never narrower than twenty columns: below that there is no room to fold into.)
@@ -154,6 +157,39 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     print(`${plainLine(given.choice.name)} takes it: ${given.choice.reasons.join("; ")}.`);
     for (const other of given.considered.filter((c) => c.id !== given.choice.id)) print(`  ${plainLine(other.name)}${other.eligible ? "" : " (can't take it)"}: ${other.why.join("; ")}`);
     print(`${given.task.id} queued in ${plainLine(given.choice.name)}'s own conversation; completion requires its gates and independent review.`);
+    return;
+  }
+  if (sub === "files") {
+    // A folder of a knight's workspace (its VM's /work; `galahad`: his computer's), folders first.
+    if (!args[0]) throw new Error("usage: galahad roundtable files <knight> [/work/path]");
+    const view = await api.call<TeamFilesView>("teamFiles", { id: args[0], ...(args[1] ? { path: args[1] } : {}) });
+    for (const entry of view.entries) print(`${entry.kind === "dir" ? `${plainLine(entry.name)}/` : plainLine(entry.name)}${entry.kind === "file" ? `  ${bytesWord(entry.size)}` : entry.kind === "link" ? "  (a link)" : ""}`);
+    if (!view.entries.length) print(`(${view.path} is empty)`);
+    if (view.more) print(`(only its first ${view.entries.length} entries)`);
+    return;
+  }
+  if (sub === "read") {
+    // One file of a knight's workspace: its text (anything like a key redacted), or what it is.
+    if (!args[0] || !args[1]) throw new Error("usage: galahad roundtable read <knight> </work/path>");
+    const file = await api.call<TeamFileView>("teamFile", { id: args[0], path: args[1] });
+    if (file.kind === "text") {
+      print(plainText(file.text ?? "").trimEnd());
+      if (file.cut) print(`(only its beginning: it is ${bytesWord(file.size)})`);
+      if (file.redacted) print("(something that looked like a key was redacted)");
+    } else print(file.kind === "image" ? `(a picture, ${file.type}, ${bytesWord(file.size)}: open it in the app)` : file.kind === "large" ? `(a picture too big to show here: ${bytesWord(file.size)})` : `(not text: ${bytesWord(file.size)})`);
+    return;
+  }
+  if (sub === "changes") {
+    // What a knight's task changed: its latest task, or --task <id>; the files with their lines, then the diff.
+    if (!args[0]) throw new Error("usage: galahad roundtable changes <knight> [--task <task-id>] [--files]");
+    const view = await api.call<TeamChangesView>("teamChanges", { id: args[0], ...(string("task") ? { task: string("task") } : {}) });
+    print(`${view.task ? `${view.task} in ${view.path}` : view.path ?? "its repository"}${view.base ? `, from ${view.base.slice(0, 12)}` : ", from HEAD"}`);
+    for (const file of view.files) print(`${file.status} ${plainLine(file.path)}${file.added === null ? "  (binary)" : `  +${file.added} -${file.removed}`}`);
+    for (const file of view.untracked) print(`? ${plainLine(file)}`);
+    if (!view.files.length && !view.untracked.length) print("(nothing changed)");
+    if (flags.files !== true && view.diff) print(`\n${plainText(view.diff).trimEnd()}`);
+    if (view.cut) print("(the diff is cut: only its beginning is here)");
+    if (view.redacted) print("(something that looked like a key was redacted)");
     return;
   }
   if (sub === "trail") {

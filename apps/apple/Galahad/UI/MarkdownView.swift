@@ -195,61 +195,24 @@ struct CodePage: View {
     @State private var copied = false
     @Environment(\.dismiss) private var dismiss
 
-    private var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
-
     var body: some View {
         NavigationStack {
-            Group {
-                if wrap {
-                    // Wrapped, each line beside its number, however many rows it takes.
-                    ScrollView {
-                        let all = lines
-                        let width = String(all.count).count
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(all.enumerated()), id: \.offset) { number, line in
-                                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                                    Text(String(number + 1).leftPadded(to: width)).foregroundStyle(.tertiary).accessibilityHidden(true)
-                                    Text(Highlight.attributed(String(line), lang: lang)).frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }
+            CodeLines(text: text, lang: lang, wrap: wrap)
+                .navigationTitle(title)
+                .inlineTitle()
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        Toggle(isOn: $wrap) { Label("Wrap Lines", systemImage: "text.word.spacing") }
+                        Button {
+                            Pasteboard.copy(text)
+                            copied = true
+                        } label: {
+                            Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                         }
-                        .font(.footnote.monospaced())
-                        .padding(Space.s4)
-                        .textSelection(.enabled)
+                        ShareLink(item: text) { Label("Share", systemImage: "square.and.arrow.up") }
                     }
-                } else {
-                    // As written: the numbers' column beside the code's, scrolled both ways (each a line a row, so they stay level).
-                    ScrollView([.vertical, .horizontal]) {
-                        HStack(alignment: .top, spacing: Space.s3) {
-                            Text((1...max(1, lines.count)).map(String.init).joined(separator: "\n"))
-                                .multilineTextAlignment(.trailing)
-                                .foregroundStyle(.tertiary)
-                                .accessibilityHidden(true)
-                            Text(Highlight.attributed(text, lang: lang))
-                                .textSelection(.enabled)
-                        }
-                        .font(.footnote.monospaced())
-                        .fixedSize()
-                        .padding(Space.s4)
-                    }
-                    .defaultScrollAnchor(.topLeading)
                 }
-            }
-            .navigationTitle(title)
-            .inlineTitle()
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Toggle(isOn: $wrap) { Label("Wrap Lines", systemImage: "text.word.spacing") }
-                    Button {
-                        Pasteboard.copy(text)
-                        copied = true
-                    } label: {
-                        Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                    }
-                    ShareLink(item: text) { Label("Share", systemImage: "square.and.arrow.up") }
-                }
-            }
         }
         #if os(macOS)
         .frame(minWidth: 720, minHeight: 520)
@@ -258,6 +221,63 @@ struct CodePage: View {
             guard copied else { return }
             try? await Task.sleep(for: .seconds(2))
             copied = false
+        }
+    }
+}
+
+/// Code with its lines numbered: as written (the numbers' column beside the code's, scrolled both ways), or wrapped, each
+/// line beside its number however many rows it takes. A code page, a workspace's file and a diff are drawn with it.
+struct CodeLines: View {
+    let text: String
+    let lang: String
+    var wrap = false
+
+    /// Its lines: a file's last newline ends its last line, and starts no line of its own.
+    private var lines: [Substring] {
+        // ("\r\n" is one character to Swift: a file written on Windows has its lines too.)
+        let all = shown.split(omittingEmptySubsequences: false) { $0 == "\n" || $0 == "\r\n" }
+        return all.isEmpty ? [""] : all
+    }
+
+    /// The text as shown: without the one newline that ends it.
+    private var shown: String { text.hasSuffix("\n") || text.hasSuffix("\r\n") ? String(text.dropLast()) : text }
+
+    var body: some View {
+        Group {
+            if wrap {
+                // Wrapped, each line beside its number, however many rows it takes.
+                ScrollView {
+                    let all = lines
+                    let width = String(all.count).count
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(all.enumerated()), id: \.offset) { number, line in
+                            HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                                Text(String(number + 1).leftPadded(to: width)).foregroundStyle(.tertiary).accessibilityHidden(true)
+                                Text(Highlight.attributed(String(line), lang: lang)).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .font(.footnote.monospaced())
+                    .padding(Space.s4)
+                    .textSelection(.enabled)
+                }
+            } else {
+                // As written: the numbers' column beside the code's, scrolled both ways (each a line a row, so they stay level).
+                ScrollView([.vertical, .horizontal]) {
+                    HStack(alignment: .top, spacing: Space.s3) {
+                        Text((1...max(1, lines.count)).map(String.init).joined(separator: "\n"))
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                        Text(Highlight.attributed(shown, lang: lang))
+                            .textSelection(.enabled)
+                    }
+                    .font(.footnote.monospaced())
+                    .fixedSize()
+                    .padding(Space.s4)
+                }
+                .defaultScrollAnchor(.topLeading)
+            }
         }
     }
 }

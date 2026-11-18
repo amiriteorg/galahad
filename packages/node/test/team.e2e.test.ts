@@ -225,3 +225,17 @@ test("real API: a file of yours goes with your words to a room, and the knight i
   const { token } = await api("mintArm", { label: "carrier", scopes: ["chat", "mind:read", "sandbox"] });
   expect((await request("postTeamMessage", { room: "forge", text: "mine", attachments: [attachment] }, token)).status).toBe(403);
 });
+
+test("real API: a knight's workspace is yours alone to look into; one with no VM, a path outside it and its token file are refused", async () => {
+  const { token } = await api("mintArm", { label: "peeker", scopes: ["chat", "mind:read", "sandbox"] });
+  for (const [name, input] of [["teamFiles", { id: "ada" }], ["teamFile", { id: "ada", path: "/work/a.txt" }], ["teamChanges", { id: "ada" }]] as const) {
+    expect((await request(name, input, token)).status).toBe(403);
+  }
+  const none = await request("teamFiles", { id: "ada" });
+  expect(none.status).toBe(424);
+  expect(((await none.json()) as { error: string }).error).toContain("this knight has no VM yet");
+  expect((await request("teamFile", { id: "ada", path: "/etc/passwd" })).status).toBe(400);
+  expect((await request("teamFiles", { id: "ada", path: "/work/../etc" })).status).toBe(400);
+  expect((await request("teamFile", { id: "ada", path: "/work/.galahad-gateway.json" })).status).toBe(403);
+  expect((await request("teamChanges", { id: "ada", task: "task-000000000000" })).status).toBe(404);
+});

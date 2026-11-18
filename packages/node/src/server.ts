@@ -156,6 +156,7 @@ import { chatTools, type ToolApi, toolsFor } from "./tools.ts";
 import { type ChatStore, type ChatStory, foldAt, type KeptSummary, type QueuedBy, type Waits } from "./chats.ts";
 import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
 import { filesFor, UploadError, type Uploads, withAttachments } from "./uploads.ts";
+import { CHANGES_SCRIPT, changesView, fileView, filesView, KEPT_FROM_VIEW, LIST_SCRIPT, LookError, READ_SCRIPT } from "./workspace-look.ts";
 import { GatewaySpend } from "./gateway-spend.ts";
 import { pricesOf, type UsageStore } from "./usage.ts";
 import type { QuestBoard } from "./quests.ts";
@@ -1748,6 +1749,25 @@ export function createApp(ctx: AppContext) {
     const computer = ctx.team.store.computer();
     return { id: TEAM_GALAHAD, workspace: computer, workspaceNode: computer?.node ?? null, repository: null, enabled: true };
   };
+  /**
+   * One look into a knight's workspace (workspace-look.ts): a fixed script and its arguments (a path, a task's worktree),
+   * run as the knight's own VM user, never through a shell. Yours alone: the routes that ask are owner-only.
+   */
+  async function lookInWorkspace(id: string, script: string, args: string[], signal: AbortSignal): Promise<string> {
+    const seat = seatOf(id);
+    if (!seat.workspace) throw new HttpError(424, noVm(id));
+    const ran = await inProcess(teammatePrincipal(seat.id), signal).call<import("@galahad/core").ExecResult>("execSandbox", { on: seat.workspace.node, id: seat.workspace.id, cmd: ["python3", "-c", script, ...args], timeoutSec: 30 });
+    if (ran.exitCode !== 0) throw new HttpError(502, `the workspace couldn't be read: ${redact(ran.stderr || ran.stdout).trim().slice(0, 300) || `it ended with ${ran.exitCode}`}`);
+    return ran.stdout;
+  }
+  const looked = <T>(look: () => T): T => {
+    try {
+      return look();
+    } catch (error) {
+      if (error instanceof LookError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
+  };
   const noVm = (id: string) => (id === TEAM_GALAHAD ? "Galahad has no computer yet: Computer in his chat makes one, or galahad roundtable provision galahad" : `this knight has no VM yet: galahad roundtable provision ${id} makes one`);
   const vmProvisioning = new Map<string, Promise<SandboxView>>();
   /** The providers each knight's VM token covers now: those with a key when its current task began (prepareTeam). */
@@ -2314,6 +2334,28 @@ export function createApp(ctx: AppContext) {
       return longRunning(onNode(p, on, routes.remakeTeamWorkspace.path, { ...asked, onBehalfOf: approver }, async () => ({
         sandbox: await ctx.sandbox!.remakeTeam(input.id, input.quest, { providers: input.providers, ...(input.network ? { network: input.network } : {}), ...(input.desktop !== undefined ? { desktop: input.desktop } : {}), approvedBy: approver }),
       }), { sandbox: input.id }));
+    },
+    teamFiles: async (input, p, req) => {
+      ownerOnly(p);
+      const path = String(input.path).replace(/\/+$/, "") || "/work";
+      return looked(async () => filesView(await lookInWorkspace(input.id, LIST_SCRIPT, [path], req.signal), input.id, path));
+    },
+    teamFile: async (input, p, req) => {
+      ownerOnly(p);
+      const path = String(input.path).replace(/\/+$/, "");
+      if ((KEPT_FROM_VIEW as readonly string[]).includes(path)) throw new HttpError(403, "kept from view: it holds this VM's gateway token");
+      return looked(async () => fileView(await lookInWorkspace(input.id, READ_SCRIPT, [path], req.signal), input.id, path));
+    },
+    teamChanges: async (input, p, req) => {
+      ownerOnly(p);
+      // A task of this knight's by name, or its latest (the one running first); with none, its repository as it stands.
+      const team = teamOf();
+      const mine = input.id === TEAM_GALAHAD ? [] : team.tasksIn({ teammate: input.id }, ["proposed", "queued", "running", "done", "failed", "stopped", "interrupted"]);
+      if (input.task && !mine.some((t) => t.id === input.task)) throw new HttpError(404, "no such task of this knight's");
+      const task = input.task ?? (mine.find((t) => t.status === "running") ?? [...mine].sort((a, b) => b.updatedAt - a.updatedAt).find((t) => t.status !== "proposed" && t.status !== "queued"))?.id ?? null;
+      const root = task ? `/work/tasks/${task}` : "/work/repo";
+      const kept = task ? `/work/.agent/base/${task}` : "";
+      return looked(async () => changesView(await lookInWorkspace(input.id, CHANGES_SCRIPT, [root, kept], req.signal), input.id, task, root));
     },
     teamWorkspace: async (input, p, req) => {
       ownerOnly(p);

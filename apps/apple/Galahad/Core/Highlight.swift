@@ -221,3 +221,40 @@ enum Highlight {
         return out
     }
 }
+
+/// A diff in its files' parts: each `diff --git a/… b/…` section with the path it is about, in order.
+enum DiffParts {
+    struct Part: Equatable, Sendable {
+        let path: String
+        let text: String
+    }
+
+    static func of(_ diff: String) -> [Part] {
+        var parts: [Part] = []
+        var path: String?
+        var lines: [Substring] = []
+        func close() {
+            if let path, !lines.isEmpty { parts.append(Part(path: path, text: lines.joined(separator: "\n"))) }
+        }
+        for line in diff.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("diff --git ") {
+                close()
+                // "diff --git a/<path> b/<path>": the path after " b/" (a path with spaces keeps them).
+                path = line.range(of: " b/").map { String(line[$0.upperBound...]) } ?? String(line.dropFirst("diff --git ".count))
+                lines = [line]
+            } else if path != nil {
+                lines.append(line)
+            }
+        }
+        close()
+        return parts
+    }
+
+    /// The language a file is written in, by its name (for its colours), or "" when it isn't one Highlight knows.
+    static func language(of path: String) -> String {
+        let name = path.split(separator: "/").last.map(String.init) ?? path
+        guard let dot = name.lastIndex(of: "."), dot != name.startIndex else { return name == "Dockerfile" || name == "Makefile" ? "sh" : "" }
+        let ext = name[name.index(after: dot)...].lowercased()
+        return ["md": "", "markdown": "", "yml": "yaml", "h": "c", "hpp": "cpp", "mts": "ts", "cts": "ts"][ext] ?? ext
+    }
+}

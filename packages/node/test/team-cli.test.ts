@@ -424,3 +424,24 @@ test("the listing says how you stepped in on each task, and the north star over 
   await teamCommand(api, undefined, [], {}, (line) => none.push(line));
   expect(none).toContain("You stepped in 1 time on the 1 task that ended in the last 30 days, and none was done and verified.");
 });
+
+test("a knight's workspace from a terminal: a folder, a file, and what its task changed", async () => {
+  const answers: Record<string, unknown> = {
+    teamFiles: { id: "ada", path: "/work", entries: [{ name: "src", kind: "dir", size: 4096, modified: 1 }, { name: "README.md", kind: "file", size: 2048, modified: 1 }, { name: "latest", kind: "link", size: 9, modified: 1 }], more: false },
+    teamFile: { id: "ada", path: "/work/a.ts", size: 900_000, modified: 1, kind: "text", text: "export const ok = true;\n", cut: true, redacted: true },
+    teamChanges: { id: "ada", task: "task-abcdefghijkl", path: "/work/tasks/task-abcdefghijkl", base: "a".repeat(40), head: "b".repeat(40), files: [{ path: "sync.ts", status: "M", added: 2, removed: 1 }, { path: "logo.png", status: "A", added: null, removed: null }], untracked: ["notes.md"], diff: "+export const retries = 3;\n", cut: false },
+  };
+  const asked: [string, unknown][] = [];
+  const api = { async call<T>(name: RouteName, input?: unknown): Promise<T> { asked.push([name, input]); return answers[name] as T; } };
+  const lines: string[] = [];
+  await teamCommand(api, "files", ["ada"], {}, (line) => lines.push(line));
+  await teamCommand(api, "read", ["ada", "/work/a.ts"], {}, (line) => lines.push(line));
+  await teamCommand(api, "changes", ["ada"], {}, (line) => lines.push(line));
+  expect(lines).toEqual([
+    "src/", "README.md  2 KB", "latest  (a link)",
+    "export const ok = true;", "(only its beginning: it is 879 KB)", "(something that looked like a key was redacted)",
+    `task-abcdefghijkl in /work/tasks/task-abcdefghijkl, from ${"a".repeat(12)}`, "M sync.ts  +2 -1", "A logo.png  (binary)", "? notes.md", "\n+export const retries = 3;",
+  ]);
+  expect(asked).toEqual([["teamFiles", { id: "ada" }], ["teamFile", { id: "ada", path: "/work/a.ts" }], ["teamChanges", { id: "ada" }]]);
+  await expect(teamCommand(api, "read", ["ada"], {}, () => {})).rejects.toThrow("usage: galahad roundtable read <knight> </work/path>");
+});

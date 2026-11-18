@@ -14,6 +14,8 @@ struct KnightView: View {
     @Environment(\.dismiss) private var leave
     @State private var watching = false
     @State private var inTerminal = false
+    /// Its workspace beside the conversation (an inspector; a sheet on an iPhone).
+    @State private var inWorkspace = false
 
     init(session: Session, id: String) {
         self.session = session
@@ -101,8 +103,13 @@ struct KnightView: View {
                     .accessibilityHint("What \(name) is and how its day stands")
             }
             #endif
-            // Its VM, once it has one: its screen to watch and take over, and a terminal in it.
+            // Its VM, once it has one: its files and what its task changed, beside this; its screen to watch and take
+            // over, and a terminal in it.
             if let knight, knight.workspace != nil, session.can("sandbox") {
+                ToolbarItem(placement: .barTrailing) {
+                    Button { inWorkspace.toggle() } label: { Label("Workspace", systemImage: inWorkspace ? "folder.fill" : "folder") }
+                        .accessibilityIdentifier("workspace")
+                }
                 ToolbarItem(placement: .barTrailing) {
                     Menu {
                         Button { watching = true } label: { Label("Its screen", systemImage: "display") }
@@ -128,6 +135,7 @@ struct KnightView: View {
         .cover(isPresented: $inTerminal) {
             if let knight { KnightTerminalView(session: session, knight: VMSeat(knight)) }
         }
+        .workspacePanel(isPresented: $inWorkspace) { WorkspaceView(session: session, id: id, name: name) }
         .sheet(isPresented: $about) {
             KnightAbout(session: session, id: id, row: row, look: look) { leave() }
         }

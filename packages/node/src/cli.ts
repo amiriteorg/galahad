@@ -58,6 +58,9 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     a task for the Roundtable: the knight best suited to it takes it (free, its work
                                     verified before, its job about this, a desktop or the repository it needs) and
                                     says why; the others' standing is shown beneath
+  roundtable files <knight> [/work/path]  a folder of its workspace (its VM's /work; galahad: his computer's)
+  roundtable read <knight> </work/path>  one file of it (anything like a key redacted)
+  roundtable changes <knight> [--task <id>] [--files]  what its latest task (or that one) changed: files, then the diff
   roundtable trail <task-id> [--follow]  what a task did, as it happened: its plan, each command and what it printed,
                                     the gates, the review; --follow keeps reading until the task has ended
   roundtable provision <id> [--on node] [--cpus 1 --mem 2 --disk 20] [--network online|gateway] [--desktop]

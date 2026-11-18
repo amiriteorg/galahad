@@ -11,6 +11,7 @@ struct ChatView: View {
     /// His own computer, watched from here: its screen, or its terminal.
     @State private var watching = false
     @State private var inTerminal = false
+    @State private var inFiles = false
     @Environment(\.composerWanted) private var composerWanted
 
     init(session: Session, chat: ChatModel? = nil) {
@@ -76,6 +77,7 @@ struct ChatView: View {
                 // His own computer, once he has one (made from the web app or a terminal, as a knight's VM is).
                 if session.team?.computer != nil && session.can("sandbox") {
                     Menu {
+                        Button { inFiles = true } label: { Label("His files", systemImage: "folder") }
                         Button { watching = true } label: { Label("His screen", systemImage: "display") }
                         Button { inTerminal = true } label: { Label("His terminal", systemImage: "apple.terminal") }
                     } label: {
@@ -104,6 +106,7 @@ struct ChatView: View {
         .cover(isPresented: $inTerminal) {
             if let computer = session.team?.computer { KnightTerminalView(session: session, knight: VMSeat(computer: computer)) }
         }
+        .workspacePanel(isPresented: $inFiles) { WorkspaceView(session: session, id: "galahad", name: "Galahad") }
         .sheet(isPresented: $listing) {
             ChatsView(session: session) { id in
                 listing = false
