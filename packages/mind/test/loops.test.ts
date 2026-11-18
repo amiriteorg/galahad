@@ -83,7 +83,9 @@ describe("loops in the log", () => {
     expect(storeA.lww<{ wakes: unknown[] }>("loopwake:deploys")?.value?.wakes).toEqual(wakes);
     // The loop itself, and its key, are as they were: a node from before this kind keeps every loop.
     expect(storeA.lwwPrefix("loop:").map((e) => e.key)).toEqual(["loop:deploys"]);
-    // A newer node's wake it can't read is still kept as it came (loosely typed in the log).
+    // A newer node's wake it can't read is still kept as it came (loosely typed in the log). It writes having heard a's,
+    // so its word is the last: written blind, in the same millisecond, the two would be concurrent and either may stand.
+    syncInto(storeA, storeB);
     storeB.emit(b, "loop.wakes", { name: "deploys", wakes: [{ kind: "telepathy", strength: 9 }], cooldownMs: 60_000 });
     syncInto(storeB, storeA);
     syncInto(storeA, storeB);
