@@ -218,8 +218,9 @@ describe("steering an answer (OpenAI-compatible)", () => {
   });
 
   test("a steer gives the tool rounds of a new message, never more at once", async () => {
-    // Eleven rounds, a steer, then eleven more: 22 tool rounds in one turn, each within its own limit.
-    const call = (i: number) => openai({ choices: [{ delta: { tool_calls: [{ index: 0, id: `c${i}`, function: { name: "post", arguments: "{}" } }] } }] });
+    // Eleven rounds, a steer, then eleven more: 22 tool rounds in one turn, each within its own limit. (Each posts something
+    // new: the same call that said the same twice is stopped sooner, chat-tools.test.ts.)
+    const call = (i: number) => openai({ choices: [{ delta: { tool_calls: [{ index: 0, id: `c${i}`, function: { name: "post", arguments: `{"n":${i}}` } }] } }] });
     const steering = new Steering();
     const replies: Reply[] = [...Array.from({ length: 22 }, (_, i) => call(i)), say("Done.")];
     const model = scripted(replies);
@@ -236,6 +237,30 @@ describe("steering an answer (OpenAI-compatible)", () => {
     const events: ChatStreamEvent[] = [];
     for await (const event of chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask("Post many."), tools, steering })) events.push(event);
     expect(ran).toBe(22);
+    expect(events.at(-1)).toEqual({ type: "done", ref: "local/m" });
+  });
+
+  test("a new message lets him look again: the same call that said the same twice runs once more after a steer", async () => {
+    const call = (i: number) => openai({ choices: [{ delta: { tool_calls: [{ index: 0, id: `c${i}`, function: { name: "checks", arguments: '{"ref":"main"}' } }] } }] });
+    const steering = new Steering();
+    const model = scripted([call(0), call(1), call(2), call(3), say("Still running.")]);
+    let ran = 0;
+    const tools: ChatTools = {
+      specs: [{ name: "checks", description: "CI checks.", inputSchema: { type: "object", properties: { ref: { type: "string" } } } }],
+      describe: () => ({ title: "Checks", input: "main" }),
+      run: async () => {
+        ran += 1;
+        return { content: "running", summary: "running" };
+      },
+    };
+    const events: ChatStreamEvent[] = [];
+    // After two that said the same, the third isn't run; then "look again" arrives, and the fourth runs.
+    let refused = 0;
+    for await (const event of chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask("Is CI done?"), tools, steering })) {
+      events.push(event);
+      if (event.type === "tool_result" && !event.ok && ++refused === 1) steering.offer("Look again.");
+    }
+    expect(ran).toBe(3);
     expect(events.at(-1)).toEqual({ type: "done", ref: "local/m" });
   });
 

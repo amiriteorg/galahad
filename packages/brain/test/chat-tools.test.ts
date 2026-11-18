@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { chat, type ChatTools, CONTINUE, MAX_CONTINUATIONS, MAX_TOOL_ROUNDS, type ToolCall } from "../src/index.ts";
+import { chat, type ChatTools, CONTINUE, MAX_CONTINUATIONS, MAX_TOOL_ROUNDS, SAME_ANSWER_LIMIT, type ToolCall } from "../src/index.ts";
 
 /*
  * Galahad's chat with tools: the model calls tools in rounds, sees their outcomes,
@@ -128,12 +128,47 @@ describe("chat with tools (OpenAI-compatible)", () => {
   });
 
   test(`at most ${MAX_TOOL_ROUNDS} rounds of tools, then the answer ends`, async () => {
-    const model = scripted(Array.from({ length: MAX_TOOL_ROUNDS + 5 }, (_, i) => callTool(`c${i}`, "recall", "{}")));
+    // Each round asks something new (the same call that said the same is stopped sooner: below).
+    const model = scripted(Array.from({ length: MAX_TOOL_ROUNDS + 5 }, (_, i) => callTool(`c${i}`, "recall", `{"query":"q${i}"}`)));
     const { tools, runs } = fakeTools();
     const events = await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask("loop forever"), tools }));
     expect(runs).toHaveLength(MAX_TOOL_ROUNDS);
     expect(events.filter((e) => e.type === "tool_result" && !e.ok)).toHaveLength(1);
     expect(events.at(-1)).toMatchObject({ type: "error", error: expect.stringContaining(`${MAX_TOOL_ROUNDS} rounds`) });
+  });
+
+  test(`the same call that said the same ${SAME_ANSWER_LIMIT} times isn't run again in that answer, and he's told why`, async () => {
+    const model = scripted([
+      callTool("c1", "recall", '{"query":"ci"}'),
+      callTool("c2", "recall", '{"query":"ci"}'),
+      callTool("c3", "recall", '{"query":"ci"}'),
+      // Something different still runs.
+      callTool("c4", "recall", '{"query":"deploy"}'),
+      say("Nothing new on CI."),
+    ]);
+    const { tools, runs } = fakeTools("CI is still running");
+    const events = await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask("is CI done?"), tools }));
+    expect(runs.map((r) => (r.input as { query: string }).query)).toEqual(["ci", "ci", "deploy"]);
+    expect(events.filter((e) => e.type === "tool_result").map((e) => (e as { summary: string }).summary)).toEqual(["CI is still running", "CI is still running", "not run: it said the same twice", "CI is still running"]);
+    // The model is told, in the outcome it reads.
+    expect(JSON.stringify(model.bodies[3])).toContain("said the same each time, so it won't say anything new now");
+    expect(events.at(-1)).toMatchObject({ type: "done" });
+  });
+
+  test("the same call that answers differently each time is run each time", async () => {
+    const model = scripted([callTool("c1", "recall", '{"query":"ci"}'), callTool("c2", "recall", '{"query":"ci"}'), callTool("c3", "recall", '{"query":"ci"}'), say("Done.")]);
+    let n = 0;
+    const runs: ToolCall[] = [];
+    const tools: ChatTools = {
+      specs: [{ name: "recall", description: "Search memory.", inputSchema: { type: "object", properties: { query: { type: "string" } } } }],
+      describe: (call) => ({ title: "Recall", input: JSON.stringify(call.input) }),
+      run: async (call) => {
+        runs.push(call);
+        return { content: `step ${++n}`, summary: `step ${n}` };
+      },
+    };
+    await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask("watch it"), tools }));
+    expect(runs).toHaveLength(3);
   });
 
   test("an answer cut off by the model's output limit goes on where it stopped, in the same answer", async () => {

@@ -1,4 +1,4 @@
-import { type ChatMessage, type ChatStreamEvent, redact, type Usage } from "@galahad/core";
+import { canonical, type ChatMessage, type ChatStreamEvent, type Json, redact, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { anthropicConversation, type ModelMessage, openAIConversation, RefusalError, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
 import { rotated } from "./effort.ts";
@@ -106,6 +106,14 @@ const NOT_RUN = {
   isError: true,
   summary: "not run: your new message came first",
 } as const;
+
+/** The same call, with the same input, that said the same this many times in one answer isn't run again: it won't change. */
+export const SAME_ANSWER_LIMIT = 2;
+const sameAgain = (name: string) => ({
+  content: `Not run: ${name} was called with this same input ${SAME_ANSWER_LIMIT} times in this answer and said the same each time, so it won't say anything new now. Answer with what you have, or try something different.`,
+  isError: true,
+  summary: "not run: it said the same twice",
+});
 
 /**
  * Tools for one answer. The specs stay the same for the whole answer (the provider
@@ -273,14 +281,17 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       let resumed = false;
       let continued = 0;
       let refused = 0;
+      // Each call (its tool and input) and what it said last, with how many times it said that, in this answer.
+      const repeats = new Map<string, { content: string; times: number }>();
       // The owner's message(s) reach him: the turn goes on with them, as with a new message of theirs.
       const handOver = function* (texts: string[], partial: string | null): Generator<ChatStreamEvent> {
         conversation.interject(texts, partial);
         handed.push(texts);
         for (const text of texts) yield { type: "steer", text };
-        // What follows answers a new message: its own paragraphs, its own continuations.
+        // What follows answers a new message: its own paragraphs, its own continuations, its own calls ("look again").
         spoke = resumed = false;
         continued = 0;
+        repeats.clear();
       };
       // What the model call that just ended cost, as its provider said (a call that never reached a model: nothing).
       const tally = function* (): Generator<ChatStreamEvent> {
@@ -373,11 +384,18 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
           // arrives isn't run: every call still gets its outcome, and this one's says why.
           const runs = !steering?.waiting && round < MAX_TOOL_ROUNDS;
           if (runs && !tools!.readOnly?.(call)) changed = true;
+          const asked = `${call.name}\n${canonical((call.input ?? null) as Json)}`;
+          const before = repeats.get(asked);
           const outcome = steering?.waiting
             ? NOT_RUN
             : round >= MAX_TOOL_ROUNDS
               ? { content: `No more tools for this answer (${MAX_TOOL_ROUNDS} rounds). Answer with what you have.`, isError: true, summary: "no more tools for this answer" }
-              : await tools!.run(call, req.signal);
+              : before && before.times >= SAME_ANSWER_LIMIT
+                ? sameAgain(call.name)
+                : await tools!.run(call, req.signal);
+          if (outcome !== NOT_RUN && !(before && before.times >= SAME_ANSWER_LIMIT) && round < MAX_TOOL_ROUNDS) {
+            repeats.set(asked, before && before.content === outcome.content ? { content: outcome.content, times: before.times + 1 } : { content: outcome.content, times: 1 });
+          }
           yield { type: "tool_result", id: call.id, name: call.name, ok: !outcome.isError, summary: outcome.summary };
           outcomes.push({ id: call.id, content: outcome.content, ...(outcome.isError ? { isError: true } : {}), ...("images" in outcome && outcome.images?.length ? { images: outcome.images } : {}) });
         }
