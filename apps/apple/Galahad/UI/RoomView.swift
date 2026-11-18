@@ -127,6 +127,10 @@ struct RoomView: View {
                 try? await Task.sleep(for: .seconds(writing.isEmpty ? 4 : 2))
             }
         }
+        // On screen, what ended here is read: no longer new, on any device.
+        .task(id: row?.unread) {
+            if row?.unread == true { await session.read(room: id) }
+        }
     }
 
     private var welcome: some View {
@@ -174,7 +178,7 @@ struct RoomRowView: View {
     var selected = false
 
     var body: some View {
-        RosterLine(name: row.name, line: row.line, needs: row.needs, selected: selected) {
+        RosterLine(name: row.name, line: row.line, needs: row.needs, fresh: row.unread, selected: selected) {
             let shown = Array(looks.prefix(3))
             ZStack {
                 ForEach(Array(shown.enumerated()), id: \.offset) { index, look in

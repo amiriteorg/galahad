@@ -27,6 +27,8 @@ struct RosterRow: Sendable, Equatable, Identifiable {
     var expression = "idle"
     /// Where it stands at a glance: the ring round its face, and the word beside its name.
     var standing = Standing.resting
+    /// Something ended on its page since you last looked (a reply to you, a task's end): new to you until you open it.
+    var unread = false
 }
 
 /// Where someone at the Roundtable stands, at a glance (lib/knight-state.ts): the colour of the ring round its face, and
@@ -35,7 +37,7 @@ struct RosterRow: Sendable, Equatable, Identifiable {
 /// passed review a moment ago; at rest, which says no word: its line says what it is for. The PWA's, held to it by the
 /// vectors.
 enum Standing: String, Sendable, Equatable {
-    case working, needs, failed, paused, queued, verified, resting
+    case working, needs, failed, paused, queued, verified, unread, resting
 
     /// The chip's words (lib/knight-state.ts' STATES), short so a name keeps its room beside them; nil at rest.
     var word: String? {
@@ -46,14 +48,15 @@ enum Standing: String, Sendable, Equatable {
         case .paused: "Paused"
         case .queued: "Queued"
         case .verified: "Verified"
+        case .unread: "New"
         case .resting: nil
         }
     }
 
     /// Galahad's, from his line (lib/knight-state.ts' galahadState): what needs you first, then work in hand or an answer
-    /// he is writing here; at rest otherwise.
+    /// he is writing here, then an answer of his you haven't read; at rest otherwise.
     static func of(_ now: GalahadNow, answering: Bool) -> Standing {
-        now.tone == .warn ? .needs : now.tone == .accent || answering ? .working : .resting
+        now.tone == .warn ? .needs : now.tone == .accent || answering ? .working : now.tone == .ok ? .unread : .resting
     }
 
     /// A line as it reads beside this state's chip (lib/knight-state.ts' `besideChip`): the chip's words aren't said
@@ -74,6 +77,8 @@ struct RoomRow: Sendable, Equatable, Identifiable {
     let members: [String]
     let line: String
     let needs: Bool
+    /// A reply or a task ended there since you last looked, on any device: new to you until you open it.
+    var unread = false
 }
 
 enum Roster {
@@ -125,7 +130,8 @@ enum Roster {
     private static func roomRow(for room: TeamRoom, in snapshot: TeamSnapshot) -> RoomRow {
         let nameOf = { (id: String) in snapshot.teammates.first { $0.id == id }?.name ?? id }
         let jobs = snapshot.tasks.filter { $0.room == room.id }.map(Job.task) + snapshot.deliveries.filter { $0.room == room.id }.map(Job.delivery)
-        let say = { (line: String, needs: Bool) in RoomRow(id: room.id, name: room.name, members: room.members, line: line, needs: needs) }
+        let fresh = endedSince(jobs, seen: snapshot.seen?["room:\(room.id)"], keeps: snapshot.seen != nil) != nil
+        let say = { (line: String, needs: Bool) in RoomRow(id: room.id, name: room.name, members: room.members, line: line, needs: needs, unread: fresh) }
 
         if let line = proposing(jobs, by: nameOf) { return say(line, true) }
 
@@ -148,6 +154,14 @@ enum Roster {
         var updatedAt: Double { switch self { case .task(let t): t.updatedAt; case .delivery(let d): d.updatedAt } }
         var error: String? { switch self { case .task(let t): t.error; case .delivery(let d): d.error } }
         var task: TeamTask? { if case .task(let t) = self { t } else { nil } }
+        var room: String { switch self { case .task(let t): t.room; case .delivery(let d): d.room } }
+    }
+
+    /// The latest of `jobs` that ended (done or failed), if it ended after `seen` (`snapshot.seen`'s; `keeps` false: a
+    /// node that keeps none), as lib/roster.ts' `endedSince`.
+    private static func endedSince(_ jobs: [Job], seen: Double?, keeps: Bool) -> Job? {
+        guard keeps, let ended = latest(of: jobs.filter { $0.status == "done" || $0.status == "failed" }), ended.updatedAt > (seen ?? 0) else { return nil }
+        return ended
     }
 
     private static func row(for person: Teammate, in snapshot: TeamSnapshot, asks: [Ask], now: Double) -> RosterRow {
@@ -157,10 +171,15 @@ enum Roster {
         // Its face says what its line says: asking your leave or your approval, over whatever else it has in hand.
         let asking = !asked.isEmpty || jobs.contains { $0.status == "proposed" && $0.task != nil }
         let expression = asking ? "asking" : KnightEyes.expression(of: person, in: snapshot, now: now)
-        // At rest, unless its work passed review a moment ago: its face is pleased, and its ring is green.
-        let rest: Standing = expression == "pleased" ? .verified : .resting
+        // New to you: what ended on its page (its tasks, its replies to you) since you last looked at it there.
+        let fresh = endedSince(jobs.filter { $0.task != nil || $0.room == room?.id }, seen: snapshot.seen?["knight:\(person.id)"], keeps: snapshot.seen != nil)
+        // At rest, its ring is green while something that ended there is new to you (verified work says so) and until you
+        // look; from a node that keeps no such thing, while its work passed review a moment ago (its face is pleased).
+        let rest: Standing = snapshot.seen != nil
+            ? (fresh.map { $0.task?.verified == true ? .verified : .unread } ?? .resting)
+            : expression == "pleased" ? .verified : .resting
         let say = { (line: String, needs: Bool, standing: Standing) in
-            RosterRow(id: person.id, name: person.name, room: room?.id, line: line, needs: needs, expression: expression, standing: standing)
+            RosterRow(id: person.id, name: person.name, room: room?.id, line: line, needs: needs, expression: expression, standing: standing, unread: fresh != nil)
         }
 
         // What only you can answer comes first: it is what the row is marked for.
@@ -263,13 +282,15 @@ struct GalahadWork: Decodable, Sendable, Equatable {
     var turns: [String?] = []
     var quests: [String] = []
     var needs: Int?
+    /// The titles of his chats with an answer you haven't read yet, the newest first.
+    var unread: [String?] = []
 
-    init(answering: Bool = false, step: String? = nil, turns: [String?] = [], quests: [String] = [], needs: Int? = nil) {
-        (self.answering, self.step, self.turns, self.quests, self.needs) = (answering, step, turns, quests, needs)
+    init(answering: Bool = false, step: String? = nil, turns: [String?] = [], quests: [String] = [], needs: Int? = nil, unread: [String?] = []) {
+        (self.answering, self.step, self.turns, self.quests, self.needs, self.unread) = (answering, step, turns, quests, needs, unread)
     }
 
     // As lib/now.ts's NowInput: `step` absent is "not answering here", and null is "only just started".
-    private enum Keys: String, CodingKey { case step, turns, quests, needs }
+    private enum Keys: String, CodingKey { case step, turns, quests, needs, unread }
     private struct Turn: Decodable { let title: String? }
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: Keys.self)
@@ -278,12 +299,14 @@ struct GalahadWork: Decodable, Sendable, Equatable {
         turns = try container.decode([Turn].self, forKey: .turns).map(\.title)
         quests = try container.decode([QuestView].self, forKey: .quests).map(\.goal)
         needs = try container.decodeIfPresent(Int.self, forKey: .needs)
+        unread = try container.decodeIfPresent([Turn].self, forKey: .unread)?.map(\.title) ?? []
     }
 }
 
 /// His line (lib/now.ts's `galahadNow`): the work first, then what needs you.
 struct GalahadNow: Equatable, Sendable {
-    enum Tone: String, Sendable { case neutral, accent, warn }
+    /// `ok`: an answer of his waits for you to read it, and nothing else is going on.
+    enum Tone: String, Sendable { case neutral, accent, warn, ok }
     let text: String
     let tone: Tone
 
@@ -303,8 +326,10 @@ struct GalahadNow: Equatable, Sendable {
         } else if let quest = work.quests.first {
             doing = "Working on: \(quest.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")[0])"
         }
-        text = doing.map { [$0, needs].compactMap { $0 }.joined(separator: " · ") } ?? needs ?? (work.needs == 0 ? "Idle · nothing needs you" : "Idle")
-        tone = needs != nil ? .warn : doing != nil ? .accent : .neutral
+        // An answer he finished while you were away, as an email you haven't opened.
+        let fresh = work.unread.count > 1 ? "\(work.unread.count) new answers" : work.unread.first.map { title in title.flatMap { $0.isEmpty ? nil : "New answer in “\($0)”" } ?? "A new answer" }
+        text = doing.map { [$0, needs].compactMap { $0 }.joined(separator: " · ") } ?? needs ?? fresh ?? (work.needs == 0 ? "Idle · nothing needs you" : "Idle")
+        tone = needs != nil ? .warn : doing != nil ? .accent : fresh != nil ? .ok : .neutral
     }
 }
 

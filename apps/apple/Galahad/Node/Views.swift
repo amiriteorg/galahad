@@ -29,6 +29,9 @@ struct TeamSnapshot: Decodable, Sendable {
     var order: [String]? = nil
     /// Who leads the Roundtable: `galahad`, or the knight you made primary (absent from an older node: Galahad).
     var primary: String? = nil
+    /// When you last looked, on any device, at each knight's page (`knight:<id>`) and each room (`room:<id>`): what ended
+    /// there after it is new to you (absent from an older node, which keeps no such thing).
+    var seen: [String: Double]? = nil
 
     struct Removed: Decodable, Sendable { let id: String; let name: String }
 }

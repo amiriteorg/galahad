@@ -632,9 +632,10 @@ export async function statusLine(api: Api): Promise<void> {
     waiting("loopDrafts", (b) => b.drafts),
     waiting("connectorRequests", (b) => b.requests),
     waiting<{ state: string }>("screenSessions", (b) => b.sessions, (s) => s.state === "waiting"),
+    waiting("turns", (b) => b.unread ?? []),
   ]);
   const said = (n: number, one: string, many: string, where = "") => `${n} ${n === 1 ? one : many}${where ? ` (${where})` : ""}`;
-  const [notices, actions, keys, pairings, facts, drafts, connectors, screens] = counts as number[];
+  const [notices, actions, keys, pairings, facts, drafts, connectors, screens, unread] = counts as number[];
   const needs = [
     notices ? said(notices, "notice", "notices") : "",
     actions ? said(actions, "waiting for your answer", "waiting for your answer", "galahad action ls") : "",
@@ -650,6 +651,8 @@ export async function statusLine(api: Api): Promise<void> {
     `${loops.length} loop${loops.length === 1 ? "" : "s"}`,
     beat ? `heartbeat ${MARK[beat.status]} ${new Date(beat.finished).toLocaleTimeString()}` : "no heartbeat yet",
     ...(needs.length ? needs.map(bold) : ["nothing needs you"]),
+    // His answers you haven't read: news, not something that needs you.
+    ...(unread ? [said(unread, "new answer", "new answers", "galahad chats")] : []),
   ];
   console.log(`\n  ${parts.join(" · ")}`);
 }

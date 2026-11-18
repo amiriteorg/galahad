@@ -126,6 +126,16 @@ export class TeamStore {
     // A database from before files at the Roundtable: a message of yours may carry some (kept on the node: uploads.ts).
     const fields = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(team_messages)").all().map((c) => c.name));
     if (!fields.has("attachments")) this.db.exec("ALTER TABLE team_messages ADD COLUMN attachments TEXT");
+    // When you last looked at each knight's page and each room (`knight:<id>`, `room:<id>`): what ended there after it
+    // is new to you. A database from before it counts everything until now as seen.
+    const seenBefore = this.db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'team_seen'").get();
+    this.db.exec("CREATE TABLE IF NOT EXISTS team_seen (key TEXT PRIMARY KEY, at INTEGER NOT NULL)");
+    if (!seenBefore) {
+      const at = this.now();
+      const add = this.db.query("INSERT OR IGNORE INTO team_seen (key, at) VALUES (?, ?)");
+      for (const { id } of this.db.query<{ id: string }, []>("SELECT id FROM team_teammates").all()) add.run(`knight:${id}`, at);
+      for (const { id } of this.db.query<{ id: string }, []>("SELECT id FROM team_rooms").all()) add.run(`room:${id}`, at);
+    }
   }
 
   close(): void { this.db.close(); }
@@ -577,7 +587,15 @@ export class TeamStore {
     const removed = this.removed().map(({ id, name, removedAt }) => { const conversations = direct.filter((room) => room.members.includes(id)).map((room) => room.id); return { id, name, removedAt, ...(conversations.length ? { conversations } : {}) }; });
     const computer = this.computer();
     const { order, primary } = this.arrangement();
-    return { northStar: this.northStar(this.now() - 30 * 86_400_000), teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(computer ? { computer } : {}), order, primary };
+    return { northStar: this.northStar(this.now() - 30 * 86_400_000), teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(computer ? { computer } : {}), order, primary, seen: this.seen() };
+  }
+  /** When you last looked at each knight's page (`knight:<id>`) and each room (`room:<id>`), on any device. */
+  seen(): Record<string, number> {
+    return Object.fromEntries(this.db.query<{ key: string; at: number }, []>("SELECT key, at FROM team_seen").all().map((row) => [row.key, row.at]));
+  }
+  /** You looked at a knight's page or a room just now: what ended there so far is no longer new. */
+  see(key: `knight:${string}` | `room:${string}`): void {
+    this.db.query("INSERT INTO team_seen (key, at) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET at = MAX(at, excluded.at)").run(key, this.now());
   }
   /** The team as Galahad himself reads it: bounded, and without anyone's working notes. `room`: that room's latest words too. */
   overview(room?: string): TeamOverview {

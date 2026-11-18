@@ -1204,9 +1204,10 @@ Next:
       const shown = conversations.filter((c) => !str("project") || c.project === str("project"));
       if (!shown.length) console.log(str("project") ? `No chats in ${str("project")}.` : "No chats yet. `galahad ask …` starts one.");
       for (const c of shown) {
-        // Where each stands, at a glance: working, needs you, queued, stopped, failed (nothing to say when it's done).
+        // Where each stands, at a glance: working, needs you, queued, stopped, failed (nothing to say when it's done); and
+        // whether an answer in it is new to you (read it with galahad chat <id>, or on any device).
         const state = chatStateWords(c);
-        console.log(`${c.pinned ? "★ " : "  "}${c.title}  ${state ? `${bold(state)}  ` : ""}${dim(`${c.id} · ${c.count} messages · ${new Date(c.updatedAt).toLocaleString()}${c.project ? ` · ${c.project}` : ""}${c.bank ? " · bank" : ""}`)}`);
+        console.log(`${c.pinned ? "★ " : "  "}${c.title}  ${c.unread ? `${bold("new")}  ` : ""}${state ? `${bold(state)}  ` : ""}${dim(`${c.id} · ${c.count} messages · ${new Date(c.updatedAt).toLocaleString()}${c.project ? ` · ${c.project}` : ""}${c.bank ? " · bank" : ""}`)}`);
       }
       return;
     }
@@ -1235,6 +1236,8 @@ Next:
       if (conversation.turn) console.log(`${bold("He's working on it now:")} ${turnLine(conversation.turn, Date.now())}\n${dim(`  galahad turn watch ${conversation.turn.id} · galahad turn stop ${conversation.turn.id} · galahad ask --chat ${conversation.id} --steer|--queue "…"`)}\n`);
       if (conversation.queue.length) console.log(`${queueLines(conversation.queue, conversation.held).join("\n")}\n${dim(`  galahad queue ${conversation.id} [resume | rm <n|all> | send <n>]`)}\n`);
       console.log(dim(`Go on with: galahad ask --chat ${conversation.id} "…"`));
+      // Read here: what he answered in it is no longer new, on any device.
+      if (conversation.unread) await admin.call("seeConversation", { id: conversation.id }).catch(() => {});
       return;
     }
 

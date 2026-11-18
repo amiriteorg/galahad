@@ -147,6 +147,10 @@ export const TeamArrangeInput = z.strictObject({
 });
 export type TeamArrangeInput = z.infer<typeof TeamArrangeInput>;
 
+/** A knight's page (its conversation with you and its tasks), or a room, looked at by you. */
+export const TeamSeenInput = z.union([z.strictObject({ knight: TeammateId }), z.strictObject({ room: TeamRoomId })]);
+export type TeamSeenInput = z.infer<typeof TeamSeenInput>;
+
 /** `approve`: a task a knight proposed starts (a task only); `stop` declines one. */
 export const TeamControlInput = z.strictObject({
   room: TeamRoomId.optional(),
@@ -409,6 +413,9 @@ export interface TeamSnapshot {
   order?: string[];
   /** Who leads the Roundtable: `galahad`, or the knight you chose (absent from an older node: Galahad). */
   primary?: string;
+  /** When you last looked, on any device, at each knight's page (`knight:<id>`) and each room (`room:<id>`): what ended
+   * there after it is new to you, as an email is unread (absent from an older node, which keeps no such thing). */
+  seen?: Record<string, number>;
 }
 
 export interface TeamRoomView extends TeamRoom {

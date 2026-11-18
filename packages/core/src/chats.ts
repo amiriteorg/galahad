@@ -116,6 +116,17 @@ export interface ConversationSummary {
   held: QueueHold | null;
   /** What it waits on you for (null: nothing). */
   needs: ChatNeeds | null;
+  /** An answer of his ended in it since you last read it, on any device (email's unread). An answer that ended while a
+   * device was watching it was read there. Absent from an older node. */
+  unread?: boolean;
+}
+
+/** A chat with an answer you haven't read yet, as `GET /api/turns` lists them (the newest answer first). */
+export interface UnreadChat {
+  id: string;
+  title: string;
+  /** When its latest answer ended. */
+  answeredAt: number;
 }
 
 export interface ConversationView extends ConversationSummary {

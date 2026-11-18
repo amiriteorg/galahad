@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   TEAM_GALAHAD, TEAM_LIMITS, TeamControlInput, TeamRoomId, type TeamSayInput, TeammateId,
   type Teammate, type TeammateInput, type TeamRecruitInput, type TeamRoom, type TeamRoomInput, type TeamPostInput, type TeamWorkspace,
-  type TeamMessage, type TeamTask, type TeamTaskChanges, type TeamTaskInput, type TeamTaskRecord, type TeamTrailEntry, type TeamSnapshot, type TeamRoomView, type TeamOverview,
+  type TeamMessage, type TeamTask, type TeamTaskChanges, type TeamTaskInput, type TeamTaskRecord, type TeamTrailEntry, type TeamSnapshot, type TeamRoomView, type TeamOverview, type TeamSeenInput,
   type InterventionKind, type TeamWorkStatus,
 } from "../../core/src/team.ts";
 import { TeamStore, TeamError, teamInput, teamOutput, teamText, type TeamAnswer, type TeamAsker, type TeamJob, type TeamSelection } from "./team-store.ts";
@@ -95,6 +95,16 @@ export class TeamService {
   }
   snapshot(): TeamSnapshot { return this.store.snapshot(); }
   room(id: string): TeamRoomView { return this.store.roomView(id); }
+  /** You looked at a knight's page or a room (one that is here). */
+  see(input: TeamSeenInput): void {
+    if ("knight" in input) {
+      if (!this.store.teammate(input.knight)) throw new TeamError(404, "No such knight at the table.");
+      this.store.see(`knight:${input.knight}`);
+    } else {
+      this.store.requireRoom(input.room);
+      this.store.see(`room:${input.room}`);
+    }
+  }
   messages(room: string, limit?: number): TeamMessage[] { return this.store.messages(room, limit); }
   saveTeammate(input: TeammateInput): Teammate {
     this.accepting();

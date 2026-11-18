@@ -1569,6 +1569,77 @@
         "expression": "working",
         "tone": "warn",
         "state": "needs"
+      },
+      {
+        "input": {
+          "turns": [],
+          "quests": [],
+          "needs": 0,
+          "unread": [
+            {
+              "title": "The release plan"
+            }
+          ]
+        },
+        "text": "New answer in “The release plan”",
+        "expression": "idle",
+        "tone": "ok",
+        "state": "unread"
+      },
+      {
+        "input": {
+          "turns": [],
+          "quests": [],
+          "needs": null,
+          "unread": [
+            {
+              "title": "A"
+            },
+            {
+              "title": "B"
+            }
+          ]
+        },
+        "text": "2 new answers",
+        "expression": "idle",
+        "tone": "ok",
+        "state": "unread"
+      },
+      {
+        "input": {
+          "turns": [],
+          "quests": [],
+          "needs": 1,
+          "unread": [
+            {
+              "title": "A"
+            }
+          ]
+        },
+        "text": "1 thing needs you",
+        "expression": "asking",
+        "tone": "warn",
+        "state": "needs"
+      },
+      {
+        "input": {
+          "turns": [
+            {
+              "title": "A"
+            }
+          ],
+          "quests": [],
+          "needs": 0,
+          "unread": [
+            {
+              "title": "B"
+            }
+          ]
+        },
+        "text": "Working in “A”",
+        "expression": "working",
+        "tone": "accent",
+        "state": "working"
       }
     ],
     "needs": [
@@ -1600,6 +1671,379 @@
           "max"
         ],
         "needs": 0
+      }
+    ]
+  },
+  "unread": {
+    "snapshot": {
+      "teammates": [
+        {
+          "id": "ada",
+          "name": "Ada",
+          "instructions": "Ada keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "bea",
+          "name": "Bea",
+          "instructions": "Bea keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "cy",
+          "name": "Cy",
+          "instructions": "Cy keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "dee",
+          "name": "Dee",
+          "instructions": "Dee keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "eli",
+          "name": "Eli",
+          "instructions": "Eli keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "fin",
+          "name": "Fin",
+          "instructions": "Fin keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        }
+      ],
+      "rooms": [
+        {
+          "id": "dm-ada",
+          "name": "ada",
+          "members": [
+            "ada"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-bea",
+          "name": "bea",
+          "members": [
+            "bea"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-cy",
+          "name": "cy",
+          "members": [
+            "cy"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-dee",
+          "name": "dee",
+          "members": [
+            "dee"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-eli",
+          "name": "eli",
+          "members": [
+            "eli"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "dm-fin",
+          "name": "fin",
+          "members": [
+            "fin"
+          ],
+          "direct": true,
+          "turnBudget": 3,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "forge",
+          "name": "Forge",
+          "members": [
+            "eli",
+            "fin"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "shed",
+          "name": "Shed",
+          "members": [
+            "fin"
+          ],
+          "direct": false,
+          "turnBudget": 8,
+          "paused": false,
+          "createdAt": 1763164000000,
+          "updatedAt": 1763199700000
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task-pass00000000",
+          "room": "dm-cy",
+          "assignee": "cy",
+          "title": "The pass task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "done",
+          "verified": true,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-pass",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763192800000
+        },
+        {
+          "id": "task-ran000000000",
+          "room": "dm-dee",
+          "assignee": "dee",
+          "title": "The ran task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "done",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-ran",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198800000
+        },
+        {
+          "id": "task-fell00000000",
+          "room": "dm-fin",
+          "assignee": "fin",
+          "title": "The fell task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "failed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-fell",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199400000
+        }
+      ],
+      "deliveries": [
+        {
+          "id": "delivery-reply",
+          "room": "dm-ada",
+          "teammate": "ada",
+          "trigger": "message",
+          "chainId": "chain-d-reply",
+          "status": "done",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "delivery-seen",
+          "room": "dm-bea",
+          "teammate": "bea",
+          "trigger": "message",
+          "chainId": "chain-d-seen",
+          "status": "done",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "delivery-there",
+          "room": "forge",
+          "teammate": "eli",
+          "trigger": "message",
+          "chainId": "chain-d-there",
+          "status": "done",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "delivery-old",
+          "room": "shed",
+          "teammate": "fin",
+          "trigger": "message",
+          "chainId": "chain-d-old",
+          "status": "done",
+          "error": null,
+          "createdAt": 1763198800000,
+          "updatedAt": 1763197600000
+        }
+      ],
+      "seen": {
+        "knight:ada": 1763198200000,
+        "knight:bea": 1763199700000,
+        "knight:dee": 1763199400000,
+        "room:forge": 1763199100000,
+        "room:shed": 1763198200000
+      }
+    },
+    "rows": [
+      {
+        "id": "ada",
+        "kind": "knight",
+        "line": "Ada keeps the build green.",
+        "needs": false,
+        "unread": true,
+        "state": "unread"
+      },
+      {
+        "id": "bea",
+        "kind": "knight",
+        "line": "Bea keeps the build green.",
+        "needs": false,
+        "unread": false,
+        "state": "resting"
+      },
+      {
+        "id": "cy",
+        "kind": "knight",
+        "line": "Verified: “The pass task”",
+        "needs": false,
+        "unread": true,
+        "state": "verified"
+      },
+      {
+        "id": "dee",
+        "kind": "knight",
+        "line": "Done: “The ran task”",
+        "needs": false,
+        "unread": false,
+        "state": "resting"
+      },
+      {
+        "id": "eli",
+        "kind": "knight",
+        "line": "Eli keeps the build green.",
+        "needs": false,
+        "unread": false,
+        "state": "resting"
+      },
+      {
+        "id": "fin",
+        "kind": "knight",
+        "line": "Failed: “The fell task”",
+        "needs": true,
+        "unread": true,
+        "state": "failed"
+      },
+      {
+        "id": "forge",
+        "kind": "room",
+        "line": "Eli, Fin",
+        "needs": false,
+        "unread": true,
+        "state": null
+      },
+      {
+        "id": "shed",
+        "kind": "room",
+        "line": "Fin",
+        "needs": false,
+        "unread": false,
+        "state": null
       }
     ]
   },

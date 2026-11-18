@@ -577,7 +577,8 @@ export class TurnHub {
     const empty = !before.content.trim() && !before.steps.some((s) => s.kind === "tool");
     if (c && turn.answerId !== null) {
       if (empty) this.opts.chats.dropAnswer(c.id, turn.answerId);
-      else this.opts.chats.finishAnswer(c.id, turn.answerId, { ...before, status: "steered" });
+      // (Read where it was being watched: you steered it from there.)
+      else this.opts.chats.finishAnswer(c.id, turn.answerId, { ...before, status: "steered" }, turn.listeners.size > 0);
       this.opts.chats.addUser(c.id, text);
       turn.answerId = this.opts.chats.startAnswer(c.id);
     }
@@ -621,7 +622,8 @@ export class TurnHub {
     }
 
     if (c) {
-      if (turn.answerId !== null) chats.finishAnswer(c.id, turn.answerId, { ...turn.answer, status: state });
+      // An answer a device watched to its end was read there; one nobody watched is new to you until you read it.
+      if (turn.answerId !== null) chats.finishAnswer(c.id, turn.answerId, { ...turn.answer, status: state }, turn.listeners.size > 0);
       chats.setWaits(c.id, { actions: [...new Set(turn.spec.waits.actions)], secrets: [...new Set(turn.spec.waits.secrets)], question: state === "done" && endsWithQuestion(turn.answer.content) });
       // A turn that didn't end well holds what's queued behind it until the owner says to go on.
       const queued = chats.queue(c.id).length;

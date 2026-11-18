@@ -15,7 +15,7 @@ import { icon } from "../ui/icons.ts";
 import { leadMark, seat, stateChip } from "../ui/avatar.ts";
 import type { Signal } from "../ui/signal.ts";
 import { arrange, arrangeControls, arranged, pending, primaryOf } from "./arrange.ts";
-import { answerStep, chatActivity, galahadWork, nodeTurns, questsInHand, stopChat } from "./chat.ts";
+import { answerStep, chatActivity, galahadWork, nodeTurns, questsInHand, stopChat, unreadChats } from "./chat.ts";
 import { editKnight, editRoom, giveToRoundtable, openDirect } from "./team-forms.ts";
 
 /*
@@ -59,7 +59,7 @@ export interface Table {
 
 /** What any list of the knights is drawn from: watched, it is drawn again whenever one of these changes. */
 export const tableSources = (ctx: Ctx): Signal<unknown>[] =>
-  [ctx.live.team, ctx.live.teamProblem, ctx.live.actions, ctx.live.inboxCount, ctx.live.inboxLoaded, nodeTurns, questsInHand, answerStep, chatActivity, pending] as Signal<unknown>[];
+  [ctx.live.team, ctx.live.teamProblem, ctx.live.actions, ctx.live.inboxCount, ctx.live.inboxLoaded, nodeTurns, questsInHand, unreadChats, answerStep, chatActivity, pending] as Signal<unknown>[];
 
 export function tableOf(ctx: Ctx): Table {
   const raw = ctx.live.team.value;
@@ -120,7 +120,7 @@ export function rosterNav(ctx: Ctx): Roster {
       })
     : null;
 
-  const row = (opts: { seated?: Seat; key: string; href: string; current: boolean; face: Child; name: string; line: string; needs: boolean; lead?: boolean; leads?: boolean; chip?: Child; moves?: boolean; rest?: boolean; onclick?: (event: Event) => void; after?: Child }): HTMLElement =>
+  const row = (opts: { seated?: Seat; key: string; href: string; current: boolean; face: Child; name: string; line: string; needs: boolean; fresh?: boolean; lead?: boolean; leads?: boolean; chip?: Child; moves?: boolean; rest?: boolean; onclick?: (event: Event) => void; after?: Child }): HTMLElement =>
     h(
       "a",
       {
@@ -135,7 +135,8 @@ export function rosterNav(ctx: Ctx): Roster {
         title: `${opts.name}: ${opts.line}`,
         onclick: opts.onclick,
       },
-      h("span", { class: "roster-face" }, opts.face, opts.needs && !opts.seated ? h("span", { class: "roster-mark", role: "img", "aria-label": "Needs you" }) : null),
+      // A face without a seat (a room's) wears a mark: amber when it needs you, else green while something there is new to you.
+      h("span", { class: "roster-face" }, opts.face, opts.seated ? null : opts.needs ? h("span", { class: "roster-mark", role: "img", "aria-label": "Needs you" }) : opts.fresh ? h("span", { class: "roster-mark is-new", role: "img", "aria-label": "Something new" }) : null),
       h("span", { class: "roster-text" }, h("span", { class: "roster-head" }, h("span", { class: "roster-name ellipsis" }, opts.name), opts.leads ? leadMark(opts.name) : null, opts.chip ?? null), h("span", { class: "roster-line ellipsis" }, opts.line)),
       opts.after,
     );
@@ -251,7 +252,7 @@ export function rosterNav(ctx: Ctx): Roster {
         ...(arranging
           ? []
           : rooms.map((item) =>
-              row({ key: item.key, href: teamHash({ room: item.room! }), current: where.route === "team" && item.room === where.room, face: h("span", { class: "avatar" }, icon("hash", { size: 16 })), name: item.name, line: item.line, needs: item.needs }),
+              row({ key: item.key, href: teamHash({ room: item.room! }), current: where.route === "team" && item.room === where.room, face: h("span", { class: "avatar" }, icon("hash", { size: 16 })), name: item.name, line: item.line, needs: item.needs, fresh: item.unread }),
             )),
       ),
     );

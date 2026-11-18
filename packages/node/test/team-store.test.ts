@@ -17,6 +17,39 @@ const setup = (store: TeamStore) => {
   store.saveRoom({ id: "workshop", name: "Workshop", members: ["ada", "lin"] });
 };
 
+describe("what is new to you", () => {
+  test("when you last looked at each knight's page and each room is kept, and only grows", () => {
+    let clock = 1_000;
+    const store = make(":memory:", () => clock);
+    setup(store);
+    // A store made before anyone sat at the table has seen nothing: what ends there is new.
+    expect(store.snapshot().seen).toEqual({});
+    clock = 2_000;
+    store.see("knight:ada");
+    store.see("room:workshop");
+    expect(store.snapshot().seen).toEqual({ "knight:ada": 2_000, "room:workshop": 2_000 });
+    // A clock that went back never makes what you read new again.
+    clock = 1_500;
+    store.see("knight:ada");
+    expect(store.snapshot().seen!["knight:ada"]).toBe(2_000);
+  });
+
+  test("a store from before it counts everything until then as seen", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-seen-")); dirs.push(dir); const path = join(dir, "team.db");
+    let clock = 1_000;
+    const store = make(path, () => clock);
+    setup(store);
+    close(store);
+    const raw = new Database(path);
+    raw.exec("DROP TABLE team_seen");
+    raw.close();
+    clock = 5_000;
+    const reopened = make(path, () => clock);
+    const seen = reopened.snapshot().seen!;
+    expect(seen).toMatchObject({ "knight:ada": 5_000, "knight:lin": 5_000, "room:workshop": 5_000 });
+  });
+});
+
 describe("private team persistence", () => {
   test("a knight's own models are kept through edits that leave them out and a reopen; none, or null, gives it its role's again", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-team-models-")); dirs.push(dir); const path = join(dir, "team.db");

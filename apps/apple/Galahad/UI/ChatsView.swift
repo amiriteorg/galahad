@@ -122,7 +122,8 @@ struct ChatsView: View {
     }
 }
 
-/// A chat in the list: its title, where it stands (in Galahad's red when it needs you), and when it was last active.
+/// A chat in the list: its title (a green dot before it while an answer in it is new to you), where it stands (amber
+/// when it needs you, red when it failed), and when it was last active.
 struct ChatRow: View {
     let chat: ConversationSummary
     /// The heading it's under, which says how its time reads.
@@ -131,23 +132,25 @@ struct ChatRow: View {
     let current: Bool
 
     private var words: String { Chats.stateWords(chat) }
-    private var needsYou: Bool { chat.state == "waiting" || chat.state == "failed" }
+    private var unread: Bool { chat.unread == true }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
             VStack(alignment: .leading, spacing: Space.line) {
                 HStack(spacing: Space.s2) {
+                    // An answer in it you haven't read: a green dot, as an unread email has, until you open it.
+                    if unread { Circle().fill(Color.done).frame(width: 8, height: 8).accessibilityLabel("New answer") }
                     if chat.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("Pinned") }
-                    Text(chat.title).font(.body.weight(current ? .semibold : .regular)).lineLimit(1)
+                    Text(chat.title).font(.body.weight(current || unread ? .semibold : .regular)).lineLimit(1)
                 }
                 if !words.isEmpty {
                     HStack(spacing: Space.s2) {
                         // The words say it; the dot is for the eye, so the row stays a button to VoiceOver.
-                        if chat.state == "working" { LiveDot() }
+                        if chat.state == "working" { LiveDot(color: .working) }
                         Text(words).lineLimit(2)
                     }
                     .font(.subheadline)
-                    .foregroundStyle(needsYou ? Color.siege : .secondary)
+                    .foregroundStyle(chat.state == "waiting" ? Color.needs : chat.state == "failed" ? Color.failed : .secondary)
                 }
             }
             Spacer(minLength: Space.s2)

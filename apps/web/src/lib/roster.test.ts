@@ -119,6 +119,25 @@ describe("a knight's state: the ring round its face and the chip beside its name
     // A room has none: its row has no face.
     expect(rows({ rooms: [room("dm-ada", ["ada"]), room("forge", ["ada"], { direct: false })] }).find((row) => row.kind === "room")!.state).toBeUndefined();
   });
+
+  test("what ended on its page since you last looked is new to you, green until you look (on any device)", () => {
+    const reply = delivery("ada", "done", { updatedAt: 50 });
+    // Its reply to you ended after you last looked: new. Looked at since: at rest.
+    expect(ada({ deliveries: [reply], seen: { "knight:ada": 40 } })).toMatchObject({ state: "unread", unread: true, needs: false });
+    expect(ada({ deliveries: [reply], seen: { "knight:ada": 50 } })).toMatchObject({ state: "resting", unread: false });
+    // Never looked at: anything that ended is new. Its verified work says so, however long ago it passed.
+    expect(ada({ deliveries: [reply], seen: {} }).state).toBe("unread");
+    expect(ada({ tasks: [task("ada", "done", { updatedAt: NOW - 60_000 })], seen: {} })).toMatchObject({ state: "verified", unread: true });
+    // A pass you have seen is at rest, however pleased its face still is.
+    expect(ada({ tasks: [task("ada", "done", { updatedAt: NOW - 1000 })], seen: { "knight:ada": NOW } })).toMatchObject({ state: "resting", expression: "pleased" });
+    // Its page holds its replies to you, not what it says in a room: that is the room's to be new in.
+    expect(ada({ deliveries: [delivery("ada", "done", { room: "forge", updatedAt: 50 })], seen: { "knight:ada": 40 } })).toMatchObject({ state: "resting", unread: false });
+    // What waits on you, work in hand and a failure still come first.
+    expect(ada({ deliveries: [reply], tasks: [task("ada", "running", { updatedAt: 60 })], seen: {} })).toMatchObject({ state: "working", unread: true });
+    expect(ada({ tasks: [task("ada", "failed", { updatedAt: 60 })], seen: {} }).state).toBe("failed");
+    // A node that keeps no such thing: nothing is new, and a pass is green only a moment.
+    expect(ada({ deliveries: [reply] })).toMatchObject({ state: "resting", unread: false });
+  });
 });
 
 describe("a task a knight proposed", () => {
@@ -152,6 +171,15 @@ describe("a room's row", () => {
     expect(forge({ tasks: [task("ada", "running", { room: "forge" }), task("lin", "proposed", { room: "forge", proposedBy: "lin", title: "Ship it" })] })).toMatchObject({ line: "Lin proposes “Ship it”", needs: true });
     // Work in another room is not this room's.
     expect(forge({ tasks: [task("ada", "failed", { room: "elsewhere" })] })).toMatchObject({ line: "Ada, Lin", needs: false });
+  });
+
+  test("is new to you when a reply or a task ended there since you last looked at it", () => {
+    const room = (seen: Record<string, number> | undefined) =>
+      rows({ teammates: [person("ada"), person("lin")], rooms: [{ id: "forge", name: "Forge", members: ["ada", "lin"], direct: false, turnBudget: 8, paused: false, createdAt: 1, updatedAt: 1 }], tasks: [], deliveries: [delivery("lin", "done", { room: "forge", updatedAt: 50 })], ...(seen ? { seen } : {}) }).find((row) => row.kind === "room")!;
+    expect(room({ "room:forge": 40 }).unread).toBe(true);
+    expect(room({ "room:forge": 50 }).unread).toBe(false);
+    expect(room({}).unread).toBe(true);
+    expect(room(undefined).unread).toBe(false);
   });
 });
 

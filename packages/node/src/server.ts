@@ -17,6 +17,7 @@ import {
   type ChatMessage,
   type DoctorReport,
   type ConversationSummary,
+  type UnreadChat,
   type ConversationView,
   type ChatNeeds,
   chatState,
@@ -1322,7 +1323,7 @@ export function createApp(ctx: AppContext) {
       // A conversation started elsewhere (a temporary chat you now keep) brings what was said before.
       for (const m of request.messages.slice(0, -1)) {
         if (m.role === "user") ctx.chats.addUser(kept.id, m.content, m.attachments);
-        else ctx.chats.finishAnswer(kept.id, ctx.chats.startAnswer(kept.id), { content: m.content, model: null, steps: [], status: "done", error: null, bank: false });
+        else ctx.chats.finishAnswer(kept.id, ctx.chats.startAnswer(kept.id), { content: m.content, model: null, steps: [], status: "done", error: null, bank: false }, true);
       }
     }
     // What he recalls: for your question, the latest thing said. For coding work (a quest's call), for what the
@@ -1725,7 +1726,8 @@ export function createApp(ctx: AppContext) {
     const kept = keptChat(aside.conversation, p);
     if (ctx.turns.runningIn(kept.id)) throw new HttpError(409, "He has just started working in that chat again. Try once more: it will steer him.");
     ctx.chats.addUser(kept.id, aside.question);
-    ctx.chats.finishAnswer(kept.id, ctx.chats.startAnswer(kept.id), { content: aside.answer, model: aside.model, steps: aside.model ? [{ kind: "model", ref: aside.model }] : [], status: "done", error: null, bank: false });
+    // (Read: you are bringing it here from where you read it.)
+    ctx.chats.finishAnswer(kept.id, ctx.chats.startAnswer(kept.id), { content: aside.answer, model: aside.model, steps: aside.model ? [{ kind: "model", ref: aside.model }] : [], status: "done", error: null, bank: false }, true);
     asides.delete(id);
     return { how: "kept" };
   }
@@ -2130,6 +2132,7 @@ export function createApp(ctx: AppContext) {
     directTeammate: (input, p) => { ownerOnly(p); return { room: teamOf().direct(input.id) }; },
     teamRoom: (input, p) => { ownerOnly(p); return teamOf().room(input.id); },
     teamTrail: (input, p) => { ownerOnly(p); return teamOf().trail(input.task, input.after ?? 0); },
+    seeTeam: (input, p) => { ownerOnly(p); teamOf().see(input); return { seen: true }; },
     teamDesktop: async (input, p, req) => {
       ownerOnly(p);
       const bound = seatOf(input.id).workspace;
@@ -2709,7 +2712,8 @@ export function createApp(ctx: AppContext) {
             clearInterval(heartbeat);
             if (kept && answerId !== null) {
               const status = answer.error ? "error" : req.signal.aborted ? "stopped" : "done";
-              ctx.chats.finishAnswer(kept.id, answerId, { ...answer, status });
+              // Read by whoever asked, unless they went away before it ended.
+              ctx.chats.finishAnswer(kept.id, answerId, { ...answer, status }, !req.signal.aborted);
             }
           }
           if (open) controller.close();
@@ -2760,6 +2764,10 @@ export function createApp(ctx: AppContext) {
       // Served as what its bytes are (never as whoever sent them said), and never run.
       return keptFile(bytes, pictureType(bytes) ?? "text/plain; charset=utf-8", "inline", bytes.length);
     },
+    seeConversation: (input, p) => {
+      keptChat(input.id, p);
+      return { seen: ctx.chats.see(input.id) };
+    },
     deleteConversation: (input, p) => {
       keptChat(input.id, p);
       // What he's doing in it stops with it; what was queued behind it goes with it.
@@ -2782,6 +2790,8 @@ export function createApp(ctx: AppContext) {
         limits: ctx.turns.limits(),
         // Which writing of the chats this is: another device's chat, answer or rename shows as a new one.
         chats: ctx.chats.version(),
+        // His answers you haven't read yet, on any device: his ring is green while there are some.
+        unread: ctx.chats.unread().filter((c) => !c.bank || p.scopes.includes("bank:read")).map(({ id, title, answeredAt }): UnreadChat => ({ id, title, answeredAt })),
       };
     },
     attachTurn: (input, p, req) => watchTurn(watchedTurn(input.turn, p), req),

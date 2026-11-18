@@ -8,8 +8,9 @@ describe("a knight's state in a word and a colour", () => {
       expect([state, look.words === null]).toEqual([state, state === "resting"]);
       if (state !== "resting") expect([state, look.words!.length > 0]).toEqual([state, true]);
     }
-    // Ink while it works, Galahad's oxblood when it waits on you, red for a failure, green for a pass, grey otherwise.
-    expect(Object.fromEntries(Object.entries(STATES).map(([state, look]) => [state, look.tone]))).toEqual({ working: "accent", needs: "needs", failed: "danger", paused: "neutral", queued: "neutral", verified: "ok", resting: "neutral" });
+    // Blue while it works, amber when it waits on you, red for a failure, green for a pass or for what is new to you,
+    // grey otherwise.
+    expect(Object.fromEntries(Object.entries(STATES).map(([state, look]) => [state, look.tone]))).toEqual({ working: "work", needs: "needs", failed: "failed", paused: "neutral", queued: "neutral", verified: "ok", unread: "ok", resting: "neutral" });
   });
 
   test("Galahad's, from his line: what waits on you first, then work in hand or an answer he is writing, then rest", () => {
@@ -19,6 +20,10 @@ describe("a knight's state in a word and a colour", () => {
     expect(galahadState(galahadNow({ turns: [{ title: "Release plan" }], quests: [], needs: 0 }))).toBe("working");
     expect(galahadState(galahadNow({ turns: [], quests: [{ goal: "Make sync resume" }], needs: 2 }))).toBe("needs");
     expect(galahadState(galahadNow({ turns: [], quests: [], needs: 1 }))).toBe("needs");
+    // An answer of his you haven't read: green, until what waits on you or work in hand comes first.
+    expect(galahadState(galahadNow({ turns: [], quests: [], needs: 0, unread: [{ title: "Release plan" }] }))).toBe("unread");
+    expect(galahadState(galahadNow({ turns: [], quests: [], needs: 1, unread: [{ title: "Release plan" }] }))).toBe("needs");
+    expect(galahadState(galahadNow({ turns: [{ title: "Another" }], quests: [], needs: 0, unread: [{ title: "Release plan" }] }))).toBe("working");
   });
 
   test("beside its chip a line doesn't say the chip's word again; where no chip is shown it keeps it", () => {

@@ -189,6 +189,23 @@ test("real API: you arrange the knights and choose who leads; no agent can, and 
   await api("removeTeammate", { id: "zed" });
 });
 
+test("real API: you looked at a knight's page or a room, on any device: the team says when; no agent can say it for you", async () => {
+  const before = await api<TeamSnapshot>("team");
+  expect(before.seen).toBeDefined();
+  expect(await api("seeTeam", { knight: "ada" })).toEqual({ seen: true });
+  expect(await api("seeTeam", { room: "forge" })).toEqual({ seen: true });
+  const after = await api<TeamSnapshot>("team");
+  expect(after.seen!["knight:ada"]).toBeGreaterThanOrEqual(before.seen!["knight:ada"] ?? 0);
+  expect(after.seen!["room:forge"]).toBeGreaterThan(0);
+  // One that isn't at the table; both at once, or neither; and an agent, whatever its scopes.
+  expect((await request("seeTeam", { knight: "nobody" })).status).toBe(404);
+  expect((await request("seeTeam", { room: "nowhere" })).status).toBe(404);
+  expect((await request("seeTeam", { knight: "ada", room: "forge" })).status).toBe(400);
+  expect((await request("seeTeam", {})).status).toBe(400);
+  const { token } = await api("mintArm", { label: "reader", scopes: ["chat", "mind:read"] });
+  expect((await request("seeTeam", { knight: "ada" }, token)).status).toBe(403);
+});
+
 test("real API: a task given again is your stepping in, counted on the new one (#28), and the team says the north star", async () => {
   await api("saveTeammate", { id: "gil", name: "GIL", role: "engineer" });
   const room = (await api<{ room: { id: string } }>("directTeammate", { id: "gil" })).room.id;

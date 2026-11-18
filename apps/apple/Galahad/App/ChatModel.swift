@@ -57,6 +57,12 @@ struct ChatRequest: Encodable, Sendable {
     private var watching: UUID?
     /// Galahad's latest chat has been looked for since the app opened (his row opens it).
     private var opened = false
+    /// Something he answered in the chat on screen hasn't been read yet, on any device.
+    private var unread = false
+    /// The chat's view is shown (ChatView says so as it comes and goes): only then is what's in it read.
+    var onScreen = false
+    /// Told the id of the chat on screen when it is read, so what showed his answers there as new stops at once.
+    var read: ((String) -> Void)?
 
     var answering: Bool { live != nil }
     /// There is something to send (words, or a file that is up), and no file is still going up.
@@ -86,6 +92,8 @@ struct ChatRequest: Encodable, Sendable {
             let detail = try await client.post("/api/conversations/get", Get(id: id), as: Got.self).conversation
             (conversation, title, role, problem, turn) = (detail.id, detail.title, detail.role, nil, nil)
             thread = ChatThread(kept: detail.messages, role: detail.role)
+            unread = detail.unread == true
+            markRead(with: client)
             // (A turn this device may not watch is refused if asked for: the chat shows as the node keeps it.)
             if let running = detail.turn, running.watchable != false { attach(running.id, with: client) }
         } catch {
@@ -222,6 +230,8 @@ struct ChatRequest: Encodable, Sendable {
         guard let detail = try? await client.post("/api/conversations/get", Get(id: conversation), as: Got.self).conversation,
               self.conversation == conversation, live == nil, !loading else { return }
         title = detail.title
+        unread = detail.unread == true
+        markRead(with: client)
         // Shown again only where the node holds what isn't on screen (a send it never took stays, with why); his turn in it,
         // attached to when this device may watch it (one it may not is refused, so it isn't asked for again and again).
         if let again = Chats.shownAgain(shown: thread.turns, kept: detail.messages, role: detail.role) { thread = again }
@@ -231,5 +241,17 @@ struct ChatRequest: Encodable, Sendable {
     private func leave() {
         live?.cancel()
         (live, watching) = (nil, nil)
+    }
+
+    /// The chat on screen, read where it is shown: what he answered in it so far is no longer new, on any device. (An
+    /// answer that ends while this device watches it is read already: the node knows it was watched.)
+    func markRead(with client: NodeClient) {
+        guard onScreen, unread, let conversation else { return }
+        unread = false
+        read?(conversation)
+        Task {
+            struct Seen: Encodable { let id: String }
+            _ = try? await client.post("/api/conversations/seen", Seen(id: conversation), as: JSONValue.self)
+        }
     }
 }

@@ -1,4 +1,4 @@
-import type { AttachmentRef, ChatMessage, ChatStreamEvent, ConversationSummary, ConversationView, ProjectView, QuestView } from "@galahad/core";
+import type { AttachmentRef, ChatMessage, ChatStreamEvent, ConversationSummary, ConversationView, ProjectView, QuestView, UnreadChat } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import type { QueuedMessage, QueueHold, TurnView } from "@galahad/core/turns";
 import { type Api, ApiError, isAbort } from "../api.ts";
@@ -113,11 +113,13 @@ let unwatchable: TurnView | null = null;
 export const nodeTurns = signal<TurnView[]>([]);
 /** The quests in hand, as last asked. */
 export const questsInHand = signal<QuestView[]>([]);
+/** His chats with an answer you haven't read yet, on any device, as last asked (his ring is green while there are some). */
+export const unreadChats = signal<UnreadChat[]>([]);
 /** The step he is at in the answer this page watches (null: only just started; undefined: it watches none). */
 export const answerStep = signal<string | null | undefined>(undefined);
 const syncStep = (): void => answerStep.set(live ? (thread.target?.steps.at(-1)?.text ?? null) : undefined);
 /** What he has in hand, for his line wherever it is shown (lib/now.ts). */
-export const galahadWork = (): Pick<NowInput, "step" | "turns" | "quests"> => ({ ...(answerStep.value === undefined ? {} : { step: answerStep.value }), turns: nodeTurns.value, quests: questsInHand.value });
+export const galahadWork = (): Pick<NowInput, "step" | "turns" | "quests" | "unread"> => ({ ...(answerStep.value === undefined ? {} : { step: answerStep.value }), turns: nodeTurns.value, quests: questsInHand.value, unread: unreadChats.value });
 /** A chat is on screen, and asks the node what he is doing itself. */
 let chatOnScreen = false;
 
@@ -127,6 +129,19 @@ function noteTurns(turns: TurnView[]): boolean {
   if (of(turns) === of(nodeTurns.value)) return false;
   nodeTurns.set(turns);
   return true;
+}
+
+/** His answers you haven't read, kept only when they changed (a node from before them says none). */
+function noteUnread(unread: UnreadChat[] | undefined): void {
+  const of = (list: UnreadChat[]) => list.map((c) => `${c.id}:${c.answeredAt}:${c.title}`).join(",");
+  if (of(unread ?? []) !== of(unreadChats.value)) unreadChats.set(unread ?? []);
+}
+
+/** The chat on screen, read: what he answered in it so far is no longer new, on any device. */
+function read(api: Api, conversation: Pick<ConversationView, "id" | "unread">): void {
+  if (!conversation.unread || document.hidden) return;
+  unreadChats.set(unreadChats.value.filter((c) => c.id !== conversation.id));
+  void api.post("/api/conversations/seen", { id: conversation.id }).catch(() => {});
 }
 
 async function lookQuests(api: Api, signal?: AbortSignal): Promise<void> {
@@ -142,7 +157,7 @@ async function lookQuests(api: Api, signal?: AbortSignal): Promise<void> {
 /** For the roster, while no chat is on screen to ask: the turns the node runs and the quests in hand, so his row says what he is doing. */
 export async function lookAtWork(api: Api, can: { chat: boolean; read: boolean }): Promise<void> {
   if (chatOnScreen || document.hidden) return;
-  if (can.chat) await api.get<{ turns: TurnView[] }>("/api/turns").then((view) => noteTurns(view.turns), () => {});
+  if (can.chat) await api.get<{ turns: TurnView[]; unread?: UnreadChat[] }>("/api/turns").then((view) => { noteTurns(view.turns); noteUnread(view.unread); }, () => {});
   if (can.read) await lookQuests(api);
 }
 
@@ -369,6 +384,7 @@ async function sync(api: Api): Promise<void> {
   queue = conversation.queue;
   held = conversation.held;
   adopt(api, conversation);
+  read(api, conversation);
   emit(null);
 }
 
@@ -426,6 +442,7 @@ export async function openConversation(api: Api, id: string): Promise<void> {
   held = conversation.held;
   steering = [];
   adopt(api, conversation);
+  read(api, conversation);
   emit(null);
   for (const fn of keptChanged) fn();
 }
@@ -618,10 +635,11 @@ export function watchTurns(api: Api, signal: AbortSignal): void {
   const look = async (): Promise<void> => {
     if (document.hidden) return;
     try {
-      const view = await api.get<{ turns: TurnView[]; chats?: string }>("/api/turns", signal);
+      const view = await api.get<{ turns: TurnView[]; chats?: string; unread?: UnreadChat[] }>("/api/turns", signal);
       const now = view.turns.map((t) => `${t.id}:${t.conversation}`).sort().join(",");
       const mine = current && view.turns.find((t) => t.conversation === current!.id);
       noteTurns(view.turns);
+      noteUnread(view.unread);
       const changed = Boolean(view.chats && seen && view.chats !== seen);
       if (view.chats) seen = view.chats;
       if (now !== known || changed) {
@@ -1321,7 +1339,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
         },
       },
       h("span", { class: "avatar" }, icon(c.pinned ? "pin" : c.project ? "folder" : "chat", { size: 14 })),
-      h("div", { class: "grow" }, h("div", { class: "strong small ellipsis" }, c.title), h("div", { class: "meta" }, meta, c.bank ? h("span", {}, " · bank") : null)),
+      // An answer in it you haven't read: a green dot, as an unread email has, until you open it.
+      h("div", { class: "grow" }, h("div", { class: "chat-row-title" }, c.unread ? dot("ok", { label: "New answer" }) : null, h("span", { class: "strong small ellipsis" }, c.title)), h("div", { class: "meta" }, meta, c.bank ? h("span", {}, " · bank") : null)),
       // Where it stands, at a glance: working, needs you, queued, stopped or failed (nothing when it's simply done).
       chatStateBadge(c),
     );

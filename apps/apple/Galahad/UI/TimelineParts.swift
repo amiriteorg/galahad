@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A timeline's title in its bar (Galahad's chat, a knight's, a room's): whose it is, and one line of where it stands
-/// under it, in Galahad's red when it needs you. The line is always there, so the title doesn't move when it comes; the
+/// under it, in amber when it needs you. The line is always there, so the title doesn't move when it comes; the
 /// bar gives the two the room between its buttons, and a long line ends in an ellipsis there.
 struct TimelineTitle: View {
     let title: String
@@ -13,7 +13,7 @@ struct TimelineTitle: View {
             Text(title).font(.headline).foregroundStyle(.primary)
             Text(line ?? " ")
                 .font(.caption)
-                .foregroundStyle(needs ? Color.siege : .secondary)
+                .foregroundStyle(needs ? Color.needs : .secondary)
                 .lineLimit(1)
         }
     }

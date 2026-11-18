@@ -63,4 +63,11 @@ describe("galahad status: what needs you", () => {
     expect(await said(quiet)).toContain("nothing needs you");
     expect(await said({ loops: { loops: [] } })).toContain("nothing needs you");
   });
+
+  test("his answers you haven't read are news, not something that needs you", async () => {
+    const line = await said({ ...quiet, turns: { turns: [], unread: [{ id: "cv_a", title: "Release", answeredAt: 1 }, { id: "cv_b", title: "Plan", answeredAt: 2 }] } });
+    expect(line).toContain("nothing needs you");
+    expect(line).toContain("2 new answers (galahad chats)");
+    expect(await said({ ...quiet, turns: { turns: [] } })).not.toContain("new answer");
+  });
 });

@@ -127,6 +127,13 @@ struct ChatView: View {
             }
         }
         .task { await chat.openLatest(with: session.client) }
+        // Shown, what he answered in it is read (and stops being new everywhere); gone from the screen, nothing more is.
+        .onAppear {
+            if chat.read == nil { chat.read = { [weak session] id in session?.noteRead(id) } }
+            chat.onScreen = true
+            chat.markRead(with: session.client)
+        }
+        .onDisappear { chat.onScreen = false }
         // A new chat asked for from the menus (⌘N, a Mac's or an iPad's): the message box takes the keys.
         .task(id: composerWanted.wrappedValue) {
             guard composerWanted.wrappedValue else { return }

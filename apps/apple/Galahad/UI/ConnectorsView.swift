@@ -119,8 +119,10 @@ struct StateBadge: View {
     private var color: Color {
         if selected { return .white }
         return switch tone {
-        case "ok": .green
-        case "warn": .orange
+        case "ok": .done
+        case "warn", "needs": .needs
+        case "work": .working
+        case "failed": .failed
         case "danger": .siege
         case "accent": .ink
         default: .secondary

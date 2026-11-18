@@ -17,7 +17,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectBranchInput, ProjectCommitInput, ProjectGitInput, ProjectId, ProjectInput } from "./chats.ts";
-import { TeammateInput, TeamArrangeInput, TeamChangesInput, TeamEngramInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
+import { TeammateInput, TeamArrangeInput, TeamChangesInput, TeamEngramInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
@@ -275,6 +275,8 @@ export const routes = {
   teamRoom: { method: "POST", path: "/api/team/room", scope: "chat", input: z.strictObject({ id: z.string().min(1).max(80) }) },
   /** What a task did, as it happened: its kept lines after number `after`, a page at a time, with the task's status now. Yours to read, like a room. */
   teamTrail: { method: "POST", path: "/api/team/trail", scope: "chat", input: z.strictObject({ task: TeamTaskId, after: z.number().int().min(0).max(10_000_000).optional() }) },
+  /** You have looked at a knight's page or a room, on whichever device: what ended there so far is no longer new (`team`'s `seen`). */
+  seeTeam: { method: "POST", path: "/api/team/seen", scope: "chat", input: TeamSeenInput },
   postTeamMessage: { method: "POST", path: "/api/team/messages", scope: "fleet:admin", input: TeamPostInput },
   createTeamTask: { method: "POST", path: "/api/team/tasks", scope: "fleet:admin", input: TeamTaskInput },
   /** A task given to the Roundtable: the knight best suited to it takes it, and the answer says who and why (everyone considered, each with its reasons). */
@@ -608,6 +610,8 @@ export const routes = {
   },
   /** Gone for good: the node overwrites what it held. */
   deleteConversation: { method: "POST", path: "/api/conversations/delete", scope: "chat", input: z.strictObject({ id: ConversationId }) },
+  /** You have read it, on whichever device: its answers so far are no longer new, as email's read (`unread`). */
+  seeConversation: { method: "POST", path: "/api/conversations/seen", scope: "chat", input: z.strictObject({ id: ConversationId }) },
   /*
    * Turns the node owns (turns.ts): a chat turn of yours (the chat route, with his tools) runs on the node to
    * its end whether or not anyone is listening. Yours alone, like your chats: never an agent's. A turn that may

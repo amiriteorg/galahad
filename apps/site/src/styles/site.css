@@ -18,7 +18,7 @@
   --on-ink: #ffffff;
   --siege: #c4141b;
   --ok: #137a43;
-  --needs: #c4141b;
+  --needs: #946200;
   --other: #8b8b94;
   --wall: 10px;
   --part: 2px;
@@ -42,7 +42,7 @@
     --on-ink: #0a0a0b;
     --siege: #ee2c36;
     --ok: #4cc38a;
-    --needs: #ff7a7a;
+    --needs: #f0b549;
     --other: #62626b;
   }
 }

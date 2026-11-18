@@ -156,6 +156,10 @@ struct KnightView: View {
                 try? await Task.sleep(for: .seconds(room.writing ? 2 : 4))
             }
         }
+        // On screen, what ended here is read (its replies to you, its tasks): no longer new, on any device.
+        .task(id: row?.unread) {
+            if row?.unread == true { await session.read(knight: id) }
+        }
     }
 
     private var welcome: some View {
@@ -473,7 +477,7 @@ private struct KnightAbout: View {
                             VStack(alignment: .leading, spacing: Space.s1) {
                                 Text(knight.name).font(.title2.bold())
                                 Text(knight.models?.isEmpty == false ? Knights.worksOn(role: knight.role.capitalized, models: knight.models) : knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)
-                                if let row { Text(row.line).font(.subheadline).foregroundStyle(row.needs ? Color.siege : .primary) }
+                                if let row { Text(row.line).font(.subheadline).foregroundStyle(row.needs ? Color.needs : .primary) }
                             }
                         }
                         .padding(.vertical, Space.s1)

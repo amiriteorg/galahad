@@ -24,6 +24,8 @@ struct ConversationSummary: Decodable, Sendable, Identifiable, Equatable {
     let queued: Int
     let held: String?
     let needs: Needs?
+    /// An answer of his ended in it since you last read it, on any device (email's unread; absent from an older node).
+    var unread: Bool? = nil
 }
 
 /// `POST /api/conversations/get`: a kept chat with its messages, and the turn the node is running in it, if any.
@@ -34,6 +36,15 @@ struct ConversationDetail: Decodable, Sendable {
     let pinned: Bool
     let messages: [StoredMessage]
     let turn: TurnView?
+    /// Something he answered in it hasn't been read yet, on any device.
+    var unread: Bool? = nil
+}
+
+/// A chat with an answer you haven't read yet, as `GET /api/turns` lists them (the newest answer first).
+struct UnreadChat: Decodable, Sendable, Equatable {
+    let id: String
+    let title: String
+    let answeredAt: Double
 }
 
 /// The chats list as the PWA shows it (`lib/chats.ts`, core's `chatStateWords`): pinned first, then by when each was

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ChatStreamEvent, clientIdFromKey, type ConversationSummary, type ConversationView, type QueuedMessage, type RouteName, routes, type Scope, signRequest, type TurnLimits, type TurnView, utf8 } from "@galahad/core";
+import { type ChatStreamEvent, clientIdFromKey, type ConversationSummary, type ConversationView, type QueuedMessage, type RouteName, routes, type Scope, signRequest, type TurnLimits, type TurnView, type UnreadChat, utf8 } from "@galahad/core";
 import { requestPairing, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -202,7 +202,7 @@ const ask = async (caller: Caller, content: string, extra: object = {}, signal?:
   return watch(response);
 };
 const chatOf = async (id: string, caller: Caller = admin) => (await json<{ conversation: ConversationView }>(caller("conversation", { id }))).conversation;
-const listed = async (caller: Caller = admin) => json<{ turns: TurnView[]; limits: TurnLimits; chats: string }>(caller("turns"));
+const listed = async (caller: Caller = admin) => json<{ turns: TurnView[]; limits: TurnLimits; chats: string; unread: UnreadChat[] }>(caller("turns"));
 const summaries = async (caller: Caller = admin) => (await json<{ conversations: ConversationSummary[] }>(caller("conversations"))).conversations;
 const idle = () => until(async () => (await listed()).turns.length === 0);
 
@@ -346,6 +346,45 @@ describe("the same chats on every device", () => {
     await chatOf(id);
     await summaries();
     expect((await listed()).chats).toBe(renamed);
+  });
+
+  test("an answer that ended with nobody watching is new on every device until it is read on one", async () => {
+    await idle();
+    const pace = paced("Done: ", "the plan.");
+    script = [pace.reply];
+    const dropped = new AbortController();
+    const asked = await ask(phone.call, "Plan Friday.", { save: true }, dropped.signal);
+    await asked.seen("text");
+    const id = asked.turn().conversation!;
+    // The phone is put away before he finishes.
+    dropped.abort();
+    await asked.done;
+    await until(async () => (await listed()).turns[0]?.watchers === 0);
+    pace.go();
+    await idle();
+    // New on this device and on the phone alike (his ring is green while it is).
+    expect((await listed()).unread).toEqual([expect.objectContaining({ id, title: "Plan Friday." })]);
+    expect((await listed(phone.call)).unread.map((c) => c.id)).toEqual([id]);
+    expect((await summaries()).find((c) => c.id === id)?.unread).toBe(true);
+    expect((await chatOf(id)).unread).toBe(true);
+    // Read on the phone is read everywhere, and the other devices can tell something changed.
+    const before = (await listed()).chats;
+    expect(await json(phone.call("seeConversation", { id }))).toEqual({ seen: true });
+    expect((await listed()).unread).toEqual([]);
+    expect((await summaries()).find((c) => c.id === id)?.unread).toBe(false);
+    const after = (await listed()).chats;
+    expect(after).not.toBe(before);
+    // Read again: nothing changes, so no device reads the chats again for it.
+    expect(await json(admin("seeConversation", { id }))).toEqual({ seen: false });
+    expect((await listed()).chats).toBe(after);
+    // A chat that isn't kept here.
+    expect((await phone.call("seeConversation", { id: `cv_${"A".repeat(22)}` })).status).toBe(404);
+    // An answer watched to its end was read where it was watched.
+    script = [say("Noted.")];
+    const watched = await ask(phone.call, "Note it.", { conversation: id });
+    await watched.done;
+    await idle();
+    expect((await listed()).unread).toEqual([]);
   });
 });
 

@@ -59,8 +59,17 @@ extension Color {
     /// The ink, the app's accent: the black tile on light, the cream on dark. Set as the tint at the root, since the
     /// system's controls took system blue from the asset catalog's accent alone (seen on iOS 26.1).
     static let ink = Color(.accent)
-    /// Galahad's red: what needs you, and his seat at the Round Table.
+    /// Galahad's red: his seat at the Round Table, and what went wrong.
     static let siege = Color(.siege)
+
+    // What is going on at the Roundtable, one colour each and the PWA's too (its --work, --needs, --failed, --ok; lib/
+    // knight-state.ts): blue at work, amber for what waits on you, red for a failure, green for what ended and is new to
+    // you (verified work among it). No pair can be mistaken with full colour vision, light or dark (each at least 15
+    // apart in OKLab); under red-green colour blindness the words beside them tell them apart.
+    static let working = Color(light: "#0a5fcc", dark: "#58a6ff")
+    static let needs = Color(light: "#946200", dark: "#f0b549")
+    static let failed = Color(light: "#c4141b", dark: "#ff6b6b")
+    static let done = Color(light: "#137a43", dark: "#4cc38a")
     /// What is written on the ink (the accent): cream on the black tile, black on the cream.
     static let onAccent = Color(.onAccent)
     static let tile = Color(.tile)
@@ -320,7 +329,14 @@ extension View {
 /// The mark on what needs you.
 struct NeedsMark: View {
     var body: some View {
-        Circle().fill(Color.siege).frame(width: 10, height: 10).accessibilityLabel("Needs you")
+        Circle().fill(Color.needs).frame(width: 10, height: 10).accessibilityLabel("Needs you")
+    }
+}
+
+/// The mark on what is new to you (a room where something ended since you looked), until you open it.
+struct NewMark: View {
+    var body: some View {
+        Circle().fill(Color.done).frame(width: 10, height: 10).accessibilityLabel("Something new")
     }
 }
 

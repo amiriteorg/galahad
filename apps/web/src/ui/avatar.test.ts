@@ -141,9 +141,9 @@ describe("a knight in its seat", () => {
 
   test("its state is said in words beside its name, in its tone; working with a live dot, so it isn't read as a quiet one", () => {
     const [working, needs, failed, resting] = withDocument(() => [stateChip("working"), stateChip("needs"), stateChip("failed"), stateChip("resting")] as unknown as (Node_ | null)[]);
-    expect([working!.attrs["data-tone"], working!.children.map((child) => child.text || child.attrs.class)]).toEqual(["accent", ["dot live", "Working"]]);
+    expect([working!.attrs["data-tone"], working!.children.map((child) => child.text || child.attrs.class)]).toEqual(["work", ["dot live", "Working"]]);
     expect([needs!.attrs["data-tone"], needs!.children.map((child) => child.text)]).toEqual(["needs", ["Needs you"]]);
-    expect(failed!.attrs["data-tone"]).toBe("danger");
+    expect(failed!.attrs["data-tone"]).toBe("failed");
     // At rest there is nothing to say beyond its line.
     expect(resting).toBeNull();
   });

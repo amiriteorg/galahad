@@ -23,6 +23,8 @@ import Observation
     /// His asks to use a Mac itself, and his sessions there while they last.
     private(set) var screenSessions: [ScreenSessionView] = []
     private(set) var turns: [TurnView] = []
+    /// His chats with an answer you haven't read yet, on any device (his ring is green while there are some).
+    private(set) var unreadChats: [UnreadChat] = []
     private(set) var quests: [QuestView] = []
     /// This period's model calls on the node at your prices, against your budget (nil: not read yet, or a node from
     /// before the meter).
@@ -40,7 +42,12 @@ import Observation
         self.key = key
         self.node = node
         self.client = NodeClient(origin: node.origin, signer: key)
+        // The chat on screen read: his answers in it stop being new here at once, not at the next look.
+        chat.read = { [weak self] id in self?.noteRead(id) }
     }
+
+    /// A chat of his read on this device (in any window): it is no longer counted new here.
+    func noteRead(_ id: String) { unreadChats.removeAll { $0.id == id } }
 
     /// What this device may do (its scopes), as the node says; until it has said, the node is left to refuse.
     func can(_ scope: String) -> Bool { whoami?.scopes.contains(scope) ?? true }
@@ -58,7 +65,8 @@ import Observation
             step: chat.step,
             turns: turns.map(\.title),
             quests: quests.map(\.goal),
-            needs: inboxLoaded ? Roster.galahadNeeds(inbox: inboxCount, asks: asks, knights: knights) : nil
+            needs: inboxLoaded ? Roster.galahadNeeds(inbox: inboxCount, asks: asks, knights: knights) : nil,
+            unread: unreadChats.map(\.title)
         ))
     }
 
@@ -125,6 +133,7 @@ import Observation
         if case .success(let list) = await screens { self.screenSessions = list.filter { $0.state == "waiting" || $0.state == "allowed" } }
         if case .success(let listed) = await turns {
             self.turns = listed.turns ?? []
+            self.unreadChats = listed.unread ?? []
             // The chat on screen, as the node holds it, when anything kept changed on another device.
             await chat.noticed(chats: listed.chats, turns: self.turns, with: client)
         }
@@ -289,7 +298,29 @@ import Observation
         var turns: [TurnView]?
         /// Which writing of the chats this is (on `GET /api/turns`).
         var chats: String?
+        /// His chats with an answer you haven't read (on `GET /api/turns`; absent from an older node).
+        var unread: [UnreadChat]?
         var quests: [QuestView]?
+    }
+
+    /// A knight's page on screen: what ended there (its replies to you, its tasks) is no longer new, on any device.
+    func read(knight id: String) async {
+        struct Seen: Encodable { let knight: String }
+        guard (try? await client.post("/api/team/seen", Seen(knight: id), as: JSONValue.self)) != nil else { return }
+        await lookAtTeam()
+    }
+
+    /// A room on screen: what ended there is no longer new, on any device.
+    func read(room id: String) async {
+        struct Seen: Encodable { let room: String }
+        guard (try? await client.post("/api/team/seen", Seen(room: id), as: JSONValue.self)) != nil else { return }
+        await lookAtTeam()
+    }
+
+    /// The Roundtable as the node has it now, alone (after a change of yours, so it shows at once).
+    private func lookAtTeam() async {
+        let arranged = arrangements
+        if let team = try? await client.get("/api/team", as: TeamSnapshot.self), arranged == arrangements { self.team = team }
     }
 }
 

@@ -266,6 +266,11 @@ const nows: NowInput[] = [
   { turns: [{ title: null }], quests: [], needs: 0 },
   { turns: [], quests: [{ goal: "Make sync resume\nafter a drop" }], needs: null },
   { turns: [{ title: "A" }], quests: [{ goal: "B" }], needs: 4 },
+  // His answers you haven't read: said when nothing else is, green; what needs you and work in hand come first.
+  { turns: [], quests: [], needs: 0, unread: [{ title: "The release plan" }] },
+  { turns: [], quests: [], needs: null, unread: [{ title: "A" }, { title: "B" }] },
+  { turns: [], quests: [], needs: 1, unread: [{ title: "A" }] },
+  { turns: [{ title: "A" }], quests: [], needs: 0, unread: [{ title: "B" }] },
 ];
 const roundtable = {
   now: NOW,
@@ -325,6 +330,25 @@ const roomsSnapshot: core.TeamSnapshot = {
 const rooms = {
   snapshot: roomsSnapshot,
   rows: rosterRows({ snapshot: roomsSnapshot, asks: [], now: NOW }).filter((row) => row.kind === "room").map((row) => ({ id: row.id, line: row.line, needs: row.needs })),
+};
+
+// ---- what is new to you at the Roundtable: what ended on a knight's page, or in a room, since you last looked --------
+const seenSnapshot: core.TeamSnapshot = {
+  teammates: [knight("ada", "Ada"), knight("bea", "Bea"), knight("cy", "Cy"), knight("dee", "Dee"), knight("eli", "Eli"), knight("fin", "Fin")],
+  rooms: [...["ada", "bea", "cy", "dee", "eli", "fin"].map(direct), { id: "forge", name: "Forge", members: ["eli", "fin"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(5) }, { id: "shed", name: "Shed", members: ["fin"], direct: false, turnBudget: 8, paused: false, createdAt: at(600), updatedAt: at(5) }],
+  tasks: [task("pass", "cy", "done", { verified: true, updatedAt: at(120) }), task("ran", "dee", "done", { updatedAt: at(20) }), task("fell", "fin", "failed", { updatedAt: at(10) })],
+  deliveries: [
+    // Its reply to you, after you last looked; one you looked at since; one in a room, which is the room's to be new in.
+    delivery("reply", "ada", "done", { updatedAt: at(10) }),
+    delivery("seen", "bea", "done", { updatedAt: at(10) }),
+    delivery("there", "eli", "done", { room: "forge", updatedAt: at(10) }),
+    delivery("old", "fin", "done", { room: "shed", updatedAt: at(40) }),
+  ],
+  seen: { "knight:ada": at(30), "knight:bea": at(5), "knight:dee": at(10), "room:forge": at(15), "room:shed": at(30) },
+};
+const unread = {
+  snapshot: seenSnapshot,
+  rows: rosterRows({ snapshot: seenSnapshot, asks: [], now: NOW }).map((row) => ({ id: row.id, kind: row.kind, line: row.line, needs: row.needs, unread: row.unread, state: row.state ?? null })),
 };
 
 // ---- seating and keeping knights (the PWA's forms) --------------------------------------------------------------------
@@ -771,6 +795,7 @@ const vectors = {
   pairing,
   looks,
   roundtable,
+  unread,
   rooms,
   knightForms,
   keys,

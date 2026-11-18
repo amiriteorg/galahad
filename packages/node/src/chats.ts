@@ -27,6 +27,10 @@ interface ConversationRow {
   queue_held: QueueHold | null;
   waiting: string | null;
   last: AnswerStatus | null;
+  /** When his latest answer in it ended (null: none has). */
+  answered_at: number | null;
+  /** When you last read it: up to his answer that ended then (null: never). */
+  seen_at: number | null;
 }
 
 interface MessageRow {
@@ -124,6 +128,8 @@ const summaryOf = (r: ConversationRow): KeptSummary => ({
   queued: r.queued,
   held: r.queued > 0 ? r.queue_held : null,
   needs: null,
+  // An answer of his ended after you last read it: new to you, on every device, until you read it on one.
+  unread: r.answered_at !== null && r.answered_at > (r.seen_at ?? 0),
   last: r.last,
   waits: waitsOf(r.waiting),
 });
@@ -196,6 +202,16 @@ export class ChatStore {
     const columns = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().map((c) => c.name));
     if (!columns.has("queue_held")) this.db.exec("ALTER TABLE conversations ADD COLUMN queue_held TEXT");
     if (!columns.has("waiting")) this.db.exec("ALTER TABLE conversations ADD COLUMN waiting TEXT");
+    // A database from before read and unread: when his latest answer in each chat ended, and when you last read it.
+    // Everything he answered before then counts as read.
+    if (!columns.has("answered_at")) {
+      this.db.exec("ALTER TABLE conversations ADD COLUMN answered_at INTEGER");
+      this.db.exec("UPDATE conversations SET answered_at = (SELECT MAX(m.ended_at) FROM messages m WHERE m.conversation = conversations.id AND m.role = 'assistant')");
+    }
+    if (!columns.has("seen_at")) {
+      this.db.exec("ALTER TABLE conversations ADD COLUMN seen_at INTEGER");
+      this.db.exec("UPDATE conversations SET seen_at = answered_at");
+    }
     // A database from before attachments: a message of yours may carry files (kept on the node: uploads.ts).
     const fields = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(messages)").all().map((c) => c.name));
     if (!fields.has("attachments")) this.db.exec("ALTER TABLE messages ADD COLUMN attachments TEXT");
@@ -312,12 +328,29 @@ export class ChatStore {
     return this.db.query<{ id: number }, [string, number]>("INSERT INTO messages (conversation, role, content, status, created_at) VALUES (?, 'assistant', '', 'streaming', ?) RETURNING id").get(id, this.now())!.id;
   }
 
-  finishAnswer(conversation: string, message: number, answer: { content: string; model: string | null; steps: StoredStep[]; status: "done" | "error" | "stopped" | "steered"; error: string | null; bank: boolean }): void {
+  /** His answer, ended. `read`: a device was watching it to its end, so it was read there; otherwise it's new to you. */
+  finishAnswer(conversation: string, message: number, answer: { content: string; model: string | null; steps: StoredStep[]; status: "done" | "error" | "stopped" | "steered"; error: string | null; bank: boolean }, read = false): void {
+    const at = this.now();
     this.db
       .query("UPDATE messages SET content = ?, model = ?, steps = ?, status = ?, error = ?, ended_at = ? WHERE id = ? AND conversation = ?")
-      .run(answer.content, answer.model, JSON.stringify(answer.steps), answer.status, answer.error, this.now(), message, conversation);
+      .run(answer.content, answer.model, JSON.stringify(answer.steps), answer.status, answer.error, at, message, conversation);
+    this.db.query("UPDATE conversations SET answered_at = ? WHERE id = ?").run(at, conversation);
+    if (read) this.see(conversation);
     if (answer.bank) this.db.query("UPDATE conversations SET bank = 1 WHERE id = ?").run(conversation);
     this.touch(conversation);
+  }
+
+  /** You read it: what he has answered in it so far is no longer new. True when that changed anything. */
+  see(id: string): boolean {
+    return this.db.query("UPDATE conversations SET seen_at = answered_at WHERE id = ? AND answered_at > COALESCE(seen_at, 0)").run(id).changes > 0;
+  }
+
+  /** The chats with an answer you haven't read, the newest answer first. */
+  unread(limit = 20): { id: string; title: string; bank: boolean; answeredAt: number }[] {
+    return this.db
+      .query<{ id: string; title: string; bank: number; answered_at: number }, [number]>("SELECT id, title, bank, answered_at FROM conversations WHERE answered_at > COALESCE(seen_at, 0) ORDER BY answered_at DESC LIMIT ?")
+      .all(limit)
+      .map((r) => ({ id: r.id, title: r.title, bank: r.bank === 1, answeredAt: r.answered_at }));
   }
 
   /** An answer that never came to anything (you steered before he'd said or done a thing): it isn't kept. */

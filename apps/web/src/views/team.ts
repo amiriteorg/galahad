@@ -9,6 +9,7 @@ import { errorMessage, type View } from "../context.ts";
 import { GALAHAD } from "../lib/arrange.ts";
 import { hasDesktop } from "../lib/desktop.ts";
 import { besideChip } from "../lib/knight-state.ts";
+import { rosterRows } from "../lib/roster.ts";
 import { type TaskAction, taskBadge } from "../lib/task-card.ts";
 import { activeTeamWork, engramLine, HARNESS, harnessNote, knightWorksOn, taskDependencies, teamSpeaker, teammateMaker, type HarnessStatus } from "../lib/team.ts";
 import { giveAgain, timeline, timelineTasks } from "../lib/timeline.ts";
@@ -579,6 +580,22 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       renderPanel();
       if (!workspace) void refreshWorkspace(knight()!.id);
     } else renderTimeline();
+    read();
+  }
+
+  /** What you asked to mark read last (with what the node said had been seen then), so it's asked once. */
+  let reading = "";
+  /** On screen, what ended here is read: this knight's page, or this room, is no longer new to you, on any device. */
+  function read(): void {
+    if (!snapshot || !room || document.hidden) return;
+    const knightId = room.direct && room.members.length === 1 ? room.members[0]! : null;
+    const row = rosterRows({ snapshot, now: Date.now() }).find((r) => (knightId ? r.kind === "knight" && r.id === knightId : r.kind === "room" && r.id === room!.id));
+    if (!row?.unread) return;
+    const body = knightId ? { knight: knightId } : { room: room.id };
+    const asked = JSON.stringify([body, snapshot.seen]);
+    if (asked === reading) return;
+    reading = asked;
+    void ctx.api.post("/api/team/seen", body).then(() => ctx.live.refreshTeam(), () => {});
   }
 
   function failed(error: unknown): void {

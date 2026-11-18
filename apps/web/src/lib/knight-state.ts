@@ -4,31 +4,38 @@ import type { Now } from "./now.ts";
  * What a knight is doing, in a word and a colour: the ring round its face and the chip beside its name (ui/avatar.ts's
  * seat, ui/controls.ts's badge). Pure (no DOM). Which one a knight is in, its row says (lib/roster.ts); Galahad's, his
  * line (lib/now.ts). The colour is never the only telling: every state the ring colours is said in words too.
+ *
+ * One colour to each thing going on, the same on every device (the Apple app's Brand.swift): blue at work, amber when
+ * it waits on you, red for a failure, green for what has ended and is new to you (verified work among it) until you
+ * look, grey while queued or paused, nothing at rest. Chosen so no two can be mistaken with full colour vision (each
+ * pair at least 15 apart in OKLab, light and dark); under red-green colour blindness the words tell them apart.
  */
 
-export type KnightState = "working" | "needs" | "failed" | "paused" | "queued" | "verified" | "resting";
+export type KnightState = "working" | "needs" | "failed" | "paused" | "queued" | "verified" | "unread" | "resting";
 
 export interface StateLook {
   /** The chip's words. None for a knight at rest: its line says what it is for, and its ring says nothing. */
   words: string | null;
-  /** The chip's tone, which is the ring's colour too: ink while it works (the ring turns), Galahad's oxblood when it
-   * waits on you, red for a failure, green for work verified a moment ago, grey otherwise. */
-  tone: "accent" | "needs" | "danger" | "ok" | "neutral";
+  /** The chip's tone, which is the ring's colour too. */
+  tone: "work" | "needs" | "failed" | "ok" | "neutral";
 }
 
 export const STATES: Record<KnightState, StateLook> = {
-  working: { words: "Working", tone: "accent" },
+  working: { words: "Working", tone: "work" },
   needs: { words: "Needs you", tone: "needs" },
-  failed: { words: "Failed", tone: "danger" },
+  failed: { words: "Failed", tone: "failed" },
   paused: { words: "Paused", tone: "neutral" },
   queued: { words: "Queued", tone: "neutral" },
   verified: { words: "Verified", tone: "ok" },
+  unread: { words: "New", tone: "ok" },
   resting: { words: null, tone: "neutral" },
 };
 
 /** Galahad's state, from what his line says: what waits on you first, as a knight's row has it (what only you can
- * answer is what the row is marked for); then work in hand or an answer being written; at rest otherwise. */
-export const galahadState = (now: Pick<Now, "expression" | "tone">): KnightState => (now.tone === "warn" ? "needs" : now.tone === "accent" || now.expression === "thinking" || now.expression === "working" ? "working" : "resting");
+ * answer is what the row is marked for); then work in hand or an answer being written; then an answer of his you
+ * haven't read; at rest otherwise. */
+export const galahadState = (now: Pick<Now, "expression" | "tone">): KnightState =>
+  now.tone === "warn" ? "needs" : now.tone === "accent" || now.expression === "thinking" || now.expression === "working" ? "working" : now.tone === "ok" ? "unread" : "resting";
 
 /** How a knight is named with its state, for a screen reader and a tooltip: "Ada, working". */
 export const withState = (name: string, state: KnightState): string => (STATES[state].words ? `${name}, ${STATES[state].words!.toLowerCase()}` : name);

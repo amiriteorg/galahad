@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { rmSync } from "node:fs";
 import type { Steering } from "@galahad/brain";
 import type { ChatStreamEvent } from "@galahad/core";
 import { ChatStore, type Queued, type QueuedBy } from "../src/chats.ts";
@@ -164,6 +166,37 @@ describe("a turn the node owns", () => {
     const late = watch(t.hub, turn.id);
     expect(late.ended).toBe(true);
     expect(late.types().at(-1)).toBe("done");
+  });
+
+  test("an answer nobody watched to its end is new to you until you read it; one a device watched was read there", async () => {
+    const t = setup();
+    const id = t.chat();
+    const alone = t.hub.start(t.spec(id, "What's the weather?"));
+    t.answers[0]!.say("Dry.");
+    t.answers[0]!.end();
+    await alone.ended;
+    expect(t.chats.summary(id)).toMatchObject({ unread: true });
+    expect(t.chats.unread().map((c) => c.id)).toEqual([id]);
+    // Read on some device: no longer new anywhere, and reading it again changes nothing.
+    expect(t.chats.see(id)).toBe(true);
+    expect(t.chats.summary(id)!.unread).toBe(false);
+    expect(t.chats.see(id)).toBe(false);
+    expect(t.chats.unread()).toEqual([]);
+    // Watched to its end: read where it was watched.
+    const watched = t.hub.start(t.spec(id, "And tomorrow?"));
+    const page = watch(t.hub, watched.id);
+    t.answers[1]!.say("Wet.");
+    t.answers[1]!.end();
+    await watched.ended;
+    expect(page.ended).toBe(true);
+    expect(t.chats.summary(id)!.unread).toBe(false);
+    // Watched for a while, then left before it ended: new again.
+    const left = t.hub.start(t.spec(id, "And the day after?"));
+    watch(t.hub, left.id).leave();
+    t.answers[2]!.say("Windy.");
+    t.answers[2]!.end();
+    await left.ended;
+    expect(t.chats.summary(id)!.unread).toBe(true);
   });
 
   test("a device that may not watch it is told only that it's running", () => {
@@ -618,6 +651,29 @@ describe("when the node stops, and comes back", () => {
     expect(starts).toEqual(["Two."]);
     await hub2.close();
     again.close();
+  });
+});
+
+describe("a chat store from before read and unread", () => {
+  test("counts everything he answered before it as read; what he answers after is new", () => {
+    const path = `${process.env.TEMP ?? "/tmp"}/galahad-unread-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+    let clock = 1_000;
+    const before = new ChatStore(path, () => clock++);
+    const id = before.create({ title: "Old", project: null, role: "planner" }).id;
+    before.addUser(id, "Hello?");
+    before.finishAnswer(id, before.startAnswer(id), { content: "Hi.", model: null, steps: [], status: "done", error: null, bank: false });
+    before.close();
+    // As an older node left it: no columns for when he answered, or when you read it.
+    const raw = new Database(path);
+    raw.exec("ALTER TABLE conversations DROP COLUMN seen_at; ALTER TABLE conversations DROP COLUMN answered_at;");
+    raw.close();
+    const after = new ChatStore(path, () => clock++);
+    expect(after.summary(id)!.unread).toBe(false);
+    expect(after.unread()).toEqual([]);
+    after.finishAnswer(id, after.startAnswer(id), { content: "And again.", model: null, steps: [], status: "done", error: null, bank: false });
+    expect(after.summary(id)!.unread).toBe(true);
+    after.close();
+    rmSync(path, { force: true });
   });
 });
 

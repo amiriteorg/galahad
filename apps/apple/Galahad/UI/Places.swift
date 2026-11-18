@@ -248,7 +248,7 @@ struct SidebarSeat: View {
                 let said = standing.beside(line)
                 Text(said.isEmpty ? " " : said)
                     .font(.subheadline)
-                    .foregroundStyle(needs && !selected ? AnyShapeStyle(Color.siege) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(needs && !selected ? AnyShapeStyle(Color.needs) : AnyShapeStyle(.secondary))
                     .lineLimit(1)
             }
         }
@@ -283,11 +283,11 @@ private struct SidebarRoom: View {
                 Text(row.name).font(.headline).lineLimit(1)
                 Text(row.line)
                     .font(.subheadline)
-                    .foregroundStyle(row.needs && !selected ? AnyShapeStyle(Color.siege) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(row.needs && !selected ? AnyShapeStyle(Color.needs) : AnyShapeStyle(.secondary))
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
-            if row.needs { NeedsMark() }
+            if row.needs { NeedsMark() } else if row.unread { NewMark() }
         }
         .padding(.vertical, Space.s1)
         .help(row.line)

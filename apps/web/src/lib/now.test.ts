@@ -33,4 +33,13 @@ describe("what Galahad is doing now, in a line", () => {
     expect(galahadNow({ turns: [], quests: [quest("Ship it")], needs: 2 })).toEqual({ text: "Working on: Ship it · 2 things need you", expression: "working", tone: "warn" });
     expect(galahadNow({ step: "Answering", turns: [], quests: [], needs: 1 })).toEqual({ text: "Answering · 1 thing needs you", expression: "thinking", tone: "warn" });
   });
+
+  test("an answer he finished that you haven't read: named, or counted, when nothing else is going on", () => {
+    expect(galahadNow({ turns: [], quests: [], needs: 0, unread: [{ title: "Release plan" }] })).toEqual({ text: "New answer in “Release plan”", expression: "idle", tone: "ok" });
+    expect(galahadNow({ turns: [], quests: [], needs: null, unread: [{ title: "A" }, { title: "B" }] }).text).toBe("2 new answers");
+    expect(galahadNow({ turns: [], quests: [], needs: 0, unread: [] })).toEqual({ text: "Idle · nothing needs you", expression: "idle", tone: "neutral" });
+    // What needs you, and work in hand, come first.
+    expect(galahadNow({ turns: [], quests: [], needs: 1, unread: [{ title: "A" }] })).toEqual({ text: "1 thing needs you", expression: "asking", tone: "warn" });
+    expect(galahadNow({ turns: [turn("Release plan")], quests: [], needs: 0, unread: [{ title: "A" }] }).tone).toBe("accent");
+  });
 });

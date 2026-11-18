@@ -28,6 +28,28 @@ struct RosterTests {
         }
     }
 
+    @Test func whatIsNewToYouIsWhatThePWASays() {
+        let unread = vectors.unread
+        let knights = Roster.rows(snapshot: unread.snapshot, asks: [], now: roundtable.now)
+        let rooms = Roster.roomRows(snapshot: unread.snapshot)
+        let expected = unread.rows
+        #expect(knights.map(\.id) == expected.filter { $0.kind == "knight" }.map(\.id))
+        for (row, want) in zip(knights, expected.filter { $0.kind == "knight" }) {
+            #expect(row.unread == want.unread, "\(row.id)")
+            #expect(row.standing.rawValue == want.state, "\(row.id)")
+            #expect(row.line == want.line, "\(row.id)")
+        }
+        // (The PWA lists rooms the latest spoken in first, as the app does.)
+        #expect(Set(rooms.map(\.id)) == Set(expected.filter { $0.kind == "room" }.map(\.id)))
+        for room in rooms {
+            let want = expected.first { $0.kind == "room" && $0.id == room.id }
+            #expect(room.unread == want?.unread, "\(room.id)")
+            #expect(room.needs == want?.needs, "\(room.id)")
+        }
+        // Both say something: some new, some not.
+        #expect(expected.contains { $0.unread } && expected.contains { !$0.unread })
+    }
+
     @Test func besideItsChipALineSaysWhatThePWASays() {
         #expect(!roundtable.besides.isEmpty)
         for item in roundtable.besides {

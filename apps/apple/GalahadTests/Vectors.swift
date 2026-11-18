@@ -86,6 +86,13 @@ struct Vectors: Decodable {
         let rows: [Row]
     }
 
+    /// What is new to you at the Roundtable (a snapshot with `seen`): each row, knights then rooms, as the PWA has it.
+    struct Unread: Decodable {
+        struct Row: Decodable { let id: String; let kind: String; let line: String; let needs: Bool; let unread: Bool; let state: String? }
+        let snapshot: TeamSnapshot
+        let rows: [Row]
+    }
+
     struct KnightForms: Decodable {
         struct Handle: Decodable { let name: String; let taken: [String]; let handle: String }
         struct Removal: Decodable {
@@ -323,6 +330,7 @@ struct Vectors: Decodable {
     let pairing: Pairing
     let looks: [Look]
     let roundtable: Roundtable
+    let unread: Unread
     let rooms: Rooms
     let knightForms: KnightForms
     let keys: KeyCases

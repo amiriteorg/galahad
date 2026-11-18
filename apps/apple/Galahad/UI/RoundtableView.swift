@@ -296,9 +296,11 @@ struct RosterLine<Face: View>: View {
     let name: String
     let line: String
     let needs: Bool
-    /// Where it stands, in a word; nil: a room, which has only its mark when it needs you.
+    /// Where it stands, in a word; nil: a room, which has only its mark: when it needs you, or something there is new to you.
     var standing: Standing? = nil
-    /// It is the row an iPad shows selected. On the list's ink Galahad's red line was hard to read (3.3 to 1) and the
+    /// A room where something ended since you looked (its mark is green until you open it).
+    var fresh = false
+    /// It is the row an iPad shows selected. On the list's ink a coloured line was hard to read (3.3 to 1) and the
     /// system's secondary grey harder, so its line takes no colour of its own there and turns as its name does; the mark
     /// beside it still says it needs you.
     var selected = false
@@ -323,14 +325,14 @@ struct RosterLine<Face: View>: View {
                 // Beside its chip, the line doesn't say the chip's word again.
                 let said = standing?.beside(line) ?? line
                 Group {
-                    if selected { Text(said) } else { Text(said).foregroundStyle(needs ? Color.siege : .secondary) }
+                    if selected { Text(said) } else { Text(said).foregroundStyle(needs ? Color.needs : .secondary) }
                 }
                 .font(.subheadline)
                 .lineLimit(2, reservesSpace: true)
             }
             if standing == nil {
                 Spacer(minLength: 0)
-                if needs { NeedsMark() }
+                if needs { NeedsMark() } else if fresh { NewMark() }
             }
         }
         .padding(.vertical, Space.s1)
@@ -401,7 +403,7 @@ struct SeatCard<Face: View>: View {
             let said = standing.beside(line)
             Text(said.isEmpty ? " " : said)
                 .font(.footnote)
-                .foregroundStyle(needs ? Color.siege : .secondary)
+                .foregroundStyle(needs ? Color.needs : .secondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2, reservesSpace: true)
         }
@@ -450,10 +452,9 @@ struct SeatFace: View {
     }
 }
 
-/// The ring round a face, in the colour of where it stands (the PWA's seat): the ink at work (a stroke of it going round,
-/// still when the device asks for less motion), Galahad's red when it needs you or its work failed, green for work that
-/// passed review a moment ago, grey while queued, dashed grey while paused, a hairline at rest. On a row an iPad shows
-/// selected, white, as the row's words are.
+/// The ring round a face, in the colour of where it stands (the PWA's seat): blue at work, amber when it needs you, red
+/// when its work failed, green for what ended and is new to you (verified work among it) until you look, grey while
+/// queued, dashed grey while paused, a hairline at rest. On a row an iPad shows selected, white, as the row's words are.
 struct StandingRing: View {
     let kind: Standing
     let width: CGFloat
@@ -462,12 +463,14 @@ struct StandingRing: View {
     var body: some View {
         switch kind {
         case .working:
-            // Still, as every state's ring is (the owner's word: nothing at the table spins): the ink says it.
-            Circle().strokeBorder(selected ? Color.white : .ink, lineWidth: width)
-        case .needs, .failed:
-            Circle().strokeBorder(selected ? Color.white : .siege, lineWidth: width)
-        case .verified:
-            Circle().strokeBorder(selected ? Color.white : .green, lineWidth: width)
+            // Still, as every state's ring is (the owner's word: nothing at the table spins): its colour says it.
+            Circle().strokeBorder(selected ? Color.white : .working, lineWidth: width)
+        case .needs:
+            Circle().strokeBorder(selected ? Color.white : .needs, lineWidth: width)
+        case .failed:
+            Circle().strokeBorder(selected ? Color.white : .failed, lineWidth: width)
+        case .verified, .unread:
+            Circle().strokeBorder(selected ? Color.white : .done, lineWidth: width)
         case .queued:
             Circle().strokeBorder(selected ? Color.white : .secondary, lineWidth: width)
         case .paused:
@@ -479,12 +482,13 @@ struct StandingRing: View {
 }
 
 extension Standing {
-    /// As a badge takes it: the ink at work, Galahad's red when it needs you or failed, green when verified, grey otherwise.
+    /// As a badge takes it, in its ring's colour (lib/knight-state.ts' STATES).
     var tone: String {
         switch self {
-        case .working: "accent"
-        case .needs, .failed: "danger"
-        case .verified: "ok"
+        case .working: "work"
+        case .needs: "needs"
+        case .failed: "failed"
+        case .verified, .unread: "ok"
         case .paused, .queued, .resting: "neutral"
         }
     }

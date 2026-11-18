@@ -17,7 +17,7 @@ export type Said = Pick<TeamMessage, "speaker" | "speakerName" | "text" | "creat
 export interface Ask { by: string; connector?: string; tool?: string }
 
 export interface RosterInput {
-  snapshot: Pick<TeamSnapshot, "teammates" | "rooms" | "tasks" | "deliveries" | "removed">;
+  snapshot: Pick<TeamSnapshot, "teammates" | "rooms" | "tasks" | "deliveries" | "removed" | "seen">;
   /** By conversation. The app reads a conversation's words only when it is opened, so most have none. */
   said?: ReadonlyMap<string, Said>;
   asks?: readonly Ask[];
@@ -35,6 +35,8 @@ export interface RosterRow {
   line: string;
   /** Only you can move this on: a failure to read, an approval to give, work waiting on a pause. */
   needs: boolean;
+  /** Something ended there since you last looked, on any device (a reply, a task's end): new to you until you open it. */
+  unread: boolean;
   /** What a knight's avatar acts out: its work as it stands (core's avatarExpression), or asking when it asks your leave. */
   expression?: AvatarExpression;
   /** A knight's state in a word: the ring round its face and the chip beside its name (lib/knight-state.ts). It says
@@ -57,6 +59,11 @@ const titled = (task: Pick<TeamTask, "title">): string => `“${task.title}”`;
 const ENDED: Record<string, string> = { "gave-up": "gave up", unverified: "not verified" };
 const withWhy = (line: string, why: string | null): string => (firstLine(why) ? `${line} · ${ENDED[firstLine(why)] ?? firstLine(why)}` : line);
 const latestOf = (jobs: Job[]): Job | undefined => jobs.reduce<Job | undefined>((latest, job) => (!latest || job.updatedAt > latest.updatedAt ? job : latest), undefined);
+/** The latest of `jobs` that ended (done or failed), if it ended after `seen` (`snapshot.seen`'s; absent: a node that keeps none). */
+const endedSince = (jobs: Job[], seen: number | undefined, keeps: boolean): Job | undefined => {
+  const ended = latestOf(jobs.filter((job) => job.status === "done" || job.status === "failed"));
+  return keeps && ended && ended.updatedAt > (seen ?? 0) ? ended : undefined;
+};
 const waitingIn = (jobs: Job[]): number => jobs.filter((job) => job.status === "queued").length;
 
 /** Work that went wrong and waits to be read, in a line (null: it didn't, or it was a stop of your own). */
@@ -99,8 +106,12 @@ function knightRow(person: Teammate, input: RosterInput): RosterRow {
   const proposed = proposals(jobs);
   // Its face says what its line says: asking your leave or your approval, over whatever else it has in hand.
   const expression = asked[0] || proposed[0] ? "asking" : avatarExpression(person, snapshot, input.now);
-  // (At rest, unless its work passed review a moment ago: its face is pleased, and its ring is green.)
-  const say = (line: string, needs = false, state: KnightState = expression === "pleased" ? "verified" : "resting"): RosterRow => ({ key: `person:${person.id}`, kind: "knight", id: person.id, name: person.name, room: room?.id ?? null, line, needs, expression, state, avatar: person.avatar });
+  // New to you: what ended on its page (its tasks, its replies to you) since you last looked at it there.
+  const fresh = endedSince(jobs.filter((job) => job.task || job.room === room?.id), snapshot.seen?.[`knight:${person.id}`], snapshot.seen !== undefined);
+  // At rest, its ring is green while something that ended there is new to you (verified work says so) and until you look;
+  // from a node that keeps no such thing, while its work passed review a moment ago (its face is pleased).
+  const rest: KnightState = snapshot.seen ? (fresh ? (fresh.task && fresh.verified ? "verified" : "unread") : "resting") : expression === "pleased" ? "verified" : "resting";
+  const say = (line: string, needs = false, state: KnightState = rest): RosterRow => ({ key: `person:${person.id}`, kind: "knight", id: person.id, name: person.name, room: room?.id ?? null, line, needs, unread: fresh !== undefined, expression, state, avatar: person.avatar });
 
   // What only you can answer comes first: it is what the row is marked for.
   if (asked[0]) return say(`Asks your leave: ${asked[0].connector}.${asked[0].tool}${asked.length > 1 ? `, and ${asked.length - 1} more` : ""}`, true, "needs");
@@ -135,7 +146,8 @@ function roomRow(room: TeamRoom, input: RosterInput): RosterRow {
   const { snapshot } = input;
   const nameOf = (id: string): string => snapshot.teammates.find((person) => person.id === id)?.name ?? id;
   const jobs: Job[] = [...snapshot.tasks.filter((task) => task.room === room.id).map((task) => ({ ...task, task: true as const })), ...snapshot.deliveries.filter((delivery) => delivery.room === room.id)];
-  const say = (line: string, needs = false): RosterRow => ({ key: `room:${room.id}`, kind: "room", id: room.id, name: room.name, room: room.id, line, needs });
+  const fresh = endedSince(jobs, snapshot.seen?.[`room:${room.id}`], snapshot.seen !== undefined);
+  const say = (line: string, needs = false): RosterRow => ({ key: `room:${room.id}`, kind: "room", id: room.id, name: room.name, room: room.id, line, needs, unread: fresh !== undefined });
 
   const proposed = proposals(jobs);
   if (proposed[0]) return say(proposing(proposed, nameOf), true);

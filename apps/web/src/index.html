@@ -80,9 +80,12 @@
         --glow: light-dark(rgb(10 10 11 / 0.045), rgb(255 255 255 / 0.065));
         --glow-hero: light-dark(rgb(10 10 11 / 0.07), rgb(255 255 255 / 0.12));
 
-        /* Galahad's oxblood: what waits on you, and only that */
-        --oxblood: light-dark(#a8373a, #ec8285);
-        --oxblood-soft: light-dark(rgb(168 55 58 / 0.09), rgb(236 130 133 / 0.12));
+        /* What is going on at the Roundtable (lib/knight-state.ts), one colour each and the Apple app's too (Brand.swift):
+           blue at work, amber for what waits on you (and only that), red for a failure; green (--ok) for what ended and is
+           new to you. No pair can be mistaken with full colour vision, light or dark; the words beside them say the rest. */
+        --work: light-dark(#0a5fcc, #58a6ff);
+        --needs: light-dark(#946200, #f0b549);
+        --failed: light-dark(#c4141b, #ff6b6b);
         /* Galahad's seat at the Round Table (icon("roundtable")): the red of the cross on his helm, brighter on black */
         --siege: light-dark(#c4141b, #ee2c36);
 
@@ -389,11 +392,13 @@
       .roster-row[aria-current="page"] { background: linear-gradient(180deg, var(--surface-2), var(--surface)); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
       .roster-face { position: relative; flex: none; display: grid; place-items: center; width: 40px; height: 40px; }
       .roster-face .avatar { width: 32px; height: 32px; border-radius: 50%; }
-      .roster-mark { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border-radius: 50%; background: var(--oxblood); box-shadow: 0 0 0 2px var(--sidebar); }
+      .roster-mark { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border-radius: 50%; background: var(--needs); box-shadow: 0 0 0 2px var(--sidebar); }
+      /* A room where something ended that is new to you: green, as a knight's ring is, until you open it. */
+      .roster-mark.is-new { background: var(--ok); }
       .roster-text { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.3; }
       .roster-name { flex: 0 1 auto; font-weight: 600; font-size: var(--fs-14); letter-spacing: -0.005em; }
       .roster-line { color: var(--text-3); font-size: var(--fs-12); }
-      .roster-row[data-needs] .roster-line { color: var(--oxblood); }
+      .roster-row[data-needs] .roster-line { color: var(--needs); }
       .roster-row > .btn { flex: none; }
       .roster-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
       .roster-head > .state-chip { margin-left: auto; flex: none; }
@@ -668,7 +673,9 @@
       [data-tone="accent"] { --tone: var(--accent); --tone-soft: var(--accent-soft); }
       [data-tone="agent"] { --tone: var(--agent); --tone-soft: var(--agent-soft); }
       [data-tone="neutral"] { --tone: var(--text-2); --tone-soft: var(--surface-2); }
-      [data-tone="needs"] { --tone: var(--oxblood); --tone-soft: var(--oxblood-soft); }
+      [data-tone="needs"] { --tone: var(--needs); --tone-soft: color-mix(in srgb, var(--needs) 12%, transparent); }
+      [data-tone="work"] { --tone: var(--work); --tone-soft: color-mix(in srgb, var(--work) 10%, transparent); }
+      [data-tone="failed"] { --tone: var(--failed); --tone-soft: color-mix(in srgb, var(--failed) 10%, transparent); }
       /* Words in their tone (an action class beside a tool's name). */
       .toned { color: var(--tone); }
       .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone, var(--text-3)); flex: none; display: inline-block; }
@@ -1251,9 +1258,9 @@
       :root[data-keyboard="open"] .team-layout { height: calc(100dvh - var(--topbar-h)); }
       @media (pointer: coarse) { .team-member-choice, .team-task-details > summary { min-height: 44px; } }
       /* A knight in its seat (ui/avatar.ts seat()): its face in a ring of its state's colour (lib/knight-state.ts), the
-         ring just outside the drawing's reach. A hairline at rest; an arc of ink that turns while it works; Galahad's
-         oxblood, calling softly, while it waits on you; red for a failure; green for work just verified; grey while
-         queued; dashed while paused. The turning and the calling stop when the device asks for less motion. */
+         ring just outside the drawing's reach. A hairline at rest; blue while it works; amber while it waits on you; red
+         for a failure; green for what ended and is new to you (verified work among it) until you look; grey while
+         queued; dashed while paused. */
       .seat {
         --ring: var(--border-strong); --ring-w: 1px; --seat-pad: 4px;
         position: relative; display: inline-grid; place-items: center; flex: none; padding: var(--seat-pad); border-radius: 50%; background: var(--surface-2);
@@ -1265,10 +1272,10 @@
       .seat.seat-m:not([data-state="resting"]) { --ring-w: 2.5px; }
       .seat.seat-l:not([data-state="resting"]) { --ring-w: 3px; }
       /* Every state's ring stands still (the owner's word: nothing at the table spins or pulses): its colour says it. */
-      .seat[data-state="working"] { --ring: var(--accent); }
-      .seat[data-state="needs"] { --ring: var(--oxblood); }
-      .seat[data-state="failed"] { --ring: var(--danger); }
-      .seat[data-state="verified"] { --ring: var(--ok); }
+      .seat[data-state="working"] { --ring: var(--work); }
+      .seat[data-state="needs"] { --ring: var(--needs); }
+      .seat[data-state="failed"] { --ring: var(--failed); }
+      .seat[data-state="verified"], .seat[data-state="unread"] { --ring: var(--ok); }
       .seat[data-state="queued"] { --ring: var(--text-3); }
       .seat[data-state="paused"]::before { box-shadow: none; border: var(--ring-w) dashed var(--text-3); }
       /* A state in words in a badge (ui/avatar.ts stateChip(), a chat's, a quest's, a loop's): working's carries a still dot. */
@@ -1324,6 +1331,7 @@
       .chat-title:hover { background: var(--surface-2); }
       .chat-row { font: inherit; text-align: left; width: 100%; background: none; border: 0; cursor: pointer; color: inherit; }
       .chat-row:hover, .chat-row[aria-current="true"] { background: var(--surface-2); }
+      .chat-row-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
       .recent-chats { display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: min(100%, 520px); margin: var(--sp-6) auto 0; text-align: left; }
       .card-link { font: inherit; text-align: left; color: inherit; cursor: pointer; }
       .card-link:hover { border-color: var(--border-strong); }

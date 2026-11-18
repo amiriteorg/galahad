@@ -19,8 +19,9 @@ import { toast } from "./toast.ts";
  * (h) and lifetimes are dom.ts's. Tones map to semantic tokens: a component never picks a colour.
  */
 
-/** `needs`: Galahad's oxblood, for what waits on you at the Roundtable (a knight's chip, lib/knight-state.ts). */
-export type Tone = "ok" | "warn" | "danger" | "info" | "accent" | "agent" | "neutral" | "needs";
+/** A knight's state's tones (lib/knight-state.ts): `work` its blue at work, `needs` amber for what waits on you, `failed` the
+ * red of a failure, and `ok` green, also for what is new to you. */
+export type Tone = "ok" | "warn" | "danger" | "info" | "accent" | "agent" | "neutral" | "needs" | "work" | "failed";
 
 export function badge(text: string, tone: Tone = "neutral", iconName?: IconName): HTMLElement {
   return h("span", { class: "badge", "data-tone": tone }, iconName ? icon(iconName, { size: 12 }) : null, text);
