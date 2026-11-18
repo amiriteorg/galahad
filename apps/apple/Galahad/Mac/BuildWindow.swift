@@ -31,6 +31,8 @@ enum BuildSelection: Hashable {
     private(set) var chatID = UUID()
     private(set) var git: ProjectGitView?
     private(set) var gitProblem: String?
+    /// The node said Galahad has no computer yet: where he works on your projects, made from here.
+    private(set) var noComputer = false
     /// A git action under way.
     private(set) var acting = false
     /// Counted up after each answer and action: the changes beside the thread are read again.
@@ -118,10 +120,29 @@ enum BuildSelection: Hashable {
         do {
             git = try await session.client.post("/api/projects/git", Ask(id: project.id), as: ProjectGitView.self)
             gitProblem = nil
+            noComputer = false
+        } catch let error as NodeError {
+            gitProblem = error.localizedDescription
+            noComputer = error.status == 424
         } catch {
             gitProblem = error.localizedDescription
         }
         looked += 1
+    }
+
+    /// His computer, made (as the web app's Computer page makes it: a VM of his, with a desktop): nil when made, else why not.
+    func makeComputer() async -> String? {
+        struct Make: Encodable { let id: String }
+        acting = true
+        defer { acting = false }
+        do {
+            _ = try await session.client.post("/api/team/provision", Make(id: "galahad"), as: JSONValue.self)
+            await session.refresh()
+            await refresh()
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     /// Switch the checkout to a branch, or start one: nil when done, else why not.
@@ -227,6 +248,44 @@ struct BuildWindow: View {
 
     @ViewBuilder private var detail: some View {
         if let project = model.project {
+            VStack(spacing: 0) {
+                if model.noComputer { computerBanner }
+                workbench(project)
+            }
+            .toolbar { toolbar(project) }
+        } else if model.loaded {
+            ContentUnavailableView {
+                Label("Build with Galahad", systemImage: "hammer")
+            } description: {
+                Text(model.problem ?? "A project is a repository he works on in his computer, one thread for each piece of work. You read what he changed, then commit it.")
+            } actions: {
+                Button("New Project…") { making = true }.buttonStyle(.borderedProminent)
+            }
+        } else {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Where his work in a project happens, not there yet: said, and made from here.
+    private var computerBanner: some View {
+        HStack(spacing: Space.s3) {
+            Image(systemName: "desktopcomputer").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: Space.line) {
+                Text("Galahad has no computer yet").font(.headline)
+                Text("His own VM on your node, kept between conversations: each project's checkout lives there, with a terminal and a desktop. One processor and 2 GB to start; it grows as the work needs.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: Space.s3)
+            Button("Make His Computer") { Task { problem = await model.makeComputer() } }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.acting)
+        }
+        .padding(Space.s4)
+        .background(.fill.quaternary)
+    }
+
+    @ViewBuilder private func workbench(_ project: ProjectView) -> some View {
             VSplitView {
                 HSplitView {
                     ChatView(session: model.session, chat: model.chat)
@@ -246,22 +305,10 @@ struct BuildWindow: View {
                             .id(project.id)
                             .frame(minHeight: 120, idealHeight: 260, maxHeight: .infinity)
                     } else {
-                        Text("Galahad has no computer yet: Computer in his chat makes one.").foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 80)
+                        Text("Galahad has no computer yet: Make His Computer, above.").foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 80)
                     }
                 }
             }
-            .toolbar { toolbar(project) }
-        } else if model.loaded {
-            ContentUnavailableView {
-                Label("Build with Galahad", systemImage: "hammer")
-            } description: {
-                Text(model.problem ?? "A project is a repository he works on in his computer, one thread for each piece of work. You read what he changed, then commit it.")
-            } actions: {
-                Button("New Project…") { making = true }.buttonStyle(.borderedProminent)
-            }
-        } else {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
     }
 
     @ToolbarContentBuilder private func toolbar(_ project: ProjectView) -> some ToolbarContent {
@@ -323,7 +370,7 @@ struct BuildWindow: View {
     }
 
     private var branchWords: String {
-        guard let git = model.git else { return model.gitProblem == nil ? "…" : "Can't read it" }
+        guard let git = model.git else { return model.noComputer ? "No computer" : model.gitProblem == nil ? "…" : "Can't read it" }
         switch git.state {
         case "ready": return git.branch ?? "No branch"
         case "missing": return "Not set up"
