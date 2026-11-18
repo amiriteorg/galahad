@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ConnectorManifest, MCP_LIBRARY, mcpLibraryEntry } from "../src/index.ts";
+import { ConnectorManifest, entryProblem, indexEntry, MCP_LIBRARY, mcpLibraryEntry, reviewedEntries } from "../src/index.ts";
 
 /* The library of hosted MCP servers (mcp-library.ts): each one addable as it stands. */
 
@@ -18,5 +18,22 @@ describe("the library of hosted MCP servers", () => {
     }
     expect(mcpLibraryEntry("linear")?.url).toBe("https://mcp.linear.app/mcp");
     expect(mcpLibraryEntry("nothing-like-it")).toBeNull();
+  });
+
+  test("each reviewed one passes every rule an index entry is held to (its address on its own site), and is marked reviewed", () => {
+    for (const entry of reviewedEntries()) {
+      expect([entry.id, entryProblem(entry)]).toEqual([entry.id, null]);
+      expect(entry.reviewed).toBe(true);
+    }
+  });
+
+  test("an entry from the index is taken in only as the rules allow, and never as reviewed", () => {
+    const good = { id: "acme", label: "Acme", description: "Builds.", url: "https://mcp.acme.example/mcp", site: "acme.example", category: "Developer tools", auth: "oauth", rank: 10, registry: "example.acme/mcp", updated: "", reviewed: true };
+    expect(indexEntry(good)).toMatchObject({ id: "acme" });
+    expect(indexEntry(good)?.reviewed).toBeUndefined();
+    expect(indexEntry({ ...good, url: "https://mcp.elsewhere.example/mcp" })).toBeNull();
+    expect(indexEntry({ ...good, category: "Toys" })).toBeNull();
+    expect(indexEntry({ ...good, rank: -1 })).toBeNull();
+    expect(indexEntry("not an object")).toBeNull();
   });
 });

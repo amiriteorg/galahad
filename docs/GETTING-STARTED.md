@@ -592,9 +592,10 @@ bun galahad connector refresh tracker --class search=read --class "*=outward"   
 bun galahad connector call deepwiki.read_wiki_structure --arg repoName=oven-sh/bun
 ```
 
-**Hosted servers you sign in to.** Most services' own MCP servers (Linear, Notion, Sentry, Atlassian, Vercel, Stripe, Figma…) take no key: you sign in to them as yourself. Galahad keeps a short library of them, each the service's own server as the official MCP Registry lists it, and every one that signs in checked to take Galahad's sign-in as it is (`packages/core/src/mcp-library.ts`). In the app they're under **Hosted MCP servers** on Connectors: **Add**, then **Sign in to Linear** in the page that opens. At a terminal:
+**Hosted servers you sign in to.** Most services' own MCP servers (Linear, Notion, Sentry, Atlassian, Vercel, Stripe, Figma…) take no key: you sign in to them as yourself. Galahad's **MCP library** holds some fifteen hundred of them: a reviewed list of its own, and the index at mcp.galahad.sh, which reads the official MCP Registry and keeps each server that is its service's own, on a site the Tranco list ranks, probed for how it lets a client in (`apps/mcp-index/README.md`). In the app it's **MCP library** on Connectors: search it, narrow it to those you sign in to, those that take a key or the open ones, or to a shelf, and order it by popularity, name or what changed lately; **Add**, then **Sign in to Linear** (or its key) in the page that opens. At a terminal:
 
 ```sh
+bun galahad connector library payments --auth sign-in             # search the library: words, --auth sign-in|key|open, --category, --sort
 bun galahad connector add linear                                   # from the library: installed, not signed in yet
 bun galahad connector signin linear --redirect https://<your app's address>/oauth/callback
 bun galahad connector add issues --mcp https://mcp.example.com/mcp --auth oauth   # any other server that signs in

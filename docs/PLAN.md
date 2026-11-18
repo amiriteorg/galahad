@@ -78,4 +78,4 @@ What the others are known for, and where Galahad has it.
 | Voice and realtime agents | Your word (14 Nov): no voice yet. And talking is the wrong axis for coding work. |
 | Code as the agent's action (CodeAct) | The knights already run OpenCode, Claude Code, Codex and Hermes in their VMs, and Galahad's own loop runs one command a turn under its gates. |
 | A visual flow editor | The mandate's anti-goal: not infinite configuration. A plan in words and gates that run say more than a graph of boxes. |
-| Thousands of connectors as a catalog (Dots) | Remote MCP servers, added as connectors, cover the long tail with no catalog to keep. The library of hosted servers is a short list of services' own servers, an address each, not integrations to maintain. |
+| Thousands of connectors as a catalog (Dots) | Remote MCP servers, added as connectors, cover the long tail with no catalog to keep. The MCP library (some fifteen hundred services' own hosted servers) is kept by an index that reads the official MCP Registry (`apps/mcp-index`): an address and a word on how each lets a client in, never integrations Galahad maintains. |

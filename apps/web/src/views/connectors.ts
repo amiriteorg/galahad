@@ -12,7 +12,8 @@ import { icon, type IconName } from "../ui/icons.ts";
 import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
 import { CLASS_INFO } from "./activity.ts";
-import { classSelect, type McpDeps, mcpBadge, openAddMcp, openSignIn, refreshMcp, saveClasses, serverWords } from "./mcp.ts";
+import { classSelect, type McpDeps, mcpBadge, openAddMcp, refreshMcp, saveClasses, serverWords } from "./mcp.ts";
+import { mcpLibrarySection } from "./mcp-library.ts";
 import { loadOrders, openNewOrder, ordersChanged, renderOrders } from "./orders.ts";
 import { vaultChanged } from "./vault.ts";
 import { signInBlock } from "./sign-in.ts";
@@ -631,34 +632,9 @@ function connectorCard(ctx: Ctx, c: ConnectorView, orders: OrderCounts, deps: Mc
   );
 }
 
-/** A hosted MCP server of the library, not added yet: what it gives, and Add (its sign-in, where it has one, is next). */
-function libraryRow(ctx: Ctx, c: ConnectorView): HTMLElement {
-  const add = ctx.can("brain:write") ? button("Add", { size: "sm", icon: "plus" }) : null;
-  add?.addEventListener("click", () =>
-    void busy(add, async () => {
-      try {
-        const { connector } = await ctx.api.post<{ connector: ConnectorView }>("/api/connectors", { id: c.id });
-        connectorsChanged.update((n) => n + 1);
-        if (connector.oauth?.provider === "mcp" && connector.key !== "ready") openSignIn(ctx, connector);
-        else toast(`${connector.label} added`, { tone: "ok", description: `${plural(connector.tools.length, "tool")}, on every node.` });
-      } catch (error) {
-        toast(`Couldn't add ${c.label}`, { tone: "error", description: errorMessage(error) });
-      }
-    }),
-  );
-  return h(
-    "div",
-    { class: "item center" },
-    h("div", { class: "grow" }, h("strong", {}, c.label), h("p", { class: "tiny subtle" }, c.description ?? "")),
-    add,
-  );
-}
-
 export const connectorsView: View = (root, ctx, { scope, opts }) => {
   const installedBox = h("div", { class: "grid wide" }, skeletonBlock(320), skeletonBlock(320));
   const availableBox = h("div", { class: "grid wide" });
-  // The library of hosted MCP servers (core mcp-library.ts): a row each, added with one tap.
-  const libraryBox = h("div", { class: "rows" });
   const note = h("div");
   const deps: McpDeps = {
     changed: () => connectorsChanged.update((n) => n + 1),
@@ -667,12 +643,8 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
   const addMcp = ctx.can("brain:write") ? button("Add an MCP server", { size: "sm", icon: "plus", onClick: () => openAddMcp(ctx, connectors, deps) }) : null;
   const installedSection = section("Installed", { actions: addMcp }, installedBox);
   const availableSection = section("Available", { id: "connectors-available" }, availableBox);
-  const librarySection = section(
-    "Hosted MCP servers",
-    { id: "connectors-library" },
-    h("p", { class: "small subtle" }, "Each is the service's own server, as the official MCP Registry lists it. One that signs in needs no key and no app of yours: add it, and sign in as yourself."),
-    h("div", { class: "card flat" }, libraryBox),
-  );
+  // The library of hosted MCP servers, searched on the node (mcp-library.ts).
+  const library = mcpLibrarySection(ctx, deps);
   const read = ctx.can("mind:read");
   const admin = ctx.can("fleet:admin");
   const ordersBox = h("div", { class: "stack" }, skeletonBlock(96));
@@ -729,13 +701,10 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
             ),
           ]),
     );
-    // (The library's servers in a list of their own; the ones Galahad ships, as cards.)
-    const shelved = available.filter((c) => c.kind === "mcp");
+    // (The library's servers are in the library, below; the ones Galahad ships, as cards.)
     const shipped = available.filter((c) => c.kind !== "mcp");
     replace(availableBox, ...shipped.map((c) => connectorCard(ctx, c, active, deps)));
     availableSection.hidden = !shipped.length;
-    replace(libraryBox, ...shelved.map((c) => libraryRow(ctx, c)));
-    librarySection.hidden = !shelved.length;
   }
 
   async function fetchOrders(): Promise<OrderView[] | null> {
@@ -797,16 +766,17 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
         installedSection,
         ordersSection,
         availableSection,
-        librarySection,
+        library.el,
         h("p", { class: "note" }, "A service of your own: describe it in a manifest and run ", h("span", { class: "mono" }, "galahad connector add --manifest file.json"), " on a node."),
       ),
     ),
   );
 
   // A connector installed answers whoever asked for it: their request leaves the Inbox at once.
-  scope.add(connectorsChanged.subscribe(() => (void refresh(), void ctx.live.refreshConnectorRequests())));
+  scope.add(connectorsChanged.subscribe(() => (void refresh(), void ctx.live.refreshConnectorRequests(), library.refresh())));
   scope.add(vaultChanged.subscribe(() => void refresh()));
   scope.add(ordersChanged.subscribe(() => void refreshOrders()));
   if (read) scope.interval(() => void refreshOrders(), 15_000);
   void refresh();
+  library.refresh();
 };

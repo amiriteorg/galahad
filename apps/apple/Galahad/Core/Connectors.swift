@@ -81,6 +81,24 @@ enum Connectors {
         return "\(text.hasSuffix("/") ? String(text.dropLast()) : text)/oauth/callback"
     }
 
+    /// How a library server lets Galahad in, in words (the PWA's views/mcp-library.ts HOW).
+    static func how(_ auth: String) -> String {
+        switch auth {
+        case "oauth": "Signs in"
+        case "key": "Takes a key"
+        default: "Open"
+        }
+    }
+
+    /// Under the library's list: how many, and where they come from.
+    static func libraryLine(_ page: LibraryPage, shown: Int) -> String {
+        let count = page.total.formatted()
+        let head = "\(count) \(page.total == 1 ? "server" : "servers")\(page.total > shown ? ", \(shown) shown" : "")."
+        if let problem = page.index.problem { return "\(head) The index couldn't be read (\(problem)): Galahad's reviewed servers are here." }
+        if page.index.fetched != nil { return "\(head) Galahad's reviewed servers, and \(page.index.count.formatted()) more the index found in the official MCP Registry, each the service's own." }
+        return page.index.url == nil ? "\(head) Galahad's reviewed servers (this node reads no index)." : "\(head) Reading the index for the first time…"
+    }
+
     /// The class of a tool, as a person reads it.
     static func classLine(_ tool: ConnectorView.Tool) -> String {
         tool.asks ? "\(tool.class) · asks you first" : tool.class

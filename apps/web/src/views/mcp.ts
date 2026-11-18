@@ -303,7 +303,7 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
             const { connector, discovered } = await setMcp(ctx, name, input);
             deps.changed();
             if (discovered.needsSignIn) signInStep(ctx, sheet, connector);
-            else if (discovered.needsKey) needsKey(connector, url);
+            else if (discovered.needsKey) keyStep(ctx, sheet, connector, url, deps);
             else showTools(ctx, sheet, connector, discovered, deps, true);
           } catch (error) {
             const status413 = error instanceof ApiError && error.status === 413;
@@ -330,35 +330,6 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
     h("div", { class: "row wrap", style: "justify-content:flex-end" }, button("Cancel", { onClick: () => sheet.close() }), connect),
   );
 
-  function needsKey(connector: ConnectorView, url: string): void {
-    const note = h("div");
-    const onSealed = () => {
-      replace(note, h("p", { class: "small muted row", style: "gap:8px" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Sealed. Listing its tools…"));
-      setMcp(ctx, connector.id, { url })
-        .then(({ connector: listed, discovered }) => {
-          deps.changed();
-          if (sheet.scope.disposed) return;
-          if (discovered.needsKey) replace(note, callout("warn", "It still has no key. Seal it again."));
-          else showTools(ctx, sheet, listed, discovered, deps, true);
-        })
-        .catch((error: unknown) => {
-          if (!sheet.scope.disposed) replace(note, callout("danger", errorMessage(error), { title: "Couldn't list its tools" }));
-        });
-    };
-    replace(
-      sheet.body,
-      h(
-        "div",
-        { class: "stack loose" },
-        callout("info", `${connector.label} is installed without tools yet: it needs its key first. Galahad lists its tools as soon as the key is sealed.`, { title: "Add its key" }),
-        deps.keyField(connector, onSealed),
-        note,
-        formActions(button("Later", { onClick: () => sheet.close() })),
-      ),
-    );
-    sheet.body.querySelector<HTMLInputElement>("input[type=password]")?.focus();
-  }
-
   const sheet = openSheet({
     title: "Add an MCP server",
     description: "A remote MCP server becomes a connector: its tools, with the classes you choose.",
@@ -366,6 +337,42 @@ export function openAddMcp(ctx: Ctx, installed: ConnectorView[], deps: McpDeps):
     size: "wide",
     initialFocus: () => address,
   });
+}
+
+/** The next step for a server that takes a key, in its sheet: the key, sealed; then its tools, listed. */
+export function keyStep(ctx: Ctx, sheet: Sheet, connector: ConnectorView, url: string, deps: McpDeps): void {
+  const note = h("div");
+  const onSealed = () => {
+    replace(note, h("p", { class: "small muted row", style: "gap:8px" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Sealed. Listing its tools…"));
+    setMcp(ctx, connector.id, { url })
+      .then(({ connector: listed, discovered }) => {
+        deps.changed();
+        if (sheet.scope.disposed) return;
+        if (discovered.needsKey) replace(note, callout("warn", "It still has no key. Seal it again."));
+        else showTools(ctx, sheet, listed, discovered, deps, true);
+      })
+      .catch((error: unknown) => {
+        if (!sheet.scope.disposed) replace(note, callout("danger", errorMessage(error), { title: "Couldn't list its tools" }));
+      });
+  };
+  replace(
+    sheet.body,
+    h(
+      "div",
+      { class: "stack loose" },
+      callout("info", `${connector.label} is installed without tools yet: it needs its key first. Galahad lists its tools as soon as the key is sealed.`, { title: "Add its key" }),
+      deps.keyField(connector, onSealed),
+      note,
+      formActions(button("Later", { onClick: () => sheet.close() })),
+    ),
+  );
+  sheet.body.querySelector<HTMLInputElement>("input[type=password]")?.focus();
+}
+
+/** Its key for a server just added (from the library): its own sheet, so you stay where you were. */
+export function openKey(ctx: Ctx, connector: ConnectorView, deps: McpDeps): void {
+  const sheet = openSheet({ title: `${connector.label}'s key`, description: "Sealed in the vault, sent to this server alone.", body: h("div") });
+  keyStep(ctx, sheet, connector, connector.url ?? "", deps);
 }
 
 /** The next step for a server you sign in to, in its sheet: the sign-in, and the sheet closes once you're in (its tools listed). */

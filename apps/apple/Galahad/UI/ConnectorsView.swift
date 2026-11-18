@@ -13,7 +13,6 @@ struct ConnectorsView: View {
 
     private var installed: [ConnectorView] { (connectors ?? []).filter(\.installed) }
     private var catalog: [ConnectorView] { (connectors ?? []).filter { !$0.installed && $0.kind != "mcp" } }
-    private var library: [ConnectorView] { (connectors ?? []).filter { !$0.installed && $0.kind == "mcp" } }
 
     var body: some View {
         GroupedList {
@@ -38,15 +37,22 @@ struct ConnectorsView: View {
                     Text("Each reaches its service through Galahad's oath: reading, making and changing run freely, and anything sent out or deleted asks you first.")
                 }
             }
-            if !library.isEmpty {
+            if connectors != nil {
                 Section {
-                    ForEach(library) { connector in
-                        NavigationLink { ConnectorDetail(session: session, id: connector.id) { await load() } } label: { ConnectorRow(connector: connector) }
+                    NavigationLink {
+                        McpLibraryView(session: session)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: Space.line) {
+                                Text("MCP library").font(.headline)
+                                Text("Hosted MCP servers, each the service's own: search, sort and add").font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "books.vertical")
+                        }
                     }
-                } header: {
-                    Text("Hosted MCP servers")
                 } footer: {
-                    Text("Each is the service's own server, as the official MCP Registry lists it. One that signs in needs no key and no app of yours: add it, then sign in.")
+                    Text("One that signs in needs no key and no app of yours: add it, and sign in as yourself.")
                 }
             }
         }
@@ -123,7 +129,7 @@ struct StateBadge: View {
 }
 
 /// One connector: what it can do and who may use it, its key or its sign-in, and adding or removing it.
-private struct ConnectorDetail: View {
+struct ConnectorDetail: View {
     let session: Session
     let id: String
     let changed: () async -> Void

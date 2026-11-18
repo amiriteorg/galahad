@@ -3,7 +3,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonical, decodeHlc, type NodeIdentity, screenSessionView } from "@galahad/core";
-import { type BrainContext, GatewayTokens, installedConnectors, type OAuthEndpoints, pinLegacyKeys } from "@galahad/brain";
+import { type BrainContext, CATALOG, GatewayTokens, installedConnectors, type OAuthEndpoints, pinLegacyKeys } from "@galahad/brain";
+import { indexUrl, McpIndex } from "./mcp-index.ts";
 import { UsageStore } from "./usage.ts";
 import { cloudflareNatives } from "./cloudflare.ts";
 import { gmailNatives, outlookNatives } from "./mail.ts";
@@ -580,6 +581,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     sandboxContext,
     terminals,
     connectors,
+    mcpIndex: new McpIndex({ file: join(home.dir, "mcp-index.json"), url: indexUrl(process.env.GALAHAD_MCP_INDEX), ...(opts.fetch ? { fetch: opts.fetch } : {}), reserved: Object.keys(CATALOG), log }),
     artifacts,
     loops,
     loopDrafts,

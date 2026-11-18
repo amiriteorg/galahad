@@ -35,6 +35,8 @@ const flag = (name: string): string | undefined => {
 };
 // The node's key goes to a file in the temp home, never to the OS keychain.
 process.env.GALAHAD_KEYSTORE = "file";
+// Nor does it read the MCP library's index from mcp.galahad.sh unless told to (GALAHAD_MCP_INDEX): the reviewed list stays.
+process.env.GALAHAD_MCP_INDEX ??= "off";
 const chosen = flag("dir");
 if (chosen) mkdirSync(chosen, { recursive: true });
 const tmp = mkdtempSync(join(chosen ?? tmpdir(), "galahad-apple-node-"));

@@ -95,7 +95,10 @@ import {
   activeScreenSession,
   MCP_LIBRARY,
   mcpLibraryEntry,
+  searchLibrary,
+  type ConnectorLibraryView,
 } from "@galahad/core";
+import type { McpIndex } from "./mcp-index.ts";
 import {
   AGENTS,
   CATALOG,
@@ -223,6 +226,8 @@ export interface AppContext {
   /** Terminals in this node's sandboxes, for you (terminals.ts); absent where it runs none. */
   terminals?: Terminals | null;
   connectors: ConnectorService;
+  /** The library of hosted MCP servers: the reviewed list and the index at mcp.galahad.sh (mcp-index.ts). */
+  mcpIndex: McpIndex;
   loops: LoopRunner;
   /** Loops Galahad drafted when you asked for one in chat, waiting for you to add or dismiss (node-local). */
   loopDrafts: LoopDrafts;
@@ -3270,6 +3275,19 @@ export function createApp(ctx: AppContext) {
       return selfActionView();
     },
     connectors: () => ({ connectors: connectorViews() }),
+    connectorLibrary: (input): ConnectorLibraryView => {
+      const page = searchLibrary(ctx.mcpIndex.entries(), input);
+      // Installed here: by its id, or as the same server under another id.
+      const mine = installedConnectors(ctx.store);
+      const ids = new Set(mine.map((c) => c.id));
+      const urls = new Set(mine.flatMap((c) => (c.manifest?.mcp ? [`${c.manifest.origin}${c.manifest.mcp.path}`.replace(/\/+$/, "")] : [])));
+      return {
+        entries: page.entries.map((e) => ({ ...e, installed: ids.has(e.id) || urls.has(e.url.replace(/\/+$/, "")) })),
+        total: page.total,
+        categories: page.categories,
+        index: ctx.mcpIndex.status(),
+      };
+    },
     setConnector: async (input) => {
       if (input.mcp) {
         if (input.manifest || input.origin) throw new HttpError(400, "give an MCP server's url, or a manifest, not both");
@@ -3287,10 +3305,12 @@ export function createApp(ctx: AppContext) {
         manifest = parsed.data;
       } else {
         const catalog = Object.hasOwn(CATALOG, input.id) ? CATALOG[input.id] : undefined;
-        // A hosted MCP server of the library: added by its address, signing in when it does.
-        const shelved = catalog ? null : mcpLibraryEntry(input.id);
+        // A hosted MCP server of the library: added by its address, signing in when it does, or asking for its key.
+        const shelved = catalog ? null : ctx.mcpIndex.find(input.id);
         if (shelved) {
-          const installed = await connectorErrors(() => ctx.connectors.installMcp(input.id, { url: shelved.url, label: shelved.label, description: shelved.description, auth: shelved.auth }));
+          const key = shelved.auth !== "key" ? { auth: shelved.auth } : shelved.header?.toLowerCase() === "authorization" ? { auth: "bearer" as const } : { auth: "header" as const, header: shelved.header };
+          const description = shelved.description.length > 300 ? `${shelved.description.slice(0, 299).replace(/\s+\S*$/, "")}…` : shelved.description;
+          const installed = await connectorErrors(() => ctx.connectors.installMcp(input.id, { url: shelved.url, label: shelved.label.slice(0, 64), description, ...key }));
           ctx.connectorRequests.resolve(input.id);
           return { connector: connectorViews().find((c) => c.id === input.id), discovered: installed };
         }
