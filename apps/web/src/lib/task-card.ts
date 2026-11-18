@@ -1,3 +1,4 @@
+import { interventionWords } from "@galahad/core/interventions";
 import type { TeamTask } from "@galahad/core/team";
 
 /*
@@ -65,6 +66,12 @@ export const givenLine = (task: Pick<TeamTask, "givenBy">): string | null =>
 /** Who wrote a task, when a knight did (null: you or Galahad gave it): `proposer` is that knight's name. */
 export const proposedLine = (task: Pick<TeamTask, "proposedBy" | "status">, proposer: string | null): string | null =>
   !task.proposedBy ? null : task.status === "proposed" ? `${proposer ?? task.proposedBy} proposes this: it starts when you approve it` : `Proposed by ${proposer ?? task.proposedBy}`;
+
+/** How you stepped in on a task, the north star's count (#28; null: you never did). */
+export const steppedLine = (task: Pick<TeamTask, "interventions">): string | null => {
+  const words = interventionWords(task.interventions);
+  return words ? `You stepped in: ${words}` : null;
+};
 
 /** What a task kept of its changes: how many files, and the artifact that holds them (null: nothing kept). */
 export const keptChanges = (task: Pick<TeamTask, "changes">): { text: string; artifact: string } | null =>

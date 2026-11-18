@@ -224,6 +224,7 @@ struct TaskCardView: View {
             }
             if let proposed = TaskCard.proposed(task, proposer: proposer) { Text(proposed).font(.caption).foregroundStyle(.secondary) }
             if let given = TaskCard.given(task) { Text(given).font(.caption).foregroundStyle(.secondary) }
+            if let stepped = TaskCard.stepped(task) { Text(stepped).font(.caption).foregroundStyle(.secondary) }
             if task.status == "proposed" {
                 Text(task.goal).font(.callout).lineLimit(6).fixedSize(horizontal: false, vertical: true)
                 if let gates = task.gates, !gates.isEmpty {

@@ -3,6 +3,7 @@ import {
   TEAM_GALAHAD, TEAM_LIMITS, TeamControlInput, TeamRoomId, type TeamSayInput, TeammateId,
   type Teammate, type TeammateInput, type TeamRecruitInput, type TeamRoom, type TeamRoomInput, type TeamPostInput, type TeamWorkspace,
   type TeamMessage, type TeamTask, type TeamTaskChanges, type TeamTaskInput, type TeamTaskRecord, type TeamTrailEntry, type TeamSnapshot, type TeamRoomView, type TeamOverview,
+  type InterventionKind, type TeamWorkStatus,
 } from "../../core/src/team.ts";
 import { TeamStore, TeamError, teamInput, teamOutput, teamText, type TeamAnswer, type TeamAsker, type TeamJob, type TeamSelection } from "./team-store.ts";
 
@@ -102,6 +103,17 @@ export class TeamService {
     if (!saved.enabled) this.cancel({ teammate: saved.id }, "interrupted", "Paused by you.");
     this.changed(); this.kick();
     return saved;
+  }
+  /**
+   * You stepped in (#28): on a task by its id, or on the work running now of a knight or a room. Counted on each such task
+   * by how, with a line on its trail; the caller is a route that only you may call.
+   */
+  steppedIn(on: TeamSelection, kind: InterventionKind, text: string): void {
+    if (!on.task && !on.teammate && !on.room) return;
+    const tasks = on.task ? [on.task] : this.store.tasksIn(on, ["running"]).map((task) => task.id);
+    let counted = false;
+    for (const task of tasks) counted = this.store.intervene(task, kind, text) || counted;
+    if (counted) this.changed();
   }
   /** A line on a task's trail from outside its run (a skill its verified work taught), shown on every device. */
   noteTask(task: string, text: string): void {
@@ -206,6 +218,14 @@ export class TeamService {
     if (timer) clearTimeout(timer);
   }
 
+  /** A task by its id, or null. */
+  task(id: string): TeamTask | null {
+    return this.store.task(id);
+  }
+  /** The tasks in any of these states: one by its id, a knight's or a room's. */
+  tasksIn(select: TeamSelection, statuses: readonly TeamWorkStatus[]): TeamTask[] {
+    return this.store.tasksIn(select, statuses);
+  }
   /** What a task did, as it happened (TeamStore.trail), with its status now. */
   trail(task: string, after = 0): { task: { id: string; status: TeamTask["status"] }; entries: TeamTrailEntry[]; more: boolean } {
     const found = this.store.task(task);

@@ -55,6 +55,19 @@ export const overviewView: View = (root, ctx, { scope }) => {
       );
     }
     if (fleet) tiles.push(statTile({ label: "Mind", icon: "memory", value: fleet.events.toLocaleString(), note: "events in the shared mind", href: "#/memory" }));
+    // The mandate's north star (#28): how often you stepped in on the knights' work, per task done and verified.
+    const star = ctx.live.team.value?.northStar;
+    if (star?.ended) {
+      tiles.push(
+        statTile({
+          label: "You stepped in",
+          icon: "user",
+          value: star.perCompleted === null ? String(star.interventions) : star.perCompleted.toFixed(1),
+          note: star.perCompleted === null ? "times, and no task done yet (30 days)" : `times a task done: ${star.completed} in 30 days`,
+          href: "#/team",
+        }),
+      );
+    }
     replace(stats, ...tiles);
   }
 
@@ -156,6 +169,7 @@ export const overviewView: View = (root, ctx, { scope }) => {
     ctx.live.fleet.watch((fleet) => keepPlace(root, () => renderStats(fleet))),
   );
   scope.add(ctx.live.inboxCount.subscribe(() => renderStats(ctx.live.fleet.value)));
+  scope.add(ctx.live.team.subscribe(() => keepPlace(root, () => renderStats(ctx.live.fleet.value))));
   scope.add(vaultChanged.subscribe(() => void loadVault()));
   void loadVault();
   void loadLedger();

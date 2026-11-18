@@ -1,4 +1,4 @@
-import { plainLine, plainText, type Prices, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate } from "@galahad/core";
+import { interventionWords, plainLine, plainText, type Prices, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate } from "@galahad/core";
 import { AVATAR_LOOKS, lookProfile, resolveAvatar, withBodyColor } from "@galahad/core/avatar";
 
 interface Api { call<T>(name: RouteName, input?: unknown): Promise<T> }
@@ -53,7 +53,10 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     for (const r of state.rooms) print(`${r.id} · ${plainLine(r.name)} · ${r.members.join(", ")}${r.paused ? " · paused" : ""}`);
     // (Money is at your prices, asked for only when a task here has a record to price.)
     const prices: Prices = state.tasks.some((t) => t.record) ? (await api.call<{ prices: Prices }>("prices").catch(() => ({ prices: {} }))).prices : {};
-    for (const t of state.tasks) print(`${t.id} · ${t.status}${t.verified ? " (verified)" : ""} · ${t.assignee} · ${plainLine(t.title)}${taskRecordLine(t, prices)}${taskChangesLine(t)}${t.status === "proposed" && t.proposedBy ? ` · proposed by ${t.proposedBy}: galahad roundtable approve ${t.id}` : ""}`);
+    for (const t of state.tasks) print(`${t.id} · ${t.status}${t.verified ? " (verified)" : ""} · ${t.assignee} · ${plainLine(t.title)}${taskRecordLine(t, prices)}${taskChangesLine(t)}${t.status === "proposed" && t.proposedBy ? ` · proposed by ${t.proposedBy}: galahad roundtable approve ${t.id}` : ""}${interventionWords(t.interventions) ? ` · you stepped in: ${interventionWords(t.interventions)}` : ""}`);
+    // The mandate's north star (#28): how often you stepped in, per task done and verified.
+    const star = state.northStar;
+    if (star?.ended) print(`You stepped in ${star.interventions} time${star.interventions === 1 ? "" : "s"} on the ${star.ended} task${star.ended === 1 ? "" : "s"} that ended in the last 30 days${star.perCompleted === null ? ", and none was done and verified." : `: ${star.perCompleted.toFixed(1)} a task done and verified (${star.completed}).`}`);
     if (!state.teammates.length) print("Create a knight with galahad roundtable add <id> --name <name>, or open the Roundtable in the app.");
     return;
   }

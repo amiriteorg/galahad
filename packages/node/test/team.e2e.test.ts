@@ -188,3 +188,20 @@ test("real API: you arrange the knights and choose who leads; no agent can, and 
   expect(await api("arrangeTeam", { primary: "galahad" })).toMatchObject({ primary: "galahad" });
   await api("removeTeammate", { id: "zed" });
 });
+
+test("real API: a task given again is your stepping in, counted on the new one (#28), and the team says the north star", async () => {
+  await api("saveTeammate", { id: "gil", name: "GIL", role: "engineer" });
+  const room = (await api<{ room: { id: string } }>("directTeammate", { id: "gil" })).room.id;
+  const first = (await api<{ task: TeamTask }>("createTeamTask", { room, assignee: "gil", title: "Fix the importer", goal: "Fix it", gates: ["true"] })).task;
+  expect(first.interventions).toBeUndefined();
+  const again = (await api<{ task: TeamTask }>("createTeamTask", { room, assignee: "gil", title: "Fix the importer", goal: "Fix it, and test the empty file", gates: ["true"], again: first.id })).task;
+  expect(again.interventions).toEqual({ again: 1 });
+  const trail = await api<{ entries: { text: string }[] }>("teamTrail", { task: again.id });
+  expect(trail.entries.map((e) => e.text)).toContain("You stepped in: given again after “Fix the importer”");
+  // A task that isn't there can't be given again, and nothing is made.
+  const before = (await api<TeamSnapshot>("team")).tasks.length;
+  expect((await request("createTeamTask", { room, assignee: "gil", title: "Nothing", goal: "Nothing", again: "task-000000000000" })).status).toBe(404);
+  const state = await api<TeamSnapshot>("team");
+  expect(state.tasks.length).toBe(before);
+  expect(state.northStar).toMatchObject({ since: expect.any(Number), completed: expect.any(Number), interventions: expect.any(Number) });
+});

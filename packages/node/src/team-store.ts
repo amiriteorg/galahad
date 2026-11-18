@@ -7,6 +7,7 @@ import {
   TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, type TeamTrailEntry, TeamWorkspace,
   type Teammate, type TeamRoom, type TeamMessage, type TeamTask, type TeamDelivery, type TeamSnapshot, type TeamRoomView, type TeamWorkStatus, type TeamOverview,
 } from "../../core/src/team.ts";
+import { type InterventionKind, type NorthStar, northStar } from "../../core/src/interventions.ts";
 
 export class TeamError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -498,7 +499,7 @@ export class TeamStore {
   private jobRow(id: string): JobRow | null { return this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE id = ?").get(id); }
   job(id: string): TeamJob | null { const row = this.jobRow(id); return row ? jobOf(row) : null; }
   private taskOf(row: JobRow): TeamTask {
-    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "givenBy" | "proposedBy">;
+    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "givenBy" | "proposedBy" | "interventions">;
     return { ...data, id: row.id, room: row.room, assignee: row.teammate, chainId: row.chain_id, status: row.status, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   task(id: string): TeamTask | null { const row = this.jobRow(id); return row?.kind === "task" ? this.taskOf(row) : null; }
@@ -549,7 +550,7 @@ export class TeamStore {
     const removed = this.removed().map(({ id, name, removedAt }) => { const conversations = direct.filter((room) => room.members.includes(id)).map((room) => room.id); return { id, name, removedAt, ...(conversations.length ? { conversations } : {}) }; });
     const computer = this.computer();
     const { order, primary } = this.arrangement();
-    return { teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(computer ? { computer } : {}), order, primary };
+    return { northStar: this.northStar(this.now() - 30 * 86_400_000), teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(computer ? { computer } : {}), order, primary };
   }
   /** The team as Galahad himself reads it: bounded, and without anyone's working notes. `room`: that room's latest words too. */
   overview(room?: string): TeamOverview {
@@ -606,6 +607,35 @@ export class TeamStore {
       this.db.query("UPDATE team_jobs SET data=?,updated_at=? WHERE id=?").run(JSON.stringify(data), at, key);
       this.trailLine(key, at, text);
     })();
+  }
+  /**
+   * You stepped in on a task (#28): counted on it by how, with a line on its trail saying so. A desktop taken over counts
+   * once a task, however many clicks it took. Returns whether it was counted.
+   */
+  intervene(key: string, kind: InterventionKind, text: string): boolean {
+    const row = this.jobRow(key);
+    if (!row || row.kind !== "task") return false;
+    const data = JSON.parse(row.data) as { interventions?: Partial<Record<InterventionKind, number>> };
+    const counts = { ...data.interventions };
+    if (kind === "takeover" && counts.takeover) return false;
+    counts[kind] = (counts[kind] ?? 0) + 1;
+    const at = this.now();
+    this.db.transaction(() => {
+      this.db.query("UPDATE team_jobs SET data=? WHERE id=?").run(JSON.stringify({ ...data, interventions: counts }), key);
+      this.trailLine(key, at, `You stepped in: ${text}`);
+    })();
+    return true;
+  }
+  /** The tasks in any of these states: one by its id, a knight's or a room's. */
+  tasksIn(select: TeamSelection, statuses: readonly TeamWorkStatus[]): TeamTask[] {
+    if (!statuses.length) return [];
+    const rows = this.db.query<JobRow, string[]>(`SELECT * FROM team_jobs WHERE kind='task' AND status IN (${statuses.map(() => "?").join(",")}) ORDER BY seq`).all(...statuses);
+    return rows.filter((row) => matches(jobOf(row), select)).map((row) => this.taskOf(row));
+  }
+  /** Interventions per completed task over the tasks that ended since `since` (all of them, not only the listed). */
+  northStar(since: number): NorthStar {
+    const rows = this.db.query<JobRow, [number]>("SELECT * FROM team_jobs WHERE kind='task' AND status IN ('done','failed','stopped') AND updated_at >= ?").all(since);
+    return northStar(rows.map((r) => this.taskOf(r)), since);
   }
   /** Its trail: each line as it happened, numbered in order, kept after the task has ended. Bounded: a line is cut to
    * TRAIL.text, and once a task has more than TRAIL.keep lines the oldest go (the numbers stay as written). */

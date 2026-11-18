@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamTask } from "@galahad/core/team";
-import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "./task-card.ts";
+import { givenLine, keptChanges, proposedLine, steppedLine, taskActions, taskBadge, taskEnd } from "./task-card.ts";
 
 const task = (status: TeamTask["status"], more: Partial<TeamTask> = {}): TeamTask => ({ id: "task-abcdefghijkl", room: "dm-ada", assignee: "ada", title: "Fix the importer", goal: "Fix it", dependsOn: [], gates: ["bun test"], status, verified: status === "done", progress: "", output: "", error: null, chainId: "c", createdAt: 1, updatedAt: 2, ...more });
 /** A task's output as the runner writes it: the knight's summary, then the review and where it worked. */
@@ -98,5 +98,14 @@ describe("a task a knight proposed", () => {
     // Declined, it says so, and it may still be taken up.
     expect(taskEnd(task("stopped", { proposedBy: "kay", error: "Declined by you.", verified: false }))).toEqual({ why: "Declined by you.", said: null });
     expect(proposedLine(task("queued"), null)).toBeNull();
+  });
+});
+
+describe("how you stepped in on a task (#28)", () => {
+  test("is said in words, or not at all", () => {
+    expect(steppedLine({})).toBeNull();
+    expect(steppedLine({ interventions: {} })).toBeNull();
+    expect(steppedLine({ interventions: { approval: 1, message: 2 } })).toBe("You stepped in: an approval and two messages");
+    expect(steppedLine({ interventions: { again: 1 } })).toBe("You stepped in: given again");
   });
 });

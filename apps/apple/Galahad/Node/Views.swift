@@ -116,6 +116,8 @@ struct TeamTask: Decodable, Sendable {
     var givenBy: String? = nil
     /// The knight that proposed it in a conversation; while its status is `proposed` it waits for your approval.
     var proposedBy: String? = nil
+    /// Each time you stepped in on it, by how (approval · message · takeover · stop · resume · again).
+    var interventions: [String: Int]? = nil
 }
 
 /// A knight's reply on its way (or how it went).

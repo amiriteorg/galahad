@@ -53,6 +53,7 @@ import {
   type NodeIdentity,
   NonceCache,
   OWNER_SCOPES,
+  type InterventionKind,
   type Presence,
   PushRequest,
   type RouteName,
@@ -1713,6 +1714,19 @@ export function createApp(ctx: AppContext) {
   /* The team controller owns identity and scheduling; its workers never inherit owner scopes. */
   const teamOwner: Principal = { kind: "admin", device: ctx.identity.id, scopes: OWNER_SCOPES };
   const teammateLabel = (id: string) => teamArmLabel(ctx.identity.id, id);
+  /** The knight an arm's label names (team.<this controller>.<knight>), or null for anyone else. */
+  const knightOfLabel = (label: string): string | null => {
+    const prefix = teamArmLabel(ctx.identity.id, TEAM_GALAHAD).slice(0, -TEAM_GALAHAD.length);
+    return label.startsWith(prefix) && label.length > prefix.length ? label.slice(prefix.length) : null;
+  };
+  /** You stepped in on a knight's work (#28): counted where the team controller is this node, and never in your way. */
+  const steppedIn = (on: { task?: string; teammate?: string; room?: string }, kind: InterventionKind, text: string): void => {
+    try {
+      ctx.team?.service?.steppedIn(on, kind, text);
+    } catch (error) {
+      ctx.log(`intervention not counted: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   const teammatePrincipal = (id: string): Principal => ({ kind: "arm", device: `arm:${teammateLabel(id)}`, label: teammateLabel(id), scopes: ["mind:read", "mind:write", "sandbox", "connect"] });
   const teamOf = () => {
     if (!ctx.team?.service) throw new HttpError(503, "the team controller is unavailable");
@@ -2076,11 +2090,14 @@ export function createApp(ctx: AppContext) {
     directTeammate: (input, p) => { ownerOnly(p); return { room: teamOf().direct(input.id) }; },
     teamRoom: (input, p) => { ownerOnly(p); return teamOf().room(input.id); },
     teamTrail: (input, p) => { ownerOnly(p); return teamOf().trail(input.task, input.after ?? 0); },
-    teamDesktop: (input, p, req) => {
+    teamDesktop: async (input, p, req) => {
       ownerOnly(p);
       const bound = seatOf(input.id).workspace;
       if (!bound) throw new HttpError(424, input.id === TEAM_GALAHAD ? noVm(input.id) : `this knight has no VM yet: galahad roundtable provision ${input.id} --desktop makes one with a desktop`);
-      return inProcess(p, req.signal).call("teamDesktopOn", { on: bound.node, id: bound.id, quest: armQuest(teammateLabel(input.id)), action: input.action });
+      const done = await inProcess(p, req.signal).call("teamDesktopOn", { on: bound.node, id: bound.id, quest: armQuest(teammateLabel(input.id)), action: input.action });
+      // A click or a key of yours on its desktop while it works is taking it over (#28): once a task.
+      if (input.action.do !== "look") steppedIn({ teammate: input.id }, "takeover", "took over its desktop");
+      return done;
     },
     teamDesktopOn: (input, p) => {
       // Yours alone: a knight operates its own desktop from inside its VM, and never another's from outside.
@@ -2170,14 +2187,43 @@ export function createApp(ctx: AppContext) {
       ctx.ledger?.({ class: "modify", resource: "screen", target: session.nodeName, verdict: "allow", reason: isOwner(p) ? "you ended it" : "he was done", detail: `session ${input.id} ended` });
       return { session: screenSessionOf(input.id) };
     },
-    postTeamMessage: (input, p) => { ownerOnly(p); return { message: teamOf().post(input, p.kind === "admin" ? { kind: "admin" } : { kind: "client", device: p.device }) }; },
-    createTeamTask: (input, p) => { ownerOnly(p); return { task: teamOf().createTask(input) }; },
+    postTeamMessage: (input, p) => {
+      ownerOnly(p);
+      const message = teamOf().post(input, p.kind === "admin" ? { kind: "admin" } : { kind: "client", device: p.device });
+      // Your words in a room while a knight works there are stepping in on that work (#28).
+      steppedIn({ room: input.room }, "message", "a message while it worked");
+      return { message };
+    },
+    createTeamTask: (input, p) => {
+      ownerOnly(p);
+      const { again, ...task } = input;
+      const team = teamOf();
+      const before = again ? team.task(again) : null;
+      if (again && !before) throw new HttpError(404, "No such team task to give again.");
+      const created = team.createTask(task);
+      // Given again after it failed or fell short: stepping in, counted on the new one (#28).
+      if (before) steppedIn({ task: created.id }, "again", `given again after “${before.title}”`);
+      return { task: team.task(created.id) ?? created };
+    },
     giveTeamTask: (input, p, req) => { ownerOnly(p); return giveTask(input, TEAM_OWNER, req.signal); },
     giveToTeam: (input, p, req) => {
       if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself gives the Roundtable work this way; you give one at the Roundtable");
       return giveTask(input, TEAM_GALAHAD, req.signal);
     },
-    controlTeam: (input, p) => { ownerOnly(p); return teamOf().control(input); },
+    controlTeam: (input, p) => {
+      ownerOnly(p);
+      const team = teamOf();
+      if (input.action === "approve") return team.control(input);
+      // Pausing, stopping or resuming is stepping in (#28), counted on each task it moved: work under way that stopped, or
+      // stopped work taken up again. A proposal declined or queued work called off never ran, so it isn't counted.
+      const select = { ...(input.room ? { room: input.room } : {}), ...(input.teammate ? { teammate: input.teammate } : {}), ...(input.task ? { task: input.task } : {}) };
+      const before = team.tasksIn(select, input.action !== "resume" ? ["running"] : input.task ? ["interrupted", "stopped", "failed"] : ["interrupted"]);
+      const snapshot = team.control(input);
+      const moved = before.filter((task) => team.task(task.id)?.status !== task.status);
+      const said = input.action === "resume" ? "resumed it" : input.action === "pause" ? "paused it" : "stopped it";
+      for (const task of moved) steppedIn({ task: task.id }, input.action === "resume" ? "resume" : "stop", said);
+      return moved.length ? team.snapshot() : snapshot;
+    },
     teamMemory: (input, p) => { ownerOnly(p); return { teammate: teamOf().remember(input.id, input.text) }; },
     teamEngram: (input, p) => { ownerOnly(p); return { engram: teamOf().setEngram(input.on) }; },
     /* Removing a worker is yours alone (never his: he only adds), and for good. One that has a VM goes only together
@@ -3355,7 +3401,13 @@ export function createApp(ctx: AppContext) {
     decideAction: (input, p) => {
       // Only you decide: never another node, never an agent (arms can't hold fleet:admin anyway).
       if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you can answer an action request");
-      return connectorErrors(() => ({ action: ctx.connectors.decide(input.id, input.approve, p.kind === "client" ? p.device : null, input.note) }));
+      return connectorErrors(() => {
+        const action = ctx.connectors.decide(input.id, input.approve, p.kind === "client" ? p.device : null, input.note);
+        // An approve card a knight's work raised, answered: stepping in on the task it is running (#28).
+        const knight = knightOfLabel(action.by);
+        if (knight) steppedIn({ teammate: knight }, "approval", `${input.approve ? "approved" : "declined"} ${action.connector}.${action.tool}`);
+        return { action };
+      });
     },
     orders: () => ({ orders: ctx.connectors.orders() }),
     setOrder: (input, p) => {

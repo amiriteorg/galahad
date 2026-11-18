@@ -88,11 +88,12 @@ import Observation
         }
     }
 
-    /// The same task, given again as a new one: what was asked, of whom and where; nothing of how the first one went.
+    /// The same task, given again as a new one: what was asked, of whom and where, and which it gives again (your
+    /// stepping in, counted on the new one); nothing of how the first one went.
     func giveAgain(_ task: TeamTask, with client: NodeClient) async {
         do {
-            struct Again: Encodable { let room: String; let assignee: String; let title: String; let goal: String; let dependsOn: [String]; let gates: [String] }
-            _ = try await client.post("/api/team/tasks", Again(room: task.room, assignee: task.assignee, title: task.title.trimmingCharacters(in: .whitespaces), goal: task.goal, dependsOn: task.dependsOn, gates: task.gates ?? []), as: JSONValue.self)
+            struct Again: Encodable { let room: String; let assignee: String; let title: String; let goal: String; let dependsOn: [String]; let gates: [String]; let again: String }
+            _ = try await client.post("/api/team/tasks", Again(room: task.room, assignee: task.assignee, title: task.title.trimmingCharacters(in: .whitespaces), goal: task.goal, dependsOn: task.dependsOn, gates: task.gates ?? [], again: task.id), as: JSONValue.self)
             await load(room: view?.id, with: client)
         } catch {
             problem = error.localizedDescription

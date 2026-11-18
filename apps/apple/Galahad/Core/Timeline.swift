@@ -150,6 +150,27 @@ enum TaskCard {
         return task.status == "proposed" ? "\(proposer ?? by) proposes this: it starts when you approve it" : "Proposed by \(proposer ?? by)"
     }
 
+    /// How you stepped in on it, the north star's count (nil: you never did): core's interventionWords.
+    static func stepped(_ task: TeamTask) -> String? {
+        let kinds = ["approval", "message", "takeover", "stop", "resume", "again"]
+        let number = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+        func count(_ n: Int) -> String { n < number.count ? number[n] : String(n) }
+        let parts: [String] = kinds.compactMap { kind in
+            guard let n = task.interventions?[kind], n > 0 else { return nil }
+            switch kind {
+            case "approval": return n == 1 ? "an approval" : "\(count(n)) approvals"
+            case "message": return n == 1 ? "a message" : "\(count(n)) messages"
+            case "takeover": return "its desktop taken over"
+            case "stop": return n == 1 ? "a stop" : "\(count(n)) stops"
+            case "resume": return n == 1 ? "a resume" : "\(count(n)) resumes"
+            default: return n == 1 ? "given again" : "given again \(count(n)) times"
+            }
+        }
+        guard let last = parts.last else { return nil }
+        let words = parts.count == 1 ? last : "\(parts.dropLast().joined(separator: ", ")) and \(last)"
+        return "You stepped in: \(words)"
+    }
+
     /// What it kept of its changes (nil: nothing kept).
     static func kept(_ task: TeamTask) -> String? {
         task.changes.map { "\($0.files) file\($0.files == 1 ? "" : "s") changed" }

@@ -50,6 +50,6 @@ describe("a knight's timeline", () => {
 describe("giving the same task again", () => {
   test("is the same goal, gates and knight in the same room, as a new task", () => {
     const failed = task("task-failed", 5, { status: "failed", verified: false, error: "gave-up", title: " Fix the importer ", goal: "Fix it", gates: ["bun test"], dependsOn: ["task-first"], output: "old", progress: "old" });
-    expect(giveAgain(failed)).toEqual({ room: "dm-ada", assignee: "ada", title: "Fix the importer", goal: "Fix it", gates: ["bun test"], dependsOn: ["task-first"] });
+    expect(giveAgain(failed)).toEqual({ room: "dm-ada", assignee: "ada", title: "Fix the importer", goal: "Fix it", gates: ["bun test"], dependsOn: ["task-first"], again: failed.id });
   });
 });

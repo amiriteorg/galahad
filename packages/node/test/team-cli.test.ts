@@ -405,3 +405,22 @@ test("a knight's own models: what it works on and what you may choose; set in or
   ]);
   expect(lines).toEqual(["ada works on ollama/mimo-v2.6:9b, deepseek/deepseek-v4-pro, in that order.", "rev works on its role's models (engineer)."]);
 });
+
+test("the listing says how you stepped in on each task, and the north star over the last thirty days (#28)", async () => {
+  const lines: string[] = [];
+  const task = (id: string, over: object) => ({ id, room: "forge", assignee: "ada", title: `Task ${id}`, goal: "g", dependsOn: [], gates: [], status: "done", verified: true, progress: "", output: "", error: null, chainId: "c", createdAt: 1, updatedAt: 2, ...over });
+  const state = { teammates: [], rooms: [], deliveries: [], tasks: [
+    task("task-one", { interventions: { approval: 1, message: 2 } }),
+    task("task-two", {}),
+  ], northStar: { since: 0, completed: 2, ended: 3, interventions: 3, perCompleted: 1.5 as number | null, byKind: { approval: 1, message: 2 } as Record<string, number> } };
+  const api = { async call<T>(): Promise<T> { return state as T; } };
+  await teamCommand(api, undefined, [], {}, (line) => lines.push(line));
+  expect(lines).toContain("task-one · done (verified) · ada · Task task-one · you stepped in: an approval and two messages");
+  expect(lines).toContain("task-two · done (verified) · ada · Task task-two");
+  expect(lines).toContain("You stepped in 3 times on the 3 tasks that ended in the last 30 days: 1.5 a task done and verified (2).");
+  // None done and verified: the count alone.
+  const none: string[] = [];
+  state.northStar = { since: 0, completed: 0, ended: 1, interventions: 1, perCompleted: null, byKind: {} };
+  await teamCommand(api, undefined, [], {}, (line) => none.push(line));
+  expect(none).toContain("You stepped in 1 time on the 1 task that ended in the last 30 days, and none was done and verified.");
+});

@@ -806,3 +806,48 @@ describe("your order of the knights, and who leads", () => {
     expect(store.snapshot().primary).toBe("galahad");
   });
 });
+
+describe("each time you step in on a task (#28)", () => {
+  test("is counted on it by how, with a line on its trail; a desktop taken over counts once", () => {
+    const store = make(); setup(store);
+    const task = store.createTask({ room: "workshop", assignee: "ada", title: "Fix the importer", goal: "Fix it" }); store.claim(task.id);
+    expect(store.intervene(task.id, "approval", "approved github.create_pr")).toBe(true);
+    expect(store.intervene(task.id, "message", "a message while it worked")).toBe(true);
+    expect(store.intervene(task.id, "message", "a message while it worked")).toBe(true);
+    expect(store.intervene(task.id, "takeover", "took over its desktop")).toBe(true);
+    expect(store.intervene(task.id, "takeover", "took over its desktop")).toBe(false);
+    expect(store.task(task.id)?.interventions).toEqual({ approval: 1, message: 2, takeover: 1 });
+    expect(store.trail(task.id).entries.map((e) => e.text)).toEqual([
+      "You stepped in: approved github.create_pr", "You stepped in: a message while it worked", "You stepped in: a message while it worked", "You stepped in: took over its desktop",
+    ]);
+    // Its other words are untouched, and only a task is counted.
+    expect(store.task(task.id)).toMatchObject({ title: "Fix the importer", goal: "Fix it", status: "running" });
+    expect(store.intervene("no-such-task", "stop", "stopped it")).toBe(false);
+  });
+
+  test("the tasks in a state are found by a knight, a room or their id", () => {
+    const store = make(); setup(store);
+    const ada = store.createTask({ room: "workshop", assignee: "ada", title: "One", goal: "One" }); store.claim(ada.id);
+    const lin = store.createTask({ room: "workshop", assignee: "lin", title: "Two", goal: "Two" }); store.claim(lin.id);
+    const queued = store.createTask({ room: "workshop", assignee: "ada", title: "Three", goal: "Three" });
+    expect(store.tasksIn({ teammate: "ada" }, ["running"]).map((t) => t.id)).toEqual([ada.id]);
+    expect(store.tasksIn({ room: "workshop" }, ["running"]).map((t) => t.id)).toEqual([ada.id, lin.id]);
+    expect(store.tasksIn({ task: queued.id }, ["running"])).toEqual([]);
+    expect(store.tasksIn({ task: queued.id }, ["queued", "running"]).map((t) => t.id)).toEqual([queued.id]);
+    expect(store.tasksIn({ room: "workshop" }, [])).toEqual([]);
+  });
+
+  test("the north star: every intervention on the tasks that ended since, per one done and verified", () => {
+    let now = 1_000;
+    const store = make(":memory:", () => now); setup(store);
+    const give = (title: string) => { const t = store.createTask({ room: "workshop", assignee: "ada", title, goal: title }); store.claim(t.id); return t.id; };
+    const old = give("Old"); store.intervene(old, "message", "a message"); store.finish(old, "done", null, { verified: true, output: "ok" });
+    now = 10_000;
+    const done = give("Done"); store.intervene(done, "approval", "approved"); store.finish(done, "done", null, { verified: true, output: "ok" });
+    const failed = give("Failed"); store.intervene(failed, "stop", "stopped it"); store.intervene(failed, "message", "a message"); store.finish(failed, "failed", "gave up", { verified: false, output: "" });
+    const running = give("Running"); store.intervene(running, "message", "a message");
+    expect(store.northStar(5_000)).toEqual({ since: 5_000, completed: 1, ended: 2, interventions: 3, perCompleted: 3, byKind: { approval: 1, stop: 1, message: 1 } });
+    expect(store.snapshot().northStar).toMatchObject({ completed: 2, ended: 3, interventions: 4, perCompleted: 2 });
+    expect(make().northStar(0)).toEqual({ since: 0, completed: 0, ended: 0, interventions: 0, perCompleted: null, byKind: {} });
+  });
+});

@@ -3,7 +3,7 @@ import { taskRecordFacts } from "@galahad/core/team-record";
 import type { Price } from "@galahad/core/spend";
 import { type Api, isAbort } from "../api.ts";
 import type { Ctx } from "../context.ts";
-import { givenLine, keptChanges, proposedLine, type TaskAction, taskActions, taskBadge, taskEnd } from "../lib/task-card.ts";
+import { givenLine, keptChanges, proposedLine, steppedLine, type TaskAction, taskActions, taskBadge, taskEnd } from "../lib/task-card.ts";
 import { relativeTime } from "../lib/time.ts";
 import { emptyTrail, takeTrail, type Trail, trailNext, type TrailPage, trailTail } from "../lib/trail.ts";
 import { badge, button, callout, dot } from "../ui/controls.ts";
@@ -155,12 +155,14 @@ export function taskCard(ctx: Ctx, task: TeamTask, o: CardOptions): HTMLElement 
   const end = taskEnd(task);
   const kept = keptChanges(task);
   const meta = [proposedLine(task, o.proposer), givenLine(task), task.room !== o.room ? `in ${o.roomName(task.room)}` : null, o.assignee].filter(Boolean).join(" · ");
+  const stepped = steppedLine(task);
   const waiting = task.status === "queued" ? o.dependencies.filter((dependency) => !dependency.satisfied) : [];
   return h(
     "article",
     { class: "team-task", "data-key": `task:${task.id}`, "data-status": task.status, "aria-label": `Task: ${task.title} · ${state.text}` },
     h("div", { class: "task-head" }, dot(state.tone, { live: task.status === "running" }), h("strong", { class: "grow" }, task.title), badge(state.text, state.tone)),
     meta ? h("p", { class: "task-meta" }, meta) : null,
+    stepped ? h("p", { class: "task-meta" }, stepped) : null,
     waiting.length ? h("p", { class: "task-meta" }, icon("clock", { size: 12 }), ` Waiting for ${waiting.map((dependency) => `“${dependency.title}”`).join(", ")} to be done and verified`) : null,
     o.trail?.el ?? null,
     // Why it wasn't verified, as the node said it; a stop of your own is said quietly.

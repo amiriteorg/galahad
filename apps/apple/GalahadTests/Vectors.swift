@@ -294,6 +294,7 @@ struct Vectors: Decodable {
             let given: String?
             let kept: String?
             let proposed: String?
+            let stepped: String?
         }
 
         let messages: [TeamMessage]

@@ -211,7 +211,7 @@ export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTaskInput): void {
     if ("error" in checks) throw new Error(checks.error);
     const money = budgetFrom(budget.value);
     if ("error" in money) throw new Error(money.error);
-    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks.gates, ...(money.usd ? { budgetUsd: money.usd } : {}) });
+    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks.gates, ...(money.usd ? { budgetUsd: money.usd } : {}), ...(copy?.again ? { again: copy.again } : {}) });
   });
 }
 

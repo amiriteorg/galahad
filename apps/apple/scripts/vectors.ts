@@ -25,7 +25,7 @@ import { connectorState } from "../../web/src/lib/connector-state.ts";
 import { noticeFrom } from "../../web/src/lib/notices.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
-import { givenLine, keptChanges, proposedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
+import { givenLine, keptChanges, proposedLine, steppedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
 import { knightModelChoices, knightModelsLine, knightRoleLine, knightRoles, knightWorksOn, removalPlan, teamSpeaker, teammateId, toggleKnightModel } from "../../web/src/lib/team.ts";
 import { budgetFrom } from "../../web/src/lib/give.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, keptDiffers, shownAgain, turnOf } from "../../web/src/lib/turns.ts";
@@ -710,10 +710,10 @@ const adaMessages = [
   said("6", "bors", "", 5),
 ];
 const adaTasks = [
-  task("sync", "ada", "done", { verified: true, createdAt: at(90), output: "Sync now resumes from the last acknowledged event.\n\nReview: PASS", changes: { artifact: `art_${"b".repeat(22)}`, files: 2, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" } }),
+  task("sync", "ada", "done", { verified: true, createdAt: at(90), output: "Sync now resumes from the last acknowledged event.\n\nReview: PASS", changes: { artifact: `art_${"b".repeat(22)}`, files: 2, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" }, interventions: { message: 2, approval: 1 } }),
   task("run", "ada", "running", { createdAt: at(30), progress: "Running · bun test packages/link\nmore" }),
   task("same", "ada", "queued", { createdAt: at(30), givenBy: "owner" }),
-  task("old", "ada", "failed", { createdAt: at(200), error: "gave-up", output: "Review: FAIL" }),
+  task("old", "ada", "failed", { createdAt: at(200), error: "gave-up", output: "Review: FAIL", interventions: { again: 2, takeover: 1, stop: 1, resume: 12, message: 0 } }),
   task("cut", "ada", "interrupted", { createdAt: at(60) }),
   task("halt", "ada", "stopped", { createdAt: at(40), error: "stopped", givenBy: "galahad" }),
   task("half", "ada", "done", { createdAt: at(20), verified: false, output: "x".repeat(1200) }),
@@ -733,7 +733,7 @@ const timelines = {
   sinceAt: at(100),
   since: timeline(adaMessages, timelineTasks(adaRoom, adaTasks), { since: at(100) }).map((item) => item.key),
   speakers: adaMessages.map((message) => teamSpeaker(message, snapshot.teammates)),
-  cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), kept: keptChanges(t)?.text ?? null, proposed: proposedLine(t, t.proposedBy === "ada" ? "Ada" : null) })),
+  cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), kept: keptChanges(t)?.text ?? null, proposed: proposedLine(t, t.proposedBy === "ada" ? "Ada" : null), stepped: steppedLine(t) })),
 };
 
 // ---- where a notice came from, in words (the PWA's lib/notices.ts) ----------------------------------------------------

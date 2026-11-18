@@ -27,6 +27,7 @@ export function timelineTasks(room: Pick<TeamRoom, "id" | "direct" | "members">,
   return all.filter((task) => (knight ? task.assignee === knight : task.room === room.id));
 }
 
-/** The same task, given again as a new one: what was asked, of whom and where. Nothing of how the first one went. */
-export const giveAgain = (task: Pick<TeamTask, "room" | "assignee" | "title" | "goal" | "gates" | "dependsOn">): TeamTaskInput =>
-  ({ room: task.room, assignee: task.assignee, title: task.title.trim(), goal: task.goal, gates: [...task.gates], dependsOn: [...task.dependsOn] });
+/** The same task, given again as a new one: what was asked, of whom and where, and which it gives again (your stepping in,
+ * counted on the new one). Nothing of how the first one went. */
+export const giveAgain = (task: Pick<TeamTask, "id" | "room" | "assignee" | "title" | "goal" | "gates" | "dependsOn">): TeamTaskInput =>
+  ({ room: task.room, assignee: task.assignee, title: task.title.trim(), goal: task.goal, gates: [...task.gates], dependsOn: [...task.dependsOn], again: task.id });

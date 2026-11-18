@@ -8752,6 +8752,10 @@
           "artifact": "art_bbbbbbbbbbbbbbbbbbbbbb",
           "files": 2,
           "base": "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2"
+        },
+        "interventions": {
+          "message": 2,
+          "approval": 1
         }
       },
       {
@@ -8804,7 +8808,14 @@
         "error": "gave-up",
         "chainId": "chain-old",
         "createdAt": 1763188000000,
-        "updatedAt": 1763198200000
+        "updatedAt": 1763198200000,
+        "interventions": {
+          "again": 2,
+          "takeover": 1,
+          "stop": 1,
+          "resume": 12,
+          "message": 0
+        }
       },
       {
         "id": "task-cut000000000",
@@ -9024,7 +9035,8 @@
         "actions": [],
         "given": null,
         "kept": "2 files changed",
-        "proposed": null
+        "proposed": null,
+        "stepped": "You stepped in: an approval and two messages"
       },
       {
         "id": "task-run000000000",
@@ -9038,7 +9050,8 @@
         ],
         "given": null,
         "kept": null,
-        "proposed": null
+        "proposed": null,
+        "stepped": null
       },
       {
         "id": "task-same00000000",
@@ -9052,7 +9065,8 @@
         ],
         "given": "Given to the Roundtable by you",
         "kept": null,
-        "proposed": null
+        "proposed": null,
+        "stepped": null
       },
       {
         "id": "task-old000000000",
@@ -9070,7 +9084,8 @@
         ],
         "given": null,
         "kept": null,
-        "proposed": null
+        "proposed": null,
+        "stepped": "You stepped in: its desktop taken over, a stop, 12 resumes and given again two times"
       },
       {
         "id": "task-cut000000000",
@@ -9088,7 +9103,8 @@
         ],
         "given": null,
         "kept": null,
-        "proposed": null
+        "proposed": null,
+        "stepped": null
       },
       {
         "id": "task-halt00000000",
@@ -9106,7 +9122,8 @@
         ],
         "given": "Given to the Roundtable by Galahad",
         "kept": null,
-        "proposed": null
+        "proposed": null,
+        "stepped": null
       },
       {
         "id": "task-half00000000",
@@ -9123,7 +9140,8 @@
         ],
         "given": null,
         "kept": null,
-        "proposed": null
+        "proposed": null,
+        "stepped": null
       },
       {
         "id": "task-elsewhere000",
@@ -9137,7 +9155,8 @@
         ],
         "given": null,
         "kept": null,
-        "proposed": null
+        "proposed": null,
+        "stepped": null
       },
       {
         "id": "task-roomwork0000",
@@ -9151,7 +9170,8 @@
         ],
         "given": null,
         "kept": null,
-        "proposed": null
+        "proposed": null,
+        "stepped": null
       },
       {
         "id": "task-ask000000000",
@@ -9166,7 +9186,8 @@
         ],
         "given": null,
         "kept": null,
-        "proposed": "Ada proposes this: it starts when you approve it"
+        "proposed": "Ada proposes this: it starts when you approve it",
+        "stepped": null
       },
       {
         "id": "task-asked0000000",
@@ -9180,7 +9201,8 @@
         ],
         "given": null,
         "kept": null,
-        "proposed": "Proposed by bea"
+        "proposed": "Proposed by bea",
+        "stepped": null
       },
       {
         "id": "task-declined0000",
@@ -9198,7 +9220,8 @@
         ],
         "given": null,
         "kept": null,
-        "proposed": "Proposed by Ada"
+        "proposed": "Proposed by Ada",
+        "stepped": null
       }
     ]
   },

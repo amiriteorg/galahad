@@ -6,6 +6,8 @@ import { AVATAR_FORMS, AVATAR_EYES, AVATAR_ACCESSORIES, AVATAR_TEMPERAMENTS, typ
 import { hasUndrawn, oneScript, readAlike } from "./lookalike.ts";
 import { SpendLines } from "./usage.ts";
 export { TEAM_LIMITS } from "./team-limits.ts";
+import type { InterventionKind, NorthStar } from "./interventions.ts";
+export { INTERVENTIONS, type InterventionKind, interventionWords, type NorthStar, northStar } from "./interventions.ts";
 
 /* Named teammates and their conversations live on one controller node. Their VM
  * workspaces may live on other fleet nodes; no team chat is put in the shared mind. */
@@ -109,6 +111,8 @@ export const TeamTaskInput = z.strictObject({
   gates: z.array(z.string().trim().min(1).max(1000)).max(16).optional(),
   /** Money its model calls may spend, in US dollars at your prices: told what is spent at each step, it stops when spent. */
   budgetUsd: z.number().positive().max(100).optional(),
+  /** The task this one gives again (Give again): your stepping in, counted on this one (#28). */
+  again: TeamTaskId.optional(),
 });
 export type TeamTaskInput = z.infer<typeof TeamTaskInput>;
 
@@ -296,6 +300,8 @@ export interface TeamTask {
   /** The knight that wrote it, in a conversation: it was proposed to you, and ran only once you approved it. Absent: you
    * or Galahad gave it. */
   proposedBy?: string;
+  /** Each time you stepped in on it, by how (absent: never). */
+  interventions?: Partial<Record<InterventionKind, number>>;
 }
 
 /** One line of what a task did, as it happened: its number in order (from 1), when, and the line (redacted, cut if long). */
@@ -306,6 +312,8 @@ export interface TeamTrailEntry {
 }
 
 export interface TeamSnapshot {
+  /** Interventions per completed task over the last thirty days (#28; absent from an older node). */
+  northStar?: NorthStar;
   teammates: Teammate[];
   rooms: TeamRoom[];
   tasks: TeamTask[];
