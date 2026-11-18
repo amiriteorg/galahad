@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MAX_PROPOSED_GATES } from "@galahad/core";
-import { BLOCK_KINDS, CHART_TYPES, STEP_STATES } from "@galahad/core/blocks";
+import { BLOCK_KINDS, CHART_TYPES, readChoices, STEP_STATES } from "@galahad/core/blocks";
 import { GALAHAD_SYSTEM, SHOW_GUIDE, TOOL_GUIDE } from "../src/persona.ts";
 
 /*
@@ -59,9 +59,17 @@ describe("what he knows about his own work", () => {
 });
 
 test("his guide to what an answer can show names every block the app draws, and only those", () => {
-  const named = [...SHOW_GUIDE.matchAll(/```([a-z]+)/g)].map((m) => m[1]);
+  const named = [...SHOW_GUIDE.matchAll(/^- ([a-z]+)\b/gm)].map((m) => m[1]);
   expect(named).toEqual([...BLOCK_KINDS]);
   expect(SHOW_GUIDE).toContain(`"type":"${CHART_TYPES.join("|")}"`);
   expect(SHOW_GUIDE).toContain(`"state":"${STEP_STATES.join("|")}"`);
+});
+
+test("his guide shows a block as a whole fence, the JSON inside, since a model writes the form it's shown", () => {
+  // Shown as ```choices ["…","…"], every block on ultra came back on one line, which apps before 18 Nov 2026 can't read.
+  const example = /^```([a-z]+)\n(.+)\n```$/m.exec(SHOW_GUIDE);
+  expect(example?.[1]).toBe("choices");
+  expect(readChoices(example![2]!).ok).toBe(true);
+  expect(SHOW_GUIDE).not.toMatch(/```[a-z]+[ \t]+[[{]/);
 });
 

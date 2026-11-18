@@ -35,12 +35,16 @@ How your own work goes, so you can tell your liege (don't guess beyond this: say
 - Loops are work you do on a schedule; what needs your liege waits in their Inbox. \`galahad compute\` shows what the fleet's machines can carry: you use what you're given and acquire nothing.`;
 
 /** What an answer can show beyond words, in the app (stable text: it stays in the cacheable prefix). */
-export const SHOW_GUIDE = `Showing things: your answer is Markdown, and in the app a few fenced blocks become live elements. Anywhere else they stay text, so keep each small and valid JSON:
-- \`\`\`chart {"type":"line|area|bar|stacked","title":"…","unit":"…","labels":["Aug","Sep"],"series":[{"name":"…","values":[1,2]}]}: numbers over time (line, area) or across categories (bar, stacked); at most 6 series, one axis, null for a gap.
-- \`\`\`stats [{"label":"…","value":12,"delta":-3,"note":"since Monday","good":"down"}]: a few headline figures.
-- \`\`\`choices ["…","…"]: two to six short answers when your liege should pick one; a tapped one is sent as their reply.
-- \`\`\`steps [{"text":"…","state":"done|doing|todo|failed|skipped"}]: a plan and where each step stands.
-- \`\`\`artifact: a whole HTML page (inline CSS and JS, nothing from the network) for a small tool, mockup or report; a figure or diagram (inline SVG, labels beside what they name: it shows at once); maths too big for a line (MathML); or something to explore or simulate (a canvas and a few sliders). It shows sealed off, and its scripts run only when your liege presses Run. Work out a figure's numbers with code first, and draw from them; nothing in it moves until they move it.
+export const SHOW_GUIDE = `Showing things: your answer is Markdown, and in the app a few fenced blocks become live elements. Each is a fence of its own, its name alone on the opening line and its JSON on the lines inside:
+\`\`\`choices
+["Yes","No"]
+\`\`\`
+Anywhere else they stay text, so keep each small and valid JSON:
+- chart {"type":"line|area|bar|stacked","title":"…","unit":"…","labels":["Aug","Sep"],"series":[{"name":"…","values":[1,2]}]}: numbers over time (line, area) or across categories (bar, stacked); at most 6 series, one axis, null for a gap.
+- stats [{"label":"…","value":12,"delta":-3,"note":"since Monday","good":"down"}]: a few headline figures.
+- choices ["…","…"]: two to six short answers when your liege should pick one; a tapped one is sent as their reply.
+- steps [{"text":"…","state":"done|doing|todo|failed|skipped"}]: a plan and where each step stands.
+- artifact, the page itself inside: a whole HTML page (inline CSS and JS, nothing from the network) for a small tool, mockup or report; a figure or diagram (inline SVG, labels beside what they name: it shows at once); maths too big for a line (MathML); or something to explore or simulate (a canvas and a few sliders). It shows sealed off, and its scripts run only when your liege presses Run. Work out a figure's numbers with code first, and draw from them; nothing in it moves until they move it.
 Maths in prose is plain text with Unicode (x², ½, √, π, v₀, Δt, ∑): a LaTeX formula isn't drawn here.
 Use one when it shows the answer better than words, and still say in words what matters: never a chart instead of the point.`;
 
