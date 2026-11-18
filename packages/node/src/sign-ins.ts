@@ -185,7 +185,7 @@ export class SignIns {
     if (error) return { ok: false, message: `${who} said ${error.slice(0, 80)}. Nothing was kept.` };
     if (waited.mcp) return this.finishMcp(waited.connector, waited.mcp, params.get("code"), waited.verifier, waited.redirect);
     const code = params.get("code");
-    const { manifest, provider } = this.oauthOf(waited.connector);
+    const { manifest, provider, scopes } = this.oauthOf(waited.connector);
     const keep = this.keep(manifest);
     // (Changed into an MCP server's between the start and now: that sign-in is its own.)
     if (!code || !keep || provider === "mcp") return { ok: false, message: "Nothing came back to sign in with. Start it again from Galahad." };
@@ -199,10 +199,17 @@ export class SignIns {
         code_verifier: waited.verifier,
       });
       if (!answer.refresh) return { ok: false, message: "Google gave no lasting sign-in. Remove the app's access in your Google Account's security settings, then sign in again." };
+      // Google's page has a box for each thing asked, and a box left unticked is a sign-in without it: say which.
+      const asked = scopes.filter((s) => s.startsWith("https://"));
+      const allowed = answer.scope === undefined ? asked : answer.scope.split(" ");
+      const without = asked.filter((s) => !allowed.includes(s)).map((s) => s.slice(s.lastIndexOf("/") + 1));
+      if (asked.length && without.length === asked.length) return { ok: false, message: `Google allowed none of what ${manifest.label} asks for (${without.join(", ")}). Sign in again and tick each box. Nothing was kept.` };
       const account = emailFrom(answer.idToken);
       this.seal(manifest, { ...keep, refresh: answer.refresh, ...(account ? { account } : {}) });
-      this.d.log(`signed in to ${manifest.id}`);
-      return { ok: true, message: `Signed in to ${manifest.label}${account ? ` as ${account}` : ""}. You can close this page and go back to Galahad.` };
+      this.d.log(`signed in to ${manifest.id}${without.length ? `, without ${without.join(", ")}` : ""}`);
+      const one = without.length === 1;
+      const short = without.length ? `, but without ${without.join(" and ")}: sign in again and tick ${one ? "its box" : "their boxes"} to give ${one ? "it" : "them"}` : "";
+      return { ok: true, message: `Signed in to ${manifest.label}${account ? ` as ${account}` : ""}${short}. You can close this page and go back to Galahad.` };
     } catch (e) {
       return { ok: false, message: `Google didn't take the sign-in (${e instanceof OAuthError ? e.message : "it couldn't be reached"}). Nothing was kept.` };
     }

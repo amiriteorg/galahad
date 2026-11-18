@@ -96,7 +96,7 @@ export function forgetAccess(connector: string): void {
 }
 
 /** The provider's answer to a token request, read strictly. */
-export async function tokenRequest(ctx: OAuthContext, url: string, form: Record<string, string>, headers: Record<string, string> = {}): Promise<{ access: string; refresh?: string; expiresIn: number; idToken?: string }> {
+export async function tokenRequest(ctx: OAuthContext, url: string, form: Record<string, string>, headers: Record<string, string> = {}): Promise<{ access: string; refresh?: string; expiresIn: number; idToken?: string; scope?: string }> {
   const response = await (ctx.fetch ?? fetch)(url, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", ...headers },
@@ -114,6 +114,8 @@ export async function tokenRequest(ctx: OAuthContext, url: string, form: Record<
     ...(typeof body.refresh_token === "string" ? { refresh: body.refresh_token } : {}),
     expiresIn: typeof body.expires_in === "number" ? body.expires_in : 3600,
     ...(typeof body.id_token === "string" ? { idToken: body.id_token } : {}),
+    // (What was allowed, which can be less than was asked: Google's page has a box for each.)
+    ...(typeof body.scope === "string" ? { scope: body.scope } : {}),
   };
 }
 

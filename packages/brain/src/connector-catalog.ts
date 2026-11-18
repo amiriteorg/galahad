@@ -27,6 +27,7 @@ const query = { type: "string", description: "the words to search with" } as con
 const limit = { type: "integer", description: "how many messages (at most 25)" } as const;
 const gmailId = { type: "string", pattern: "[A-Za-z0-9_-]{6,64}", required: true, description: "the message's id, as search gives it" } as const;
 const outlookId = { type: "string", pattern: "[A-Za-z0-9=_+/-]{6,512}", required: true, description: "the message's id, as search gives it" } as const;
+const driveId = { type: "string", pattern: "[A-Za-z0-9_-]{10,100}", required: true, description: "the file's id, as files gives it" } as const;
 const compose = {
   to: { type: "string", required: true, description: "addresses, comma-separated" },
   cc: { type: "string", description: "addresses, comma-separated" },
@@ -341,26 +342,51 @@ export const CATALOG: Record<string, CatalogEntry> = {
       private: true,
     },
   },
-  // Bilag copied from your mail (node bilag.ts), the owner's word of 18 November 2026. drive.file alone: Galahad sees
-  // and makes only its own files there, never the rest of your Drive.
+  // The owner's word of 18 November 2026: bilag copied from your mail (node bilag.ts), and all of your Drive to read
+  // (drive.readonly). Galahad writes only files of its own there (drive.file), and changes or deletes nothing of yours.
   gdrive: {
-    keyHelp: "it signs in with Google, through the app you registered for Gmail with the Google Drive API on and the drive.file scope added (docs/BOOKS.md)",
+    keyHelp: "it signs in with Google, through the app you registered for Gmail with the Google Drive API on and the drive.readonly and drive.file scopes added (docs/BOOKS.md)",
     manifest: {
       id: "gdrive",
       label: "Google Drive",
-      description: "Bilag Galahad copies from your mail into your Drive (Bilag/<year>/<month>). It sees only the files it made there, never the rest of your Drive. Galahad's alone.",
+      description: "Your Drive, to read: find files anywhere in it and in shared drives, look one up, read a Google Doc or Sheet. It writes only the bilag it copies from your mail (Bilag/<year>/<month>). Galahad's alone, and what it reads stays in the answer that read it, as the mail's does.",
       origin: "https://www.googleapis.com",
-      auth: { secret: "gdrive", scheme: "oauth", oauth: { provider: "google", scopes: ["https://www.googleapis.com/auth/drive.file", "openid", "email"] } },
+      auth: { secret: "gdrive", scheme: "oauth", oauth: { provider: "google", scopes: ["https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.file", "openid", "email"] } },
       tools: {
         files: {
-          description: "The files Galahad made in your Drive, the bilag it copied among them: give fields (files(id,name,webViewLink,createdTime)), orderBy (createdTime desc) and q, Drive's search words (name contains 'Telia').",
+          description: "Find files anywhere in your Drive. q is Drive's search words: name contains 'BLXMP', fullText contains 'faktura' (a PDF's words too), '<folder id>' in parents, mimeType = 'application/pdf', trashed = false. fields: files(id,name,mimeType,parents,createdTime,webViewLink),nextPageToken. pageToken for the next page. Shared drives too: corpora allDrives, includeItemsFromAllDrives and supportsAllDrives true.",
           method: "GET",
           path: "/drive/v3/files",
-          params: { q: { type: "string", description: "Drive's search words, e.g. name contains 'Telia' and trashed = false" }, fields: { type: "string" }, orderBy: { type: "string" }, pageSize: { type: "integer" } },
+          params: {
+            q: { type: "string", description: "Drive's search words, e.g. name contains 'Telia' and trashed = false" },
+            fields: { type: "string" },
+            orderBy: { type: "string", description: "e.g. createdTime desc" },
+            pageSize: { type: "integer", description: "how many (at most 1000)" },
+            pageToken: { type: "string", description: "the nextPageToken a search gave" },
+            corpora: { type: "string", enum: ["user", "drive", "allDrives"] },
+            driveId: { type: "string", pattern: "[A-Za-z0-9_-]{10,100}" },
+            includeItemsFromAllDrives: { type: "boolean" },
+            supportsAllDrives: { type: "boolean" },
+          },
+          class: "read",
+        },
+        file: {
+          description: "One file or folder by its id: give fields (id,name,mimeType,parents,size,createdTime,modifiedTime,webViewLink,owners(emailAddress)). Its parents lead to the folder it is in.",
+          method: "GET",
+          path: "/drive/v3/files/{id}",
+          params: { id: driveId, fields: { type: "string" }, supportsAllDrives: { type: "boolean" } },
+          class: "read",
+        },
+        export: {
+          description: "A Google Doc, Sheet (its first sheet) or Slides as text: text/plain or text/markdown for a Doc or Slides, text/csv for a Sheet. Other files (a PDF, a picture) aren't read here: find them by their words with files (fullText contains).",
+          method: "GET",
+          path: "/drive/v3/files/{id}/export",
+          params: { id: driveId, mimeType: { type: "string", enum: ["text/plain", "text/markdown", "text/csv"], required: true } },
           class: "read",
         },
       },
       access: { only: "galahad", allowed: [] },
+      private: true,
     },
   },
 };

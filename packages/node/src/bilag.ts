@@ -10,8 +10,9 @@ import type { Transferred } from "@galahad/brain";
  *
  * It is the node's own work, and no model is in it. The bytes go from the mail's own API to Drive's, each under its own
  * sign-in and pinned to its own origin (ConnectorService.transfer), and each request is a line in the ledger. Nothing
- * is deleted, sent or moved in the mail. Drive is reached with drive.file alone: Galahad sees only what it made there.
- * A file copied once is never copied again: its SHA-256 is kept here, in local.db.
+ * is deleted, sent or moved in the mail. Galahad reads all of your Drive (drive.readonly, your word of 18 November) and
+ * writes only files of its own there (drive.file), in folders it made and marked. A file copied once is never copied
+ * again: its SHA-256 is kept here, in local.db.
  */
 
 export type Mailbox = "gmail" | "outlook";
@@ -188,12 +189,13 @@ async function folderOf(deps: BilagDeps, path: string[]): Promise<string> {
       parent = known;
       continue;
     }
-    // (drive.file: Drive shows Galahad only what it made, so a folder found is one it made, if a node was set up again.)
-    const q = `name = '${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and mimeType = '${FOLDER}' and '${parent}' in parents and trashed = false`;
+    // (Found again if a node was set up again. Galahad reads all of your Drive but writes only in what it made, so a
+    // folder is its own by the mark it put on it, which only it can see: a folder of yours of the same name is left alone.)
+    const q = `name = '${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' and mimeType = '${FOLDER}' and '${parent}' in parents and appProperties has { key='galahad' and value='bilag' } and trashed = false`;
     const found = await json(deps, "gdrive", `/drive/v3/files?q=${enc(q)}&fields=${enc("files(id)")}&pageSize=1&spaces=drive`, "find the bilag folder", 1 << 20);
     let id: unknown = found?.files?.[0]?.id;
     if (typeof id !== "string") {
-      const made = await deps.transfer("gdrive", { method: "POST", path: "/drive/v3/files?fields=id", headers: { "content-type": "application/json; charset=UTF-8" }, body: JSON.stringify({ name, mimeType: FOLDER, parents: [parent] }), class: "create", why: `make the bilag folder ${at}`, max: 1 << 20 });
+      const made = await deps.transfer("gdrive", { method: "POST", path: "/drive/v3/files?fields=id", headers: { "content-type": "application/json; charset=UTF-8" }, body: JSON.stringify({ name, mimeType: FOLDER, parents: [parent], appProperties: { galahad: "bilag" } }), class: "create", why: `make the bilag folder ${at}`, max: 1 << 20 });
       id = answer(made, "gdrive")?.id;
     }
     if (typeof id !== "string" || !id) throw new Error(`gdrive gave no folder for ${at}`);

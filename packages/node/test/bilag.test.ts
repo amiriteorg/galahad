@@ -19,6 +19,10 @@ function services() {
   const calls: { connector: string; method: string; path: string; class: string; body?: Uint8Array | string; headers?: Record<string, string> }[] = [];
   const files: { name: string; parents: string[]; bytes: number }[] = [];
   const folders = new Map<string, string>();
+  const marks: unknown[] = [];
+  // Your own folders, by where they are: Galahad reads them (drive.readonly) and may write in none (drive.file).
+  const yours = new Map<string, string>();
+  const notYours = (id: string) => ({ ...ok({ error: { message: `The user has not granted the app 123 write access to the file ${id}.` } }), ok: false, status: 403 });
   let next = 0;
   let goneFolders = false;
   const gmail: Record<string, { from: string; at: number; parts: { name: string; type: string; size: number; data?: Uint8Array; inline?: boolean }[] }> = {};
@@ -54,16 +58,19 @@ function services() {
       if (m?.[2]) return ok({ value: mail.attachments.map((a) => ({ "@odata.type": a.item ? "#microsoft.graph.itemAttachment" : "#microsoft.graph.fileAttachment", id: a.id, name: a.name, contentType: a.type, size: a.size, isInline: a.inline === true })) });
       return ok({ from: { emailAddress: mail.from }, receivedDateTime: mail.at });
     }
-    // Drive: its folders and files, as drive.file shows them (only Galahad's own).
+    // Drive: all of it to read, yours as well as Galahad's own; only a folder it made carries its mark.
     if (url.pathname === "/drive/v3/files" && step.method === "GET") {
       const q = url.searchParams.get("q") ?? "";
       const name = /name = '([^']*)'/.exec(q)?.[1];
       const parent = /'([^']*)' in parents/.exec(q)?.[1];
-      const id = folders.get(`${parent}/${name}`);
+      const own = q.includes("appProperties has { key='galahad' and value='bilag' }");
+      const id = own ? folders.get(`${parent}/${name}`) : (yours.get(`${parent}/${name}`) ?? folders.get(`${parent}/${name}`));
       return ok({ files: id ? [{ id }] : [] });
     }
     if (url.pathname === "/drive/v3/files" && step.method === "POST") {
-      const meta = JSON.parse(String(step.body)) as { name: string; parents: string[] };
+      const meta = JSON.parse(String(step.body)) as { name: string; parents: string[]; appProperties?: unknown };
+      if (meta.parents[0]?.startsWith("yours-")) return notYours(meta.parents[0]);
+      marks.push(meta.appProperties);
       const id = `folder-${++next}`;
       folders.set(`${meta.parents[0]}/${meta.name}`, id);
       return ok({ id });
@@ -77,13 +84,14 @@ function services() {
       }
       const body = step.body instanceof Uint8Array ? new TextDecoder().decode(step.body) : String(step.body);
       const meta = step.method === "PUT" ? { name: "(resumed)", parents: ["?"] } : (JSON.parse(/\r\n\r\n(\{.*?\})\r\n--/s.exec(body)![1]!) as { name: string; parents: string[] });
+      if (meta.parents[0]?.startsWith("yours-")) return notYours(meta.parents[0]);
       files.push({ name: meta.name, parents: meta.parents, bytes: step.body instanceof Uint8Array ? step.body.length : body.length });
       return ok({ id: `file-${++next}`, webViewLink: `https://drive.google.com/file/d/file-${next}/view` });
     }
     throw new Error(`no stand-in for ${connector} ${step.method} ${step.path}`);
   };
   const deps = { transfer, local: new Database(":memory:"), tz: "Europe/Copenhagen" };
-  return { deps, calls, files, folders, gmail, outlook, loseFolders: () => void (goneFolders = true) };
+  return { deps, calls, files, folders, marks, yours, gmail, outlook, loseFolders: () => void (goneFolders = true) };
 }
 
 describe("what is a bilag, and where it goes", () => {
@@ -167,6 +175,19 @@ describe("copying them", () => {
     const report = await copyBilag(s.deps, [{ mailbox: "gmail", id: "small" }]);
     expect(report.copied).toHaveLength(1);
     expect(report.failed).toEqual([]);
+  });
+
+  test("a Bilag folder of your own is left as it is: Galahad reads all of your Drive, but writes only in folders it made, known by its mark", async () => {
+    const s = services();
+    s.yours.set("root/Bilag", "yours-1");
+    s.yours.set("yours-1/2026", "yours-2");
+    s.gmail.g1 = { from: '"Telia" <faktura@telia.dk>', at: LATE, parts: [{ name: "Faktura.pdf", type: "application/pdf", size: 40_000, data: pdf("telia") }] };
+    const report = await copyBilag(s.deps, [{ mailbox: "gmail", id: "g1" }]);
+    expect(report.failed).toEqual([]);
+    expect(report.copied.map((c) => c.folder)).toEqual(["Bilag/2026/11"]);
+    expect(s.files.map((f) => f.parents)).toEqual([["folder-3"]]);
+    expect([...s.folders.keys()]).toEqual(["root/Bilag", "folder-1/2026", "folder-2/11"]);
+    expect(s.marks).toEqual([{ galahad: "bilag" }, { galahad: "bilag" }, { galahad: "bilag" }]);
   });
 
   test("a mail that can't be read is said, and the rest are copied", async () => {

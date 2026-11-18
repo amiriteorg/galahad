@@ -27,6 +27,17 @@ const manifest = (id: string, provider: "google" | "microsoft") =>
     private: true,
   });
 
+// Two things asked of Google, each with a box of its own on its page.
+const drive = ConnectorManifest.parse({
+  id: "drive",
+  label: "Google Drive",
+  origin: "https://drive.example.test",
+  auth: { secret: "drive", scheme: "oauth", oauth: { provider: "google", scopes: ["https://drive.example.test/drive.readonly", "https://drive.example.test/drive.file", "openid", "email"] } },
+  tools: { files: { description: "Your files.", method: "GET", path: "/files", class: "read" } },
+  access: { only: "galahad", allowed: [] },
+  private: true,
+});
+
 /** An ID token as a provider's token endpoint gives one (unsigned here: it is read, never trusted for more). */
 const idToken = (claims: Record<string, unknown>) => `e30.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.sig`;
 
@@ -35,7 +46,7 @@ function rig(answer: (url: string, form: URLSearchParams) => Response) {
   const store = new MindStore(":memory:");
   foundFleet(store, identity, { fleetName: "camelot", nodeName: "ultra" });
   const vault = new Vault(store, identity);
-  const manifests = { gmail: manifest("gmail", "google"), outlook: manifest("outlook", "microsoft") };
+  const manifests = { gmail: manifest("gmail", "google"), outlook: manifest("outlook", "microsoft"), drive };
   const asked: { url: string; form: URLSearchParams }[] = [];
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -144,6 +155,23 @@ describe("Google: its consent page, and its return", () => {
     r.later(10 * 60_000 + 1);
     expect(await r.signIns.callback(new URLSearchParams({ state: stale, code: "auth-code" }))).toMatchObject({ ok: false, message: expect.stringMatching(/expired/) });
     expect(r.keep("gmail")).toMatchObject({ refresh: "test-refresh-FAKE-google" });
+  });
+
+  test("what Google allowed is held to what was asked: a box left unticked is said, and a sign-in that allows none of it isn't kept", async () => {
+    let allowed = "";
+    const r = rig(() => Response.json({ access_token: "test-access-FAKE", refresh_token: "test-refresh-FAKE-google", expires_in: 3600, scope: allowed, id_token: idToken({ email: "you@example.com" }) }));
+    r.signIns.setApp("drive", "client-id.apps.example", "test-secret-FAKE");
+    const back = async (scope: string) => {
+      allowed = scope;
+      const url = new URL(((await r.signIns.start("drive", "https://keep.example.test/oauth/callback")) as { url: string }).url);
+      return r.signIns.callback(new URLSearchParams({ state: url.searchParams.get("state")!, code: "auth-code" }));
+    };
+    expect(await back("openid https://www.googleapis.com/auth/userinfo.email")).toEqual({ ok: false, message: "Google allowed none of what Google Drive asks for (drive.readonly, drive.file). Sign in again and tick each box. Nothing was kept." });
+    expect(r.keep("drive")).toEqual({ client: "client-id.apps.example", secret: "test-secret-FAKE" });
+    expect(await back("https://drive.example.test/drive.file openid")).toEqual({ ok: true, message: "Signed in to Google Drive as you@example.com, but without drive.readonly: sign in again and tick its box to give it. You can close this page and go back to Galahad." });
+    expect(r.keep("drive")).toMatchObject({ refresh: "test-refresh-FAKE-google", account: "you@example.com" });
+    expect(await back("https://drive.example.test/drive.readonly https://drive.example.test/drive.file openid")).toEqual({ ok: true, message: "Signed in to Google Drive as you@example.com. You can close this page and go back to Galahad." });
+    expect(r.said).toEqual(["signed in to drive, without drive.readonly", "signed in to drive"]);
   });
 });
 
