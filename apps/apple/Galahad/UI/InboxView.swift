@@ -183,6 +183,38 @@ struct ApprovalRow: View {
     }
 }
 
+/// The changes an approval would send (its kept work's changes.patch), to read before you answer.
+struct KeptChanges: View {
+    let session: Session
+    let artifact: String
+    @State private var text: String?
+    @State private var problem: String?
+    /// More than this is cut: a patch that big is read in full from Artifacts.
+    private static let shown = 200_000
+
+    var body: some View {
+        Group {
+            if let text { CodeLines(text: text, lang: "diff") }
+            else if let problem { ContentUnavailableView("Couldn't read the changes", systemImage: "exclamationmark.triangle", description: Text(problem)) }
+            else { ProgressView() }
+        }
+        .navigationTitle("The changes")
+        .inlineTitle()
+        .task { await load() }
+    }
+
+    private func load() async {
+        struct Ask: Encodable { let id: String; let path: String }
+        do {
+            let data = try await session.client.bytes("/api/artifacts/file", Ask(id: artifact, path: "changes.patch"))
+            let start = String(decoding: data.prefix(Self.shown), as: UTF8.self)
+            text = data.count > Self.shown ? start + "\n… (cut here: \(data.count) bytes in all, in \(artifact))" : start
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
 /// An approval in full: what it sends and where, who asked and why. Approving asks once more, and a delete is approved
 /// only by typing what it deletes.
 struct ApprovalSheet: View {
@@ -219,6 +251,13 @@ struct ApprovalSheet: View {
                                 Text(action.args[key]?.text ?? "").font(.body.monospaced()).textSelection(.enabled)
                             }
                         }
+                    }
+                }
+                if let work = Approval.work(action.args) {
+                    Section {
+                        NavigationLink { KeptChanges(session: session, artifact: work) } label: { Label("Read the changes", systemImage: "doc.plaintext") }
+                    } footer: {
+                        Text("The work this sends, kept with its SHA-256s: what changes.patch says it changes.")
                     }
                 }
                 Section {

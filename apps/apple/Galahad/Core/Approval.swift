@@ -23,6 +23,13 @@ enum Approval {
         return last.removingPercentEncoding ?? last
     }
 
+    /// The kept work an approval would send (a ship's, or a fix's push): its artifact, to read before you answer (the
+    /// PWA's keptWork); nil when it sends none.
+    static func work(_ args: [String: JSONValue]) -> String? {
+        guard case .string(let id) = args["artifact"], id.wholeMatch(of: #/art_[A-Za-z0-9_-]{22}/#) != nil else { return nil }
+        return id
+    }
+
     /// A string, number or truth as its text (a number as JavaScript writes it); nil for anything else.
     private static func scalarText(_ value: JSONValue) -> String? {
         switch value {

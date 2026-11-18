@@ -22,4 +22,14 @@ struct ApprovalTests {
         #expect(call("mcp deleteIssue {}", ["id": .number(42), "repo": .string("galahad")]) == "forge.bucket.delete")
         #expect(call("DELETE /buckets/%E0%A4%A", [:]) == "%E0%A4%A")
     }
+
+    @Test func theWorkAnApprovalSendsIsThereToRead() {
+        let kept = "art_" + String(repeating: "A", count: 22)
+        #expect(Approval.work(["artifact": .string(kept), "branch": .string("galahad/units")]) == kept)
+        // Only kept work's own id: nothing else is fetched to show.
+        #expect(Approval.work(["artifact": .string("art_short")]) == nil)
+        #expect(Approval.work(["artifact": .string("../" + kept)]) == nil)
+        #expect(Approval.work(["artifact": .number(1)]) == nil)
+        #expect(Approval.work(["title": .string("Fix")]) == nil)
+    }
 }
