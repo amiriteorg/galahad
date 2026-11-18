@@ -6,8 +6,33 @@ import { z } from "zod";
 import {
   TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, type TeamTrailEntry, TeamWorkspace,
   type Teammate, type TeamRoom, type TeamMessage, type TeamTask, type TeamDelivery, type TeamSnapshot, type TeamRoomView, type TeamWorkStatus, type TeamOverview,
+  TeamOutcomeInput, type TeamOutcomeStatus,
 } from "../../core/src/team.ts";
 import { type InterventionKind, type NorthStar, northStar } from "../../core/src/interventions.ts";
+
+/** An outcome as the store keeps it (outcomes.ts adds what it has cost, at your prices, for its view). */
+export interface StoredOutcome {
+  id: string;
+  room: string;
+  title: string;
+  goal: string;
+  done: string | null;
+  knights: string[];
+  budgetUsd: number;
+  /** What his own looks at it have cost (its tasks' costs are read from their records). */
+  leadUsd: number;
+  status: TeamOutcomeStatus;
+  notes: string;
+  reportHour: number;
+  tz: string;
+  lastLookAt: number | null;
+  lastReportAt: number | null;
+  ended: string | null;
+  /** What his looks have taken in: the tasks of it whose end he has seen, and the last message of yours he read. */
+  seen: { tasks: string[]; message: string | null };
+  createdAt: number;
+  updatedAt: number;
+}
 
 export class TeamError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -114,6 +139,7 @@ export class TeamStore {
       CREATE INDEX IF NOT EXISTS team_jobs_teammate ON team_jobs(teammate, status);
       CREATE INDEX IF NOT EXISTS team_jobs_activity ON team_jobs(updated_at, teammate, kind, status);
       CREATE TABLE IF NOT EXISTS team_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS team_outcomes (id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS team_trail (task TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY(task, n));
       CREATE TABLE IF NOT EXISTS team_stories (room TEXT PRIMARY KEY REFERENCES team_rooms(id), text TEXT NOT NULL, through TEXT NOT NULL, updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS team_answers (
@@ -336,6 +362,32 @@ export class TeamStore {
     return row ? JSON.parse(row.value) as TeamRoom : null;
   }
   rooms(): TeamRoom[] { return this.db.query<DocRow, []>("SELECT value FROM team_rooms ORDER BY id").all().map((r) => JSON.parse(r.value) as TeamRoom); }
+
+  /* ---------- outcomes he owns (PLAN #43; outcomes.ts runs them) ---------- */
+
+  outcomes(): StoredOutcome[] { return this.db.query<DocRow, []>("SELECT value FROM team_outcomes ORDER BY id").all().map((r) => JSON.parse(r.value) as StoredOutcome); }
+  outcome(id: string): StoredOutcome | null {
+    const row = this.db.query<DocRow, [string]>("SELECT value FROM team_outcomes WHERE id = ?").get(id);
+    return row ? (JSON.parse(row.value) as StoredOutcome) : null;
+  }
+  putOutcome(outcome: StoredOutcome): StoredOutcome {
+    const saved = { ...outcome, updatedAt: this.now() };
+    this.db.query("INSERT INTO team_outcomes(id,value) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value").run(saved.id, JSON.stringify(saved));
+    return saved;
+  }
+  /** A new outcome, with a room of its own (its id the outcome's) holding the knights you named for it. */
+  createOutcome(raw: TeamOutcomeInput): StoredOutcome {
+    const input = teamInput(TeamOutcomeInput, raw);
+    teamText([input.title, input.goal, input.done ?? ""].join("\n"));
+    return this.db.transaction(() => {
+      for (const knight of input.knights) this.requireTeammate(knight);
+      const key = id("out");
+      if (this.rooms().length >= TEAM_LIMITS.rooms) throw new TeamError(409, `At most ${TEAM_LIMITS.rooms} team rooms can live on this node.`);
+      const at = this.now();
+      this.putRoom({ id: key, name: input.title, members: input.knights, direct: false, turnBudget: 8, paused: false, createdAt: at, updatedAt: at });
+      return this.putOutcome({ id: key, room: key, title: input.title, goal: input.goal, done: input.done ?? null, knights: input.knights, budgetUsd: input.budgetUsd, leadUsd: 0, status: "active", notes: "", reportHour: input.reportHour ?? 9, tz: input.tz ?? "UTC", lastLookAt: null, lastReportAt: null, ended: null, seen: { tasks: [], message: null }, createdAt: at, updatedAt: at });
+    })();
+  }
   /** A direct conversation with a worker that was removed: kept to read (by its id), and taking no new words or work. */
   private closed(room: TeamRoom): boolean { return room.direct && room.members.some((member) => !this.teammate(member)); }
   /** The rooms that are still in use. */
@@ -497,6 +549,12 @@ export class TeamStore {
     const input = teamInput(TeamSayInput, raw);
     return this.db.transaction(() => this.post({ room: input.room ?? this.direct(input.teammate!).id, text: input.text }, { galahad: true }))();
   }
+  /** His words in a room for you, waking no knight: what he tells you of an outcome he owns (outcomes.ts). */
+  note(room: string, text: string): TeamMessage {
+    teamText(text);
+    // A reply in a conversation of its own: it names nobody, so it reaches nobody.
+    return this.db.transaction(() => this.post({ room, text }, { galahad: true, reply: true, chainId: this.chain(this.requireRoom(room)) }))();
+  }
   messages(room: string, limit: number = TEAM_LIMITS.history): TeamMessage[] {
     this.requireRoom(room);
     const count = Math.max(1, Math.min(TEAM_LIMITS.history, Math.trunc(limit) || TEAM_LIMITS.history));
@@ -522,21 +580,21 @@ export class TeamStore {
         if (!task || task.room !== room.id) throw new TeamError(400, "Every dependency must already exist in this room.");
       }
       if (this.pending() >= TEAM_LIMITS.pending) throw new TeamError(429, "The team queue is full. Let some work finish first.");
-      // Galahad's own giving is within his allowance for the day; yours is not counted.
-      if (by.givenBy === TEAM_GALAHAD && this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_jobs WHERE kind = 'task' AND json_extract(data, '$.givenBy') = ? AND created_at > ?").get(TEAM_GALAHAD, this.now() - 86_400_000)!.n >= TEAM_LIMITS.givesPerDay) {
+      // Galahad's own giving is within his allowance for the day; yours is not counted, nor an outcome's (its own allowance and budget: outcomes.ts).
+      if (by.givenBy === TEAM_GALAHAD && !input.outcome && this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_jobs WHERE kind = 'task' AND json_extract(data, '$.givenBy') = ? AND json_extract(data, '$.outcome') IS NULL AND created_at > ?").get(TEAM_GALAHAD, this.now() - 86_400_000)!.n >= TEAM_LIMITS.givesPerDay) {
         throw new TeamError(429, `Galahad has given the Roundtable ${TEAM_LIMITS.givesPerDay} tasks in the last day, which is his allowance. The owner can give more at the Roundtable.`);
       }
       const chain = by.chainId ?? this.chain(room);
       // A knight's task is proposed to you: it is written down where it was asked for, and waits for your approval.
       const proposed = by.teammate ? { proposedBy: by.teammate } : {};
-      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...proposed }, by.teammate ? "proposed" : "queued");
+      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...(input.outcome ? { outcome: input.outcome } : {}), ...proposed }, by.teammate ? "proposed" : "queued");
       return this.task(key)!;
     })();
   }
   private jobRow(id: string): JobRow | null { return this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE id = ?").get(id); }
   job(id: string): TeamJob | null { const row = this.jobRow(id); return row ? jobOf(row) : null; }
   private taskOf(row: JobRow): TeamTask {
-    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "givenBy" | "proposedBy" | "interventions">;
+    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "givenBy" | "proposedBy" | "interventions" | "outcome">;
     return { ...data, id: row.id, room: row.room, assignee: row.teammate, chainId: row.chain_id, status: row.status, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   task(id: string): TeamTask | null { const row = this.jobRow(id); return row?.kind === "task" ? this.taskOf(row) : null; }

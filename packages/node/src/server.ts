@@ -182,6 +182,7 @@ import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
+import { OutcomeError, OutcomeRunner } from "./outcomes.ts";
 import { randomBytes } from "node:crypto";
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
 import type { ConnectorRequest, ConnectorRequests } from "./connector-requests.ts";
@@ -260,7 +261,7 @@ export interface AppContext {
   chats: ChatStore;
   /** What you attach to your messages there: pictures and texts, kept by their SHA-256 (uploads.ts). */
   uploads: Uploads;
-  team?: { store: TeamStore; service?: TeamService };
+  team?: { store: TeamStore; service?: TeamService; outcomes?: OutcomeRunner };
   /** The turns this node runs for you: each to its end whoever listens, with what you steer and queue. */
   turns: TurnHub;
   /** The quests in hand, as whoever runs each one reports it. */
@@ -1533,6 +1534,8 @@ export function createApp(ctx: AppContext) {
    */
   async function answerInRoom(room: TeamRoom, history: TeamMessage[], ask: { asker: TeamAsker; trigger: TeamMessage | null }, signal: AbortSignal): Promise<string> {
     const byKnight = ask.asker.kind === "knight";
+    // In an outcome's room your words are that outcome's: he answers with its plan and its tools (outcomes.ts).
+    if (!byKnight && ctx.team?.outcomes?.owns(room.id)) return ctx.team.outcomes.answer(room.id, signal);
     const p: Principal = ask.asker.kind === "knight" ? { device: ctx.identity.id, kind: "client", scopes: [] } : askerNow(ask.asker.kind === "admin" ? { kind: "admin", device: ctx.identity.id } : ask.asker);
     const content = galahadInRoom(room, teamOf().overview().workers, history, { trigger: ask.trigger, byKnight });
     // The files of yours he is shown: the newest your messages here carried, as a knight is shown them (never for a
@@ -1793,6 +1796,10 @@ export function createApp(ctx: AppContext) {
   const teamOf = () => {
     if (!ctx.team?.service) throw new HttpError(503, "the team controller is unavailable");
     return ctx.team.service;
+  };
+  const outcomesOf = () => {
+    if (!ctx.team?.outcomes) throw new HttpError(503, "the team controller is unavailable");
+    return ctx.team.outcomes;
   };
   const teamMember = (id: string) => {
     if (!ctx.team) throw new HttpError(503, "the team controller is unavailable");
@@ -2160,8 +2167,21 @@ export function createApp(ctx: AppContext) {
       reason: made.createdBy === TEAM_GALAHAD ? "Galahad seated a knight, in your conversation with him" : `the knight ${made.createdBy} seated another, in its room`,
       detail: `${made.role} · ${made.dailyTurns} turns a day`,
     });
-    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, answer: answerInRoom, timeoutMs: 15 * 60_000, taskTimeoutMs: null, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit });
+    // Outcomes he owns (outcomes.ts): looked at when one of their tasks ends, when you write in their rooms, and on time.
+    const team = ctx.team;
+    const outcomes = new OutcomeRunner({
+      store: team.store,
+      service: () => team.service!,
+      mind: ctx.store,
+      identity: ctx.identity,
+      brain: () => brainFor({ device: `arm:${GALAHAD_ARM}`, kind: "arm", label: GALAHAD_ARM, scopes: [] }),
+      prices: () => pricesOf(ctx.store),
+      log: ctx.log,
+    });
+    team.outcomes = outcomes;
+    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, answer: answerInRoom, timeoutMs: 15 * 60_000, taskTimeoutMs: null, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit, onTaskEnded: (task) => { if (task.outcome) outcomes.nudge(); } });
     ctx.team.service.start();
+    outcomes.start();
   }
 
   const handlers: Record<RouteName, Handler> = {
@@ -2172,6 +2192,38 @@ export function createApp(ctx: AppContext) {
     directTeammate: (input, p) => { ownerOnly(p); return { room: teamOf().direct(input.id) }; },
     teamRoom: (input, p) => { ownerOnly(p); return teamOf().room(input.id); },
     teamTrail: (input, p) => { ownerOnly(p); return teamOf().trail(input.task, input.after ?? 0); },
+    teamOutcomes: (_input, p) => { ownerOnly(p); return { outcomes: outcomesOf().list() }; },
+    setTeamOutcome: (input, p) => {
+      ownerOnly(p);
+      try {
+        const made = outcomesOf().create(input);
+        ctx.ledger?.({ class: "create", resource: "team", target: `outcome:${made.id}`, verdict: "allow", reason: "you gave Galahad an outcome to own, within its budget", detail: `${made.knights.map((k) => `@${k}`).join(" ")} · ${made.budgetUsd} USD` });
+        return { outcome: made };
+      } catch (error) {
+        throw error instanceof OutcomeError ? new HttpError(error.status, error.message) : error;
+      }
+    },
+    galahadOutcome: (input, p) => {
+      if (!leadsTeam(p)) throw new HttpError(403, "only Galahad himself takes on an outcome this way; you give one at the Roundtable");
+      // His own taking on is within a few a day; you can give him more at the Roundtable.
+      const lately = outcomesOf().list().filter((o) => o.createdAt > Date.now() - 86_400_000).length;
+      if (lately >= 3) throw new HttpError(429, "he has taken on 3 outcomes in the last day, his allowance; the owner can give more at the Roundtable");
+      try {
+        const made = outcomesOf().create(input);
+        ctx.ledger?.({ class: "create", resource: "team", target: `outcome:${made.id}`, verdict: "allow", reason: "Galahad took on an outcome you asked him to own, in your conversation", detail: `${made.knights.map((k) => `@${k}`).join(" ")} · ${made.budgetUsd} USD` });
+        return { outcome: made };
+      } catch (error) {
+        throw error instanceof OutcomeError ? new HttpError(error.status, error.message) : error;
+      }
+    },
+    controlTeamOutcome: (input, p) => {
+      ownerOnly(p);
+      try {
+        return { outcome: outcomesOf().control(input) };
+      } catch (error) {
+        throw error instanceof OutcomeError ? new HttpError(error.status, error.message) : error;
+      }
+    },
     seeTeam: (input, p) => { ownerOnly(p); teamOf().see(input); return { seen: true }; },
     teamDesktop: async (input, p, req) => {
       ownerOnly(p);

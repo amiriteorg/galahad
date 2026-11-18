@@ -40,7 +40,7 @@ import {
   type SkillView,
   TEAM_GALAHAD,
   TEAM_OWNER,
-  type TeamMessage, type TeamTask,
+  type TeamMessage, type TeamOutcome, type TeamTask,
   type TeamOverview,
   type Teammate,
 } from "@galahad/core";
@@ -884,6 +884,28 @@ export const TOOLS: GalahadTool[] = [
         `${given.task.id} is queued in ${given.choice.name}'s own conversation with the user (conversation ${given.task.room}); its gates and an independent reviewer decide when it is done. Read how it went with team, room "${given.task.room}".`,
         ...(others.length ? [`The others: ${others.join(" · ")}`] : []),
       ].join("\n");
+    },
+  }),
+
+  tool({
+    name: "team_outcome",
+    title: "Own an outcome",
+    description:
+      "When the user asks you to own an outcome (a result over days or weeks, not one task: \"port the app to Android\", \"keep CI green on main\"), take it on: it gets a room of its own with the knights they name, and you work it there on your own within its budget (plan, give those knights tasks, judge what comes back, report daily, ask them there when a choice is theirs; shipping still asks them on a card). Only when they asked, with its knights and its budget in their words: if either is missing, ask first. Say what you took on and where to follow it.",
+    input: {
+      title: z.string().min(1).max(120).describe("A short name for it"),
+      goal: z.string().min(1).max(4000).describe("The outcome, in full: what it is, where, what matters. Never a key or a password."),
+      done: z.string().min(1).max(1000).describe("How you'll both know it's done, if they said").optional(),
+      knights: z.array(z.string().min(1).max(32)).min(1).max(8).describe("The knights' handles they named for it"),
+      budgetUsd: z.number().min(0.5).max(1000).describe("What it may spend in all, in US dollars, as they said"),
+      reportHour: z.number().int().min(0).max(23).describe("The hour of your daily report, if they said").optional(),
+    },
+    routes: ["galahadOutcome"],
+    flow: "egress",
+    own: true,
+    async run(api, input) {
+      const { outcome } = await api.call<{ outcome: TeamOutcome }>("galahadOutcome", input);
+      return `Taken on: ${outcome.title}, in its room "${outcome.room}" with ${outcome.knights.map((k) => `@${k}`).join(", ")}, within $${outcome.budgetUsd}. I work it there from now: the first look is now, the report each day at ${String(outcome.reportHour).padStart(2, "0")}:00 (${outcome.tz}).`;
     },
   }),
 

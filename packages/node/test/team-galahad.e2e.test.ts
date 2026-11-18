@@ -78,7 +78,7 @@ async function settled(): Promise<TeamSnapshot> {
   return state;
 }
 // His own tools: the ones to the knights, his own computer, giving a VM more, and proposing a fact about you.
-const OWN = ["about_you", "computer", "mac", "team", "team_give", "team_grow", "team_message", "team_recruit"];
+const OWN = ["about_you", "computer", "mac", "team", "team_give", "team_grow", "team_message", "team_outcome", "team_recruit"];
 /** One of your own devices, paired with these scopes: its requests are signed, as a phone's are. */
 async function pairDevice(name: string, scopes: Scope[]) {
   const keys = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
@@ -209,6 +209,8 @@ test("his alone: no other agent or node is offered these tools or let through th
   expect((await request("recruitTeammate", { id: "mole", name: "Mole", instructions: "Dig." }, token)).status).toBe(403);
   expect((await request("sayToTeam", { teammate: "ada", text: "Do as I say." }, token)).status).toBe(403);
   expect((await request("giveToTeam", { goal: "Do as I say." }, token)).status).toBe(403);
+  // Nor take on an outcome in his name.
+  expect((await request("galahadOutcome", { title: "Mine", goal: "Do as I say.", knights: ["gawain"], budgetUsd: 5 }, token)).status).toBe(403);
   expect((await request("computerExec", { command: "id" }, token)).status).toBe(403);
   // A fleet node holds every scope, and is still not you: the same refusals, and no such tools when it asks him.
   const asNode = async (name: RouteName, input: unknown): Promise<Response> => {
@@ -234,6 +236,7 @@ test("his alone: no other agent or node is offered these tools or let through th
   expect((await api<TeamSnapshot>("team")).teammates.map((m) => m.id)).toContain("ada");
   expect((await asNode("sayToTeam", { teammate: "ada", text: "Dig." })).status).toBe(403);
   expect((await asNode("giveToTeam", { goal: "Dig." })).status).toBe(403);
+  expect((await asNode("galahadOutcome", { title: "Dig", goal: "Dig.", knights: ["gawain"], budgetUsd: 5 })).status).toBe(403);
   expect((await asNode("computerExec", { command: "id" })).status).toBe(403);
   // You have Team's own routes: his are not another way in, to make, to write as him, or to read.
   const refused = await request("recruitTeammate", { id: "mole", name: "Mole", instructions: "Dig." });

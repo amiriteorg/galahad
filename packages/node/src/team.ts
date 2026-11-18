@@ -51,6 +51,8 @@ export interface TeamServiceOptions {
   onChange?(): void;
   /** A knight seated by Galahad (in your conversation) or by another knight (in its room): for the record. */
   onRecruit?(made: Teammate): void;
+  /** A task's run has ended, however it ended (an outcome it is a step of looks again: outcomes.ts). */
+  onTaskEnded?(task: TeamTask): void;
 }
 
 interface Active {
@@ -415,6 +417,17 @@ export class TeamService {
       if (active.timer) clearTimeout(active.timer);
       this.active.delete(job.teammate);
       if (this.running) { this.changed(); this.kick(); }
+      // (After a bounded shutdown the store is closed: nobody is told, as no observer is.)
+      if (this.running && job.kind === "task") {
+        const ended = this.store.task(job.id);
+        if (ended && ended.status !== "running" && ended.status !== "queued") {
+          try {
+            this.options.onTaskEnded?.(ended);
+          } catch {
+            // (Whoever listens never holds up the team.)
+          }
+        }
+      }
     });
     this.changed();
   }

@@ -17,7 +17,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectBranchInput, ProjectCommitInput, ProjectGitInput, ProjectId, ProjectInput } from "./chats.ts";
-import { TeammateInput, TeamArrangeInput, TeamChangesInput, TeamEngramInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamWorkspaceQuest } from "./team.ts";
+import { TeammateInput, TeamArrangeInput, TeamChangesInput, TeamEngramInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamOutcomeControlInput, TeamOutcomeInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
@@ -332,6 +332,16 @@ export const routes = {
   seeTeam: { method: "POST", path: "/api/team/seen", scope: "chat", input: TeamSeenInput },
   postTeamMessage: { method: "POST", path: "/api/team/messages", scope: "fleet:admin", input: TeamPostInput },
   createTeamTask: { method: "POST", path: "/api/team/tasks", scope: "fleet:admin", input: TeamTaskInput },
+  /** Outcomes Galahad owns (PLAN #43): each with its room, budget and spend, its tasks and his plan. */
+  teamOutcomes: { method: "GET", path: "/api/team/outcomes", scope: "chat", input: null },
+  /**
+   * Give him an outcome to own: its room is made with the knights you named, and he gives them tasks on his own within
+   * its budget (your ruling of 18 November). Yours alone, as giving work is.
+   */
+  setTeamOutcome: { method: "POST", path: "/api/team/outcomes", scope: "fleet:admin", input: TeamOutcomeInput },
+  controlTeamOutcome: { method: "POST", path: "/api/team/outcomes/control", scope: "fleet:admin", input: TeamOutcomeControlInput },
+  /** Galahad takes on an outcome you asked him to own, in your conversation (his team_outcome; leads the team, as giveToTeam). */
+  galahadOutcome: { method: "POST", path: "/api/team/galahad-outcome", scope: "mind:write", input: TeamOutcomeInput },
   /** A task given to the Roundtable: the knight best suited to it takes it, and the answer says who and why (everyone considered, each with its reasons). */
   giveTeamTask: { method: "POST", path: "/api/team/give", scope: "fleet:admin", input: TeamGiveInput },
   controlTeam: { method: "POST", path: "/api/team/control", scope: "fleet:admin", input: TeamControlInput },

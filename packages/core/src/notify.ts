@@ -144,6 +144,7 @@ export function noticeItem(n: { key: string; severity: string; title: string; so
 /** A notice a rule of yours that tells raises (its source `rule:<name>`): the rule's name is yours, never a model's words. */
 const RULE_SOURCE = /^rule:([a-z0-9][a-z0-9._-]{0,39})$/;
 const TELL_SOURCE = /^tell:([a-z0-9][a-z0-9._-]{0,39})$/;
+const OUTCOME_SOURCE = /^outcome:out-[a-z0-9_-]{12}$/;
 
 /**
  * A command a rule of yours matches has run: once for each rule and task (the notice is one per pair, its count kept in
@@ -154,6 +155,10 @@ export function toldItem(n: { key: string; severity: string; source: string; dis
   const loop = TELL_SOURCE.exec(n.source)?.[1];
   if (loop && !n.dismissed && n.severity === "info") {
     return { key: `notice:${n.key}`, kind: "told", alert: false, title: `Galahad: ${loop}`, body: "What you asked to be told about has happened. The Inbox says what.", open: "inbox", needs: ["mind:read"] };
+  }
+  // An outcome he owns (PLAN #43): its report, or its end. Fixed words: what he wrote is in its room and the Inbox.
+  if (OUTCOME_SOURCE.test(n.source) && !n.dismissed && n.severity === "info") {
+    return { key: `notice:${n.key}`, kind: "told", alert: false, title: "Galahad: an outcome of yours", body: "There's news of it: his words are in its room and your Inbox.", open: "inbox", needs: ["mind:read"] };
   }
   const rule = RULE_SOURCE.exec(n.source)?.[1];
   if (!rule || n.dismissed || n.severity !== "info") return null;

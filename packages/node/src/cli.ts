@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TelegramView, type TrialView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type TelegramView, type TrialView } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -58,6 +58,11 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     a task for the Roundtable: the knight best suited to it takes it (free, its work
                                     verified before, its job about this, a desktop or the repository it needs) and
                                     says why; the others' standing is shown beneath
+  outcome [ls]                     outcomes Galahad owns: each one's room, budget and spend, tasks and plan
+  outcome add "<title>" --goal "…" --knight <id>… --budget-usd 20 [--done "…"] [--report-hour 9] [--tz Zone]
+                                    he owns it for days or weeks: plans it in its own room, gives those knights
+                                    tasks on his own within its budget, reports daily, asks you there
+  outcome pause|resume|stop <id>   stopping it stops its waiting work
   roundtable files <knight> [/work/path]  a folder of its workspace (its VM's /work; galahad: his computer's)
   roundtable read <knight> </work/path>  one file of it (anything like a key redacted)
   roundtable changes <knight> [--task <id>] [--files]  what its latest task (or that one) changed: files, then the diff
@@ -545,6 +550,11 @@ async function main(): Promise<void> {
       cooldown: { type: "string" },
       // A loop that tells you: --tell, with your words --say "…".
       say: { type: "string" },
+      // An outcome he owns: outcome add "<title>" --goal "…" --knight id… --budget-usd 20 [--done "…"] [--report-hour 9].
+      goal: { type: "string" },
+      done: { type: "string" },
+      knight: { type: "string", multiple: true },
+      "report-hour": { type: "string" },
       tz: { type: "string" },
       heartbeat: { type: "boolean" },
       checklist: { type: "string" },
@@ -1902,6 +1912,50 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "notify":
       await notifyCommand(new Admin(home), sub, rest, flags);
       return;
+    case "outcome":
+    case "outcomes": {
+      const admin = new Admin(home);
+      const show = (o: TeamOutcome) => {
+        const left = Math.max(0, o.budgetUsd - o.spentUsd - o.committedUsd);
+        console.log(`${bold(o.title)} ${dim(o.id)} · ${o.status}${o.ended ? ` (${o.ended})` : ""}`);
+        console.log(`  ${o.knights.map((k) => `@${k}`).join(" ")} · spent $${o.spentUsd.toFixed(2)} of $${o.budgetUsd}, held $${o.committedUsd.toFixed(2)}, left $${left.toFixed(2)} · tasks ${o.tasks.done} done, ${o.tasks.running} running, ${o.tasks.queued} waiting, ${o.tasks.failed} not done`);
+        if (o.notes) console.log(dim(`  plan: ${o.notes.split("\n")[0]!.slice(0, 140)}`));
+        console.log(dim(`  follow it: galahad roundtable chat ${o.room}`));
+      };
+      if (!sub || sub === "ls") {
+        const { outcomes } = await admin.call<{ outcomes: TeamOutcome[] }>("teamOutcomes");
+        if (!outcomes.length) console.log('No outcomes yet. galahad outcome add "<title>" --goal "…" --knight <id> --budget-usd 20');
+        for (const o of outcomes) show(o);
+        return;
+      }
+      if (sub === "add") {
+        const title = rest.join(" ").trim();
+        const knights = Array.isArray(flags.knight) ? (flags.knight as string[]) : flags.knight ? [String(flags.knight)] : [];
+        const budgetUsd = Number(str("budget-usd"));
+        if (!title || !str("goal") || !knights.length || !Number.isFinite(budgetUsd)) fail('usage: galahad outcome add "<title>" --goal "…" --knight <id> [--knight <id>…] --budget-usd 20 [--done "…"] [--report-hour 9] [--tz Zone]');
+        const { outcome } = await admin.call<{ outcome: TeamOutcome }>("setTeamOutcome", {
+          title,
+          goal: str("goal"),
+          knights,
+          budgetUsd,
+          ...(str("done") ? { done: str("done") } : {}),
+          ...(str("report-hour") ? { reportHour: Number(str("report-hour")) } : {}),
+          ...(str("tz") ? { tz: str("tz") } : {}),
+        });
+        console.log("He owns it now. He works it in its own room, within its budget, and asks you there when a choice is yours.");
+        show(outcome);
+        return;
+      }
+      if (sub === "pause" || sub === "resume" || sub === "stop") {
+        if (!rest[0]) fail(`usage: galahad outcome ${sub} <id>`);
+        if (sub === "stop" && !flags.yes && !confirm("Stop it? Its waiting work is stopped, and it ends.")) return;
+        const { outcome } = await admin.call<{ outcome: TeamOutcome }>("controlTeamOutcome", { id: rest[0], action: sub });
+        show(outcome);
+        return;
+      }
+      fail("usage: galahad outcome [ls | add | pause | resume | stop]");
+      return;
+    }
     case "roundtable":
     case "squires":
     case "squire":

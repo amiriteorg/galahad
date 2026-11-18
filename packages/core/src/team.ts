@@ -21,6 +21,8 @@ export const TEAM_GALAHAD = "galahad";
 export const TeammateId = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/, "a lowercase name of at most 32 letters, digits or hyphens").refine((id) => id !== TEAM_OWNER && id !== "system" && id !== TEAM_GALAHAD, "that name is reserved");
 export const TeamRoomId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 export const TeamTaskId = z.string().regex(/^task-[a-z0-9_-]{12}$/);
+/** An outcome Galahad owns (PLAN #43): its id is its room's too. */
+export const TeamOutcomeId = z.string().regex(/^out-[a-z0-9_-]{12}$/);
 /** `claude` and `codex` are the vendors' own tools (Claude Code, Codex), which the owner installs and signs in in the knight's VM. */
 export const TeamHarness = z.enum(["native", "opencode", "hermes", "claude", "codex"]);
 export type TeamHarness = z.infer<typeof TeamHarness>;
@@ -123,6 +125,8 @@ export const TeamTaskInput = z.strictObject({
   budgetUsd: z.number().positive().max(100).optional(),
   /** The task this one gives again (Give again): your stepping in, counted on this one (#28). */
   again: TeamTaskId.optional(),
+  /** The outcome it is a step of (PLAN #43): its spend counts against that outcome's budget. */
+  outcome: TeamOutcomeId.optional(),
 });
 export type TeamTaskInput = z.infer<typeof TeamTaskInput>;
 
@@ -139,6 +143,57 @@ export const TeamGiveInput = z.strictObject({
   needs: z.strictObject({ desktop: z.boolean().optional(), repository: z.string().trim().min(1).max(300).optional() }).optional(),
 });
 export type TeamGiveInput = z.infer<typeof TeamGiveInput>;
+
+/**
+ * An outcome you give Galahad to own for days or weeks (PLAN #43; Devin Bots' core): he plans it in a room of its own,
+ * gives tasks to the knights you name for it on his own within its budget (your ruling of 18 November), judges what
+ * comes back (each task still gated and reviewed), reports once a day and asks you there when a decision is yours.
+ * Shipping, and anything outward, still asks you on a card.
+ */
+export const TeamOutcomeInput = z.strictObject({
+  title: z.string().trim().min(1).max(120),
+  goal: z.string().trim().min(1).max(4000),
+  /** How you'll both know it's done, in a few lines (optional: he proposes it, and asks). */
+  done: z.string().trim().min(1).max(1000).optional(),
+  knights: z.array(TeammateId).min(1).max(8).refine((ids) => new Set(ids).size === ids.length, "each knight once"),
+  /** What it may spend in all, in US dollars at your prices: its tasks, and his own looks at it. */
+  budgetUsd: z.number().min(0.5).max(1000),
+  /** The hour of his daily report, in your time zone (default 9). */
+  reportHour: z.number().int().min(0).max(23).optional(),
+  tz: z.string().max(64).optional(),
+});
+export type TeamOutcomeInput = z.infer<typeof TeamOutcomeInput>;
+export const TeamOutcomeControlInput = z.strictObject({ id: TeamOutcomeId, action: z.enum(["pause", "resume", "stop"]) });
+export type TeamOutcomeControlInput = z.infer<typeof TeamOutcomeControlInput>;
+
+export type TeamOutcomeStatus = "active" | "paused" | "done" | "stopped" | "spent";
+
+export interface TeamOutcome {
+  id: string;
+  /** Its room: its tasks, his reports, and your words to him about it. */
+  room: string;
+  title: string;
+  goal: string;
+  done: string | null;
+  knights: string[];
+  budgetUsd: number;
+  /** What its tasks and his looks have cost, at your prices (models with no price of yours count nothing). */
+  spentUsd: number;
+  /** Reserved by tasks still to run or running: what their budgets may still spend. */
+  committedUsd: number;
+  status: TeamOutcomeStatus;
+  /** His plan, as he keeps it: what's done, what's next, what's in the way. */
+  notes: string;
+  tasks: { total: number; queued: number; running: number; done: number; failed: number };
+  reportHour: number;
+  tz: string;
+  lastLookAt: number | null;
+  lastReportAt: number | null;
+  /** When it ended, how he said it ended (done) or why (stopped, spent). */
+  ended: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
 
 /** Your order of the knights, and who leads the Roundtable (`galahad`, or one of your knights). Each is optional. */
 export const TeamArrangeInput = z.strictObject({
@@ -318,6 +373,8 @@ export interface TeamTask {
   proposedBy?: string;
   /** Each time you stepped in on it, by how (absent: never). */
   interventions?: Partial<Record<InterventionKind, number>>;
+  /** The outcome it is a step of (PLAN #43); absent: none. */
+  outcome?: string;
 }
 
 /** A path in a knight's workspace (its VM's /work): absolute, under /work, with no `.` or `..` in it. */

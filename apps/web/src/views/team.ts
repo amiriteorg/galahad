@@ -1,4 +1,5 @@
 import type { SandboxView } from "@galahad/core";
+import { outcomeBar, isOutcomeRoom } from "./outcome-bar.ts";
 import { findSecrets } from "@galahad/core/secret-scan";
 import type { TeamEngramStatus, TeamHarness, TeamMessage, TeamRoomView, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
@@ -116,7 +117,9 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   const side = h("aside", { class: "team-side", hidden: true });
   let sideShown = knightPanelShown();
   let sideVersion = "";
-  const main = h("section", { class: "team-main", "aria-label": "The Roundtable" }, head, notice, h("div", { class: "team-body" }, h("div", { class: "team-column" }, content, composerWrap), side));
+  // An outcome's room: the bar of what Galahad owns there (outcome-bar.ts).
+  const ownBar = roomId && isOutcomeRoom(roomId) ? outcomeBar(ctx, roomId, scope.signal) : null;
+  const main = h("section", { class: "team-main", "aria-label": "The Roundtable" }, head, notice, ownBar?.el ?? null, h("div", { class: "team-body" }, h("div", { class: "team-column" }, content, composerWrap), side));
   replace(root, h("div", { class: "team-layout" }, main));
   replace(content, skeletonRows(4));
 
@@ -616,6 +619,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       const detail = await ctx.api.post<TeamRoomView>("/api/team/room", { id: roomId }, scope.signal);
       if (scope.disposed) return;
       room = detail;
+      void ownBar?.refresh();
       noteSaid(detail.id, detail.messages.at(-1));
       draw(force);
     } catch (error) {

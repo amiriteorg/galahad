@@ -73,7 +73,7 @@ Cognition launched **Devin Bots** on 17 November 2026 [C1][C3]: "a persistent ag
 
 | | Devin Bots | Galahad |
 |---|---|---|
-| **The unit** | A Bot owns an outcome or a standing responsibility; a Devin session is one task [C1] | Knights with a lasting job and a VM each, led by Galahad in rooms; a task is one quest. No object yet for an outcome owned over weeks |
+| **The unit** | A Bot owns an outcome or a standing responsibility; a Devin session is one task [C1] | An outcome Galahad owns for weeks, since 18 November: its own room with the knights you name, tasks he gives them within its budget, a daily report (PLAN #43); a task is one quest in a knight's VM |
 | **Where it runs** | Cognition's cloud: a machine per child session, network policy per host, admins choose the repositories and tools a Bot reaches [C2][C3][C4] | Your own machines: a microVM per knight behind its own firewall, keys sealed and never in a VM |
 | **Checking the work** | CI, Devin Review, screenshot tests, before-and-after videos, recorded user flows; teams choose what a human reviews and what merges on its own [C1][C3] | Gates that must pass and an independent reviewer on every quest, an auditor on long runs; a pull request's CI followed after a ship |
 | **What needs you** | A "Needs you" list of decisions, PRs to review or merge, permission requests, reports and FYIs, each answered, snoozed or dismissed [C2] | The Inbox: approvals, notices, drafts, key and connector requests, dismissed by you |
@@ -83,7 +83,7 @@ Cognition launched **Devin Bots** on 17 November 2026 [C1][C3]: "a persistent ag
 | **Scale it reports** | The Android version of Devin's app in 44 days: 1,134 merged PRs, 344,651 lines of Kotlin, 2,841 screenshot tests, from 183 messages (one per six PRs); a studio run by about 20 Bots and one person, from 50 to 1,900 PRs a week [C1] | Its north star, your interventions per task done and verified, counted on real work since 18 November (the Overview, `galahad roundtable`); its trials are eight tasks of its own |
 | **Price** | Counts toward a Devin plan's usage like any session [C2]; no price of its own published [C3] | Your machines and your keys or plans; dollars per task shown |
 
-What it shows Galahad: the outcome a lead owns over weeks (a plan, tasks fanned out to knights in parallel, results judged, a daily report, decisions sent to you) is the next layer above knights and quests, and the pieces are here. Cognition counts the number Galahad's mandate is built on, human messages per merged change (183 for 1,134), which Galahad began counting on its own work the same week. And its triggers, its "Needs you" kinds and its recordings of the work being tested are each a step past Galahad's.
+What it shows Galahad: the outcome a lead owns over weeks (a plan, tasks fanned out to knights in parallel, results judged, a daily report, decisions sent to you) is the next layer above knights and quests, which Galahad built the next day (PLAN #43), each task still gated and reviewed in its own VM. Cognition counts the number Galahad's mandate is built on, human messages per merged change (183 for 1,134), which Galahad began counting on its own work the same week. And its triggers, its "Needs you" kinds and its recordings of the work being tested are each a step past Galahad's.
 
 ## Where Galahad leads, and where it trails
 
