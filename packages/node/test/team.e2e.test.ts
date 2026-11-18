@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaultAvatar, routes, teamArmLabel, type LedgerEntry, type RouteName, type TeamSnapshot, type TeamRoomView, type TeamTask } from "@galahad/core";
+import { type AttachmentRef, defaultAvatar, routes, teamArmLabel, type LedgerEntry, type RouteName, type TeamMessage, type TeamSnapshot, type TeamRoomView, type TeamTask } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { startDaemon, type Daemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
@@ -204,4 +204,24 @@ test("real API: a task given again is your stepping in, counted on the new one (
   const state = await api<TeamSnapshot>("team");
   expect(state.tasks.length).toBe(before);
   expect(state.northStar).toMatchObject({ since: expect.any(Number), completed: expect.any(Number), interventions: expect.any(Number) });
+});
+
+test("real API: a file of yours goes with your words to a room, and the knight it reaches is given it", async () => {
+  const { attachment } = await api<{ attachment: AttachmentRef }>("uploadAttachment", { name: "build.log", type: "text/plain", data: Buffer.from("step 3 of the build failed: missing lockfile\n").toString("base64") });
+  const before = prompts.length;
+  const { message } = await api<{ message: TeamMessage }>("postTeamMessage", { room: "forge", text: "@ada what broke?", attachments: [attachment] });
+  expect(message.attachments).toEqual([attachment]);
+  let room = await api<TeamRoomView>("teamRoom", { id: "forge" });
+  const busy = (view: TeamRoomView) => view.deliveries.some((d) => d.trigger === message.id && (d.status === "queued" || d.status === "running"));
+  for (let n = 0; n < 400 && busy(room); n++) { await Bun.sleep(5); room = await api<TeamRoomView>("teamRoom", { id: "forge" }); }
+  expect(busy(room)).toBe(false);
+  expect(room.messages.find((m) => m.id === message.id)?.attachments).toEqual([attachment]);
+  // Ada was given the file's words, fenced as data.
+  expect(JSON.stringify(prompts.slice(before))).toContain("step 3 of the build failed: missing lockfile");
+  // Files alone are a message; one this node doesn't keep is refused, and so are an agent's.
+  expect((await api<{ message: TeamMessage }>("postTeamMessage", { room: "forge", text: "", attachments: [attachment] })).message.text).toBe("");
+  expect((await request("postTeamMessage", { room: "forge", text: "and this", attachments: [{ ...attachment, id: "c".repeat(64) }] })).status).toBe(409);
+  expect((await request("postTeamMessage", { room: "forge", text: "" })).status).toBe(400);
+  const { token } = await api("mintArm", { label: "carrier", scopes: ["chat", "mind:read", "sandbox"] });
+  expect((await request("postTeamMessage", { room: "forge", text: "mine", attachments: [attachment] }, token)).status).toBe(403);
 });

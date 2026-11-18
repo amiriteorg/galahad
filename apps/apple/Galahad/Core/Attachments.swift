@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import PDFKit
 import UniformTypeIdentifiers
 
 /// A file kept on the node for a message of yours (core's `AttachmentRef`): what the message names it by.
@@ -18,7 +19,8 @@ struct AttachmentRef: Codable, Hashable, Sendable {
  * Files with a message, on this side (the node keeps them: packages/node/src/uploads.ts; the PWA's lib/attachments.ts).
  * What a file is, is read from its bytes by the node's own rule (packages/core/src/attachments.ts), never from its
  * name. A picture is drawn again before it goes, at most `side` pixels on its long side, as a new image: its metadata
- * (where a photo was taken, the camera) is never copied into it. A GIF goes as it is; anything else must be text.
+ * (where a photo was taken, the camera) is never copied into it. A GIF goes as it is. A PDF is read here, into its
+ * words (a text), or for a scan, its first pages drawn as pictures; anything else must be text.
  */
 enum Attachments {
     /// core's ATTACHMENT_LIMITS.
@@ -64,7 +66,7 @@ enum Attachments {
 
     /// Why a file can't go with a message, in words; nil when it can.
     static func refusal(name: String, type: String?, size: Int) -> String? {
-        guard let type else { return "\(name) isn't a picture or text: only those go with a message." }
+        guard let type else { return "\(name) isn't a picture, a PDF or text: only those go with a message." }
         if size == 0 { return "\(name) is empty." }
         let text = type == "text/plain"
         let limit = text ? textBytes : pictureBytes
@@ -88,6 +90,65 @@ enum Attachments {
         }
         if let why = refusal(name: name, type: isText(data) ? "text/plain" : nil, size: data.count) { throw Refused(errorDescription: why) }
         return Prepared(name: name, type: "text/plain", data: data)
+    }
+
+    /// A file you chose, made ready to go up as what a model can take: a PDF as its words, or (a scan, with none) its
+    /// first pages as pictures; anything else as `prepare` makes it.
+    static func prepareAll(name raw: String, data: Data) throws -> [Prepared] {
+        guard isPDF(data) else { return [try prepare(name: raw, data: data)] }
+        guard let pdf = PDFDocument(data: data), pdf.pageCount > 0 else { throw Refused(errorDescription: "\(name(raw)) is a PDF this app can't read.") }
+        if pdf.isLocked { throw Refused(errorDescription: "\(name(raw)) is locked with a password: unlock it, or send what you need from it as text.") }
+        let name = name(raw)
+        if let words = pdfWords(pdf, name: name) { return [Prepared(name: name, type: "text/plain", data: Data(words.utf8))] }
+        let stem = name.replacing(#/\.pdf$/#.ignoresCase(), with: "")
+        let pages = (0..<min(pdf.pageCount, pdfPages)).compactMap { at -> Prepared? in
+            guard let page = pdf.page(at: at), let jpeg = drawn(page) else { return nil }
+            return Prepared(name: pdf.pageCount == 1 ? "\(stem).jpg" : "\(stem), page \(at + 1).jpg", type: "image/jpeg", data: jpeg)
+        }
+        guard !pages.isEmpty else { throw Refused(errorDescription: "\(name) is a PDF this app can't draw.") }
+        return pages
+    }
+
+    /// At most so many pages of a PDF that has no words go, as pictures: a message carries eight files at most.
+    static let pdfPages = 4
+
+    /// Whether these bytes are a PDF (it begins as one).
+    static func isPDF(_ data: Data) -> Bool {
+        data.starts(with: Array("%PDF-".utf8))
+    }
+
+    /// A PDF's words as one text a model reads, saying where they came from, cut to what a text may be (nil: it has
+    /// too few to be its words: a scan).
+    static func pdfWords(_ pdf: PDFDocument, name: String) -> String? {
+        let words = (pdf.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard words.count >= 20 else { return nil }
+        let head = "[The words of \(name), read from the PDF on your device (\(pdf.pageCount) page\(pdf.pageCount == 1 ? "" : "s")): its pictures and layout aren't here.]\n\n"
+        let cut = "\n\n[… the rest of the PDF is cut here: a text goes with a message up to 256 KB …]"
+        var text = head + words
+        if text.utf8.count > textBytes {
+            var kept = head + words
+            while kept.utf8.count > textBytes - cut.utf8.count { kept = String(kept.prefix(kept.count * 9 / 10)) }
+            text = kept + cut
+        }
+        return text
+    }
+
+    /// A PDF's page drawn on white, at most `side` pixels on its long side, as a JPEG.
+    static func drawn(_ page: PDFPage) -> Data? {
+        let bounds = page.bounds(for: .mediaBox)
+        guard bounds.width > 0, bounds.height > 0 else { return nil }
+        let scale = CGFloat(side) / max(bounds.width, bounds.height)
+        let width = Int(bounds.width * scale), height = Int(bounds.height * scale)
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.scaleBy(x: scale, y: scale)
+        page.draw(with: .mediaBox, to: context)
+        guard let image = context.makeImage() else { return nil }
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.86] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? out as Data : nil
     }
 
     /// Whether ImageIO reads these bytes as a picture of some kind.

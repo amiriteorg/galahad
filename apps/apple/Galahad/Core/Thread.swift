@@ -106,6 +106,14 @@ struct ChatThread: Equatable, Sendable {
         }
     }
 
+    /// Asked again: the turns from `index` on leave the thread (the question there and everything after it), for the
+    /// new exchange to take their place (the PWA's `retry`).
+    mutating func cut(at index: Int) {
+        guard index >= 0, index < turns.count else { return }
+        turns.removeSubrange(index...)
+        base = nil
+    }
+
     /// You send a message: it, and the answer to come (what the stream then writes), join the thread.
     mutating func begin(question: String, role: String, attachments: [AttachmentRef] = []) {
         turns.append(Turn(id: take(), role: .user, content: question, steps: [], status: .done, attachments: attachments.isEmpty ? nil : attachments))

@@ -1018,3 +1018,29 @@ test("a gate that passes before any work is said to show nothing; when every gat
   );
   expect(taskStep(progress({ type: "baseline", results: [ran("grep -qx Hi hello.txt", 0)] }))).toBe("checking");
 });
+
+test("the files your messages carried go with the conversation: the newest pictures and texts given, the rest named", async () => {
+  const picture = (n: number) => ({ id: String(n).repeat(64).slice(0, 64), name: `shot-${n}.png`, type: "image/png" as const, bytes: 10 });
+  const log = { id: "b".repeat(64), name: "build.log", type: "text/plain" as const, bytes: 10 };
+  const asked: string[][] = [];
+  const f = fixture([say("Seen.")], {
+    files: (refs) => {
+      asked.push(refs.map((r) => r.name));
+      return { images: refs.filter((r) => r.type !== "text/plain").map((r) => ({ mediaType: "image/png", data: "iVBORw0KGgo=", alt: r.name })), texts: refs.filter((r) => r.type === "text/plain").map((r) => `<file-x>${r.name}: tests failed</file-x>`) };
+    },
+  });
+  const history: TeamMessage[] = [
+    { ...said(1, "owner", "Eight screenshots."), attachments: Array.from({ length: 8 }, (_, i) => picture(i)) },
+    { ...said(2, "owner", "Two more, and the log."), attachments: [picture(8), picture(9), log] },
+    said(3, "ada", "Looking."),
+  ];
+  await f.runtime.respond(member, room, history, f.context);
+  // The newest eight pictures and the text, oldest first; the two oldest are only named.
+  expect(asked).toEqual([["shot-2.png", "shot-3.png", "shot-4.png", "shot-5.png", "shot-6.png", "shot-7.png", "shot-8.png", "shot-9.png", "build.log"]]);
+  const sent = JSON.stringify(f.bodies[0].messages);
+  expect(sent).toContain("<file-x>build.log: tests failed</file-x>");
+  expect(sent).toContain('\\"files\\":[\\"shot-0.png\\"');
+  // This model can't see, so it is told each picture is there.
+  expect(sent).toContain("[A picture is attached here (shot-9.png), but this model can't see pictures.]");
+  expect(sent).not.toContain("shot-1.png), but");
+});

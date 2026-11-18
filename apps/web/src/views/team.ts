@@ -21,6 +21,7 @@ import { renderMarkdown } from "../ui/markdown.ts";
 import { leadMark, stateChip, workerAvatar } from "../ui/avatar.ts";
 import { toast } from "../ui/toast.ts";
 import { makePrimary, pending } from "./arrange.ts";
+import { attachedView, attachTray, type Waiting } from "./attach-tray.ts";
 import { roundtableHome } from "./board.ts";
 import { noteSaid, seatFace, tableOf } from "./roster.ts";
 import { openConsole } from "./sandboxes.ts";
@@ -39,6 +40,8 @@ import { openTerminal } from "./terminal.ts";
  * the board's (views/board.ts).
  */
 const drafts = new Map<string, string>();
+/** Each conversation's next files, kept while you look elsewhere, as its words are. */
+const roomFiles = new Map<string, Waiting[]>();
 interface WorkspaceStatus {
   workspace: SandboxView | null;
   error?: string;
@@ -79,6 +82,13 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   const problem = h("div", { class: "team-send-error", role: "status" });
   const input = h("textarea", { rows: 2, maxlength: TEAM_LIMITS.message, placeholder: "Message…", "aria-label": "Message", autocomplete: "off", enterkeyhint: "send" });
   input.value = roomId ? (drafts.get(roomId) ?? "") : "";
+  // Files with your words: chosen, pasted or dropped, as in your chat with Galahad.
+  const tray = attachTray(ctx, {
+    files: { get: () => (roomId ? (roomFiles.get(roomId) ?? []) : []), set: (next) => void (roomId && roomFiles.set(roomId, next)) },
+    enabled: () => canChat && Boolean(roomId),
+    changed: () => syncComposer(),
+    disposed: () => scope.disposed,
+  });
   const send = button("Send", { variant: "primary", icon: "arrow-up", type: "submit" });
   // Giving a task (a goal and the commands that prove it) sits beside the message.
   const give = button("Give a task", { size: "sm", icon: "layers", onClick: () => room && giveTask(ctx, room) });
@@ -92,9 +102,13 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
         void deliver();
       },
     },
+    tray.row,
     input,
-    h("div", { class: "composer-bar" }, icon("shield-check", { size: 14, class: "subtle" }), composerHint, give, send),
+    tray.chooser,
+    h("div", { class: "composer-bar" }, tray.button, icon("shield-check", { size: 14, class: "subtle" }), composerHint, give, send),
   );
+  tray.take(input, composer);
+  tray.render();
   const composerWrap = h("div", { class: "team-composer", hidden: true }, status, problem, composer);
   // A knight's side panel, beside its timeline on a wide screen: shown unless you hid it (remembered on this device).
   const side = h("aside", { class: "team-side", hidden: true });
@@ -194,7 +208,14 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       "article",
       { class: `team-message${owner ? " owner" : ""}`, "data-key": message.id, "aria-label": `${speaker} said` },
       owner ? null : workerAvatar({ id: message.speaker, name: speaker, profile: personOf(message.speaker)?.avatar, still: true }),
-      h("div", { class: "team-message-body" }, h("div", { class: "team-message-by" }, h("strong", {}, speaker), at), h("div", { class: owner ? "team-owner-text" : "md" }, owner ? message.text : renderMarkdown(message.text))),
+      h(
+        "div",
+        { class: "team-message-body" },
+        h("div", { class: "team-message-by" }, h("strong", {}, speaker), at),
+        // What a message of yours carried, above its words (a message may be files alone).
+        message.attachments?.length ? attachedView(ctx, message.attachments) : null,
+        message.text ? h("div", { class: owner ? "team-owner-text" : "md" }, owner ? message.text : renderMarkdown(message.text)) : null,
+      ),
     );
   }
 
@@ -491,7 +512,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
 
   function syncComposer(): void {
     const secret = findSecrets(input.value).length > 0;
-    send.disabled = sending || !input.value.trim() || secret || !room;
+    send.disabled = sending || (!input.value.trim() && !tray.carried().length) || tray.going() || secret || !room;
     give.hidden = !room;
     if (roomId) {
       if (secret) drafts.delete(roomId);
@@ -504,10 +525,12 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     syncComposer();
     if (send.disabled || !room) return;
     const text = input.value.trim();
+    const files = tray.carried();
     sending = true;
     syncComposer();
     try {
-      await ctx.api.post("/api/team/messages", { room: room.id, text }, scope.signal);
+      await ctx.api.post("/api/team/messages", { room: room.id, text, ...(files.length ? { attachments: files } : {}) }, scope.signal);
+      if (files.length) tray.sent();
       if (scope.disposed) return;
       if (input.value.trim() === text) {
         input.value = "";

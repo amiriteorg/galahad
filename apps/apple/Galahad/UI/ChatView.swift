@@ -35,7 +35,13 @@ struct ChatView: View {
                         .foregroundStyle(Color.siege)
                 }
                 ForEach(chat.thread.turns) { turn in
-                    MessageRow(turn: turn, client: session.client)
+                    MessageRow(
+                        turn: turn,
+                        client: session.client,
+                        reply: { chat.quote($0); composing = true },
+                        edit: turn.role == .user && !chat.answering ? { chat.edit($0); composing = true } : nil,
+                        askAgain: turn.id == chat.thread.turns.last?.id && chat.canAskAgain ? { chat.askAgain(with: session.client) } : nil
+                    )
                         .environment(\.answerLive, turn.status == .streaming)
                         // Choices he offered are yours to tap on his latest finished answer only.
                         .environment(\.choose, turn.id == latestAnswer && turn.status == .done && !chat.answering ? { text in chat.reply(text, with: session.client) } : nil)
@@ -45,6 +51,7 @@ struct ChatView: View {
             .padding(.vertical, Space.s3)
             .readingWidth()
         }
+        .keepingLatest()
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
@@ -128,6 +135,10 @@ struct MessageRow: View {
     let turn: ChatThread.Turn
     /// Where a picture you attached is read from, to show it (nil: shown only once it is known here).
     var client: NodeClient? = nil
+    /// What holding it offers beyond copying and sharing (MessageMenu): quoting it, editing yours, asking his again.
+    var reply: ((String) -> Void)? = nil
+    var edit: ((String) -> Void)? = nil
+    var askAgain: (() -> Void)? = nil
 
     var body: some View {
         switch turn.role {
@@ -142,7 +153,7 @@ struct MessageRow: View {
                             .foregroundStyle(Color.onAccent)
                             .padding(Metrics.bubblePadding)
                             .background(Color.ink, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
-                            .textSelection(.enabled)
+                            .messageMenu(turn.content, reply: reply, edit: edit)
                     }
                 }
             }
@@ -159,7 +170,7 @@ struct MessageRow: View {
                         MarkdownView(turn.content)
                             .padding(Metrics.bubblePadding)
                             .background(.fill.tertiary, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
-                            .textSelection(.enabled)
+                            .messageMenu(turn.content, reply: reply, askAgain: turn.status == .streaming ? nil : askAgain)
                             .accessibilityIdentifier("galahad-answer")
                     }
                     footer
@@ -179,7 +190,10 @@ struct MessageRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         case .error:
-            Label("Couldn't answer: \(turn.error ?? "no reason given")", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(Color.siege)
+            HStack(spacing: Space.s2) {
+                Label("Couldn't answer: \(turn.error ?? "no reason given")", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(Color.siege)
+                if let askAgain { Button("Ask Again", action: askAgain).font(.caption.weight(.semibold)).buttonStyle(.borderless) }
+            }
         case .stopped:
             Label(turn.steps.last { $0.state == .warn && $0.tool == nil }?.text ?? "Stopped", systemImage: "stop.circle").font(.caption).foregroundStyle(.secondary)
         case .steered:
@@ -198,38 +212,19 @@ struct Composer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            if let problem = chat.attachProblem {
-                Label(problem, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(Color.siege)
-                    .onTapGesture { chat.attachProblem = nil }
-                    .task(id: problem) {
-                        try? await Task.sleep(for: .seconds(6))
-                        if chat.attachProblem == problem { chat.attachProblem = nil }
-                    }
-            }
-            if !chat.waiting.isEmpty { WaitingFiles(chat: chat) }
+            OutboxLines(outbox: chat.outbox)
             field
         }
         .padding(.horizontal, Metrics.margin)
         .padding(.vertical, Space.s2)
         .readingWidth()
-        // Files dropped on the message box go with the message (Files, the Finder, another app's file).
-        .dropDestination(for: URL.self) { urls, _ in
-            let files = AttachButton.read(urls.filter(\.isFileURL), refused: { chat.attachProblem = $0 })
-            chat.attach(files, with: client)
-            return !files.isEmpty
-        }
-        #if os(macOS)
-        // And pasted (⌘V): files copied in the Finder, or a picture copied alone.
-        .modifier(PasteFiles(chat: chat, client: client, composing: composing))
-        #endif
+        .takingFiles(chat.outbox, client: client, composing: composing)
     }
 
     private var field: some View {
         GlassEffectContainer(spacing: 10) {
             HStack(alignment: .bottom, spacing: Space.s2) {
-                AttachButton(chat: chat, client: client)
+                AttachButton(outbox: chat.outbox, client: client)
                 // Made anew with each message sent: clearing a focused multi-line field can leave what was sent on
                 // screen, or let the keyboard put back what it still held (a word it was correcting, a dictation
                 // finishing). A new one is empty, and nothing late reaches it.

@@ -9266,5 +9266,551 @@
       "source": "something-new",
       "from": "something-new"
     }
+  ],
+  "highlights": [
+    {
+      "lang": "swift",
+      "code": "let x = \"hi \\\" there\" // say it\nif c == 'a' { return 0x1F }\nlet big = 1_000.5e-3, odd = 0b2, y1 = x",
+      "pieces": [
+        {
+          "text": "let",
+          "tone": "keyword"
+        },
+        {
+          "text": " x = "
+        },
+        {
+          "text": "\"hi \\\" there\"",
+          "tone": "string"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "// say it",
+          "tone": "comment"
+        },
+        {
+          "text": "\n"
+        },
+        {
+          "text": "if",
+          "tone": "keyword"
+        },
+        {
+          "text": " c == "
+        },
+        {
+          "text": "'a'",
+          "tone": "string"
+        },
+        {
+          "text": " { "
+        },
+        {
+          "text": "return",
+          "tone": "keyword"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "0x1F",
+          "tone": "number"
+        },
+        {
+          "text": " }\n"
+        },
+        {
+          "text": "let",
+          "tone": "keyword"
+        },
+        {
+          "text": " big = "
+        },
+        {
+          "text": "1_000.5e-3",
+          "tone": "number"
+        },
+        {
+          "text": ", odd = "
+        },
+        {
+          "text": "0",
+          "tone": "number"
+        },
+        {
+          "text": "b2, y1 = x"
+        }
+      ]
+    },
+    {
+      "lang": "rust",
+      "code": "/* a\nblock */ fn main<'a>() { let s = '\\n'; }",
+      "pieces": [
+        {
+          "text": "/* a\nblock */",
+          "tone": "comment"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "fn",
+          "tone": "keyword"
+        },
+        {
+          "text": " main<'a>() { "
+        },
+        {
+          "text": "let",
+          "tone": "keyword"
+        },
+        {
+          "text": " s = "
+        },
+        {
+          "text": "'\\n'",
+          "tone": "string"
+        },
+        {
+          "text": "; }"
+        }
+      ]
+    },
+    {
+      "lang": "ts",
+      "code": "const s = `a\nb`; const t = 'x'; // café ☕\nexport type A = typeof s;",
+      "pieces": [
+        {
+          "text": "const",
+          "tone": "keyword"
+        },
+        {
+          "text": " s = "
+        },
+        {
+          "text": "`a\nb`",
+          "tone": "string"
+        },
+        {
+          "text": "; "
+        },
+        {
+          "text": "const",
+          "tone": "keyword"
+        },
+        {
+          "text": " t = "
+        },
+        {
+          "text": "'x'",
+          "tone": "string"
+        },
+        {
+          "text": "; "
+        },
+        {
+          "text": "// café ☕",
+          "tone": "comment"
+        },
+        {
+          "text": "\n"
+        },
+        {
+          "text": "export",
+          "tone": "keyword"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "type",
+          "tone": "keyword"
+        },
+        {
+          "text": " A = "
+        },
+        {
+          "text": "typeof",
+          "tone": "keyword"
+        },
+        {
+          "text": " s;"
+        }
+      ]
+    },
+    {
+      "lang": "go",
+      "code": "x := `raw\nline` /* c */ + \"s\"",
+      "pieces": [
+        {
+          "text": "x := "
+        },
+        {
+          "text": "`raw\nline`",
+          "tone": "string"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "/* c */",
+          "tone": "comment"
+        },
+        {
+          "text": " + "
+        },
+        {
+          "text": "\"s\"",
+          "tone": "string"
+        }
+      ]
+    },
+    {
+      "lang": "python",
+      "code": "def f():\n    \"\"\"doc\n    string\"\"\"\n    return None  # nothing\nx = 'it\\'s'",
+      "pieces": [
+        {
+          "text": "def",
+          "tone": "keyword"
+        },
+        {
+          "text": " f():\n    "
+        },
+        {
+          "text": "\"\"\"doc\n    string\"\"\"",
+          "tone": "string"
+        },
+        {
+          "text": "\n    "
+        },
+        {
+          "text": "return",
+          "tone": "keyword"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "None",
+          "tone": "keyword"
+        },
+        {
+          "text": "  "
+        },
+        {
+          "text": "# nothing",
+          "tone": "comment"
+        },
+        {
+          "text": "\nx = "
+        },
+        {
+          "text": "'it\\'s'",
+          "tone": "string"
+        }
+      ]
+    },
+    {
+      "lang": "bash",
+      "code": "echo \"a#b\" # say\nif [ $x ]; then exit 1; fi\nurl=http://x#frag",
+      "pieces": [
+        {
+          "text": "echo "
+        },
+        {
+          "text": "\"a#b\"",
+          "tone": "string"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "# say",
+          "tone": "comment"
+        },
+        {
+          "text": "\n"
+        },
+        {
+          "text": "if",
+          "tone": "keyword"
+        },
+        {
+          "text": " [ $x ]; "
+        },
+        {
+          "text": "then",
+          "tone": "keyword"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "exit",
+          "tone": "keyword"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "1",
+          "tone": "number"
+        },
+        {
+          "text": "; "
+        },
+        {
+          "text": "fi",
+          "tone": "keyword"
+        },
+        {
+          "text": "\nurl=http://x#frag"
+        }
+      ]
+    },
+    {
+      "lang": "SQL",
+      "code": "SELECT id FROM t -- all\nwhere n > 2 /* why */",
+      "pieces": [
+        {
+          "text": "SELECT",
+          "tone": "keyword"
+        },
+        {
+          "text": " id "
+        },
+        {
+          "text": "FROM",
+          "tone": "keyword"
+        },
+        {
+          "text": " t "
+        },
+        {
+          "text": "-- all",
+          "tone": "comment"
+        },
+        {
+          "text": "\n"
+        },
+        {
+          "text": "where",
+          "tone": "keyword"
+        },
+        {
+          "text": " n > "
+        },
+        {
+          "text": "2",
+          "tone": "number"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "/* why */",
+          "tone": "comment"
+        }
+      ]
+    },
+    {
+      "lang": "json",
+      "code": "{\"a\": [1.5e3, true, null], \"b\": \"c\\\"d\"}",
+      "pieces": [
+        {
+          "text": "{"
+        },
+        {
+          "text": "\"a\"",
+          "tone": "string"
+        },
+        {
+          "text": ": ["
+        },
+        {
+          "text": "1.5e3",
+          "tone": "number"
+        },
+        {
+          "text": ", "
+        },
+        {
+          "text": "true",
+          "tone": "keyword"
+        },
+        {
+          "text": ", "
+        },
+        {
+          "text": "null",
+          "tone": "keyword"
+        },
+        {
+          "text": "], "
+        },
+        {
+          "text": "\"b\"",
+          "tone": "string"
+        },
+        {
+          "text": ": "
+        },
+        {
+          "text": "\"c\\\"d\"",
+          "tone": "string"
+        },
+        {
+          "text": "}"
+        }
+      ]
+    },
+    {
+      "lang": "yaml",
+      "code": "key: 'v' # note\nother: true",
+      "pieces": [
+        {
+          "text": "key: "
+        },
+        {
+          "text": "'v'",
+          "tone": "string"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "# note",
+          "tone": "comment"
+        },
+        {
+          "text": "\nother: "
+        },
+        {
+          "text": "true",
+          "tone": "keyword"
+        }
+      ]
+    },
+    {
+      "lang": "ruby",
+      "code": "def go; puts 'hi' # yes\nend",
+      "pieces": [
+        {
+          "text": "def",
+          "tone": "keyword"
+        },
+        {
+          "text": " go; puts "
+        },
+        {
+          "text": "'hi'",
+          "tone": "string"
+        },
+        {
+          "text": " "
+        },
+        {
+          "text": "# yes",
+          "tone": "comment"
+        },
+        {
+          "text": "\n"
+        },
+        {
+          "text": "end",
+          "tone": "keyword"
+        }
+      ]
+    },
+    {
+      "lang": "diff",
+      "code": "diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n same\r\n same too",
+      "pieces": [
+        {
+          "text": "diff --git a/x b/x\n",
+          "tone": "meta"
+        },
+        {
+          "text": "index 1..2\n",
+          "tone": "meta"
+        },
+        {
+          "text": "--- a/x\n",
+          "tone": "meta"
+        },
+        {
+          "text": "+++ b/x\n",
+          "tone": "meta"
+        },
+        {
+          "text": "@@ -1 +1 @@\n",
+          "tone": "meta"
+        },
+        {
+          "text": "-old\n",
+          "tone": "removed"
+        },
+        {
+          "text": "+new\n",
+          "tone": "added"
+        },
+        {
+          "text": " same\r\n same too"
+        }
+      ]
+    },
+    {
+      "lang": "html",
+      "code": "<b>x</b>",
+      "pieces": [
+        {
+          "text": "<b>x</b>"
+        }
+      ]
+    },
+    {
+      "lang": "",
+      "code": "let x",
+      "pieces": [
+        {
+          "text": "let x"
+        }
+      ]
+    },
+    {
+      "lang": "swift",
+      "code": "say(\"open",
+      "pieces": [
+        {
+          "text": "say("
+        },
+        {
+          "text": "\"open",
+          "tone": "string"
+        }
+      ]
+    },
+    {
+      "lang": "ts",
+      "code": "/* never closed",
+      "pieces": [
+        {
+          "text": "/* never closed",
+          "tone": "comment"
+        }
+      ]
+    },
+    {
+      "lang": "py",
+      "code": "'''x",
+      "pieces": [
+        {
+          "text": "'''x",
+          "tone": "string"
+        }
+      ]
+    }
   ]
 }

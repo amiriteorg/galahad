@@ -53,6 +53,8 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         ITSAppUsesNonExemptEncryption: false
+        # Take Photo, in a message's attach menu: asked the first time you choose it, never before.
+        NSCameraUsageDescription: Galahad uses the camera only when you take a photo to send with a message.
     # Notifications from your node, through Apple's push service (written by XcodeGen like Info.plist). Xcode builds
     # answer to Apple's development service; an archive for TestFlight is signed for its production one.
     entitlements:

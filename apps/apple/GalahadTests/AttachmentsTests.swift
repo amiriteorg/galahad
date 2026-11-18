@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import ImageIO
 import Testing
@@ -66,10 +67,51 @@ struct AttachmentsTests {
         #expect(try Attachments.prepare(name: "spinner.gif", data: gif) == .init(name: "spinner.gif", type: "image/gif", data: gif))
     }
 
+    /// A PDF made here: one page with `words` on it, or blank (a scan holds no words), `pages` long.
+    static func pdf(words: String?, pages: Int = 1) throws -> Data {
+        let out = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let consumer = try #require(CGDataConsumer(data: out as CFMutableData))
+        let context = try #require(CGContext(consumer: consumer, mediaBox: &box, nil))
+        for _ in 0..<pages {
+            context.beginPDFPage(nil)
+            context.setFillColor(red: 0.2, green: 0.2, blue: 0.2, alpha: 1)
+            context.fill(CGRect(x: 72, y: 600, width: 200, height: 40))
+            if let words {
+                let line = CTLineCreateWithAttributedString(NSAttributedString(string: words, attributes: [kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName("Helvetica" as CFString, 14, nil)]))
+                context.textPosition = CGPoint(x: 72, y: 700)
+                CTLineDraw(line, context)
+            }
+            context.endPDFPage()
+        }
+        context.closePDF()
+        return out as Data
+    }
+
+    @Test func aPDFGoesAsItsWordsOrAScanAsItsFirstPages() throws {
+        let report = try Self.pdf(words: "Quarterly report: revenue grew by eleven percent.")
+        let read = try Attachments.prepareAll(name: "report.pdf", data: report)
+        #expect(read.count == 1)
+        #expect(read[0].name == "report.pdf" && read[0].type == "text/plain")
+        let words = String(decoding: read[0].data, as: UTF8.self)
+        #expect(words.hasPrefix("[The words of report.pdf, read from the PDF on your device (1 page): its pictures and layout aren't here.]"))
+        #expect(words.contains("revenue grew by eleven percent"))
+        // A scan holds no words: its first pages go as pictures (four at most), each a JPEG on white.
+        let scan = try Self.pdf(words: nil, pages: 6)
+        let pages = try Attachments.prepareAll(name: "Scan.PDF", data: scan)
+        #expect(pages.map(\.name) == ["Scan, page 1.jpg", "Scan, page 2.jpg", "Scan, page 3.jpg", "Scan, page 4.jpg"])
+        #expect(pages.allSatisfy { $0.type == "image/jpeg" && Attachments.pictureType($0.data) == "image/jpeg" })
+        // Anything else is as `prepare` makes it; a PDF that isn't one is refused.
+        #expect(try Attachments.prepareAll(name: "a.txt", data: Data("hi".utf8)) == [.init(name: "a.txt", type: "text/plain", data: Data("hi".utf8))])
+        #expect(throws: Attachments.Refused(errorDescription: "broken.pdf is a PDF this app can't read.")) {
+            try Attachments.prepareAll(name: "broken.pdf", data: Data("%PDF-1.7 not really".utf8))
+        }
+    }
+
     @Test func textGoesAsItIsAndAnythingElseIsRefusedWithWhy() throws {
         let log = Data("FAIL db.test.ts\n".utf8)
         #expect(try Attachments.prepare(name: "test.log", data: log) == .init(name: "test.log", type: "text/plain", data: log))
-        #expect(throws: Attachments.Refused(errorDescription: "core.dump isn't a picture or text: only those go with a message.")) {
+        #expect(throws: Attachments.Refused(errorDescription: "core.dump isn't a picture, a PDF or text: only those go with a message.")) {
             try Attachments.prepare(name: "core.dump", data: Data([0x7F, 0x45, 0x4C, 0x46, 0x00, 0x01]))
         }
         #expect(throws: Attachments.Refused(errorDescription: "huge.log is too big: a text goes with a message up to 256 KB.")) {

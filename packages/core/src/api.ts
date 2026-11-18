@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { ATTACHMENT_LIMITS, ATTACHMENT_TYPES } from "./attachments.ts";
+import { ATTACHMENT_LIMITS } from "./attachments.ts";
+import { AttachmentId, AttachmentName, AttachmentRef, AttachmentType } from "./attachment-ref.ts";
+export { AttachmentId, AttachmentName, AttachmentRef, AttachmentType };
 import { AgentLabel, ConnectorArgs, ToolName } from "./connectors.ts";
 import { MCP_AUTHS, MCP_CATEGORIES, type McpCategory, type McpIndexEntry } from "./mcp-index.ts";
 import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity, SCREEN_SESSION_MAX_MINUTES, ScreenSessionId } from "./events.ts";
@@ -45,24 +47,6 @@ export const ProviderId = Name.refine((name) => !isReservedGatewayScope(name), {
 });
 
 const ModelRef = z.string().min(3).max(256);
-
-/**
- * What a message of yours in your chat may carry (packages/node/src/uploads.ts): pictures (PNG, JPEG, WebP, GIF, as
- * their bytes say), which a model that sees is shown, and text (UTF-8: a log, a file of code, notes), which goes with
- * the message fenced as data, its name saying what it is. Each is kept on the node by the SHA-256 of its bytes.
- */
-export const AttachmentType = z.enum(ATTACHMENT_TYPES);
-export type AttachmentType = z.infer<typeof AttachmentType>;
-/** A file's name as you gave it: no folders, no control characters. */
-export const AttachmentName = z.string().trim().min(1).max(200).regex(/^[^/\\\u0000-\u001f\u007f]+$/, "a file's name, without folders");
-export const AttachmentId = z.string().regex(/^[a-f0-9]{64}$/);
-export const AttachmentRef = z.strictObject({
-  id: AttachmentId,
-  name: AttachmentName,
-  type: AttachmentType,
-  bytes: z.number().int().min(1).max(ATTACHMENT_LIMITS.imageBytes),
-});
-export type AttachmentRef = z.infer<typeof AttachmentRef>;
 
 export const ChatMessage = z
   .strictObject({

@@ -53,6 +53,7 @@ import {
   type NodeIdentity,
   NonceCache,
   OWNER_SCOPES,
+  type AttachmentRef,
   type InterventionKind,
   type Presence,
   PushRequest,
@@ -154,7 +155,7 @@ import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./a
 import { chatTools, type ToolApi, toolsFor } from "./tools.ts";
 import { type ChatStore, type ChatStory, foldAt, type KeptSummary, type QueuedBy, type Waits } from "./chats.ts";
 import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
-import { UploadError, type Uploads, withAttachments } from "./uploads.ts";
+import { filesFor, UploadError, type Uploads, withAttachments } from "./uploads.ts";
 import { GatewaySpend } from "./gateway-spend.ts";
 import { pricesOf, type UsageStore } from "./usage.ts";
 import type { QuestBoard } from "./quests.ts";
@@ -179,7 +180,7 @@ import type { DoctorOptions, DoctorRun } from "./doctor-facts.ts";
 import { NotifyError, type NotifyService } from "./notify.ts";
 import { TeamService, TeamError } from "./team.ts";
 import type { TeamAsker, TeamStore } from "./team-store.ts";
-import { galahadInRoom, harnessReadiness, quote, TEAM_COMMAND_SECONDS, teamRuntime, withGateway } from "./team-runtime.ts";
+import { galahadInRoom, harnessReadiness, newestFiles, quote, TEAM_COMMAND_SECONDS, teamRuntime, withGateway } from "./team-runtime.ts";
 import { APPLE_PUSH, APPLE_PUSH_SECRET, appleProviderToken, storedApplePushKey } from "./apns-send.ts";
 import { inputRefused, type MacScreen, ScreenError, screenDid } from "./mac-screen.ts";
 import { galahadRevision } from "./revision.ts";
@@ -1477,7 +1478,10 @@ export function createApp(ctx: AppContext) {
     const byKnight = ask.asker.kind === "knight";
     const p: Principal = ask.asker.kind === "knight" ? { device: ctx.identity.id, kind: "client", scopes: [] } : askerNow(ask.asker.kind === "admin" ? { kind: "admin", device: ctx.identity.id } : ask.asker);
     const content = galahadInRoom(room, teamOf().overview().workers, history, { trigger: ask.trigger, byKnight });
-    const input = routes.chat.input.parse({ role: "planner", messages: [{ role: "user", content }], ...(byKnight ? { tools: false, archive: false } : {}) });
+    // The files of yours he is shown: the newest your messages here carried, as a knight is shown them (never for a
+    // knight's ask: its words bring nothing of yours into his turn).
+    const files = byKnight ? [] : newestFiles(history).filter((a) => ctx.uploads.has(a.id));
+    const input = routes.chat.input.parse({ role: "planner", messages: [{ role: "user", content, ...(files.length ? { attachments: files } : {}) }], ...(byKnight ? { tools: false, archive: false } : {}) });
     let text = "";
     for await (const event of turnSpec(prepareAnswer(input, p, ask.trigger?.text), p).run(new Steering(), signal)) {
       if (event.type === "text") text += event.text;
@@ -2009,6 +2013,7 @@ export function createApp(ctx: AppContext) {
       brain: (member) => ({ ...brainFor(teammatePrincipal(member.id)), ...(ctx.fetch ? { fetch: overFleet(ctx.fetch) } : {}) }),
       enter: (signal) => ctx.governor.enterModel({ wait: true }, signal),
       exec: execTeam, prepare: prepareTeam, renew: renewTeam, teammate: teamMember,
+      files: (refs) => filesFor(refs, ctx.uploads),
       dependencies: (task) => task.dependsOn.map((id) => ctx.team!.store.task(id)).filter((t): t is NonNullable<typeof t> => !!t && t.status === "done" && t.verified).map(({ id, title, output }) => ({ id, title, output })),
       stopWorker: stopTeamWorker,
       // A knight's eyes: the roster's first `eyes` model on a provider this VM's gateway token covers (a task's token
@@ -2189,6 +2194,9 @@ export function createApp(ctx: AppContext) {
     },
     postTeamMessage: (input, p) => {
       ownerOnly(p);
+      // Files go with your words only when this node keeps them (uploadAttachment), as in your chat.
+      const gone = (input.attachments as AttachmentRef[] | undefined)?.find((a) => !ctx.uploads.has(a.id));
+      if (gone) throw new HttpError(409, `${gone.name} isn't on this node: attach it again`);
       const message = teamOf().post(input, p.kind === "admin" ? { kind: "admin" } : { kind: "client", device: p.device });
       // Your words in a room while a knight works there are stepping in on that work (#28).
       steppedIn({ room: input.room }, "message", "a message while it worked");

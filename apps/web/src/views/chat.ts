@@ -1,12 +1,9 @@
-import type { AttachmentRef, AttachmentType, ChatMessage, ChatStreamEvent, ConversationSummary, ConversationView, ProjectView, QuestView } from "@galahad/core";
-import { ATTACHMENT_LIMITS } from "@galahad/core/attachments";
+import type { AttachmentRef, ChatMessage, ChatStreamEvent, ConversationSummary, ConversationView, ProjectView, QuestView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import type { QueuedMessage, QueueHold, TurnView } from "@galahad/core/turns";
 import { type Api, ApiError, isAbort } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
-import { bytesLabel } from "../lib/artifacts.ts";
-import { ATTACH_ACCEPT, knownLook, lookOf, prepare, upload } from "../lib/attachments.ts";
 import { type ChatAction, chatActions, CHATS_MENU, filterConversations, groupConversations, mostRecent } from "../lib/chats.ts";
 import { galahadNow, type NowInput } from "../lib/now.ts";
 import { questInHand } from "../lib/quests.ts";
@@ -25,6 +22,7 @@ import { renderMarkdown } from "../ui/markdown.ts";
 import { selector, type SelectorGroup } from "../ui/selector.ts";
 import { signal } from "../ui/signal.ts";
 import { toast } from "../ui/toast.ts";
+import { attachedView, attachTray, type Waiting } from "./attach-tray.ts";
 import { openAside } from "./chat-aside.ts";
 import { openComputer } from "./computer.ts";
 import { queuePanel } from "./chat-queue.ts";
@@ -81,20 +79,8 @@ function roleProblem(name: string): string | null {
 // ---- module state: survives navigation; the conversation itself, and the turn, are kept by the node ----
 const thread: Thread = { turns: [], nextId: 1, target: null, base: null };
 let draft = "";
-/** A file waiting to go with your next message: going up to the node, up (what the message carries), or not taken. */
-interface Waiting {
-  key: number;
-  name: string;
-  type: AttachmentType | null;
-  size: number;
-  preview: string | null;
-  state: "going" | "up" | "failed";
-  ref?: AttachmentRef;
-  problem?: string;
-}
 /** Your next message's files: kept while you look elsewhere, as its words are. */
 let waiting: Waiting[] = [];
-let waitingKey = 0;
 let role = lastRole() ?? "planner";
 let roster: Record<string, RoleSpec> | null = null;
 const changed = new Set<(turn: Turn | null) => void>();
@@ -694,81 +680,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   input.value = opts.query ?? draft;
   const sendButton = h("button", { class: "btn primary send", type: "submit", "aria-label": "Send" }, icon("arrow-up", { size: 18 }));
   // ---- files with your message: chosen, pasted or dropped; each goes up as it's added, and the message names them ----
-  const fileInput = h("input", { type: "file", multiple: true, accept: ATTACH_ACCEPT, hidden: true, "aria-hidden": "true", tabindex: "-1" });
-  const attachButton = button("Attach pictures or files", { variant: "ghost", size: "sm", icon: "paperclip", iconOnly: true, onClick: () => fileInput.click() });
-  const filesRow = h("div", { class: "composer-files", role: "list", "aria-label": "Files with your message" });
-  function renderFiles(): void {
-    filesRow.hidden = waiting.length === 0;
-    replace(
-      filesRow,
-      ...waiting.map((f) => {
-        const remove = button(`Remove ${f.name}`, {
-          variant: "ghost",
-          size: "sm",
-          icon: "x",
-          iconOnly: true,
-          onClick: () => {
-            waiting = waiting.filter((w) => w.key !== f.key);
-            renderFiles();
-            syncComposer();
-          },
-        });
-        const look = f.preview ? h("img", { class: "file-look", src: f.preview, alt: "" }) : h("span", { class: "file-look file-kind" }, icon(f.state === "failed" ? "alert" : "file", { size: 18 }));
-        const said = f.state === "going" ? "Sending…" : f.state === "failed" ? (f.problem ?? "Not taken") : bytesLabel(f.size);
-        return h(
-          "div",
-          { class: `composer-file ${f.state}`, role: "listitem", title: f.problem ?? f.name },
-          h("span", { class: "file-look-wrap" }, look, f.state === "going" ? spinner("xs") : null),
-          h("span", { class: "file-words" }, h("span", { class: "file-name ellipsis" }, f.name), h("span", { class: "file-said ellipsis" }, said)),
-          remove,
-        );
-      }),
-    );
-  }
-  /** Files added: each made ready (a picture made smaller, its metadata left behind), then sent up to the node. */
-  function addFiles(files: File[]): void {
-    if (!canChat || !files.length) return;
-    const room = ATTACHMENT_LIMITS.perMessage - waiting.length;
-    if (files.length > room) toast(`${ATTACHMENT_LIMITS.perMessage} files go with a message at most`, { tone: "warn", description: room === 1 ? "The first is added." : room > 1 ? `The first ${room} are added.` : "Remove one to add another." });
-    for (const file of files.slice(0, Math.max(0, room))) {
-      const f: Waiting = { key: ++waitingKey, name: file.name || "file", type: null, size: file.size, preview: null, state: "going" };
-      waiting = [...waiting, f];
-      void (async () => {
-        const ready = await prepare(file);
-        if ("problem" in ready) {
-          waiting = waiting.filter((w) => w.key !== f.key);
-          toast("Not added", { tone: "warn", description: ready.problem });
-        } else {
-          Object.assign(f, { name: ready.name, type: ready.type, size: ready.bytes.length, preview: ready.preview });
-          renderFiles();
-          try {
-            f.ref = await upload(ctx.api, ready);
-            knownLook(f.ref, ready.preview);
-            f.state = "up";
-          } catch (error) {
-            Object.assign(f, { state: "failed", problem: errorMessage(error) });
-          }
-        }
-        if (!scope.disposed) {
-          renderFiles();
-          syncComposer();
-        }
-      })();
-    }
-    renderFiles();
-    syncComposer();
-  }
-  fileInput.addEventListener("change", () => {
-    addFiles([...(fileInput.files ?? [])]);
-    fileInput.value = "";
-  });
-  // A picture pasted alone is attached; one that comes with text (a page copied) is pasted as its text.
-  input.addEventListener("paste", (event: ClipboardEvent) => {
-    const files = [...(event.clipboardData?.files ?? [])];
-    if (!files.length || event.clipboardData?.types.includes("text/plain")) return;
-    event.preventDefault();
-    addFiles(files);
-  });
+  const tray = attachTray(ctx, { files: { get: () => waiting, set: (next) => void (waiting = next) }, enabled: () => canChat, changed: syncComposer, disposed: () => scope.disposed });
   const meta = h("span", { class: "hint ellipsis grow" });
   const jump = button("Latest", { size: "sm", icon: "arrow-down", onClick: () => scrollToEnd(true) });
   jump.hidden = true;
@@ -891,7 +803,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       return h(
         "article",
         { class: "turn user", "aria-label": "You said" },
-        h("div", { class: "turn-col" }, turn.attachments?.length ? attachedView(turn.attachments) : null, turn.content ? h("div", { class: "bubble" }, turn.content) : null, turnActions(turn)),
+        h("div", { class: "turn-col" }, turn.attachments?.length ? attachedView(ctx, turn.attachments) : null, turn.content ? h("div", { class: "bubble" }, turn.content) : null, turnActions(turn)),
       );
     }
     const content = h("div", { class: "md" });
@@ -916,30 +828,6 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       { class: `turn assistant${thread.turns.at(-1) === turn ? " last" : ""}`, "aria-label": "Galahad said" },
       h("span", { class: "avatar agent", "aria-hidden": "true" }, icon("mark", { size: 16 })),
       h("div", { class: "turn-body" }, processView(turn), turn.content ? content : null, errorBox, turn.status === "streaming" ? null : turnActions(turn)),
-    );
-  }
-
-  /** What a message of yours carried: its pictures, each opened large with a tap, and its texts by name and size. */
-  function attachedView(refs: AttachmentRef[]): HTMLElement {
-    return h(
-      "div",
-      { class: "attached", role: "list", "aria-label": "Files with it" },
-      ...refs.map((ref) => {
-        if (ref.type === "text/plain") return h("span", { class: "attached-file", role: "listitem", title: ref.name }, icon("file", { size: 16 }), h("span", { class: "ellipsis" }, ref.name), h("span", { class: "subtle" }, bytesLabel(ref.bytes)));
-        const img = h("img", { alt: ref.name, decoding: "async" });
-        // (Shimmering until its look comes, as a skeleton does.)
-        const shown = h("button", { class: "attached-picture skeleton", type: "button", role: "listitem", "aria-label": `Open ${ref.name}`, title: ref.name }, img);
-        void lookOf(ctx.api, ref).then((look) => {
-          shown.classList.remove("skeleton");
-          if (look) img.src = look;
-          else shown.classList.add("gone");
-        });
-        shown.addEventListener("click", () => {
-          if (!img.src) return;
-          openSheet({ title: ref.name, description: bytesLabel(ref.bytes), size: "wide", body: h("img", { class: "attached-large", src: img.src, alt: ref.name }) });
-        });
-        return shown;
-      }),
     );
   }
 
@@ -1094,8 +982,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
 
   function syncComposer(): void {
     const busy = live !== null;
-    const files = waiting.some((f) => f.state === "up");
-    const has = (Boolean(input.value.trim()) || files) && !blocked && !waiting.some((f) => f.state === "going");
+    const files = tray.carried().length > 0;
+    const has = (Boolean(input.value.trim()) || files) && !blocked && !tray.going();
     const canQueue = current !== null;
     const enter = chatEnter();
     sendButton.hidden = busy;
@@ -1105,7 +993,6 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     queueButton.hidden = !busy || !canQueue;
     // (Files go with a message he answers from its start, never one he's handed as he works.)
     steerButton.disabled = queueButton.disabled = !canChat || !has || files;
-    attachButton.disabled = !canChat || waiting.length >= ATTACHMENT_LIMITS.perMessage;
     // The one Enter does is in ink.
     steerButton.classList.toggle("primary", !canQueue || enter === "steer");
     queueButton.classList.toggle("primary", canQueue && enter === "queue");
@@ -1191,9 +1078,9 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   async function deliver(how: { modifier?: boolean; how?: "steer" | "queue" } = {}): Promise<void> {
     check(); // never trust a debounced result at the moment of sending
     const text = input.value.trim();
-    const files = waiting.flatMap((f) => (f.state === "up" && f.ref ? [f.ref] : []));
+    const files = tray.carried();
     if ((!text && !files.length) || blocked || !canChat) return;
-    if (waiting.some((f) => f.state === "going")) return void toast("Your files are still going up", { description: "Send once each is up.", tone: "warn" });
+    if (tray.going()) return void toast("Your files are still going up", { description: "Send once each is up.", tone: "warn" });
     const clear = (): void => {
       input.value = "";
       draft = "";
@@ -1211,11 +1098,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     clear();
     const result = await sendMessage(ctx.api, text, { ...how, attachments: files });
     // Sent with the message: the composer is clear of them (one not taken stays, to remove).
-    if (typeof result !== "object" && files.length) {
-      waiting = waiting.filter((f) => f.state !== "up");
-      renderFiles();
-      syncComposer();
-    }
+    if (typeof result !== "object" && files.length) tray.sent();
     if (typeof result === "object") {
       // It wasn't taken: the words go back in the box, and why is said.
       if (!scope.disposed && !input.value) {
@@ -1490,25 +1373,14 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
         void deliver();
       },
     },
-    filesRow,
+    tray.row,
     input,
-    fileInput,
-    h("div", { class: "composer-bar" }, attachButton, icon("shield-check", { size: 14, class: "subtle", label: "Checked for secrets before sending" }), meta, queueButton, steerButton, stopButton, sendButton),
+    tray.chooser,
+    h("div", { class: "composer-bar" }, tray.button, icon("shield-check", { size: 14, class: "subtle", label: "Checked for secrets before sending" }), meta, queueButton, steerButton, stopButton, sendButton),
   );
-  // Files dropped on the message box are attached.
-  form.addEventListener("dragover", (event: DragEvent) => {
-    if (!canChat || !event.dataTransfer?.types.includes("Files")) return;
-    event.preventDefault();
-    form.classList.add("dropping");
-  });
-  form.addEventListener("dragleave", () => form.classList.remove("dropping"));
-  form.addEventListener("drop", (event: DragEvent) => {
-    form.classList.remove("dropping");
-    if (!canChat || !event.dataTransfer?.files.length) return;
-    event.preventDefault();
-    addFiles([...event.dataTransfer.files]);
-  });
-  renderFiles();
+  // Pictures pasted alone, and files dropped on the message box, go with the message.
+  tray.take(input, form);
+  tray.render();
 
   replace(
     root,

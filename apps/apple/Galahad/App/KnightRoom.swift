@@ -17,6 +17,10 @@ import Observation
     private(set) var problem: String?
     private(set) var sending = false
     var draft = ""
+    /// Files waiting to go with your next message.
+    let outbox = Outbox()
+    /// There is something to send (words, or a file that is up), no file is still going up, and nothing is on its way.
+    var sendable: Bool { (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !outbox.carried.isEmpty) && !outbox.going && !sending && view != nil }
 
     init(knight: String) {
         self.knight = knight
@@ -36,6 +40,11 @@ import Observation
         return deliveries.contains { delivery in (delivery.status == "queued" || delivery.status == "running") && (knight.isEmpty || delivery.teammate == knight) }
     }
 
+    /// A message quoted at the start of your next one, with who said it.
+    func quote(_ text: String, by speaker: String) {
+        draft = Quote.of(text, by: speaker) + draft
+    }
+
     /// The room on the node: the one the Roundtable knows, or the knight's own, made now if it has none yet.
     func load(room known: String?, with client: NodeClient) async {
         do {
@@ -53,16 +62,18 @@ import Observation
         }
     }
 
-    /// What's in the box, said in the room; the knight replies when its turn comes.
+    /// What's in the box, said in the room with the files that are up; the knight replies when its turn comes.
     func send(with client: NodeClient) async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let room = view?.id, !text.isEmpty, !sending else { return }
+        let files = outbox.carried
+        guard let room = view?.id, sendable else { return }
         sending = true
         defer { sending = false }
-        struct Post: Encodable { let room: String; let text: String }
+        struct Post: Encodable { let room: String; let text: String; let attachments: [AttachmentRef]? }
         do {
-            _ = try await client.post("/api/team/messages", Post(room: room, text: text), as: JSONValue.self)
+            _ = try await client.post("/api/team/messages", Post(room: room, text: text, attachments: files.isEmpty ? nil : files), as: JSONValue.self)
             draft = ""
+            outbox.sent()
             await load(room: room, with: client)
         } catch {
             problem = error.localizedDescription

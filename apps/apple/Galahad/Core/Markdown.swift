@@ -409,3 +409,48 @@ enum Markdown {
         return nil
     }
 }
+
+/// A message quoted in your next one, as a messaging app quotes it: one line of its words (its Markdown read, never
+/// shown), at most 160 characters, after "> ", with who said it when that is known.
+enum Quote {
+    static func of(_ text: String, by speaker: String? = nil) -> String {
+        let words = Markdown.plain(Markdown.parse(text))
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        var shown = String(words.prefix(160))
+        if shown.count < words.count { shown = shown.trimmingCharacters(in: .whitespaces) + "…" }
+        return "> " + (speaker.map { "\($0): " } ?? "") + shown + "\n\n"
+    }
+}
+
+extension Markdown {
+    /// An answer's words without their Markdown, a block a line (what a quote of it says). A block his answer shows
+    /// beyond words (a chart, figures) says nothing here.
+    static func plain(_ blocks: [Block]) -> String {
+        blocks.map { block -> String in
+            switch block {
+            case .p(let inlines), .h(_, let inlines): plain(inlines)
+            case .code(let lang, let text, _): Blocks.Kind(rawValue: lang.lowercased()) == nil ? text : ""
+            case .list(_, _, let items): items.map { plain($0) }.joined(separator: "\n")
+            case .quote(let inner): plain(inner)
+            case .hr: ""
+            case .table(_, let head, let rows): ([head] + rows).map { $0.map { plain($0) }.joined(separator: " ") }.joined(separator: "\n")
+            }
+        }
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n")
+    }
+
+    static func plain(_ inlines: [Inline]) -> String {
+        inlines.map { inline -> String in
+            switch inline {
+            case .text(let text), .code(let text): text
+            case .strong(let inner), .em(let inner), .del(let inner), .link(_, let inner): plain(inner)
+            case .br: " "
+            }
+        }
+        .joined()
+    }
+}

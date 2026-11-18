@@ -851,3 +851,41 @@ describe("each time you step in on a task (#28)", () => {
     expect(make().northStar(0)).toEqual({ since: 0, completed: 0, ended: 0, interventions: 0, perCompleted: null, byKind: {} });
   });
 });
+
+describe("your files at the Roundtable", () => {
+  const picture = { id: "a".repeat(64), name: "screen.png", type: "image/png" as const, bytes: 2048 };
+  const log = { id: "b".repeat(64), name: "build.log", type: "text/plain" as const, bytes: 300 };
+
+  test("a message of yours carries them, with words or without, and they are kept with it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-files-")); dirs.push(dir); const path = join(dir, "team.db");
+    const store = make(path); setup(store);
+    const sent = store.post({ room: "workshop", text: "", attachments: [picture, log] });
+    expect(sent).toMatchObject({ speaker: "owner", text: "", attachments: [picture, log] });
+    store.post({ room: "workshop", text: "No files with this one." });
+    close(store);
+    const reopened = make(path);
+    const messages = reopened.messages("workshop", 10);
+    expect(messages[0]!.attachments).toEqual([picture, log]);
+    expect(messages[1]).not.toHaveProperty("attachments");
+    expect(reopened.attachmentIds()).toEqual(new Set([picture.id, log.id]));
+  });
+
+  test("a message has words or files; only you bring files", () => {
+    const store = make(); setup(store);
+    expect(() => store.post({ room: "workshop", text: "  " })).toThrow(TeamError);
+    const chain = store.post({ room: "workshop", text: "@ada look" }).chainId;
+    expect(() => store.post({ room: "workshop", text: "Mine now", attachments: [picture] }, { teammate: "ada", chainId: chain })).toThrow("Only you bring files to the Roundtable.");
+    expect(() => store.post({ room: "workshop", text: "His", attachments: [picture] }, { galahad: true })).toThrow("Only you bring files to the Roundtable.");
+    expect(store.attachmentIds()).toEqual(new Set());
+  });
+
+  test("a database from before files takes them after it is opened again", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-files-")); dirs.push(dir); const path = join(dir, "team.db");
+    const old = new Database(path);
+    old.exec(`CREATE TABLE team_rooms (id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE team_chains (id TEXT PRIMARY KEY, budget INTEGER NOT NULL, spent INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE team_messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, room TEXT NOT NULL REFERENCES team_rooms(id), speaker TEXT NOT NULL, speaker_name TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL, chain_id TEXT NOT NULL REFERENCES team_chains(id));`);
+    old.close();
+    const store = make(path); setup(store);
+    expect(store.post({ room: "workshop", text: "Now with a file", attachments: [log] }).attachments).toEqual([log]);
+  });
+});

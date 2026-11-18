@@ -1020,6 +1020,15 @@
       .codeblock .cb-head { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border); font-size: var(--fs-12); color: var(--text-3); }
       .codeblock pre { margin: 0; padding: 12px; overflow-x: auto; font: 12.5px/1.6 var(--font-mono); tab-size: 2; }
       .codeblock pre code { background: none; border: 0; padding: 0; font: inherit; }
+      /* Code's parts (lib/highlight.ts): its words in the cross's red, quiet blues for what it holds, comments recede. */
+      .codeblock { --code-keyword: light-dark(#b3261e, #ff8a80); --code-string: light-dark(#0a3069, #a5d6ff); --code-number: light-dark(#0550ae, #79c0ff); --code-comment: light-dark(#6e7781, #8b949e); }
+      .tok-keyword { color: var(--code-keyword); }
+      .tok-string { color: var(--code-string); }
+      .tok-number { color: var(--code-number); }
+      .tok-comment { color: var(--code-comment); font-style: italic; }
+      .tok-added { color: light-dark(#116329, #7ee2a8); background: light-dark(#dafbe1, rgb(46 160 67 / 0.18)); }
+      .tok-removed { color: light-dark(#82071e, #ffa198); background: light-dark(#ffebe9, rgb(248 81 73 / 0.16)); }
+      .tok-meta { color: var(--text-3); font-weight: 600; }
       .md .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
       .md table { border-collapse: collapse; width: 100%; font-size: 0.93em; }
       .md th, .md td { padding: 7px 10px; border-top: 1px solid var(--border); text-align: left; vertical-align: top; }

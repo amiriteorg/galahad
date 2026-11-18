@@ -1,3 +1,4 @@
+import { highlight } from "../lib/highlight.ts";
 import { type Block, type Inline, parseMarkdown } from "../lib/markdown.ts";
 import { matchRanges } from "../lib/text.ts";
 import { type BlockOptions, drawBlock } from "./blocks.ts";
@@ -63,7 +64,8 @@ function codeBlock(block: { lang: string; v: string }): HTMLElement {
     "div",
     { class: "codeblock" },
     h("div", { class: "cb-head" }, h("span", { class: "mono" }, block.lang || "text"), copy),
-    h("pre", { tabindex: 0 }, h("code", {}, block.v)),
+    // Coloured by what each part is (lib/highlight.ts): still only text nodes, in spans of a class.
+    h("pre", { tabindex: 0 }, h("code", {}, ...highlight(block.v, block.lang).map((piece) => (piece.tone ? h("span", { class: `tok-${piece.tone}` }, piece.text) : piece.text)))),
   );
 }
 

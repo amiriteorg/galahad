@@ -9,6 +9,8 @@ struct TeamMessage: Decodable, Sendable, Identifiable, Equatable {
     let speakerName: String
     let text: String
     let createdAt: Double
+    /// The files a message of yours carried (nil: none).
+    var attachments: [AttachmentRef]? = nil
 }
 
 /// `POST /api/team/room`: a room with its words, its work and the replies on their way.

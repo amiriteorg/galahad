@@ -47,7 +47,10 @@ struct KnightView: View {
                 ForEach(items) { item in
                     switch item {
                     case .message(let message):
-                        TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), look: message.speaker == "galahad" ? "galahad" : look)
+                        TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), look: message.speaker == "galahad" ? "galahad" : look, client: session.client) { text in
+                            room.quote(text, by: Timeline.speaker(message, teammates: session.team?.teammates ?? []))
+                            composing = true
+                        }
                     case .task(let task):
                         TaskCardView(task: task, proposer: task.proposedBy.map { session.teammate($0)?.name ?? $0 }) { action in act(action, on: task) }
                     }
@@ -63,12 +66,13 @@ struct KnightView: View {
             .padding(.vertical, Space.s3)
             .readingWidth()
         }
+        .keepingLatest()
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
             if knight != nil {
-                RoomComposer(room: room, name: name, client: session.client, composing: $composing)
+                RoomComposer(room: room, name: name, client: session.client, composing: $composing, seats: [Mentions.Seat(id: id, name: name), Mentions.Seat(id: "galahad", name: "Galahad")])
             }
         }
         .navigationTitle(name)
@@ -168,18 +172,29 @@ struct TeamBubble: View {
     let speaker: String
     let look: String
     var named = false
+    /// Where a picture you sent is read from, to show it (nil: shown only once it is known here).
+    var client: NodeClient? = nil
+    /// Quoting it in your next message (MessageMenu's Reply), with who said it.
+    var reply: ((String) -> Void)? = nil
 
     var body: some View {
         switch message.speaker {
         case "owner":
-            HStack {
-                Spacer(minLength: Metrics.yoursInset)
-                Text(message.text)
-                    .foregroundStyle(Color.onAccent)
-                    .padding(Metrics.bubblePadding)
-                    .background(Color.ink, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
-                    .textSelection(.enabled)
+            VStack(alignment: .trailing, spacing: Space.s2) {
+                // What it carried, above its words (a message may be files alone).
+                if let refs = message.attachments, !refs.isEmpty { AttachedView(refs: refs, client: client) }
+                if !message.text.isEmpty {
+                    HStack {
+                        Spacer(minLength: Metrics.yoursInset)
+                        Text(message.text)
+                            .foregroundStyle(Color.onAccent)
+                            .padding(Metrics.bubblePadding)
+                            .background(Color.ink, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
+                            .messageMenu(message.text, reply: reply)
+                    }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         case "system":
             Text(message.text)
                 .font(.caption)
@@ -194,7 +209,7 @@ struct TeamBubble: View {
                     MarkdownView(message.text)
                         .padding(Metrics.bubblePadding)
                         .background(.fill.tertiary, in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
-                        .textSelection(.enabled)
+                        .messageMenu(message.text, reply: reply)
                 }
                 Spacer(minLength: Space.s6)
             }
@@ -285,11 +300,26 @@ struct RoomComposer: View {
     let name: String
     let client: NodeClient
     var composing: FocusState<Bool>.Binding
+    /// Who may be named here with @ (MentionChoices).
+    var seats: [Mentions.Seat] = []
 
     var body: some View {
-        let empty = room.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        GlassEffectContainer(spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            MentionChoices(draft: $room.draft, seats: seats)
+            OutboxLines(outbox: room.outbox)
+            field
+        }
+        .padding(.horizontal, Metrics.margin)
+        .padding(.vertical, Space.s2)
+        .readingWidth()
+        .takingFiles(room.outbox, client: client, composing: composing)
+    }
+
+    private var field: some View {
+        let empty = !room.sendable
+        return GlassEffectContainer(spacing: 10) {
             HStack(alignment: .bottom, spacing: Space.s2) {
+                AttachButton(outbox: room.outbox, client: client)
                 TextField("Message \(name)", text: $room.draft, axis: .vertical)
                     .plainField()
                     .lineLimit(1...6)
@@ -305,13 +335,10 @@ struct RoomComposer: View {
                 }
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.circle)
-                .disabled(empty || room.sending || room.view == nil)
+                .disabled(empty)
                 .accessibilityLabel("Send to \(name)")
             }
         }
-        .padding(.horizontal, Metrics.margin)
-        .padding(.vertical, Space.s2)
-        .readingWidth()
     }
 }
 

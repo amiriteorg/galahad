@@ -17,6 +17,7 @@ import { besideChip, galahadState, type KnightState } from "../../web/src/lib/kn
 import { galahadNeeds, rosterRows } from "../../web/src/lib/roster.ts";
 import { galahadNow, type NowInput } from "../../web/src/lib/now.ts";
 import { groupConversations } from "../../web/src/lib/chats.ts";
+import { highlight } from "../../web/src/lib/highlight.ts";
 import { parseMarkdown } from "../../web/src/lib/markdown.ts";
 import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web/src/lib/text.ts";
 import { desktopAddress, screenPoint, shotSource } from "../../web/src/lib/desktop.ts";
@@ -739,6 +740,26 @@ const timelines = {
 // ---- where a notice came from, in words (the PWA's lib/notices.ts) ----------------------------------------------------
 const notices = ["rule:pushes", "loop:morning", "heartbeat", "ci", "compute", "rule:a:b", "rule:", ":x", "constructor:x", "something-new"].map((source) => ({ source, from: noticeFrom(source) }));
 
+// ---- code, coloured by what each part is (the PWA's lib/highlight.ts) -------------------------------------------------
+const highlights = [
+  ["swift", `let x = "hi \\" there" // say it\nif c == 'a' { return 0x1F }\nlet big = 1_000.5e-3, odd = 0b2, y1 = x`],
+  ["rust", "/* a\nblock */ fn main<'a>() { let s = '\\n'; }"],
+  ["ts", "const s = `a\nb`; const t = 'x'; // café ☕\nexport type A = typeof s;"],
+  ["go", 'x := `raw\nline` /* c */ + "s"'],
+  ["python", "def f():\n    \"\"\"doc\n    string\"\"\"\n    return None  # nothing\nx = 'it\\'s'"],
+  ["bash", 'echo "a#b" # say\nif [ $x ]; then exit 1; fi\nurl=http://x#frag'],
+  ["SQL", "SELECT id FROM t -- all\nwhere n > 2 /* why */"],
+  ["json", '{"a": [1.5e3, true, null], "b": "c\\"d"}'],
+  ["yaml", "key: 'v' # note\nother: true"],
+  ["ruby", "def go; puts 'hi' # yes\nend"],
+  ["diff", "diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n same\r\n same too"],
+  ["html", "<b>x</b>"],
+  ["", "let x"],
+  ["swift", 'say("open'],
+  ["ts", "/* never closed"],
+  ["py", "'''x"],
+].map(([lang, code]) => ({ lang, code, pieces: highlight(code!, lang!) }));
+
 // ---- the file ----------------------------------------------------------------------------------------------------------
 const vectors = {
   about: "Made by apps/apple/scripts/vectors.ts from packages/core (and the PWA's roster). Every key here is a fake made for these tests.",
@@ -762,6 +783,7 @@ const vectors = {
   blocks,
   timelines,
   notices,
+  highlights,
 };
 const text = `${JSON.stringify(vectors, null, 2)}\n`;
 if (Bun.argv.includes("--check")) {

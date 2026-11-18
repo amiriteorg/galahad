@@ -5,6 +5,8 @@ import { utf8 } from "./bytes.ts";
 import { AVATAR_FORMS, AVATAR_EYES, AVATAR_ACCESSORIES, AVATAR_TEMPERAMENTS, type AvatarProfile } from "./avatar.ts";
 import { hasUndrawn, oneScript, readAlike } from "./lookalike.ts";
 import { SpendLines } from "./usage.ts";
+import { ATTACHMENT_LIMITS } from "./attachments.ts";
+import { AttachmentRef } from "./attachment-ref.ts";
 export { TEAM_LIMITS } from "./team-limits.ts";
 import type { InterventionKind, NorthStar } from "./interventions.ts";
 export { INTERVENTIONS, type InterventionKind, interventionWords, type NorthStar, northStar } from "./interventions.ts";
@@ -96,7 +98,15 @@ export const TeamRoomInput = z.strictObject({
 });
 export type TeamRoomInput = z.infer<typeof TeamRoomInput>;
 
-export const TeamPostInput = z.strictObject({ room: TeamRoomId, text: z.string().trim().min(1).max(TEAM_LIMITS.message) });
+export const TeamPostInput = z
+  .strictObject({
+    room: TeamRoomId,
+    /** Its words: none only for a message of yours that carries files. */
+    text: z.string().trim().max(TEAM_LIMITS.message),
+    /** Your files with it, kept on the node first (uploadAttachment), as a chat message's are. */
+    attachments: z.array(AttachmentRef).min(1).max(ATTACHMENT_LIMITS.perMessage).optional(),
+  })
+  .refine((m) => m.text.length > 0 || !!m.attachments, "a message has words, or files it carries");
 export type TeamPostInput = z.infer<typeof TeamPostInput>;
 /** Galahad's own words into Team: to one worker (in that worker's direct conversation with you) or to a room. */
 export const TeamSayInput = z.strictObject({ teammate: TeammateId.optional(), room: TeamRoomId.optional(), text: z.string().trim().min(1).max(TEAM_LIMITS.message) })
@@ -228,6 +238,8 @@ export interface TeamMessage {
   text: string;
   createdAt: number;
   chainId: string;
+  /** The files a message of yours carried (absent: none). */
+  attachments?: AttachmentRef[];
 }
 
 /** `proposed`: a task a knight wrote, waiting for your approval before it may run. */

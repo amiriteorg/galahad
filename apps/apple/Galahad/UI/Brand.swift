@@ -209,6 +209,63 @@ extension Color {
         let value = Int(hex.dropFirst(), radix: 16) ?? 0
         self.init(red: Double((value >> 16) & 0xff) / 255, green: Double((value >> 8) & 0xff) / 255, blue: Double(value & 0xff) / 255)
     }
+
+    /// One colour on light, another on dark (the PWA's `light-dark()`), by six hex digits each.
+    init(light: String, dark: String) {
+        func rgb(_ hex: String) -> (Double, Double, Double) {
+            let value = Int(hex.dropFirst(), radix: 16) ?? 0
+            return (Double((value >> 16) & 0xff) / 255, Double((value >> 8) & 0xff) / 255, Double(value & 0xff) / 255)
+        }
+        let (l, d) = (rgb(light), rgb(dark))
+        #if os(iOS)
+        self.init(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: d.0, green: d.1, blue: d.2, alpha: 1) : UIColor(red: l.0, green: l.1, blue: l.2, alpha: 1) })
+        #else
+        self.init(NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(red: d.0, green: d.1, blue: d.2, alpha: 1) : NSColor(red: l.0, green: l.1, blue: l.2, alpha: 1) })
+        #endif
+    }
+}
+
+extension Highlight.Tone {
+    /// Its colour, light and dark (the PWA's .tok-* and --code-*): a language's words in the cross's red, quiet blues for
+    /// what code holds, comments receding; a diff's lines in green and red.
+    var color: Color {
+        switch self {
+        case .keyword: Color(light: "#b3261e", dark: "#ff8a80")
+        case .string: Color(light: "#0a3069", dark: "#a5d6ff")
+        case .number: Color(light: "#0550ae", dark: "#79c0ff")
+        case .comment: Color(light: "#6e7781", dark: "#8b949e")
+        case .added: Color(light: "#116329", dark: "#7ee2a8")
+        case .removed: Color(light: "#82071e", dark: "#ffa198")
+        case .meta: .secondary
+        }
+    }
+
+    /// A diff's line, under its words.
+    var shade: Color? {
+        switch self {
+        case .added: Color(light: "#dafbe1", dark: "#1d3a26")
+        case .removed: Color(light: "#ffebe9", dark: "#3d1f20")
+        default: nil
+        }
+    }
+}
+
+extension Highlight {
+    /// Code as one attributed string in its colours (the PWA's ui/markdown.ts codeBlock).
+    static func attributed(_ code: String, lang: String) -> AttributedString {
+        var out = AttributedString()
+        for piece in pieces(code, lang: lang) {
+            var part = AttributedString(piece.text)
+            if let tone = piece.tone {
+                part.foregroundColor = tone.color
+                if let shade = tone.shade { part.backgroundColor = shade }
+                if tone == .comment { part.inlinePresentationIntent = .emphasized }
+                if tone == .meta { part.inlinePresentationIntent = .stronglyEmphasized }
+            }
+            out += part
+        }
+        return out
+    }
 }
 
 /// The Roundtable from above: the ring and the knights' chairs in the ink, Galahad's seat in his red.

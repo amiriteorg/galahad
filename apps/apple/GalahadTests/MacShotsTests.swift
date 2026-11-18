@@ -116,8 +116,8 @@ struct MacShots {
         MacApp.shared.place = .galahad
         NSApp.appearance = NSAppearance(named: .aqua)
         let drawing = try Data(contentsOf: try #require(Bundle.main.url(forResource: "kay", withExtension: "webp", subdirectory: "knights")))
-        session.chat.attach([(name: "kay.webp", data: drawing), (name: "test.log", data: Data("FAIL db.test.ts\n  connect ECONNREFUSED 127.0.0.1:5432\n".utf8))], with: session.client)
-        try await until(30) { session.chat.waiting.count == 2 && session.chat.waiting.allSatisfy { $0.state == .up } }
+        session.chat.outbox.attach([(name: "kay.webp", data: drawing), (name: "test.log", data: Data("FAIL db.test.ts\n  connect ECONNREFUSED 127.0.0.1:5432\n".utf8))], with: session.client)
+        try await until(30) { session.chat.outbox.waiting.count == 2 && session.chat.outbox.waiting.allSatisfy { $0.state == .up } }
         session.chat.draft = "Why does this fail?"
         try await Task.sleep(for: .seconds(1.5))
         try await snap(main, "main-chat-attaching-light")
@@ -189,8 +189,8 @@ struct MacShots {
         Pasted.board = board
         let paste = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: main.windowNumber, context: nil, characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9))
         NSApp.postEvent(paste, atStart: false)
-        try await until(30) { session.chat.waiting.count == 1 && session.chat.waiting.allSatisfy { $0.state == .up } }
-        #expect(session.chat.waiting.map(\.name) == ["Pasted picture.png"])
+        try await until(30) { session.chat.outbox.waiting.count == 1 && session.chat.outbox.waiting.allSatisfy { $0.state == .up } }
+        #expect(session.chat.outbox.waiting.map(\.name) == ["Pasted picture.png"])
         try await Task.sleep(for: .seconds(1.5))
         try await snap(main, "main-new-chat-pasted-light")
     }

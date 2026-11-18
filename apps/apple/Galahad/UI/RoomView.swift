@@ -46,7 +46,10 @@ struct RoomView: View {
                 ForEach(items) { item in
                     switch item {
                     case .message(let message):
-                        TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), look: look(of: message), named: true)
+                        TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), look: look(of: message), named: true, client: session.client) { text in
+                            room.quote(text, by: Timeline.speaker(message, teammates: session.team?.teammates ?? []))
+                            composing = true
+                        }
                     case .task(let task):
                         TaskCardView(task: task, proposer: task.proposedBy.map { session.teammate($0)?.name ?? $0 }) { action in act(action, on: task) }
                     }
@@ -62,6 +65,7 @@ struct RoomView: View {
             .padding(.vertical, Space.s3)
             .readingWidth()
         }
+        .keepingLatest()
         .defaultScrollAnchor(.bottom)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
@@ -73,7 +77,7 @@ struct RoomView: View {
                         .foregroundStyle(.secondary)
                         .padding(.top, Space.s2)
                 }
-                RoomComposer(room: room, name: name, client: session.client, composing: $composing)
+                RoomComposer(room: room, name: name, client: session.client, composing: $composing, seats: members.map { Mentions.Seat(id: $0.id, name: $0.name) } + [Mentions.Seat(id: "galahad", name: "Galahad")])
             }
         }
         .navigationTitle(name)

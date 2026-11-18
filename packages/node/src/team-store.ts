@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { chmodSync, closeSync, existsSync, openSync } from "node:fs";
-import { findSecrets, randomId, readAlike, redact } from "@galahad/core";
+import { AttachmentRef, findSecrets, randomId, readAlike, redact } from "@galahad/core";
 import { defaultAvatar, resolveAvatar, type AvatarActivity } from "@galahad/core/avatar";
 import { z } from "zod";
 import {
@@ -34,7 +34,7 @@ export function teamOutput(text: string, max: number = TEAM_LIMITS.output): stri
 }
 
 interface DocRow { value: string }
-interface MessageRow { id: string; room: string; speaker: string; speaker_name: string; text: string; created_at: number; chain_id: string }
+interface MessageRow { id: string; room: string; speaker: string; speaker_name: string; text: string; created_at: number; chain_id: string; attachments: string | null }
 interface JobRow { id: string; kind: "delivery" | "task"; room: string; teammate: string; chain_id: string; status: TeamWorkStatus; data: string; error: string | null; created_at: number; updated_at: number }
 interface AnswerRow { id: string; room: string; chain_id: string; trigger: string; asker: string; status: TeamWorkStatus; error: string | null; reply: string | null; created_at: number; updated_at: number }
 export interface TeamJob { id: string; kind: "delivery" | "task"; room: string; teammate: string; chainId: string; status: TeamWorkStatus; createdAt: number }
@@ -45,7 +45,20 @@ export type TeamAsker = { kind: "admin" } | { kind: "client"; device: string } |
 /** Galahad's answer to a room: one waits per room, for its newest words. */
 export interface TeamAnswer { id: string; room: string; chainId: string; trigger: string; asker: TeamAsker; status: TeamWorkStatus; error: string | null; createdAt: number; updatedAt: number }
 
-const messageOf = (r: MessageRow): TeamMessage => ({ id: r.id, room: r.room, speaker: r.speaker, speakerName: r.speaker_name, text: r.text, createdAt: r.created_at, chainId: r.chain_id });
+const messageOf = (r: MessageRow): TeamMessage => {
+  const attachments = attachmentsOf(r.attachments);
+  return { id: r.id, room: r.room, speaker: r.speaker, speakerName: r.speaker_name, text: r.text, createdAt: r.created_at, chainId: r.chain_id, ...(attachments.length ? { attachments } : {}) };
+};
+/** A message's files, read back: what was kept (each still checked to be one), or none. */
+function attachmentsOf(json: string | null): AttachmentRef[] {
+  if (!json) return [];
+  try {
+    const parsed = z.array(AttachmentRef).safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+}
 const jobOf = (r: JobRow): TeamJob => ({ id: r.id, kind: r.kind, room: r.room, teammate: r.teammate, chainId: r.chain_id, status: r.status, createdAt: r.created_at });
 const answerOf = (r: AnswerRow): TeamAnswer => ({ id: r.id, room: r.room, chainId: r.chain_id, trigger: r.trigger, asker: JSON.parse(r.asker) as TeamAsker, status: r.status, error: r.error, createdAt: r.created_at, updatedAt: r.updated_at });
 /** His seat in every room, for the mentions that call him. */
@@ -110,6 +123,9 @@ export class TeamStore {
       CREATE INDEX IF NOT EXISTS team_answers_queue ON team_answers(status, seq);
       CREATE INDEX IF NOT EXISTS team_answers_room ON team_answers(room, seq);
       CREATE INDEX IF NOT EXISTS team_answers_reply ON team_answers(reply);`);
+    // A database from before files at the Roundtable: a message of yours may carry some (kept on the node: uploads.ts).
+    const fields = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(team_messages)").all().map((c) => c.name));
+    if (!fields.has("attachments")) this.db.exec("ALTER TABLE team_messages ADD COLUMN attachments TEXT");
   }
 
   close(): void { this.db.close(); }
@@ -362,6 +378,8 @@ export class TeamStore {
   post(raw: TeamPostInput, by: { teammate?: string; chainId?: string; output?: boolean; galahad?: boolean; reply?: boolean; asker?: Exclude<TeamAsker, { kind: "knight" }> } = {}): TeamMessage {
     const input = teamInput(TeamPostInput, raw);
     if (!by.output) teamText(input.text);
+    // Files are yours alone to bring: a knight's or Galahad's words carry none.
+    if (input.attachments && (by.teammate || by.galahad || by.output)) throw new TeamError(403, "Only you bring files to the Roundtable.");
     return this.db.transaction(() => {
       const room = this.requireRoom(input.room);
       if (by.reply ? !by.galahad || by.teammate || !by.chainId : by.galahad && (by.teammate || by.chainId)) throw new TeamError(400, "Galahad speaks for himself, in a conversation of his own.");
@@ -391,7 +409,8 @@ export class TeamStore {
       const chainId = by.chainId ?? this.chain(room);
       const at = this.now();
       const message: TeamMessage = { id: id("message"), room: room.id, speaker: by.teammate ?? (by.galahad ? TEAM_GALAHAD : TEAM_OWNER), speakerName: by.teammate ? this.requireTeammate(by.teammate).name : by.galahad ? "Galahad" : "You", text: by.output ? teamOutput(input.text, TEAM_LIMITS.message) : input.text, createdAt: at, chainId };
-      this.db.query("INSERT INTO team_messages(id,room,speaker,speaker_name,text,created_at,chain_id) VALUES(?,?,?,?,?,?,?)").run(message.id, message.room, message.speaker, message.speakerName, message.text, at, chainId);
+      if (input.attachments) message.attachments = input.attachments;
+      this.db.query("INSERT INTO team_messages(id,room,speaker,speaker_name,text,created_at,chain_id,attachments) VALUES(?,?,?,?,?,?,?,?)").run(message.id, message.room, message.speaker, message.speakerName, message.text, at, chainId, input.attachments ? JSON.stringify(input.attachments) : null);
       for (const member of recipients) this.insertJob("delivery", room.id, member, chainId, { trigger: message.id });
       if (forGalahad) this.queueAnswer(room.id, message, by.teammate ? { kind: "knight", teammate: by.teammate } : (by.asker ?? { kind: "admin" }));
       this.putRoom({ ...room, updatedAt: at });
@@ -399,6 +418,14 @@ export class TeamStore {
     })();
   }
   /** What Galahad said to the Roundtable in the last day from his own conversation: his allowance. His answers in rooms were asked for. */
+  /** Every file a kept message carries: what uploads.ts keeps whatever its age (rooms keep their words). */
+  attachmentIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const row of this.db.query<{ attachments: string }, []>("SELECT attachments FROM team_messages WHERE attachments IS NOT NULL").all()) {
+      for (const a of attachmentsOf(row.attachments)) ids.add(a.id);
+    }
+    return ids;
+  }
   private saidToday(): number {
     return this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_messages m WHERE m.speaker = ? AND m.created_at > ? AND NOT EXISTS (SELECT 1 FROM team_answers a WHERE a.reply = m.id)").get(TEAM_GALAHAD, this.now() - DAY)!.n;
   }

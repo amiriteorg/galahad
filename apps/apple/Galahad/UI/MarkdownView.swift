@@ -66,17 +66,26 @@ private struct BlockView: View {
     }
 }
 
-/// Code, as written: monospaced, scrolled sideways rather than wrapped, and copied whole.
+/// Code, as written: coloured by what each part is (Highlight), monospaced, scrolled sideways rather than wrapped,
+/// copied whole, and opened on a page of its own with its lines numbered.
 struct CodeBlock: View {
     let lang: String
     let text: String
     @State private var copied = false
+    @State private var opened = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: Space.s3) {
                 Text(lang.isEmpty ? "Code" : lang).font(.caption.monospaced()).foregroundStyle(.secondary)
                 Spacer()
+                Button {
+                    opened = true
+                } label: {
+                    Label("Open", systemImage: "arrow.up.left.and.arrow.down.right").font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Open the code on a page of its own")
                 Button {
                     Pasteboard.copy(text)
                     copied = true
@@ -89,12 +98,13 @@ struct CodeBlock: View {
             .padding(.horizontal, Space.s3)
             .padding(.top, Space.s2)
             ScrollView(.horizontal) {
-                Text(text)
+                Text(Highlight.attributed(text, lang: lang))
                     .font(.footnote.monospaced())
                     .fixedSize(horizontal: true, vertical: false)
                     .padding(Space.s3)
             }
         }
+        .cover(isPresented: $opened) { CodePage(title: lang.isEmpty ? "Code" : lang, lang: lang, text: text) }
         .background(.fill.quaternary, in: .rect(cornerRadius: Metrics.innerRadius, style: .continuous))
         .task(id: copied) {
             guard copied else { return }
@@ -173,4 +183,86 @@ enum Inlines {
         }
         return piece
     }
+}
+
+/// Code on a page of its own: every line numbered, coloured as it is in the answer, wrapped or scrolled sideways as you
+/// like (remembered on this device), copied or shared whole. A file of a knight's workspace opens on it too.
+struct CodePage: View {
+    let title: String
+    let lang: String
+    let text: String
+    @AppStorage("code.wrap") private var wrap = false
+    @State private var copied = false
+    @Environment(\.dismiss) private var dismiss
+
+    private var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if wrap {
+                    // Wrapped, each line beside its number, however many rows it takes.
+                    ScrollView {
+                        let all = lines
+                        let width = String(all.count).count
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(all.enumerated()), id: \.offset) { number, line in
+                                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                                    Text(String(number + 1).leftPadded(to: width)).foregroundStyle(.tertiary).accessibilityHidden(true)
+                                    Text(Highlight.attributed(String(line), lang: lang)).frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                        }
+                        .font(.footnote.monospaced())
+                        .padding(Space.s4)
+                        .textSelection(.enabled)
+                    }
+                } else {
+                    // As written: the numbers' column beside the code's, scrolled both ways (each a line a row, so they stay level).
+                    ScrollView([.vertical, .horizontal]) {
+                        HStack(alignment: .top, spacing: Space.s3) {
+                            Text((1...max(1, lines.count)).map(String.init).joined(separator: "\n"))
+                                .multilineTextAlignment(.trailing)
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                            Text(Highlight.attributed(text, lang: lang))
+                                .textSelection(.enabled)
+                        }
+                        .font(.footnote.monospaced())
+                        .fixedSize()
+                        .padding(Space.s4)
+                    }
+                    .defaultScrollAnchor(.topLeading)
+                }
+            }
+            .navigationTitle(title)
+            .inlineTitle()
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Toggle(isOn: $wrap) { Label("Wrap Lines", systemImage: "text.word.spacing") }
+                    Button {
+                        Pasteboard.copy(text)
+                        copied = true
+                    } label: {
+                        Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    }
+                    ShareLink(item: text) { Label("Share", systemImage: "square.and.arrow.up") }
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 720, minHeight: 520)
+        #endif
+        .task(id: copied) {
+            guard copied else { return }
+            try? await Task.sleep(for: .seconds(2))
+            copied = false
+        }
+    }
+}
+
+private extension String {
+    /// Padded on the left with spaces to `width` characters (a line number, so the numbers' column stays straight).
+    func leftPadded(to width: Int) -> String { String(repeating: " ", count: max(0, width - count)) + self }
 }

@@ -150,30 +150,36 @@ function fencedText(a: AttachmentRef, text: string): string {
   ].join("\n");
 }
 
+/** Files as a model is given them: pictures as pictures, texts fenced as data, one no longer kept here said so. Each one
+ * used is touched. */
+export function filesFor(refs: readonly AttachmentRef[], uploads: Pick<Uploads, "read" | "touch">): { images: ToolImage[]; texts: string[] } {
+  const images: ToolImage[] = [];
+  const texts: string[] = [];
+  const used: string[] = [];
+  for (const a of refs) {
+    const bytes = uploads.read(a.id);
+    if (!bytes) {
+      texts.push(`[${clean(a.name)} was attached here, and isn't on this node any more.]`);
+      continue;
+    }
+    used.push(a.id);
+    if (a.type === "text/plain") texts.push(fencedText(a, textOf(bytes) ?? ""));
+    else images.push({ mediaType: a.type, data: Buffer.from(bytes).toString("base64"), alt: `${clean(a.name)}, attached by your liege` });
+  }
+  uploads.touch(used);
+  return { images, texts };
+}
+
 /**
  * Messages as a model is given them: a message's attached pictures as its pictures (a model that can't see is told so
  * in words: adapters.ts), its attached texts after its words, each fenced as data. One no longer kept here is said so.
  * Each one used is touched, so a temporary chat's attachments stay while it goes on.
  */
 export function withAttachments(messages: readonly ChatMessage[], uploads: Pick<Uploads, "read" | "touch">): ModelMessage[] {
-  const used: string[] = [];
-  const told = messages.map((m): ModelMessage => {
+  return messages.map((m): ModelMessage => {
     if (!m.attachments?.length) return { role: m.role, content: m.content };
-    const images: ToolImage[] = [];
-    const texts: string[] = [];
-    for (const a of m.attachments) {
-      const bytes = uploads.read(a.id);
-      if (!bytes) {
-        texts.push(`[${clean(a.name)} was attached here, and isn't on this node any more.]`);
-        continue;
-      }
-      used.push(a.id);
-      if (a.type === "text/plain") texts.push(fencedText(a, textOf(bytes) ?? ""));
-      else images.push({ mediaType: a.type, data: Buffer.from(bytes).toString("base64"), alt: `${clean(a.name)}, attached by your liege` });
-    }
+    const { images, texts } = filesFor(m.attachments, uploads);
     const content = [m.content, ...texts].filter(Boolean).join("\n\n") || "(No words with it: only what is attached.)";
     return { role: m.role, content, ...(images.length ? { images } : {}) };
   });
-  uploads.touch(used);
-  return told;
 }
