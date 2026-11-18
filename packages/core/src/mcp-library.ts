@@ -4,8 +4,13 @@
  * signs in was found to take Galahad's own sign-in as it is: a 401 that names its authorization server, which lets a
  * client register itself, with PKCE (S256). This reviewed list is the library's floor; the index at mcp.galahad.sh
  * (apps/mcp-index, mcp-index.ts) adds the rest of the registry's that pass its checks, and a node reads it.
+ *
+ * Dinero's is the service's own by its own page (dinero.dk/funktioner/mcp, checked 18 November 2026), not the
+ * registry's: its authorization server (Visma Connect) takes only clients with a secret, which Galahad asks for when it
+ * registers there (brain mcp-oauth.ts, clientAuthMethod). Its endpoint is the root; the page's /mcp answers 404.
  */
 import { z } from "zod";
+import type { ConnectorTool } from "./connectors.ts";
 import { entryProblem, MCP_AUTHS, MCP_CATEGORIES, type McpCategory, type McpIndexEntry } from "./mcp-index.ts";
 
 /** One hosted MCP server: where it is, whether you sign in to it as yourself, and what it gives, in a line. */
@@ -42,8 +47,48 @@ export const MCP_LIBRARY: readonly McpLibraryEntry[] = [
   { id: "canva", label: "Canva", url: "https://mcp.canva.com/mcp", auth: "oauth", description: "Designs: find, make and export them.", category: "Design & media", site: "canva.com" },
   { id: "airtable", label: "Airtable", url: "https://mcp.airtable.com/mcp", auth: "oauth", description: "Bases, tables and records.", category: "Data & databases", site: "airtable.com" },
   { id: "monday", label: "monday.com", url: "https://mcp.monday.com/mcp", auth: "oauth", description: "Boards, items and updates.", category: "Project management", site: "monday.com" },
+  { id: "dinero", label: "Dinero", url: "https://mcp.dinero.dk/", auth: "oauth", description: "Danish bookkeeping: invoices, vouchers, contacts, bank transactions and the figures (Dinero Pro or Total).", category: "Finance", site: "dinero.dk" },
   { id: "webflow", label: "Webflow", url: "https://mcp.webflow.com/mcp", auth: "oauth", description: "Sites, pages and CMS collections.", category: "Design & media", site: "webflow.com" },
 ];
+
+type ToolClass = ConnectorTool["class"];
+
+/**
+ * The reviewed list's own proposal of a class for a server's tools, by their names (case aside; `*` any run of
+ * characters), the first that matches: before the server's hints, never before your own choice (brain
+ * mcp-connectors.ts). Only the reviewed list proposes: a server from the index is classed by its hints alone.
+ *
+ * Dinero's is the owner's ruling for the knight that keeps the books (18 November 2026, "Drafts on its own"): it
+ * reads, and prepares drafts (vouchers, invoices, offers, credit notes, the contacts and products they name, the files
+ * they carry) without asking; booking, registering a payment, sending, changing what is there and deleting ask you.
+ */
+export const MCP_TOOL_CLASSES: Readonly<Record<string, readonly (readonly [pattern: string, toolClass: ToolClass])[]>> = {
+  dinero: [
+    ["book*", "outward"],
+    ["add_*payment*", "outward"],
+    ["send*", "outward"],
+    ["update*", "outward"],
+    ["submit*", "outward"],
+    ["delete*", "delete"],
+    ["get*", "read"],
+    ["list*", "read"],
+    ["search*", "read"],
+    ["create*", "create"],
+    ["generate*", "create"],
+    ["upload*", "create"],
+    ["attach*", "create"],
+  ],
+};
+
+/** What the reviewed list proposes for a server's tool (MCP_TOOL_CLASSES), or null where it proposes nothing. */
+export function libraryClass(proposed: readonly (readonly [string, ToolClass])[] | undefined, remote: string): ToolClass | null {
+  const name = remote.toLowerCase();
+  for (const [pattern, toolClass] of proposed ?? []) {
+    const glob = new RegExp(`^${pattern.toLowerCase().split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
+    if (glob.test(name)) return toolClass;
+  }
+  return null;
+}
 
 /** A library entry by its id, or null. */
 export const mcpLibraryEntry = (id: string): McpLibraryEntry | null => MCP_LIBRARY.find((entry) => entry.id === id) ?? null;

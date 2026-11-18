@@ -52,6 +52,8 @@ export interface OAuthKeep {
   /** An MCP server's access token when it gave no lasting sign-in, and when it lapses (ms since the epoch). */
   access?: string;
   expires?: number;
+  /** Its secret goes in the token request's header, as the server took it when Galahad registered (client_secret_basic). */
+  basic?: boolean;
 }
 
 export function readKeep(value: string): OAuthKeep | null {
@@ -65,6 +67,7 @@ export function readKeep(value: string): OAuthKeep | null {
       if (v) out[field] = v;
     }
     if (typeof keep.expires === "number" && Number.isFinite(keep.expires)) out.expires = keep.expires;
+    if (keep.basic === true) out.basic = true;
     return out;
   } catch {
     return null;
@@ -93,10 +96,10 @@ export function forgetAccess(connector: string): void {
 }
 
 /** The provider's answer to a token request, read strictly. */
-export async function tokenRequest(ctx: OAuthContext, url: string, form: Record<string, string>): Promise<{ access: string; refresh?: string; expiresIn: number; idToken?: string }> {
+export async function tokenRequest(ctx: OAuthContext, url: string, form: Record<string, string>, headers: Record<string, string> = {}): Promise<{ access: string; refresh?: string; expiresIn: number; idToken?: string }> {
   const response = await (ctx.fetch ?? fetch)(url, {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", ...headers },
     body: new URLSearchParams(form).toString(),
     redirect: "manual",
     signal: AbortSignal.timeout(20_000),
@@ -136,14 +139,16 @@ export async function accessToken(ctx: OAuthContext, manifest: ConnectorManifest
   const provider = auth.oauth.provider;
   // (An MCP server's sign-in is renewed only where it was pinned when you signed in, for that server alone.)
   if (provider === "mcp" && !keep.token) throw new OAuthError(`${manifest.label}'s sign-in has no address to be renewed at: sign in again from its card in Connectors`);
+  // (Its secret in the body, or, where the server took it so when Galahad registered, in the header: RFC 6749 2.3.1.)
+  const basic = keep.secret && keep.basic ? { authorization: `Basic ${Buffer.from(`${encodeURIComponent(keep.client)}:${encodeURIComponent(keep.secret)}`).toString("base64")}` } : null;
   const answer = await tokenRequest(ctx, provider === "mcp" ? keep.token! : endpointsOf(provider, ctx.endpoints).token, {
     grant_type: "refresh_token",
     refresh_token: keep.refresh,
     client_id: keep.client,
-    ...(keep.secret ? { client_secret: keep.secret } : {}),
+    ...(keep.secret && !basic ? { client_secret: keep.secret } : {}),
     ...(provider === "microsoft" ? { scope: auth.oauth.scopes.join(" ") } : {}),
     ...(provider === "mcp" && keep.resource ? { resource: keep.resource } : {}),
-  }).catch((error: Error) => {
+  }, basic ?? {}).catch((error: Error) => {
     // Revoked, or expired after months unused: say so plainly, so you sign in again.
     throw new OAuthError(error.message === "invalid_grant" ? `${manifest.label}'s sign-in has ended: sign in again from its card in Connectors` : `${manifest.label}'s sign-in couldn't be renewed (${error.message})`);
   });

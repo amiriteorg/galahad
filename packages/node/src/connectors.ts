@@ -418,6 +418,8 @@ export class ConnectorService {
       header?: string;
       only?: string[];
       classes?: Record<string, ConnectorManifest["tools"][string]["class"]>;
+      /** The reviewed library's proposal for its tools (core MCP_TOOL_CLASSES). */
+      proposed?: readonly (readonly [string, ConnectorManifest["tools"][string]["class"]])[];
     },
   ): Promise<{ server: string | null; tools: number; needsKey: boolean; needsSignIn?: boolean } & MergeReport> {
     let url: URL;
@@ -485,7 +487,7 @@ export class ConnectorService {
       }
       throw new ConnectorCallError(502, `${base.data.label} unreachable: ${redact(String((error as Error).message ?? error))}`);
     }
-    const { tools, report } = mergeMcpTools(discovered.tools, same ? previous!.tools : {}, { ...(only ? { only } : {}), ...(input.classes ? { classes: input.classes } : {}) });
+    const { tools, report } = mergeMcpTools(discovered.tools, same ? previous!.tools : {}, { ...(only ? { only } : {}), ...(input.classes ? { classes: input.classes } : {}), ...(input.proposed ? { proposed: input.proposed } : {}) });
     if (Object.keys(tools).length > 64) {
       throw new ConnectorCallError(413, `${base.data.label} has ${Object.keys(tools).length} tools; install up to 64 with only (the ones you need)`);
     }

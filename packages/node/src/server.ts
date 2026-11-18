@@ -102,6 +102,7 @@ import {
   screenSessionView,
   activeScreenSession,
   MCP_LIBRARY,
+  MCP_TOOL_CLASSES,
   mcpLibraryEntry,
   searchLibrary,
   type ConnectorLibraryView,
@@ -3674,7 +3675,9 @@ export function createApp(ctx: AppContext) {
         if (shelved) {
           const key = shelved.auth !== "key" ? { auth: shelved.auth } : shelved.header?.toLowerCase() === "authorization" ? { auth: "bearer" as const } : { auth: "header" as const, header: shelved.header };
           const description = shelved.description.length > 300 ? `${shelved.description.slice(0, 299).replace(/\s+\S*$/, "")}…` : shelved.description;
-          const installed = await connectorErrors(() => ctx.connectors.installMcp(input.id, { url: shelved.url, label: shelved.label.slice(0, 64), description, ...key }));
+          // (The reviewed list's own proposal of its tools' classes, where it has one: Dinero's is the owner's ruling.)
+          const proposed = Object.hasOwn(MCP_TOOL_CLASSES, shelved.id) ? MCP_TOOL_CLASSES[shelved.id] : undefined;
+          const installed = await connectorErrors(() => ctx.connectors.installMcp(input.id, { url: shelved.url, label: shelved.label.slice(0, 64), description, ...key, ...(proposed ? { proposed } : {}) }));
           ctx.connectorRequests.resolve(input.id);
           return { connector: connectorViews().find((c) => c.id === input.id), discovered: installed };
         }

@@ -38,6 +38,17 @@ function secure(address: string | undefined, what: string): string {
   return url.toString();
 }
 
+/**
+ * How Galahad says it will prove itself at the token address when it registers: with no secret (PKCE alone) where the
+ * server allows that, as most do; else with the secret the server hands back (sealed with the sign-in), sent in the
+ * request's body as a renewal sends it (oauth.ts), or in its header where that is all the server takes. A server that
+ * lists no methods is asked for none, as Galahad always has: the servers it signs in to take that.
+ */
+export function clientAuthMethod(supported: readonly string[] | undefined): "none" | "client_secret_post" | "client_secret_basic" {
+  if (!supported?.length || supported.includes("none")) return "none";
+  return supported.includes("client_secret_post") || !supported.includes("client_secret_basic") ? "client_secret_post" : "client_secret_basic";
+}
+
 /** Starts a sign-in to the MCP server at `server`: where your browser goes, and what finishing it needs. */
 export async function startMcpSignIn(opts: { server: string; redirect: string; state: string; scopes: readonly string[]; fetch?: typeof fetch }): Promise<{ url: string; verifier: string; pending: McpPending }> {
   const fetchFn = opts.fetch;
@@ -60,7 +71,7 @@ export async function startMcpSignIn(opts: { server: string; redirect: string; s
   secure(metadata.registration_endpoint, "registration address");
   const client = await registerClient(authServer, {
     metadata,
-    clientMetadata: { client_name: "Galahad", redirect_uris: [opts.redirect], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" },
+    clientMetadata: { client_name: "Galahad", redirect_uris: [opts.redirect], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: clientAuthMethod(metadata.token_endpoint_auth_methods_supported) },
     ...(fetchFn ? { fetchFn } : {}),
   });
   const { authorizationUrl, codeVerifier } = await startAuthorization(authServer, {
@@ -89,6 +100,7 @@ export async function finishMcpSignIn(pending: McpPending, opts: { code: string;
   return {
     client: pending.client.client_id,
     ...(pending.client.client_secret ? { secret: pending.client.client_secret } : {}),
+    ...(pending.client.client_secret && pending.client.token_endpoint_auth_method === "client_secret_basic" ? { basic: true } : {}),
     token: pending.metadata.token_endpoint,
     resource: pending.server,
     // A lasting sign-in when it gives one; else the access token it gave, kept sealed until it lapses.
