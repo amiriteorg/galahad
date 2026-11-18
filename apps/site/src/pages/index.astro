@@ -123,7 +123,7 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
           <div class="wing">
             <div>
               <p class="room-name">The next wing</p>
-              <p class="room-line">Chat apps, events that start work, and a budget per task. Drawn in dashes: not built yet.</p>
+              <p class="room-line">Galahad writing first, events that start work, and chat apps. Drawn in dashes: not built yet.</p>
             </div>
             <a class="callout callout-wing" href="#phasing" aria-label="Detail G: what is built next">G</a>
           </div>
@@ -151,7 +151,8 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
         </p>
         <p>
           Give it a task by talking to it, or give one to the Roundtable and the knight best suited takes it. Watch its
-          screen and take it over, or open a terminal into its VM, from the app or the command line.
+          screen and take it over, read its files and what its task changed, or open a terminal into its VM, from the
+          app or the command line.
         </p>
         <p class="more"><a href={doc("ROUNDTABLE")}>How the Roundtable works</a></p>
       </div>
@@ -166,6 +167,10 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
             <li>
               <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect x="3" y="6" width="26" height="20" rx="2" /><path d="m9 13 4 3-4 3M15 19h7" /></svg>
               <span><b>A terminal</b> into its VM, for you and for the vendors' own sign-ins.</span>
+            </li>
+            <li>
+              <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M3 9a2 2 0 0 1 2-2h7l3 3h12a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /><path d="M10 18.5h5M12.5 16v5M18 18.5h5" /></svg>
+              <span><b>Its workspace</b>, beside your conversation: its files, and what its task changed.</span>
             </li>
             <li>
               <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M4 7h24M4 16h24M4 25h24" /><path d="M8 7v-3M14 16v-3M21 25v-3M24 7v-3" /></svg>
@@ -347,7 +352,8 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
       <div class="detail-text wide">
         <p>
           A codebase you can read is one you can trust and change. Here are four agents' footprints, each dimensioned by
-          its source: lines of code with the tests left out, counted on {SIZE.date}.
+          its source: lines of code with the tests left out, Galahad's counted on {SIZE.oursDate} and the others'
+          on {SIZE.date}.
         </p>
       </div>
       <table class="footprints">
@@ -394,9 +400,10 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
       </table>
       <p class="schedule-note">
         Counted with <code>git ls-files</code> and <code>wc -l</code>: TypeScript, JavaScript, Python and Swift files,
-        test files and fixtures left out. Galahad at <a href={`${REPO}/commit/${SIZE.commit}`}><code>{SIZE.commit}</code></a>;
-        Hermes Agent at version 0.21 (it has grown since); Rakazo and OpenMausBot from their main branches that day, to
-        the thousand.
+        test files and fixtures left out. Galahad at <a href={`${REPO}/commit/${SIZE.commit}`}><code>{SIZE.commit}</code></a>{" "}
+        (it was 85k on {SIZE.date}: a footprint grows, and this one is measured again as it does); Hermes Agent at
+        version 0.21 (it has grown since); Rakazo and OpenMausBot from their main branches on {SIZE.date}, to the
+        thousand.
       </p>
 
       <div class="schedule compare">
@@ -441,8 +448,9 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
       <div class="detail-text">
         <p>
           The app shows every knight and what it is doing, and what waits for you. Approve a task with one tap, give one
-          by talking to a knight, watch its screen or take it over. It installs from your node as a web app; an iPhone app
-          is in testing. On a Mac it is an app of its own, signed and notarized, that keeps itself up to date and can
+          by talking to a knight, watch its screen or take it over. Send a photo or a file, see what the models have cost
+          against your budget, and swipe away what no longer needs you. It installs from your node as a web app; an
+          iPhone app is in testing. On a Mac it is an app of its own, signed and notarized, that keeps itself up to date and can
           make that Mac a node.
         </p>
         <p class="more"><a href={doc("GETTING-STARTED")}>Pair your phone</a> · <a href="#download">Galahad for Mac</a></p>

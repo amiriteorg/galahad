@@ -31,6 +31,13 @@ const home = path === "/" ? "" : "/";
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:type" content="website" />
+    {/* A link's preview: the plan as the home page draws it (pictured at 1300×682 without the bar, the lede, the annex
+        and the callouts, scaled to 1200×630). */}
+    <meta property="og:image" content="https://galahad.sh/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Galahad's plan: six knights, each in a room of its own, around the Round Table where Galahad sits; the vault; and the one-line install at the front door." />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="canonical" href={canonical} />
     {/* The app's icon, the Roundtable: drawn for browsers that take SVG, rendered for the rest. */}
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />

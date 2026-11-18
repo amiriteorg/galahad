@@ -83,13 +83,15 @@ export const TRIALS_HARD = {
   models: "planner glm-5.3, engineer deepseek-v4-pro, reviewer qwen3.8-max, on a coding plan",
 } as const;
 
-/** Lines of source, test files left out, counted with `git ls-files` on 15 November 2026. Galahad's at `commit`;
- * Hermes Agent's at its 0.21 checkout; Rakazo's and OpenMausBot's from their main branches that day, to the thousand. */
+/** Lines of source, test files left out, counted with `git ls-files`: Galahad's at `commit` on `oursDate` (the same count
+ * at deaa43c, on 15 November, gave the 84,819 first shown here); Hermes Agent's at its 0.21 checkout, and Rakazo's and
+ * OpenMausBot's from their main branches, on `date`, to the thousand. */
 export const SIZE = {
   date: "15 November 2026",
-  commit: "deaa43c",
+  oursDate: "18 November 2026",
+  commit: "7f3eb2b",
   rows: [
-    { name: "Galahad", lines: 84_819, exact: true, of: "TypeScript (76,230) and Swift (8,589)", ours: true },
+    { name: "Galahad", lines: 106_902, exact: true, of: "TypeScript (90,222) and Swift (16,680)", ours: true },
     { name: "Rakazo", lines: 467_000, exact: false, of: "TypeScript", ours: false },
     { name: "OpenMausBot", lines: 571_000, exact: false, of: "TypeScript and JavaScript", ours: false },
     { name: "Hermes Agent", lines: 1_192_697, exact: true, of: "Python (720,605) and TypeScript (472,092), version 0.21", ours: false },
@@ -111,24 +113,29 @@ export const COMPARE = {
   ],
 } as const;
 
-/** What is built, being built and next: docs/PLAN.md's rows in a line each, with the state the plan gives them. */
+/** What is built, being built and next: docs/PLAN.md's rows in a line each, with the state the plan gives them, in its order. */
 export const PHASING = {
-  date: "17 November 2026",
+  date: "18 November 2026",
   rows: [
+    { state: "built", what: "The workspace beside the chat", line: "A knight's files and what its task changed, beside its conversation: read only, keys redacted before they leave its VM." },
+    { state: "built", what: "A usage meter", line: "What the models have cost today or this month, against a budget of yours: a line to watch, never a stop." },
+    { state: "built", what: "The Inbox cleared by you", line: "Everything in it leaves when you say so, a swipe on a phone; a yes is still a deliberate press." },
     { state: "built", what: "Galahad leads in rooms", line: "What you say to a room is his; he brings in only the knights the work needs." },
     { state: "built", what: "Cheaper coding plans", line: "Twelve plans as presets, each used only as far as its vendor's terms allow." },
+    { state: "built", what: "Audited, not capped", line: "A knight's run has no limit of time or commands; an independent audit keeps it on its task and getting closer." },
+    { state: "built", what: "A budget per task", line: "A task sees what it has spent and stops when it is, a coding tool's own calls included." },
     { state: "built", what: "His own computer", line: "A VM with a desktop that is his, kept between conversations." },
+    { state: "built", what: "Photos and files in chat", line: "Send him a screenshot, a log or a file of code, from any app or the terminal." },
+    { state: "built", what: "A chat to work in", line: "Reply to a line, edit, ask again; code coloured and numbered; pictures to zoom; @ for the knights in a room." },
     { state: "built", what: "What he knows of you", line: "Facts he proposes and you keep, sent with every answer." },
     { state: "built", what: "Roles you make", line: "Choose the models each knight works on, a local one on whichever of your machines serves it; the reviewer stays independent." },
-    { state: "built", what: "A budget per task", line: "A task sees what it has spent and stops when it is, a coding tool's own calls included." },
-    { state: "built", what: "Audited, not capped", line: "A knight's run has no limit of time or commands; an independent audit keeps it on its task and getting closer." },
-    { state: "built", what: "Photos and files in chat", line: "Send him a screenshot, a log or a file of code, from any app or the terminal." },
-    { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, run a check after one, or tell you it ran; next, before an answer." },
-    { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing; next, the test written first." },
-    { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
-    { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; it gives a Mac its knights' VMs, behind its firewall, with one password, and lends Galahad the Mac itself in sessions you allow." },
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Lean context", line: "Output a later run or edit made stale becomes a line; next, errors since fixed." },
+    { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing; next, the test written first." },
+    { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, run a check after one, or tell you it ran; next, before an answer." },
+    { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
+    { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; it gives a Mac its knights' VMs, behind its firewall, with one password, and lends Galahad the Mac itself in sessions you allow." },
+    { state: "next", what: "Galahad writes first", line: "What happened while you were away, and the next step offered as choices, never acting without asking." },
     { state: "next", what: "Checkpoint, rewind and fork", line: "A quest paused, moved, rewound to a step, or forked at a doubt." },
     { state: "next", what: "Event triggers", line: "Work started by a webhook, new mail or a failed CI run, not only a clock." },
     { state: "next", what: "Chat apps", line: "Telegram first, then Slack, Discord, Signal and WhatsApp." },
