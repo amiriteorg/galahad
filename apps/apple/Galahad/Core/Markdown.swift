@@ -35,7 +35,9 @@ enum Markdown {
     private static let maxDepth = 6
 
     // The PWA's patterns, with JavaScript's ASCII \w and \d written out.
-    private static let fence = pattern(#"^ {0,3}(`{3,}|~{3,})\s*([A-Za-z0-9_+#.-]*)\s*$"#)
+    /// A fence: its run, its language, and whatever else its line says (never a backtick: that's inline code). No two
+    /// parts can match the same spaces, so a line is read in linear time, whatever a model writes on it.
+    private static let fence = pattern(#"^ {0,3}(`{3,}|~{3,})\s*(?:([A-Za-z0-9_+#.-]+)(?:\s+([^`\s](?:[^`]*[^`\s])?))?\s*)?$"#)
     private static let heading = pattern(#"^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$"#)
     private static let rule = pattern(#"^ {0,3}([-*_])(\s*\1){2,}\s*$"#)
     private static let bullet = pattern(#"^(\s*)([-*+])\s+(.*)$"#)
@@ -80,7 +82,9 @@ enum Markdown {
                     body.append(l)
                     i += 1
                 }
-                blocks.append(.code(lang: found[2], text: body.joined(separator: "\n"), open: open))
+                // An answer block written on one line (```choices ["a","b"]) has its JSON on the fence line and nothing inside.
+                let text = body.joined(separator: "\n"), said = found[3]
+                blocks.append(.code(lang: found[2], text: trim(text).isEmpty && !said.isEmpty && Blocks.Kind(rawValue: found[2].lowercased()) != nil ? said : text, open: open))
                 continue
             }
 

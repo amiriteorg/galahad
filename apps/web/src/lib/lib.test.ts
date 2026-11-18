@@ -44,6 +44,19 @@ describe("markdown-lite", () => {
     ]);
   });
 
+  test("a fence line may say more after its language, and an answer block written on one line is still that block", () => {
+    // How models write them (and his guide shows them): the JSON on the fence line, nothing inside.
+    expect(parseMarkdown('```choices ["15°", "30°"]\n```\n\nThen **one more**.')).toEqual([
+      { t: "code", lang: "choices", v: '["15°", "30°"]', open: false },
+      { t: "p", c: [text("Then "), { t: "strong", c: [text("one more")] }, text(".")] },
+    ]);
+    // Code keeps its own body: what follows its language is never code.
+    expect(parseMarkdown('```ts title="a.ts"\nconst a = 1;\n```')).toEqual([{ t: "code", lang: "ts", v: "const a = 1;", open: false }]);
+    expect(parseMarkdown("```ts title=x\n```")).toEqual([{ t: "code", lang: "ts", v: "", open: false }]);
+    // Backticks after the opening run make inline code, not a fence.
+    expect(parseMarkdown("```x``` stays text")[0]!.t).toBe("p");
+  });
+
   test("inline code, bold, italic and strike", () => {
     expect(parseInline("a `x*y*` **b** *c* ~~d~~ snake_case_name")).toEqual([
       text("a "),
@@ -104,6 +117,11 @@ describe("markdown-lite", () => {
     for (const unit of ["*a ", "a *b ", "_x ", "**a ", "~~a "]) {
       parseMarkdown(unit.repeat(1000)); // warm
       expect(fastest(unit.repeat(8000)) / fastest(unit.repeat(2000))).toBeLessThan(10);
+    }
+    // Every line is asked whether it opens a fence: spaces or words after the backticks, then one that isn't.
+    for (const line of [(n: number) => `\`\`\`${" ".repeat(n)}\``, (n: number) => `\`\`\`ts ${"a ".repeat(n)}\``, (n: number) => `\`\`\`ts a${" ".repeat(n)}\``]) {
+      parseMarkdown(line(1000)); // warm
+      expect(fastest(line(32_000)) / fastest(line(8000))).toBeLessThan(10);
     }
   });
 

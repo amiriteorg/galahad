@@ -10,6 +10,8 @@
  * Only http(s) links ever become links; anything else stays text.
  */
 
+import { isBlockKind } from "@galahad/core/blocks";
+
 export type Inline =
   | { t: "text"; v: string }
   | { t: "code"; v: string }
@@ -31,7 +33,11 @@ export type Block =
   | { t: "table"; align: Align[]; head: Inline[][]; rows: Inline[][][] };
 
 const MAX_DEPTH = 6;
-const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([\w+#.-]*)\s*$/;
+/**
+ * A fence: its run, its language, and whatever else its line says (never a backtick: that's inline code). No two
+ * parts can match the same spaces, so a line is read in linear time, whatever a model writes on it.
+ */
+const FENCE = /^ {0,3}(`{3,}|~{3,})\s*(?:([\w+#.-]+)(?:\s+([^`\s](?:[^`]*[^`\s])?))?\s*)?$/;
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const HR = /^ {0,3}([-*_])(\s*\1){2,}\s*$/;
 const BULLET = /^(\s*)([-*+])\s+(.*)$/;
@@ -70,7 +76,9 @@ export function parseMarkdown(source: string, depth = 0): Block[] {
         body.push(l);
         i++;
       }
-      blocks.push({ t: "code", lang: fence[2] ?? "", v: body.join("\n"), open });
+      // An answer block written on one line (```choices ["a","b"]) has its JSON on the fence line and nothing inside.
+      const lang = fence[2] ?? "", v = body.join("\n"), said = fence[3] ?? "";
+      blocks.push({ t: "code", lang, v: !v.trim() && said && isBlockKind(lang.toLowerCase()) ? said : v, open });
       continue;
     }
 

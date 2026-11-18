@@ -7990,6 +7990,68 @@
       ]
     },
     {
+      "source": "```steps [{\"text\":\"Predict\",\"state\":\"doing\"}]\n```\n\n**First, a prediction.**\n\n```Choices [\"15°\", \"45°\"]\n```\n\n```ts title=\"a.ts\"\nconst a = 1;\n```\n\n```ts title=x\n```\n\n```x``` stays text\n\n~~~chart {\"type\":\"bar\"}  \n~~~",
+      "blocks": [
+        {
+          "t": "code",
+          "lang": "steps",
+          "v": "[{\"text\":\"Predict\",\"state\":\"doing\"}]",
+          "open": false
+        },
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "strong",
+              "c": [
+                {
+                  "t": "text",
+                  "v": "First, a prediction."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "code",
+          "lang": "Choices",
+          "v": "[\"15°\", \"45°\"]",
+          "open": false
+        },
+        {
+          "t": "code",
+          "lang": "ts",
+          "v": "const a = 1;",
+          "open": false
+        },
+        {
+          "t": "code",
+          "lang": "ts",
+          "v": "",
+          "open": false
+        },
+        {
+          "t": "p",
+          "c": [
+            {
+              "t": "code",
+              "v": "x"
+            },
+            {
+              "t": "text",
+              "v": " stays text"
+            }
+          ]
+        },
+        {
+          "t": "code",
+          "lang": "chart",
+          "v": "{\"type\":\"bar\"}",
+          "open": false
+        }
+      ]
+    },
+    {
       "source": "# One\n###### Six\n####### Seven\n## C#\n## Closed ##",
       "blocks": [
         {

@@ -656,6 +656,7 @@ const markdownCases = [
   "| Check | Result | Time |\n|:--|:-:|--:|\n| Unit tests | passed | 41 s |\n| Review | `a|b` \\| c |\n| Short |",
   "```ts\nconst ok = await verify(change);\n```\n\n```chart\n{\"type\":\"line\"}\n```\n\n~~~\ntilde fence\n~~~",
   "Still writing:\n\n```python\nprint('half",
+  '```steps [{"text":"Predict","state":"doing"}]\n```\n\n**First, a prediction.**\n\n```Choices ["15°", "45°"]\n```\n\n```ts title="a.ts"\nconst a = 1;\n```\n\n```ts title=x\n```\n\n```x``` stays text\n\n~~~chart {"type":"bar"}  \n~~~',
   "# One\n###### Six\n####### Seven\n## C#\n## Closed ##",
   "---\n* * *\n___\n- - -\n    ---",
   "3. Third\n4. Fourth\n\n   indented under Fourth\n\n5) Fifth",
