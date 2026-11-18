@@ -29,7 +29,7 @@ import { noteSaid, seatFace, tableOf } from "./roster.ts";
 import { openConsole } from "./sandboxes.ts";
 import { desktopViewer, type DesktopViewer } from "./desktop.ts";
 import { liveTrail, type LiveTrail, taskCard } from "./task-card.ts";
-import { controlTeam, editKnight, editNotes, editRoom, giveTask, growVm, provisionVm, remakeVm, removeKnight, setCiBack, setEngram } from "./team-forms.ts";
+import { controlTeam, editKnight, editNotes, editRoom, giveTask, growVm, provisionVm, remakeVm, removeKnight, setCiBack, setEngram, shipTask } from "./team-forms.ts";
 import { openTerminal } from "./terminal.ts";
 import { openWorkspace } from "./workspace.ts";
 
@@ -228,7 +228,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     if (action === "again") {
       const where = snapshot?.rooms.find((candidate) => candidate.id === task.room) ?? room;
       if (where) giveTask(ctx, where, giveAgain(task));
-    } else void control({ task: task.id, action: action === "decline" ? "stop" : action });
+    } else if (action === "ship") void shipTask(ctx, task);
+    else void control({ task: task.id, action: action === "decline" ? "stop" : action });
   }
 
   function taskEl(task: TeamTask): HTMLElement {

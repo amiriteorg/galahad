@@ -9462,13 +9462,71 @@
         "createdAt": 1763199580000,
         "updatedAt": 1763198200000,
         "proposedBy": "ada"
+      },
+      {
+        "id": "task-shipped00000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The shipped task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "done",
+        "verified": true,
+        "progress": "",
+        "output": "Units parse.\n\nReview: PASS",
+        "error": null,
+        "chainId": "chain-shipped",
+        "createdAt": 1763192800000,
+        "updatedAt": 1763198200000,
+        "changes": {
+          "artifact": "art_cccccccccccccccccccccc",
+          "files": 1,
+          "base": "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2"
+        },
+        "shipped": {
+          "url": "https://github.com/amiriteorg/galahad/pull/12",
+          "pr": 12
+        }
+      },
+      {
+        "id": "task-fixing000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The fixing task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "done",
+        "verified": true,
+        "progress": "",
+        "output": "Checks pass.\n\nReview: PASS",
+        "error": null,
+        "chainId": "chain-fixing",
+        "createdAt": 1763193400000,
+        "updatedAt": 1763198200000,
+        "changes": {
+          "artifact": "art_dddddddddddddddddddddd",
+          "files": 1,
+          "base": "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2"
+        },
+        "fix": {
+          "connector": "github",
+          "owner": "amiriteorg",
+          "repo": "galahad",
+          "branch": "galahad/units",
+          "pr": 12,
+          "head": "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2"
+        }
       }
     ],
     "knight": [
       "task:task-old000000000",
       "task:task-ask000000000",
       "msg-1",
+      "task:task-shipped00000",
       "msg-2",
+      "task:task-fixing000000",
       "msg-3",
       "msg-4",
       "task:task-sync00000000",
@@ -9486,7 +9544,9 @@
       "task:task-old000000000",
       "task:task-ask000000000",
       "msg-1",
+      "task:task-shipped00000",
       "msg-2",
+      "task:task-fixing000000",
       "msg-3",
       "msg-4",
       "task:task-sync00000000",
@@ -9538,11 +9598,14 @@
           "why": null,
           "said": "Sync now resumes from the last acknowledged event."
         },
-        "actions": [],
+        "actions": [
+          "ship"
+        ],
         "given": null,
         "kept": "2 files changed",
         "proposed": null,
-        "stepped": "You stepped in: an approval and two messages"
+        "stepped": "You stepped in: an approval and two messages",
+        "shipped": null
       },
       {
         "id": "task-run000000000",
@@ -9557,7 +9620,8 @@
         "given": null,
         "kept": null,
         "proposed": null,
-        "stepped": null
+        "stepped": null,
+        "shipped": null
       },
       {
         "id": "task-same00000000",
@@ -9572,7 +9636,8 @@
         "given": "Given to the Roundtable by you",
         "kept": null,
         "proposed": null,
-        "stepped": null
+        "stepped": null,
+        "shipped": null
       },
       {
         "id": "task-old000000000",
@@ -9591,7 +9656,8 @@
         "given": null,
         "kept": null,
         "proposed": null,
-        "stepped": "You stepped in: its desktop taken over, a stop, 12 resumes and given again two times"
+        "stepped": "You stepped in: its desktop taken over, a stop, 12 resumes and given again two times",
+        "shipped": null
       },
       {
         "id": "task-cut000000000",
@@ -9610,7 +9676,8 @@
         "given": null,
         "kept": null,
         "proposed": null,
-        "stepped": null
+        "stepped": null,
+        "shipped": null
       },
       {
         "id": "task-halt00000000",
@@ -9629,7 +9696,8 @@
         "given": "Given to the Roundtable by Galahad",
         "kept": null,
         "proposed": null,
-        "stepped": null
+        "stepped": null,
+        "shipped": null
       },
       {
         "id": "task-half00000000",
@@ -9647,7 +9715,8 @@
         "given": null,
         "kept": null,
         "proposed": null,
-        "stepped": null
+        "stepped": null,
+        "shipped": null
       },
       {
         "id": "task-elsewhere000",
@@ -9662,7 +9731,8 @@
         "given": null,
         "kept": null,
         "proposed": null,
-        "stepped": null
+        "stepped": null,
+        "shipped": null
       },
       {
         "id": "task-roomwork0000",
@@ -9677,7 +9747,8 @@
         "given": null,
         "kept": null,
         "proposed": null,
-        "stepped": null
+        "stepped": null,
+        "shipped": null
       },
       {
         "id": "task-ask000000000",
@@ -9693,7 +9764,8 @@
         "given": null,
         "kept": null,
         "proposed": "Ada proposes this: it starts when you approve it",
-        "stepped": null
+        "stepped": null,
+        "shipped": null
       },
       {
         "id": "task-asked0000000",
@@ -9708,7 +9780,8 @@
         "given": null,
         "kept": null,
         "proposed": "Proposed by bea",
-        "stepped": null
+        "stepped": null,
+        "shipped": null
       },
       {
         "id": "task-declined0000",
@@ -9727,7 +9800,42 @@
         "given": null,
         "kept": null,
         "proposed": "Proposed by Ada",
-        "stepped": null
+        "stepped": null,
+        "shipped": null
+      },
+      {
+        "id": "task-shipped00000",
+        "badge": {
+          "text": "Verified",
+          "tone": "ok"
+        },
+        "end": {
+          "why": null,
+          "said": "Units parse."
+        },
+        "actions": [],
+        "given": null,
+        "kept": "1 file changed",
+        "proposed": null,
+        "stepped": null,
+        "shipped": "Pull request #12"
+      },
+      {
+        "id": "task-fixing000000",
+        "badge": {
+          "text": "Verified",
+          "tone": "ok"
+        },
+        "end": {
+          "why": null,
+          "said": "Checks pass."
+        },
+        "actions": [],
+        "given": null,
+        "kept": "1 file changed",
+        "proposed": null,
+        "stepped": null,
+        "shipped": null
       }
     ]
   },

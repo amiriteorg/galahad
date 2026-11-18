@@ -90,7 +90,7 @@ enum Timeline {
 /// it, what can be done with it, who gave it to the Roundtable, and what it kept.
 enum TaskCard {
     enum Tone: String, Sendable { case ok, warn, danger, accent, neutral }
-    enum Action: String, Sendable { case approve, decline, stop, resume, again }
+    enum Action: String, Sendable { case approve, decline, stop, resume, again, ship }
 
     /// Where it stands, toned as status is everywhere: green only for verified work.
     static func badge(_ task: TeamTask) -> (text: String, tone: Tone) {
@@ -129,12 +129,19 @@ enum TaskCard {
         return (why, said)
     }
 
-    /// A proposal approved or declined; work in hand stopped; work that ended unverified resumed or given again.
+    /// A proposal approved or declined; work in hand stopped; work that ended unverified resumed or given again; verified
+    /// work it kept shipped as a pull request (not a fix: that goes onto its own).
     static func actions(_ task: TeamTask) -> [Action] {
         if task.status == "proposed" { return [.approve, .decline] }
         if task.status == "queued" || task.status == "running" { return [.stop] }
-        if task.status == "done" { return task.verified ? [] : [.again] }
+        if task.status == "done" { return !task.verified ? [.again] : task.changes != nil && task.fix == nil && task.shipped == nil ? [.ship] : [] }
         return [.resume, .again]
+    }
+
+    /// Its pull request, once you shipped it (nil: not shipped from an app).
+    static func shipped(_ task: TeamTask) -> (text: String, url: String)? {
+        guard let shipped = task.shipped else { return nil }
+        return (shipped.pr.map { "Pull request #\($0)" } ?? "Its pull request", shipped.url)
     }
 
     /// Who gave it to the Roundtable rather than to a knight by name (nil: it was given by name).

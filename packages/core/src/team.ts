@@ -379,7 +379,18 @@ export interface TeamTask {
   outcome?: string;
   /** The pull request whose failing checks it fixes (PLAN #29); absent: none. */
   fix?: TeamTaskFix;
+  /** Its pull request, once you shipped its work from an app (PLAN #37; absent: not shipped that way). */
+  shipped?: TeamTaskShipped;
 }
+
+/** Where a knight's verified work went as a pull request, on your word: its address, and its number. */
+export interface TeamTaskShipped {
+  url: string;
+  pr: number | null;
+}
+
+/** A knight's verified work shipped as a pull request, on your word; `title` is the pull request's (the task's when absent). */
+export const TeamShipInput = z.strictObject({ task: TeamTaskId, title: z.string().trim().min(1).max(120).optional() });
 
 /**
  * A pull request a task fixes (PLAN #29, the node's ci-back.ts): its checks failed on `head`, so the knight whose work it

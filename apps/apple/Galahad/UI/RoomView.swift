@@ -10,6 +10,8 @@ struct RoomView: View {
     @State private var giving = false
     @State private var editing = false
     @State private var stopping: TeamTask?
+    /// The verified work being shipped as a pull request (ShipPrompt asks its title).
+    @State private var shipping: TeamTask?
     @State private var problem: String?
     @FocusState private var composing: Bool
 
@@ -121,6 +123,7 @@ struct RoomView: View {
         } message: { task in
             Text("“\(task.title)” stops where it is. What it changed so far stays in its knight's workspace.")
         }
+        .modifier(ShipPrompt(task: $shipping, room: room, client: session.client))
         .task(id: id) {
             while !Task.isCancelled {
                 await room.load(room: id, with: session.client)
@@ -156,6 +159,7 @@ struct RoomView: View {
         case .stop: stopping = task
         case .resume: Task { await room.control(task, "resume", with: session.client) }
         case .again: Task { await room.giveAgain(task, with: session.client) }
+        case .ship: shipping = task
         }
     }
 

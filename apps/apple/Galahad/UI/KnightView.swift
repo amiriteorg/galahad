@@ -10,6 +10,8 @@ struct KnightView: View {
     @State private var giving = false
     @State private var about = false
     @State private var stopping: TeamTask?
+    /// The verified work being shipped as a pull request (ShipPrompt asks its title).
+    @State private var shipping: TeamTask?
     @FocusState private var composing: Bool
     @Environment(\.dismiss) private var leave
     @State private var watching = false
@@ -149,6 +151,7 @@ struct KnightView: View {
         } message: { task in
             Text("“\(task.title)” stops where it is. What it changed so far stays in \(name)'s workspace.")
         }
+        .modifier(ShipPrompt(task: $shipping, room: room, client: session.client))
         // Asked again while you're here: its replies and its work move on as it goes.
         .task(id: row?.room) {
             while !Task.isCancelled {
@@ -175,6 +178,7 @@ struct KnightView: View {
         case .stop: stopping = task
         case .resume: Task { await room.control(task, "resume", with: session.client) }
         case .again: Task { await room.giveAgain(task, with: session.client) }
+        case .ship: shipping = task
         }
     }
 
@@ -282,13 +286,16 @@ struct TaskCardView: View {
             if let kept = TaskCard.kept(task) {
                 Label(kept, systemImage: "doc.badge.plus").font(.caption).foregroundStyle(.secondary)
             }
+            if let shipped = TaskCard.shipped(task), let url = URL(string: shipped.url) {
+                Link(destination: url) { Label(shipped.text, systemImage: "arrow.up.forward.square") }.font(.caption)
+            }
             let actions = TaskCard.actions(task)
             if !actions.isEmpty {
                 // One size for every card's buttons, big enough for a thumb.
                 HStack(spacing: Space.s2) {
                     ForEach(actions, id: \.rawValue) { action in
-                        if action == .approve {
-                            Button("Approve") { act(action) }
+                        if action == .approve || action == .ship {
+                            Button(action == .ship ? "Ship it" : "Approve") { act(action) }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.ink)
                         } else {
@@ -308,6 +315,27 @@ struct TaskCardView: View {
     }
 
     private static let label: [TaskCard.Action: String] = [.decline: "Decline", .stop: "Stop", .resume: "Resume", .again: "Give again"]
+}
+
+/// Asks a pull request's title (the task's, to change) before a knight's verified work is shipped: the PWA's shipTask.
+struct ShipPrompt: ViewModifier {
+    @Binding var task: TeamTask?
+    let room: KnightRoom
+    let client: NodeClient
+    @State private var title = ""
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Ship it as a pull request?", isPresented: .init(get: { task != nil }, set: { if !$0 { task = nil } }), presenting: task) { task in
+                TextField("Pull request title", text: $title)
+                Button("Open pull request") { Task { _ = await room.ship(task, title: title, with: client) } }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Cancel", role: .cancel) {}
+            } message: { task in
+                Text("\(task.changes.map { "\($0.files) file\($0.files == 1 ? "" : "s")" } ?? "Its changes"), on a new galahad/… branch of its repository, as it was verified. Its checks are followed after.")
+            }
+            .onChange(of: task?.id) { title = String(task?.title.prefix(120) ?? "") }
+    }
 }
 
 /// The message box at the foot of a conversation: a knight's own, or a room's.

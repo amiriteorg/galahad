@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, type TeamTrailEntry, TeamWorkspace,
   type Teammate, type TeamRoom, type TeamMessage, type TeamTask, type TeamDelivery, type TeamSnapshot, type TeamRoomView, type TeamWorkStatus, type TeamOverview,
-  TeamOutcomeInput, type TeamOutcomeStatus, type TeamTaskFix,
+  TeamOutcomeInput, type TeamOutcomeStatus, type TeamTaskFix, type TeamTaskShipped,
 } from "../../core/src/team.ts";
 import { type InterventionKind, type NorthStar, northStar } from "../../core/src/interventions.ts";
 
@@ -598,6 +598,13 @@ export class TeamStore {
       return this.task(key)!;
     })();
   }
+  /** A task's work, shipped as a pull request on your word (PLAN #37): said on it from then on. */
+  markShipped(key: string, shipped: TeamTaskShipped): void {
+    const row = this.jobRow(key);
+    if (row?.kind !== "task") return;
+    // (When it ended stays as it was: shipping it is not more of its work.)
+    this.db.query("UPDATE team_jobs SET data=? WHERE id=?").run(JSON.stringify({ ...JSON.parse(row.data), shipped }), key);
+  }
   /** The task whose kept work this is (an artifact's id), if it was this node's knights'. */
   taskOfWork(artifact: string): TeamTask | null {
     const row = this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE kind='task' AND json_extract(data,'$.changes.artifact') = ? ORDER BY seq DESC LIMIT 1").get(artifact);
@@ -613,7 +620,7 @@ export class TeamStore {
   private jobRow(id: string): JobRow | null { return this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE id = ?").get(id); }
   job(id: string): TeamJob | null { const row = this.jobRow(id); return row ? jobOf(row) : null; }
   private taskOf(row: JobRow): TeamTask {
-    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "changes" | "givenBy" | "proposedBy" | "interventions" | "outcome" | "fix">;
+    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "changes" | "givenBy" | "proposedBy" | "interventions" | "outcome" | "fix" | "shipped">;
     return { ...data, id: row.id, room: row.room, assignee: row.teammate, chainId: row.chain_id, status: row.status, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   task(id: string): TeamTask | null { const row = this.jobRow(id); return row?.kind === "task" ? this.taskOf(row) : null; }

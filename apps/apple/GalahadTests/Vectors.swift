@@ -309,6 +309,7 @@ struct Vectors: Decodable {
             let kept: String?
             let proposed: String?
             let stepped: String?
+            let shipped: String?
         }
 
         let messages: [TeamMessage]

@@ -527,6 +527,7 @@ A sandbox never holds a GitHub key. It **reads** through the node's **git gatewa
 |---|---|
 | `galahad do --agent opencode --repo https://github.com/o/r --ship "<goal>"` | Once the reviewer passes the work, a pull request is filed for your approval (Inbox, with **Read the changes**) |
 | `galahad ship <artifact> --title "…"` | Ship kept work yourself, after a look at the files (`--ask` files it for approval instead) |
+| **Ship it** on a verified task's card (`shipTeamTask`) | A knight's work, filed as its knight's ship and answered by you at once: so it is in the outbox, its checks are followed and a failure can go back to that knight; the card names the pull request after |
 | `galahad order add github.ship --arg owner=o --arg repo=r --arg branch='galahad/*' --label "…"` | A standing order: Galahad's passed work on that repository becomes a PR without asking |
 | `galahad connector add github --owner <org>` | One more owner with its own token (`github-<org>`); shipping picks it for that owner's repositories |
 | `galahad roundtable ci on` | A failing pull request of a knight's work, or a review asking for changes, goes back to that knight, outside an outcome too; you approve the fix's push |

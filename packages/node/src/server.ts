@@ -184,6 +184,7 @@ import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.t
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
 import { OutcomeError, OutcomeRunner } from "./outcomes.ts";
 import { offerFix } from "./ci-back.ts";
+import { ShipManifest } from "./ship.ts";
 import { randomBytes } from "node:crypto";
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
 import type { ConnectorRequest, ConnectorRequests } from "./connector-requests.ts";
@@ -198,7 +199,7 @@ import { APPLE_PUSH, APPLE_PUSH_SECRET, appleProviderToken, storedApplePushKey }
 import { inputRefused, type MacScreen, ScreenError, screenDid } from "./mac-screen.ts";
 import { galahadRevision } from "./revision.ts";
 import { localModelsOf, type ModelPeer, serves, viaFleet } from "./local-models.ts";
-import { githubRepo } from "./quest-cli.ts";
+import { githubRepo, shipBranch } from "./quest-cli.ts";
 import type { Terminals } from "./terminals.ts";
 
 /**
@@ -2370,6 +2371,54 @@ export function createApp(ctx: AppContext) {
     teamMemory: (input, p) => { ownerOnly(p); return { teammate: teamOf().remember(input.id, input.text) }; },
     teamEngram: (input, p) => { ownerOnly(p); return { engram: teamOf().setEngram(input.on) }; },
     teamCi: (input, p) => { ownerOnly(p); return { ci: teamOf().setCiBack(input.on) }; },
+    /* A knight's verified work as a pull request, on your word (PLAN #37's next step): filed as its knight's ship, so it is
+     * in the outbox that the CI watcher follows (and a failure can go back to that knight), and answered by you at once,
+     * from the device you tapped on. Only from this node, which keeps the work. */
+    shipTeamTask: async (input, p) => {
+      ownerOnly(p);
+      const task = ctx.team!.store.task(input.task);
+      if (!task) throw new HttpError(404, `no task ${input.task}`);
+      if (task.status !== "done" || !task.verified || !task.changes) throw new HttpError(409, "only work that was verified, and kept, is shipped");
+      if (task.fix) throw new HttpError(409, "a fix goes onto its pull request's branch: its push waits in your Inbox");
+      if (task.shipped) throw new HttpError(409, `it was shipped already: ${task.shipped.url}`);
+      const artifact = task.changes.artifact;
+      let shipment: ShipManifest;
+      try {
+        shipment = ShipManifest.parse(JSON.parse(new TextDecoder().decode(ctx.artifacts.read(artifact, "ship/manifest.json").bytes)));
+      } catch {
+        throw new HttpError(404, `${artifact} isn't kept on this node, or holds no shipment: ship it from where it is kept (galahad ship ${artifact})`);
+      }
+      const where = githubRepo(shipment.remote);
+      if (!where) throw new HttpError(422, `the work was done on ${shipment.remote}, which isn't a github.com repository`);
+      const own = `github-${where.owner.toLowerCase()}`;
+      const connector = installedConnector(ctx.store, own) ? own : "github";
+      const title = input.title ?? task.title.slice(0, 120);
+      const said = task.output.split("\n\nReview:")[0]!.trim();
+      const body = [said, `_Made by @${task.assignee} in task ${task.id}, verified by its gates and an independent reviewer; the work is kept as ${artifact}._`].filter(Boolean).join("\n\n").slice(0, 20_000);
+      const filed = await connectorErrors(() =>
+        ctx.connectors.call(
+          { connector, tool: "ship", args: { owner: where.owner, repo: where.repo, artifact, branch: shipBranch(title, task.id.slice(-8)), title, body }, why: `Your word, in the app, on @${task.assignee}'s verified work (task ${task.id}).` },
+          { kind: "agent", by: teammateLabel(task.assignee) },
+        ),
+      );
+      let receipt: string;
+      if (filed.status === "done") {
+        if (!filed.result.ok) throw new HttpError(502, `not shipped: ${filed.result.body}`);
+        receipt = filed.result.body;
+      } else {
+        connectorErrors(() => ctx.connectors.decide(filed.action, true, p.kind === "client" ? p.device : null));
+        await ctx.connectors.drain();
+        const action = ctx.connectors.actions(10_000).find((a) => a.id === filed.action);
+        if (action?.state !== "done") throw new HttpError(502, `not shipped: ${action?.receipt ?? "it hasn't been sent yet (galahad action ls)"}`);
+        receipt = action.receipt ?? "";
+      }
+      const url = /https:\/\/github\.com\/[^\s)]+\/pull\/\d+/.exec(receipt)?.[0] ?? null;
+      const pr = Number(/pull request #(\d+)/.exec(receipt)?.[1]) || null;
+      if (url) teamOf().markShipped(task.id, { url, pr });
+      teamOf().noteTask(task.id, `Shipped · ${receipt}`.slice(0, 500));
+      steppedIn({ task: task.id }, "approval", "shipped it");
+      return { receipt, url, pr };
+    },
     /* Removing a worker is yours alone (never his: he only adds), and for good. One that has a VM goes only together
      * with it, when you say so and from a device that may destroy a sandbox: the destroy is your own request, approved
      * as that device's. Whether it has one is asked of its host, never assumed: a VM made just before a crash may

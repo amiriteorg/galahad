@@ -111,6 +111,20 @@ import Observation
         }
     }
 
+    /// Its verified work as a pull request, on your word, under the title you gave it: where it went (nil: it wasn't).
+    func ship(_ task: TeamTask, title: String, with client: NodeClient) async -> String? {
+        struct Ship: Encodable { let task: String; let title: String }
+        struct Shipped: Decodable { let url: String?; let pr: Int? }
+        do {
+            let shipped = try await client.post("/api/team/ship", Ship(task: task.id, title: title.trimmingCharacters(in: .whitespacesAndNewlines)), as: Shipped.self)
+            await load(room: view?.id, with: client)
+            return shipped.url
+        } catch {
+            problem = error.localizedDescription
+            return nil
+        }
+    }
+
     /// The commands that prove it done, one a line: at most 16, each at most 1,000 characters (lib/give.ts).
     nonisolated static func gates(from text: String) -> Result<[String], NodeError> {
         let gates = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }

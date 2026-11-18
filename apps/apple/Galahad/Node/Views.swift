@@ -121,6 +121,12 @@ struct TeamTask: Decodable, Sendable {
     var proposedBy: String? = nil
     /// Each time you stepped in on it, by how (approval · message · takeover · stop · resume · again).
     var interventions: [String: Int]? = nil
+    /// The pull request whose failing checks or review it fixes: its fix goes onto that branch, never a new pull request.
+    struct Fix: Decodable, Sendable { let branch: String }
+    var fix: Fix? = nil
+    /// Its pull request, once you shipped its work from an app.
+    struct Shipped: Decodable, Sendable { let url: String; let pr: Int? }
+    var shipped: Shipped? = nil
 }
 
 /// A knight's reply on its way (or how it went).

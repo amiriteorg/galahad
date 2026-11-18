@@ -3,13 +3,14 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type ActionView, type RouteName, routes } from "@galahad/core";
+import { type ActionView, type RouteName, routes, type TeamSnapshot } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { githubRepo, shipBranch } from "../src/quest-cli.ts";
 import { sameRepository, SHIPMENT_SCRIPT, type ShipDeps, shipToGitHub } from "../src/ship.ts";
+import { TeamStore } from "../src/team-store.ts";
 import { freePort } from "./ports.ts";
 
 /*
@@ -376,6 +377,36 @@ describe("the gate, end to end", () => {
     const bad = await send(armToken, "callConnector", { connector: "github", tool: "ship", args: { ...ARGS, artifact, branch: "main" } });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/branch doesn't match/);
+  });
+
+  test("a knight's verified work ships from an app in one tap: filed as the knight's ship and answered by you, so it is followed after; said on the task; once", async () => {
+    // The node's team, as a knight's run leaves it: a verified task whose work is kept here.
+    const team = new TeamStore(join(home.dir, "team.db"));
+    let id: string;
+    try {
+      team.saveTeammate({ id: "kay", name: "Kay", repository: "https://github.com/amiriteorg/shipyard" });
+      const work = team.createTask({ room: team.direct("kay").id, assignee: "kay", title: "Parse SI units", goal: "Parse them." });
+      team.finish(work.id, "done", null, { verified: true, output: "Units parse, kilo to giga.\n\nReview: PASS", changes: { artifact, files: 3, base: BASE } });
+      id = work.id;
+    } finally {
+      team.close();
+    }
+    const before = seen.length;
+    const shipped = await send(home.adminToken(), "shipTeamTask", { task: id, title: "Parse SI units" });
+    expect(shipped.status).toBe(200);
+    expect(shipped.body).toMatchObject({ url: "https://github.com/amiriteorg/shipyard/pull/7", pr: 7 });
+    expect(seen.slice(before).filter((s) => s.method === "POST" && s.url.endsWith("/pulls"))).toHaveLength(1);
+    // In the outbox as the knight's, answered by you: what the CI watcher follows.
+    const actions = (await send(home.adminToken(), "actions")).body.actions as ActionView[];
+    const filed = actions.find((a) => a.tool === "ship" && a.state === "done" && a.by.endsWith(".kay"));
+    expect(filed?.args).toMatchObject({ owner: "amiriteorg", repo: "shipyard", artifact, title: "Parse SI units", branch: `galahad/parse-si-units-${id.slice(-8)}` });
+    expect(String(filed?.args.body)).toStartWith("Units parse, kilo to giga.");
+    // Said on the task, and not offered again.
+    const task = ((await send(home.adminToken(), "team")).body as TeamSnapshot).tasks.find((t) => t.id === id);
+    expect(task?.shipped).toEqual({ url: "https://github.com/amiriteorg/shipyard/pull/7", pr: 7 });
+    expect((await send(home.adminToken(), "shipTeamTask", { task: id })).status).toBe(409);
+    // Yours alone: an agent may not.
+    expect((await send(armToken, "shipTeamTask", { task: id })).status).toBe(403);
   });
 
   test("a fix onto its pull request's branch goes through the same gate: it waits for you; approved, the branch moves forward once and no new pull request opens", async () => {

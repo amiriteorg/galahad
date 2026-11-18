@@ -1,6 +1,6 @@
 import type { SandboxView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
-import type { TeamControlInput, TeamRoom, TeamTaskInput, Teammate } from "@galahad/core/team";
+import type { TeamControlInput, TeamRoom, TeamTask, TeamTaskInput, Teammate } from "@galahad/core/team";
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
 import { isAbort } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
@@ -161,6 +161,16 @@ export function editNotes(ctx: Ctx, person: Teammate): void {
   editor(ctx, `${person.name}'s working notes`, "Local working context for this knight. Knowledge the knights share belongs in Memory.", [field("Working notes", text, { hint: "Keep task context here. No credentials." })], "Save notes", async () => {
     if (findSecrets(text.value).length) throw new Error("This looks like it contains a secret. Keep it in the vault.");
     await ctx.api.post("/api/team/memory", { id: person.id, text: text.value });
+  });
+}
+
+/** A knight's verified work as a pull request, on your word: its title yours to change, then opened with the connector's key. */
+export function shipTask(ctx: Ctx, task: TeamTask): void {
+  const title = h("input", { class: "input", required: true, maxlength: 120, value: task.title.slice(0, 120) });
+  const files = task.changes ? `${task.changes.files} file${task.changes.files === 1 ? "" : "s"}` : "Its changes";
+  editor(ctx, "Ship it as a pull request?", `${files}, on a new galahad/… branch of its repository, as it was verified. Its checks are followed after.`, [field("Pull request title", title)], "Open pull request", async () => {
+    const shipped = await ctx.api.post<{ url: string | null; pr: number | null }>("/api/team/ship", { task: task.id, title: title.value.trim() });
+    toast(shipped.pr ? `Pull request #${shipped.pr} opened` : "Pull request opened", { tone: "info", ...(shipped.url ? { action: { label: "Open", run: () => window.open(shipped.url!, "_blank", "noopener") } } : {}) });
   });
 }
 

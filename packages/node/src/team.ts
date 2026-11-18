@@ -3,7 +3,7 @@ import {
   TEAM_GALAHAD, TEAM_LIMITS, TeamControlInput, TeamRoomId, type TeamSayInput, TeammateId,
   type Teammate, type TeammateInput, type TeamRecruitInput, type TeamRoom, type TeamRoomInput, type TeamPostInput, type TeamWorkspace,
   type TeamMessage, type TeamTask, type TeamTaskChanges, type TeamTaskInput, type TeamTaskRecord, type TeamTrailEntry, type TeamSnapshot, type TeamRoomView, type TeamOverview, type TeamSeenInput,
-  type InterventionKind, type TeamWorkStatus, type TeamTaskFix,
+  type InterventionKind, type TeamWorkStatus, type TeamTaskFix, type TeamTaskShipped,
 } from "../../core/src/team.ts";
 import { TeamStore, TeamError, teamInput, teamOutput, teamText, type TeamAnswer, type TeamAsker, type TeamJob, type TeamSelection } from "./team-store.ts";
 
@@ -130,6 +130,11 @@ export class TeamService {
   /** A line on a task's trail from outside its run (a skill its verified work taught), shown on every device. */
   noteTask(task: string, text: string): void {
     this.store.noteTask(task, text);
+    this.changed();
+  }
+  /** A task's work, shipped as a pull request on your word. */
+  markShipped(task: string, shipped: TeamTaskShipped): void {
+    this.store.markShipped(task, shipped);
     this.changed();
   }
   setWorkspace(id: string, binding: TeamWorkspace | null): Teammate {

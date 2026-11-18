@@ -48,14 +48,14 @@ export function taskEnd(task: Pick<TeamTask, "status" | "verified" | "error" | "
   return { why: (error && (QUEST_ENDS[error] ?? error)) || UNSAID[task.status]!, said };
 }
 
-export type TaskAction = "approve" | "decline" | "stop" | "resume" | "again";
+export type TaskAction = "approve" | "decline" | "stop" | "resume" | "again" | "ship";
 
 /** What can be done with a task: a proposal approved or declined, work in hand stopped, work that ended unverified
- * resumed or given again. */
-export function taskActions(task: Pick<TeamTask, "status" | "verified">): TaskAction[] {
+ * resumed or given again, and verified work it kept shipped as a pull request (not a fix: that goes onto its own). */
+export function taskActions(task: Pick<TeamTask, "status" | "verified" | "changes" | "fix" | "shipped">): TaskAction[] {
   if (task.status === "proposed") return ["approve", "decline"];
   if (task.status === "queued" || task.status === "running") return ["stop"];
-  if (task.status === "done") return task.verified ? [] : ["again"];
+  if (task.status === "done") return !task.verified ? ["again"] : task.changes && !task.fix && !task.shipped ? ["ship"] : [];
   return ["resume", "again"];
 }
 
@@ -76,3 +76,7 @@ export const steppedLine = (task: Pick<TeamTask, "interventions">): string | nul
 /** What a task kept of its changes: how many files, and the artifact that holds them (null: nothing kept). */
 export const keptChanges = (task: Pick<TeamTask, "changes">): { text: string; artifact: string } | null =>
   task.changes ? { text: `${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed`, artifact: task.changes.artifact } : null;
+
+/** Its pull request, once you shipped it (null: not shipped from an app). */
+export const shippedLine = (task: Pick<TeamTask, "shipped">): { text: string; url: string } | null =>
+  task.shipped ? { text: task.shipped.pr ? `Pull request #${task.shipped.pr}` : "Its pull request", url: task.shipped.url } : null;
