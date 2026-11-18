@@ -1,7 +1,7 @@
 #if os(iOS)
 import SwiftUI
 
-/// Notifications on this iPhone: on and off, said plainly, and a test. What he tells you about and when he stays quiet
+/// Notifications on this iPhone or iPad: on and off, said plainly, and a test. What he tells you about and when he stays quiet
 /// are the node's own settings, the same from every device (the web app's Settings, or `galahad notify`).
 struct NotificationsSection: View {
     let session: Session
@@ -20,7 +20,7 @@ struct NotificationsSection: View {
     var body: some View {
         Section {
             Toggle(isOn: Binding(get: { on ?? false }, set: { want in Task { await turn(want) } })) {
-                Label("Notifications on this iPhone", systemImage: "bell")
+                Label("Notifications on this \(ThisDevice.kind)", systemImage: "bell")
             }
             .disabled(on == nil || busy)
             if on == true {

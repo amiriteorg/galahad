@@ -400,9 +400,9 @@ private struct AddKeySheet: View {
                 }
                 if PhoneKeys.offered {
                     Section {
-                        Toggle("Keep a copy on this iPhone", isOn: $keepCopy)
+                        Toggle("Keep a copy on this \(ThisDevice.kind)", isOn: $keepCopy)
                     } footer: {
-                        Text("In this iPhone's Keychain, for this device alone, read back only with Face ID or your passcode: to seal it again where a node lost it.")
+                        Text("In this \(ThisDevice.kind)'s Keychain, for this device alone, read back only with Face ID or your passcode: to seal it again where a node lost it.")
                     }
                 }
                 if let problem {
