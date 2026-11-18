@@ -2505,6 +2505,10 @@ export function createApp(ctx: AppContext) {
         requestedBy: r.device,
       })),
     }),
+    dismissSecretRequest: (input) => {
+      if (!ctx.vault.dismissRequest(input.name)) throw new HttpError(404, "no such request (its key was set, it was dismissed, or it was never asked for)");
+      return { ok: true };
+    },
     requestSecret: (input) => {
       guardAgainstSecrets(input.purpose);
       ctx.vault.request(input.name, input.purpose, input.provider);

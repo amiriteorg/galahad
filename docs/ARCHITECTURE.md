@@ -75,7 +75,7 @@ Event kinds today:
 | `node.profile` | A node's endpoint and capabilities, re-published only when they change |
 | `vault.key` / `vault.grant` | Vault keys, sealed to each full node |
 | `secret.set` / `secret.deleted` | Encrypted secrets (LWW by name) |
-| `secret.requested` | Galahad asks you for a credential |
+| `secret.requested` / `secret.request.dismissed` | Galahad asks you for a credential; you dismiss one (LWW by name: the newer stands) |
 | `provider.set` / `provider.removed` | Provider config (LWW) |
 | `roster.set` | Role → ordered models (LWW) |
 | `memory.added` / `memory.forgotten` | Memories with provenance and trust |
@@ -200,7 +200,7 @@ Add an API key once, and every full node can use it. The key never appears in th
 | Entering keys | A hidden terminal prompt (`galahad key add`, `secret set`) or the PWA's password field. Never on the command line, never in chat. |
 | Chat and memory | **Secret scanning** refuses anything credential-shaped with `422` and points to the vault. It catches `sk-ant-`, `sk-orca-`, `sk-or-`, `sk-…`, Zhipu and Z.ai keys, GitHub, AWS, Google, Slack and HF tokens, private keys, Galahad tokens and invites, a credential's name with a value (`password=…`, `DB_PASSWORD=…`, `"api_key": …`), and high-entropy tokens. Text that only names one passes, so Galahad's own answers about code don't block a temporary chat that resends them: a reference (`${DB_PASSWORD}`, `$TOKEN`, `process.env.API_KEY`), a placeholder (`<your-key-here>`), a call that fetches it (`request.headers.get(…)`), a masked or redacted value; and of high-entropy tokens, integrity hashes (`sha512-…` of exactly that length) and the ids of events in the mind. A bare word, a number or a literal default (`${X:-…}`) is still refused. Chat goes to providers and memory replicates in plaintext, so both doors are guarded. |
 | Errors | Provider error text is **redacted** of the key in use and of anything secret-shaped before it reaches chat, logs or arms. |
-| Asking | Galahad files a **secret request** (`secret.requested`: name, provider, purpose). You fill it from any device, and he learns only that it exists. |
+| Asking | Galahad files a **secret request** (`secret.requested`: name, provider, purpose). You fill it from any device, and he learns only that it exists. One that no longer matters, or that you won't give, you dismiss (`secret.request.dismissed`, `POST /api/secret-requests/dismiss`, `vault:write`, which agents never hold; `galahad secret dismiss <name>`): it leaves your Inbox until he asks for it again. |
 | Using keys | The **model gateway** (`/gw/<provider>/…`, loopback only) injects the real key on the way out. Arms hold `gw_…` tokens that are scoped to providers, expiring, request-capped, stored as hashes and revocable. |
 | Running tools | `galahad run --providers deepseek -- opencode` mints a token, sets `OPENAI_BASE_URL`/`ANTHROPIC_BASE_URL` and the token for the child process only, and revokes the token when the tool exits: also when `galahad run` is killed or its terminal closes (it stops the tool first). Ctrl+C is the tool's to take (an interactive one may only cancel), so `galahad run` waits for the tool through it, as a shell does. |
 | API | No route ever returns a secret's plaintext. Listing shows name, provider and a `…last4` hint (only for values of 12 characters or more). |

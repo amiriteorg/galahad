@@ -162,6 +162,13 @@ import Observation
         await refresh()
     }
 
+    /// Dismisses a key he asked for that no longer matters (or that you won't give): out of the Inbox until he asks again.
+    func dismiss(_ request: SecretRequestView) async throws {
+        struct Dismiss: Encodable { let name: String }
+        _ = try await client.post("/api/secret-requests/dismiss", Dismiss(name: request.name), as: JSONValue.self)
+        await refresh()
+    }
+
     /// Lets a device in (only when its code matches the one it shows), or turns it away.
     func answer(_ pairing: PairingView, approve: Bool) async throws {
         struct Answer: Encodable { let invite: String; let device: String }

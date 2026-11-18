@@ -6,6 +6,8 @@ import SwiftUI
 struct InboxView: View {
     let session: Session
     @State private var open: ActionView?
+    /// Why an approval declined from its row wasn't (the row has no room to say it).
+    @State private var declineTrouble: String?
 
     var body: some View {
         GroupedList {
@@ -36,6 +38,12 @@ struct InboxView: View {
                     ForEach(session.waiting) { action in
                         Button { open = action } label: { ApprovalRow(action: action) }
                             .tint(.primary)
+                            // A no from the row; a yes is only ever given in the approval itself.
+                            .inboxSwipe("Decline", when: session.can("fleet:admin")) {
+                                Task {
+                                    do { try await session.decide(action, approve: false) } catch { declineTrouble = error.localizedDescription }
+                                }
+                            }
                     }
                 } header: {
                     Text("Waiting for your approval")
@@ -51,7 +59,7 @@ struct InboxView: View {
                 } header: {
                     Text("Keys Galahad asked for")
                 } footer: {
-                    Text("He'll learn that a key exists, never what it is.")
+                    Text("He'll learn that a key exists, never what it is. One you dismiss is back only if he asks again.")
                 }
             }
             if !session.facts.isEmpty {
@@ -88,6 +96,34 @@ struct InboxView: View {
         .refreshable { await session.refresh() }
         .sheet(item: $open) { action in
             ApprovalSheet(session: session, action: action)
+        }
+        .alert("Couldn't decline it", isPresented: Binding(get: { declineTrouble != nil }, set: { if !$0 { declineTrouble = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(declineTrouble ?? "")
+        }
+    }
+}
+
+extension View {
+    /// How an item leaves the Inbox, in its row's own word (Dismiss, Decline, Drop, Not now, End now): a swipe on an iPhone
+    /// or an iPad, a right click on a Mac. Never a yes: letting anything in or out stays a deliberate press.
+    @ViewBuilder
+    func inboxSwipe(_ title: String, systemImage: String = "xmark", when allowed: Bool = true, action: @escaping () -> Void) -> some View {
+        if allowed {
+            #if os(iOS)
+            swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                // In red, as a swipe that takes a row away is on an iPhone (a row's own tint would make it ink).
+                Button(role: .destructive, action: action) { Label(title, systemImage: systemImage) }
+                    .tint(Color.siege)
+            }
+            #else
+            contextMenu {
+                Button(role: .destructive, action: action) { Label(title, systemImage: systemImage) }
+            }
+            #endif
+        } else {
+            self
         }
     }
 }
@@ -262,6 +298,7 @@ struct KeyRequestRow: View {
     let request: SecretRequestView
     @State private var value = ""
     @State private var sealing = false
+    @State private var dismissing = false
     @State private var problem: String?
 
     var body: some View {
@@ -294,12 +331,29 @@ struct KeyRequestRow: View {
                     .disabled(value.isEmpty || sealing)
                 }
                 .fixedSize(horizontal: false, vertical: true)
+                // One that no longer matters, or that you won't give.
+                Button("Dismiss") { Task { await dismiss() } }
+                    .buttonStyle(.glass)
+                    .disabled(dismissing || sealing)
+                    .accessibilityLabel("Dismiss: \(request.name)")
             } else {
                 Text("This device can't fill key requests (it has no vault:write scope).").font(.footnote).foregroundStyle(.secondary)
             }
             if let problem {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
             }
+        }
+        .inboxSwipe("Dismiss", when: session.can("vault:write")) { Task { await dismiss() } }
+    }
+
+    private func dismiss() async {
+        dismissing = true
+        defer { dismissing = false }
+        do {
+            try await session.dismiss(request)
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
         }
     }
 
@@ -353,6 +407,7 @@ struct FactRow: View {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
             }
         }
+        .inboxSwipe("Drop", systemImage: "trash", when: session.can("mind:write")) { Task { await act { try await session.drop(fact) } } }
         .alert("In your words", isPresented: $rewording) {
             TextField("About you", text: $words)
             Button("Keep") {
@@ -412,6 +467,7 @@ struct NoticeRow: View {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
             }
         }
+        .inboxSwipe("Dismiss", when: session.can("fleet:admin")) { Task { await dismiss() } }
     }
 
     private func dismiss() async {
@@ -482,6 +538,13 @@ struct ScreenSessionRow: View {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
             }
         }
+        .inboxSwipe(screen.state == "allowed" ? "End now" : "Not now", systemImage: screen.state == "allowed" ? "stop.fill" : "xmark", when: session.can("fleet:admin")) {
+            Task {
+                await act {
+                    if screen.state == "allowed" { try await session.end(screen: screen) } else { try await session.decide(screen: screen, allow: false) }
+                }
+            }
+        }
         .alert("Let Galahad use \(screen.nodeName) itself?", isPresented: $confirming) {
             Button("Let him, for \(screen.minutes) minutes") { Task { await act { try await session.decide(screen: screen, allow: true) } } }
             Button("Cancel", role: .cancel) {}
@@ -534,6 +597,7 @@ struct JoinRequestRow: View {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(Color.siege)
             }
         }
+        .inboxSwipe("Decline", when: !pairing.conflict && session.can("fleet:admin")) { Task { await answer(false) } }
         .alert("Let \(pairing.name) in?", isPresented: $confirming) {
             Button("Let it in") { Task { await answer(true) } }
             Button("Cancel", role: .cancel) {}

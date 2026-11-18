@@ -330,6 +330,26 @@ describe("M0: one mind, two bodies", () => {
     await until(async () => (await callB("secretRequests")).requests.length === 0);
   });
 
+  test("a key request you dismiss leaves the Inbox on every node until he asks again; an agent can't dismiss one", async () => {
+    const callA = admin(homeA, portA);
+    const callB = admin(homeB, portB);
+    await callB("requestSecret", { name: "orca", purpose: "a second opinion on the reviewer's answers" });
+    await until(async () => (await callA("secretRequests")).requests.some((r: any) => r.name === "orca"));
+    // An agent may ask for a key, never clear your Inbox: dismissing needs vault:write, which no arm holds.
+    const { token } = await callA<{ token: string }>("mintArm", { label: "tidier" });
+    const route = routes.dismissSecretRequest;
+    const refused = await fetch(`http://127.0.0.1:${portA}${route.path}`, { method: route.method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ name: "orca" }) });
+    expect(refused.status).toBe(403);
+    await refused.body?.cancel();
+    expect((await callA("secretRequests")).requests.some((r: any) => r.name === "orca")).toBe(true);
+    await callA("dismissSecretRequest", { name: "orca" });
+    await until(async () => !(await callB("secretRequests")).requests.some((r: any) => r.name === "orca"));
+    // Nothing open by that name is said, never a silent success.
+    await expect(callA("dismissSecretRequest", { name: "orca" })).rejects.toThrow(/404.*no such request/);
+    await callB("requestSecret", { name: "orca", purpose: "the reviewer's answers, again" });
+    await until(async () => (await callA("secretRequests")).requests.some((r: any) => r.name === "orca" && r.purpose === "the reviewer's answers, again"));
+  });
+
   test("a subscription's sign-in pasted as a provider's key is refused, and never sealed; the presets say which are coding plans", async () => {
     const callA = admin(homeA, portA);
     // (Fake: the form of a token from `claude setup-token`, not one.)

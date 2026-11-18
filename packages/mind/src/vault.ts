@@ -200,7 +200,14 @@ export class Vault {
     this.store.emit(this.identity, "secret.requested", { name, purpose, ...(provider ? { provider } : {}) });
   }
 
-  /** Open requests: asked for, and not set since. */
+  /** Dismisses an open request: it leaves the Inbox until he asks for it again. False when none is open by that name. */
+  dismissRequest(name: string): boolean {
+    if (!this.requests().some((r) => r.name === name)) return false;
+    this.store.emit(this.identity, "secret.request.dismissed", { name });
+    return true;
+  }
+
+  /** Open requests: asked for, and not set or dismissed since. */
   requests(): { name: string; provider: string | null; purpose: string; hlc: string; device: string }[] {
     return this.store
       .lwwPrefix<{ name: string; provider?: string; purpose: string }>("secret-request:")

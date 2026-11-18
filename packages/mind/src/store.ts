@@ -67,8 +67,10 @@ CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, device TEXT NOT NULL, h
  *    them before it knew them.
  * 5: sessions on a Mac's own screen (screen.asked, screen.decided, screen.ended; in v_lww as screen:<id>,
  *    screen-decision:<id>, screen-ended:<id>), applied the same way by a replica that held them before it knew them.
+ * 6: key requests you dismissed (secret.request.dismissed; clears v_lww's secret-request:<name>), applied the same
+ *    way by a replica that held them before it knew them.
  */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 const MAX_PENDING = 2000;
 
@@ -271,6 +273,9 @@ export class MindStore {
         this.replay();
       } else if (from < 5 && this.db.query("SELECT 1 FROM events WHERE kind IN ('screen.asked', 'screen.decided', 'screen.ended') LIMIT 1").get()) {
         // Screen sessions a newer node wrote while this replica didn't know them: applied now, as a rebuild would.
+        this.replay();
+      } else if (from < 6 && this.db.query("SELECT 1 FROM events WHERE kind = 'secret.request.dismissed' LIMIT 1").get()) {
+        // Key requests dismissed on a newer node while this replica didn't know the kind: applied now, as a rebuild would.
         this.replay();
       }
       if (from < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -810,6 +815,12 @@ export class MindStore {
       case "secret.requested": {
         const body = bodyOf(event, "secret.requested");
         this.putLww(`secret-request:${body.name}`, event, body as Json);
+        return null;
+      }
+      case "secret.request.dismissed": {
+        // Yours (its route needs vault:write, which agents never hold). The newer of an ask and a dismissal stands, in
+        // any order: asked again after, it's open again.
+        this.putLww(`secret-request:${bodyOf(event, "secret.request.dismissed").name}`, event, null);
         return null;
       }
       case "provider.set": {

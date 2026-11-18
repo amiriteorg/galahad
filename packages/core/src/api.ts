@@ -481,6 +481,9 @@ export const routes = {
     scope: "mind:write",
     input: z.strictObject({ name: Name, provider: Name.optional(), purpose: z.string().min(1).max(500) }),
   },
+  /** A key he asked for that no longer matters (or that you won't give): out of your Inbox until he asks again. Yours: the
+   * scope that fills a request, which agents never hold. */
+  dismissSecretRequest: { method: "POST", path: "/api/secret-requests/dismiss", scope: "vault:write", input: z.strictObject({ name: Name }) },
   rotateVault: {
     method: "POST",
     path: "/api/vault/rotate",

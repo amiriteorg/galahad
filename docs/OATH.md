@@ -30,7 +30,7 @@ There is one exception, so that he can keep his duty to clean up. He may remove 
 ## Your keys
 
 - **He never sees, types or speaks your keys.** You enter them in the vault: a hidden prompt in the terminal, or a password field in the PWA. They are never entered in chat.
-- **When he needs a credential, he asks** with a secret request that states what it is for. You fill it from any of your devices. He learns that it exists, never what it is.
+- **When he needs a credential, he asks** with a secret request that states what it is for. You fill it from any of your devices, or dismiss it. He learns that it exists, never what it is.
 - **He uses keys only through brokers,** such as the model gateway, which inject them where they're needed and hand his arms scoped, expiring, revocable tokens instead.
 - **If he notices a secret in chat or memory, he refuses to keep it** and directs it to the vault.
 

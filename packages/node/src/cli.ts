@@ -118,6 +118,7 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   the provider is auto-detected when the key's form says whose it is
   secret set <name> | secret list | secret rm <name> | vault rotate
   secret request <name> --reason "…"   ask for a credential; fill it later from any device
+  secret dismiss <name>           dismiss a request: out of the Inbox until he asks for it again
   run [--providers a,b] -- <cmd>  run a tool (opencode, claude, codex…) on a scoped gateway token
   provider add <id> [--preset p] [--base-url url] [--kind openai|anthropic] [--secret name]
   provider list | provider models <id> | provider presets
@@ -950,12 +951,17 @@ Next:
         if (!rest[0] || !str("reason")) fail('usage: galahad secret request <name> --reason "what it is for" [--provider id]');
         await admin.call("requestSecret", { name: rest[0], purpose: str("reason"), provider: str("provider") });
         console.log(`Requested. Fill it with \`galahad secret set ${rest[0]}\` or on the PWA's Vault page.`);
+      } else if (sub === "dismiss") {
+        if (!rest[0]) fail("usage: galahad secret dismiss <name>");
+        await admin.call("dismissSecretRequest", { name: rest[0] });
+        console.log("Dismissed: it's back in your Inbox only if he asks for it again.");
       } else {
         const [{ secrets, unlocked }, { requests }] = await Promise.all([admin.call("secrets"), admin.call("secretRequests")]);
         if (!unlocked) console.log(dim("(this node cannot decrypt the vault)"));
         for (const s of secrets) console.log(`  ${s.name.padEnd(20)} ${(s.provider ?? "").padEnd(14)} ${s.hint ?? ""}`);
         if (!secrets.length) console.log("The vault is empty. `galahad key add` to add one.");
         for (const r of requests) console.log(`  ${bold("requested")} ${r.name.padEnd(20)} ${dim(r.purpose)}`);
+        if (requests.length) console.log(dim("Fill one: galahad secret set <name> · dismiss one: galahad secret dismiss <name>"));
       }
       return;
     }

@@ -108,6 +108,8 @@ export const Bodies = {
     provider: Name.optional(),
     purpose: z.string().min(1).max(500),
   }),
+  /** You dismissed a request (it no longer matters, or you won't give it): it leaves your Inbox until he asks again. */
+  "secret.request.dismissed": z.strictObject({ name: Name }),
   "memory.added": z.strictObject({
     text: z.string().min(1).max(20_000),
     tags: z.array(z.string().min(1).max(64)).max(32).optional(),

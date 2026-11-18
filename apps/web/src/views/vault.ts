@@ -276,6 +276,25 @@ export function secretRequestCard(ctx: Ctx, request: SecretRequestView): HTMLEle
   const secret = secretInput({ label: `Value for ${request.name}` });
   const seal = button("Seal", { variant: "primary", type: "submit", icon: "vault" });
   const status = h("div");
+  // A key that no longer matters (or that you won't give): out of the Inbox until he asks for it again.
+  const dismiss = ctx.can("vault:write")
+    ? button("Dismiss", {
+        size: "sm",
+        variant: "ghost",
+        icon: "x",
+        label: `Dismiss: ${request.name}`,
+        onClick: (event) =>
+          void busy(event.currentTarget as HTMLButtonElement, async () => {
+            try {
+              await ctx.api.post("/api/secret-requests/dismiss", { name: request.name });
+              toast("Dismissed", { description: "It's back only if he asks for it again." });
+              await ctx.live.refreshInbox();
+            } catch (error) {
+              replace(status, callout("danger", errorMessage(error), { title: "Couldn't dismiss it" }));
+            }
+          }),
+      })
+    : null;
   return h(
     "article",
     { class: "card accent" },
@@ -293,6 +312,7 @@ export function secretRequestCard(ctx: Ctx, request: SecretRequestView): HTMLEle
           h("p", { class: "small" }, request.purpose),
           h("p", { class: "tiny subtle" }, ms ? `Asked ${relativeTime(ms)}. ` : "", "He'll learn that it exists, never what it is."),
         ),
+        dismiss,
       ),
       ctx.can("vault:write")
         ? h(
