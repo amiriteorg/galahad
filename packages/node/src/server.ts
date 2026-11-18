@@ -151,7 +151,7 @@ import {
   tripOf,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
-import { type Device, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
+import { type Device, enrollDevice, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
 import { DESKTOP_IMAGE, type LedgerEntryInput, SandboxError, TEAM_LEASE_MINUTES } from "@galahad/sandbox";
 import type { GovernedSandboxHost } from "./compute/governed-host.ts";
 import type { Governor } from "./compute/governor.ts";
@@ -181,6 +181,7 @@ import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
+import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
 import { randomBytes } from "node:crypto";
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
 import type { ConnectorRequest, ConnectorRequests } from "./connector-requests.ts";
@@ -243,6 +244,8 @@ export interface AppContext {
   loops: LoopRunner;
   /** Loops Galahad drafted when you asked for one in chat, waiting for you to add or dismiss (node-local). */
   loopDrafts: LoopDrafts;
+  /** Telegram, when a bot of yours talks to Galahad through this node (telegram.ts). */
+  telegram?: TelegramGateway | null;
   /** Connectors agents asked you for, waiting for you to add one or dismiss the request (node-local). */
   connectorRequests: ConnectorRequests;
   /** The heartbeat's checks, run here and now (no writes). */
@@ -3360,6 +3363,26 @@ export function createApp(ctx: AppContext) {
       return { ok: true };
     },
     loopDrafts: () => ({ drafts: ctx.loopDrafts.list().map(loopDraftView) }),
+    telegram: () => ({ telegram: { ...(ctx.telegram?.status() ?? { connected: false, bot: null, owner: null, linkExpires: null, device: null, problem: null }), node: ctx.nodeName } }),
+    telegramConnect: async (input) => {
+      const telegram = ctx.telegram;
+      if (!telegram) throw new HttpError(409, "this node runs no chat apps");
+      let connected;
+      try {
+        // A device you revoked is never brought back: connecting again then makes a new one.
+        connected = await telegram.connect(input.token, (device) => !ctx.store.device(device) || Boolean(ctx.store.activeDevice(device)));
+      } catch (error) {
+        throw error instanceof TelegramError ? new HttpError(error.status === 401 ? 400 : error.status, error.message) : error;
+      }
+      // The gateway's device: a client of yours with chat and mind:read only, listed and revoked with your other devices.
+      if (!ctx.store.activeDevice(connected.device)) enrollDevice(ctx.store, ctx.identity, { device: connected.device, name: `Telegram (${connected.bot})`, kind: "client", scopes: TELEGRAM_SCOPES });
+      return { bot: connected.bot, code: connected.code, expires: connected.expires, device: connected.device, node: ctx.nodeName };
+    },
+    telegramDisconnect: async () => {
+      const device = (await ctx.telegram?.disconnect()) ?? null;
+      if (device && ctx.store.activeDevice(device)) revokeDevice(ctx.store, ctx.identity, device, "Telegram was disconnected");
+      return { ok: true };
+    },
     draftLoop: (input, p) => {
       const tz = input.tz ?? "UTC";
       if (!isTimeZone(tz)) throw new HttpError(400, `unknown time zone "${tz}" (use an IANA name such as Europe/Copenhagen)`);

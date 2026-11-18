@@ -50,7 +50,7 @@ Galahad declined a model screening risky actions on purpose: what needs you stay
 
 | | Chat apps | What starts work besides you |
 |---|---|---|
-| **Galahad** | None yet ([PLAN #19](PLAN.md)) | Schedules (loops), the heartbeat, a pull request's CI after a ship, and since 18 November events: a signed webhook, new Gmail or Outlook mail, a GitHub repository's failed CI run or push ([PLAN #13](PLAN.md)) |
+| **Galahad** | Telegram, since 18 November: a bot of yours answering only your linked account, as a revocable device that may chat ([PLAN #19](PLAN.md)) | Schedules (loops), the heartbeat, a pull request's CI after a ship, and since 18 November events: a signed webhook, new Gmail or Outlook mail, a GitHub repository's failed CI run or push ([PLAN #13](PLAN.md)) |
 | **Hermes Agent** | About 30 adapters: Telegram, Slack, Discord, WhatsApp, Signal, iMessage, Teams, Matrix, email and more [H7] | Schedules |
 | **Rakazo** | Teams, Slack, Telegram, iMessage/SMS, WhatsApp, Feishu [R4][R1] | Routines, and since 0.11 a page that changes [R1] |
 | **OpenMausBot** | Slack, through its cloud only [M8] | Automations [M1] |
@@ -71,7 +71,7 @@ Since 16 November, among the five: Rakazo 0.12 can hand coding work to a T3 Code
 
 **Leads.** Each knight's work is in a VM of its own, on hardware you own: of the eight others, none keeps every agent's work apart by default (the coding consoles run on your host or in a worktree; Grok Bot's bots share one computer). Work counts as done only through gates and an independent reviewer, and an auditor watches a long run. Keys are sealed and pinned, and no model or VM ever holds one. Pairing is signed per request; an approval is your word on a card, never a model's score. Local models on any node serve the whole fleet, and any model or coding plan serves any role. It is small enough to read: about 85,000 lines against Hermes Agent's 1.2 million (the [site](https://galahad.sh/#scale) draws them to scale).
 
-**Trails.** It doesn't yet count its own north star, human interventions per completed task (#28). A failed check on a pull request it shipped is a notice for you, where Orchestrator.inc and T3 Code send it back to the agent (#29). It runs four coding tools, where T3 Code and OpenHands run any ACP agent (#30). No chat apps yet (#19); nothing rewinds or forks a task (#15). The iPhone app is in testing, not in the App Store (#33), there is no Android app of its own, and the Mac app is its only desktop one. Its numbers are eight tasks of its own; OpenHands publishes an index of public benchmarks, and nothing yet measures Galahad against the others on the same tasks (#32). What comes next is in the [PLAN](PLAN.md).
+**Trails.** It doesn't yet count its own north star, human interventions per completed task (#28). A failed check on a pull request it shipped is a notice for you, where Orchestrator.inc and T3 Code send it back to the agent (#29). It runs four coding tools, where T3 Code and OpenHands run any ACP agent (#30). Of the chat apps, only Telegram so far (#19); nothing rewinds or forks a task (#15). The iPhone app is in testing, not in the App Store (#33), there is no Android app of its own, and the Mac app is its only desktop one. Its numbers are eight tasks of its own; OpenHands publishes an index of public benchmarks, and nothing yet measures Galahad against the others on the same tasks (#32). What comes next is in the [PLAN](PLAN.md).
 
 ## Sources
 

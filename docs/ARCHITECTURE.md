@@ -790,6 +790,17 @@ An answer is Markdown, drawn with `createElement` and `textContent` only (`apps/
 
 A block the reader doesn't accept (not JSON, a field out of shape, too big) is shown as its code, with why. While a block is still being written it's a placeholder, never half-drawn JSON. A block may also be written on one line, its JSON on the fence line (` ```choices ["Yes","No"] `), as models write them; and any fence line may say more after its language (` ```ts title="a.ts" `), which is never code. Both apps read fences the same way (the parity vectors' Markdown cases), and in linear time, whatever is on the line. His guide shows him a whole fence with its JSON inside, the form every version of the apps reads, since a model writes the form it's shown.
 
+## 10⅓. Chat apps: Telegram ✅
+
+Talk to Galahad from Telegram, through a bot of yours (PLAN #19; `packages/node/src/telegram.ts`). `galahad telegram connect` (or Connectors → Chat apps in the app; `telegramConnect`, `fleet:admin`) takes the token @BotFather gave you, checks it with Telegram (`getMe`) and seals it in the vault (`telegram:bot`). The gateway becomes **a device of its own**: a client key the node keeps sealed (`telegram:device`), enrolled as "Telegram (@your_bot)" with `chat` and `mind:read` only, listed with your devices and revoked like any of them. It answers through the node's own API, signing each request as that device does, so a Telegram chat is a turn of yours (kept, in your chats, unread until you look) and Galahad's tools there are those its scopes reach: no knights commanded, no keys, no approvals, which stay in the app.
+
+| | How |
+|---|---|
+| **Reaching it** | The node asks Telegram for what was sent (long polling, `getUpdates`): nothing of yours is opened to the internet. The node you connect it on is the one that polls. |
+| **Only you** | Connecting answers a code (8 letters and digits, 15 minutes, never shown again: the status route doesn't have it). Sent as `/start <code>` from your own account, it links that account; every other account's messages and button taps are dropped unread and never answered, and so is anything in a group. |
+| **Answers** | Its own HTML: bold, italic, code and links, the rest escaped (`telegram-format.ts`, fences read as the apps read them). A choices block is buttons, and a tap is your next message; a plan's steps are marked lines; figures are lines; a chart or a page says to open the chat in the app. Pieces of at most 3,500 characters. `typing` while he works. `/new` starts a new chat. |
+| **Stopping** | `galahad telegram disconnect`: the token is deleted and the device revoked (a revoked device is never brought back: connecting again makes a new one); its chats stay yours. A token revoked in BotFather stops the polling and says so. |
+
 ## 10½. The bank, read-only ✅
 
 Your own accounts' balances and transactions, through Enable Banking (PSD2 account information only), for the agents you choose. Setup, the threat model and what couldn't be verified: [BANK](BANK.md).

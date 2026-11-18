@@ -1,5 +1,6 @@
 import type { ArgValue, ConnectorRequestView, ConnectorToolView, ConnectorView, OrderView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
+import { chatAppsSection } from "./chat-apps.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { connectorStateOf, KEY_STATE } from "../lib/connector-state.ts";
 import { argKind, claimSentence, type ToolClass } from "../lib/connectors.ts";
@@ -645,6 +646,8 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
   const availableSection = section("Available", { id: "connectors-available" }, availableBox);
   // The library of hosted MCP servers, searched on the node (mcp-library.ts).
   const library = mcpLibrarySection(ctx, deps);
+  // Chat apps: Telegram, through a bot of yours (chat-apps.ts).
+  const chatApps = chatAppsSection(ctx);
   const read = ctx.can("mind:read");
   const admin = ctx.can("fleet:admin");
   const ordersBox = h("div", { class: "stack" }, skeletonBlock(96));
@@ -764,6 +767,7 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
       // Shown whole once the connectors and the orders have answered: each part came in on its own, pushing the next.
       pageBody(
         installedSection,
+        chatApps.el,
         ordersSection,
         availableSection,
         library.el,
@@ -779,4 +783,5 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
   if (read) scope.interval(() => void refreshOrders(), 15_000);
   void refresh();
   library.refresh();
+  void chatApps.refresh();
 };

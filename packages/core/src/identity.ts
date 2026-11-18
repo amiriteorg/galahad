@@ -2,9 +2,12 @@ import { b64u, type Bytes, fromB64u, utf8 } from "./bytes.ts";
 import {
   boxPublicKey,
   newBoxKeyPair,
+  newP256Secret,
   newSigningKeyPair,
+  p256PublicKey,
   signEd25519,
   signingPublicKey,
+  signP256,
   verifyEd25519,
   verifyP256,
 } from "./crypto.ts";
@@ -28,6 +31,21 @@ export function verifyDeviceSignature(device: DeviceId, signature: Bytes, messag
 }
 
 export const shortId = (id: DeviceId): string => id.slice(2, 10);
+
+/**
+ * A client a node runs itself (a chat app's gateway): a device of its own, paired with the scopes you gave it and
+ * revoked like any other, whose P-256 key the node keeps sealed in the vault. It signs API requests only.
+ */
+export interface ClientIdentity {
+  id: DeviceId;
+  sign(message: Bytes): Bytes;
+}
+
+export function clientIdentity(secret: Bytes): ClientIdentity {
+  return { id: clientIdFromKey(p256PublicKey(secret)), sign: (message) => signP256(secret, message) };
+}
+
+export const newClientSecret = (): Bytes => newP256Secret();
 
 /** A node's private identity. Never leaves the device; never enters the log. */
 export interface NodeIdentity {

@@ -42,6 +42,7 @@ import { LoopDrafts } from "./loop-drafts.ts";
 import { ConnectorRequests } from "./connector-requests.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { WakeWatcher } from "./wakes.ts";
+import { TelegramGateway } from "./telegram.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
 import { createApp } from "./server.ts";
@@ -90,6 +91,8 @@ export interface DaemonOptions {
   ciWatchMs?: number | false;
   /** How often what wakes its loops (mail, GitHub) is read (false: never, for tests). */
   wakeWatchMs?: number | false;
+  /** Where Telegram's Bot API is (tests: a stand-in). */
+  telegramBase?: string;
   /** Let the fleet's founding node create its default loop, the heartbeat (default true; GALAHAD_HEARTBEAT=off disables). */
   defaultHeartbeat?: boolean;
   /** Outbound fetch for connectors (tests). */
@@ -459,6 +462,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       });
   };
   const loopDrafts = new LoopDrafts(local);
+  // Telegram (telegram.ts): a bot of yours, polled from here once connected on this node; it answers as a device of its own.
+  const telegram = new TelegramGateway({ local, vault, apiBase: `http://127.0.0.1:${port}`, ...(opts.telegramBase ? { telegramBase: opts.telegramBase } : {}), log });
   const connectorRequests = new ConnectorRequests(local);
   const loops = new LoopRunner({
     store,
@@ -589,6 +594,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     artifacts,
     loops,
     loopDrafts,
+    telegram,
     connectorRequests,
     heartbeatCheck: () => lookAround(taskDeps),
     bank,
@@ -688,6 +694,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     wake: (loop, events) => loops.wake(loop, events),
   });
   if (opts.wakeWatchMs !== false) wakeWatcher.start(opts.wakeWatchMs);
+  telegram.start();
   notify.start();
   // After you ship: this node follows each pull request it shipped until its checks end (ci-watch.ts).
   const ciWatch = new CiWatch({
@@ -768,6 +775,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       await archive.stop();
       await loops.stop();
       await wakeWatcher.stop();
+      await telegram.stop();
       await ciWatch.stop();
       await connectors.drain();
       await Promise.race([Promise.all([finished, turnsEnded]), Bun.sleep(opts.shutdownGraceMs ?? SHUTDOWN_GRACE_MS)]);

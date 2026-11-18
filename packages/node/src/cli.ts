@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TrialView } from "@galahad/core";
+import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TelegramView, type TrialView } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -112,6 +112,11 @@ Mind
   search "<words>" [--page 2]    search the web through Galahad's own SearXNG (also: websearch, in sandboxes)
   decide "<state>" --question "…" [--options a,b,c | --levels low,mid,high]
                                   a typed decision from the decider role (TypeSafe's Jev): yes/no, a choice, a score
+
+Chat apps
+  telegram                        whether a bot of yours talks to Galahad through this node, and which account it answers
+  telegram connect                link a bot (its token from @BotFather, hidden); send it the code from your own account
+  telegram disconnect             its device revoked, its token deleted; its chats stay yours
 
 Keys & models (keys are typed into a hidden prompt — never into chat, never on the command line)
   key add [--provider id]        paste any API key, or a coding plan's (provider presets marks the plans);
@@ -946,6 +951,32 @@ Next:
       if (sub !== "add") fail("usage: galahad key add [--provider id]");
       // Recognised, sealed and its provider configured (key-cli.ts).
       await keyAddCommand(new Admin(home), await readSecret("Paste the API key (hidden): "), flags, console.log, dim);
+      return;
+    }
+
+    case "telegram": {
+      const admin = new Admin(home);
+      if (sub === "connect") {
+        console.log("Make a bot with @BotFather in Telegram (/newbot), and paste the token it gives you.");
+        const token = await readSecret("The bot's token (hidden): ");
+        const connected = await admin.call<{ bot: string; code: string; expires: number; node: string }>("telegramConnect", { token });
+        console.log(`Connected ${bold(connected.bot)} on ${connected.node}: its token is sealed in the vault, and it answers as a device of its own that may chat.`);
+        console.log(`Now send it this from your own Telegram account, within 15 minutes (it answers nobody else):\n\n  /start ${bold(connected.code)}\n`);
+        return;
+      }
+      if (sub === "disconnect") {
+        if (!flags.yes && !confirm("Disconnect Telegram? Its device is revoked and its token deleted; the chats stay yours.")) return;
+        await admin.call("telegramDisconnect", {});
+        console.log("Disconnected.");
+        return;
+      }
+      if (sub) fail("usage: galahad telegram [connect | disconnect]");
+      const { telegram } = await admin.call<{ telegram: TelegramView }>("telegram");
+      if (!telegram.connected) console.log("Not connected on this node. galahad telegram connect links a bot of yours.");
+      else {
+        console.log(`${bold(telegram.bot ?? "a bot")} on ${telegram.node}: ${telegram.owner ? `answers ${telegram.owner}, and nobody else` : telegram.linkExpires ? `waiting for your code (until ${new Date(telegram.linkExpires).toLocaleTimeString()})` : "no account linked: galahad telegram connect gives a new code"}.`);
+        if (telegram.problem) console.log(bold(telegram.problem));
+      }
       return;
     }
 

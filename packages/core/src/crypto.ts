@@ -58,6 +58,11 @@ export function verifyP256(signature: Bytes, message: Bytes, publicKey: Bytes): 
   }
 }
 
+/** A P-256 key a node holds for a client of its own (a chat app's gateway): signed as a browser's key signs. */
+export const newP256Secret = (): Bytes => p256.utils.randomSecretKey();
+export const p256PublicKey = (secret: Bytes): Bytes => p256.getPublicKey(secret, false);
+export const signP256 = (secret: Bytes, message: Bytes): Bytes => p256.sign(message, secret, { prehash: true });
+
 // --- X25519 + XChaCha20-Poly1305: sealing secrets to devices ---------------
 
 export function newBoxKeyPair(): KeyPair {

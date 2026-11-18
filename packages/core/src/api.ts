@@ -890,6 +890,16 @@ export const routes = {
    */
   loopHook: { method: "POST", path: "/api/loops/hook", scope: "brain:write", input: z.strictObject({ name: LoopName }) },
   loopDrafts: { method: "GET", path: "/api/loops/drafts", scope: "mind:read", input: null },
+  /** Telegram (PLAN #19): whether a bot of yours talks to Galahad through this node, and which account it answers. */
+  telegram: { method: "GET", path: "/api/telegram", scope: "mind:read", input: null },
+  /**
+   * Connect a bot of yours (its token from BotFather, checked with Telegram and sealed in the vault). The gateway
+   * becomes a device of its own (chat and mind:read only), and the code it answers, sent to the bot from your account,
+   * links that account. Again: a new code (another bot forgets the account it had).
+   */
+  telegramConnect: { method: "POST", path: "/api/telegram/connect", scope: "fleet:admin", input: z.strictObject({ token: z.string().trim().min(20).max(100) }) },
+  /** Stop: the bot's token goes, and the gateway's device is revoked. Its chats stay yours. */
+  telegramDisconnect: { method: "POST", path: "/api/telegram/disconnect", scope: "fleet:admin", input: z.strictObject({}) },
   /** Galahad's draft of a loop you asked for in chat: never a loop until you add it (setLoop, brain:write). */
   draftLoop: { method: "POST", path: "/api/loops/drafts", scope: "chat", input: LoopDraftInput },
   dismissLoopDraft: { method: "POST", path: "/api/loops/drafts/dismiss", scope: "brain:write", input: z.strictObject({ id: LoopDraftId }) },
@@ -1505,6 +1515,19 @@ export interface ConnectorRequestView {
   at: number;
   /** Unanswered by then, and it's gone. */
   expires: number;
+}
+
+/** The Telegram gateway, as the node you asked runs it (telegram.ts). */
+export interface TelegramView {
+  connected: boolean;
+  bot: string | null;
+  /** Your Telegram account, once linked. */
+  owner: string | null;
+  /** Until then, when the code you were given stops working. */
+  linkExpires: number | null;
+  device: string | null;
+  problem: string | null;
+  node: string;
 }
 
 export interface LoopDraftView {
