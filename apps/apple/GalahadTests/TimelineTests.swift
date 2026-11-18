@@ -35,6 +35,7 @@ struct TimelineTests {
             #expect(TaskCard.proposed(task, proposer: task.proposedBy == "ada" ? "Ada" : nil) == card.proposed, "\(task.id)")
             #expect(TaskCard.stepped(task) == card.stepped, "\(task.id)")
             #expect(TaskCard.shipped(task)?.text == card.shipped, "\(task.id)")
+            #expect(TaskCard.againGoal(task) == card.again, "\(task.id)")
         }
         #expect(t.tasks.count == t.cards.count)
     }

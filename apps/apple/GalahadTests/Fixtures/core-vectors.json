@@ -9490,6 +9490,23 @@
         }
       },
       {
+        "id": "task-revised00000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The revised task",
+        "goal": "Parse SI units.\n\nLast time (task-older000000), it ended without verified work: It gave up.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "failed",
+        "verified": false,
+        "progress": "",
+        "output": "I made kilo work.\n\nReview: REVISE\nMega still parses as milli: src/units.ts:14.\nWorkspace: /work/tasks/task-revised00000",
+        "error": "unverified",
+        "chainId": "chain-revised",
+        "createdAt": 1763194000000,
+        "updatedAt": 1763198200000
+      },
+      {
         "id": "task-fixing000000",
         "room": "dm-ada",
         "assignee": "ada",
@@ -9527,6 +9544,7 @@
       "task:task-shipped00000",
       "msg-2",
       "task:task-fixing000000",
+      "task:task-revised00000",
       "msg-3",
       "msg-4",
       "task:task-sync00000000",
@@ -9547,6 +9565,7 @@
       "task:task-shipped00000",
       "msg-2",
       "task:task-fixing000000",
+      "task:task-revised00000",
       "msg-3",
       "msg-4",
       "task:task-sync00000000",
@@ -9566,6 +9585,7 @@
       "task:task-ask000000000",
       "msg-1",
       "msg-2",
+      "task:task-revised00000",
       "msg-3",
       "msg-4",
       "task:task-sync00000000",
@@ -9605,7 +9625,8 @@
         "kept": "2 files changed",
         "proposed": null,
         "stepped": "You stepped in: an approval and two messages",
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-run000000000",
@@ -9621,7 +9642,8 @@
         "kept": null,
         "proposed": null,
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-same00000000",
@@ -9637,7 +9659,8 @@
         "kept": null,
         "proposed": null,
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-old000000000",
@@ -9657,7 +9680,8 @@
         "kept": null,
         "proposed": null,
         "stepped": "You stepped in: its desktop taken over, a stop, 12 resumes and given again two times",
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well.\n\nLast time (task-old000000000), it ended without verified work: It gave up."
       },
       {
         "id": "task-cut000000000",
@@ -9677,7 +9701,8 @@
         "kept": null,
         "proposed": null,
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-halt00000000",
@@ -9697,7 +9722,8 @@
         "kept": null,
         "proposed": null,
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-half00000000",
@@ -9716,7 +9742,8 @@
         "kept": null,
         "proposed": null,
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well.\n\nLast time (task-half00000000), it ended without verified work: The work was not independently verified.\nWhat it said of its work: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
       },
       {
         "id": "task-elsewhere000",
@@ -9732,7 +9759,8 @@
         "kept": null,
         "proposed": null,
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-roomwork0000",
@@ -9748,7 +9776,8 @@
         "kept": null,
         "proposed": null,
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-ask000000000",
@@ -9765,7 +9794,8 @@
         "kept": null,
         "proposed": "Ada proposes this: it starts when you approve it",
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-asked0000000",
@@ -9781,7 +9811,8 @@
         "kept": null,
         "proposed": "Proposed by bea",
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-declined0000",
@@ -9801,7 +9832,8 @@
         "kept": null,
         "proposed": "Proposed by Ada",
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       },
       {
         "id": "task-shipped00000",
@@ -9818,7 +9850,29 @@
         "kept": "1 file changed",
         "proposed": null,
         "stepped": null,
-        "shipped": "Pull request #12"
+        "shipped": "Pull request #12",
+        "again": "Do it well."
+      },
+      {
+        "id": "task-revised00000",
+        "badge": {
+          "text": "Failed",
+          "tone": "danger"
+        },
+        "end": {
+          "why": "Not verified: its gates or the independent review did not pass.",
+          "said": "I made kilo work."
+        },
+        "actions": [
+          "resume",
+          "again"
+        ],
+        "given": null,
+        "kept": null,
+        "proposed": null,
+        "stepped": null,
+        "shipped": null,
+        "again": "Parse SI units.\n\nLast time (task-revised00000), it ended without verified work: Not verified: its gates or the independent review did not pass.\nWhat it said of its work: I made kilo work.\nWhat the independent review said: REVISE\nMega still parses as milli: src/units.ts:14."
       },
       {
         "id": "task-fixing000000",
@@ -9835,7 +9889,8 @@
         "kept": "1 file changed",
         "proposed": null,
         "stepped": null,
-        "shipped": null
+        "shipped": null,
+        "again": "Do it well."
       }
     ]
   },

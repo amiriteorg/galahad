@@ -381,7 +381,7 @@ enum Markdown {
     private static func matches(_ regex: NSRegularExpression, _ text: String) -> Bool { match(regex, text) != nil }
 
     /// What JavaScript's \s matches, one code unit at a time.
-    private static func isSpace(_ u: UInt16) -> Bool {
+    static func isSpace(_ u: UInt16) -> Bool {
         (9...13).contains(u) || u == 32 || u == 0xA0 || u == 0x1680 || (0x2000...0x200A).contains(u) || u == 0x2028 || u == 0x2029 || u == 0x202F || u == 0x205F || u == 0x3000 || u == 0xFEFF
     }
 

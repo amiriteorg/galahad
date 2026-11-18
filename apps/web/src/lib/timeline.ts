@@ -1,4 +1,5 @@
 import type { TeamMessage, TeamRoom, TeamTask, TeamTaskInput } from "@galahad/core/team";
+import { taskEnd } from "./task-card.ts";
 
 /*
  * A knight is one timeline: what was said and the tasks it was given, in the order they
@@ -28,6 +29,30 @@ export function timelineTasks(room: Pick<TeamRoom, "id" | "direct" | "members">,
 }
 
 /** The same task, given again as a new one: what was asked, of whom and where, and which it gives again (your stepping in,
- * counted on the new one). Nothing of how the first one went. */
-export const giveAgain = (task: Pick<TeamTask, "id" | "room" | "assignee" | "title" | "goal" | "gates" | "dependsOn">): TeamTaskInput =>
-  ({ room: task.room, assignee: task.assignee, title: task.title.trim(), goal: task.goal, gates: [...task.gates], dependsOn: [...task.dependsOn], again: task.id });
+ * counted on the new one), with what came of it last time (againGoal). */
+export const giveAgain = (task: Pick<TeamTask, "id" | "room" | "assignee" | "title" | "goal" | "gates" | "dependsOn" | "status" | "verified" | "error" | "output">): TeamTaskInput =>
+  ({ room: task.room, assignee: task.assignee, title: task.title.trim(), goal: againGoal(task), gates: [...task.gates], dependsOn: [...task.dependsOn], again: task.id });
+
+/** Where a try's lesson begins in a goal: replaced by the next try's, never piled up. */
+const LAST_TIME = "\n\nLast time (";
+const cut = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/**
+ * What a task given again is asked: what was asked before, and when it ran and wasn't verified, what came of it (why,
+ * what the knight said of its work, and what the independent review said), so the next try starts from there. Only the
+ * latest try's is kept; a task stopped, cut off or verified is asked again as it was.
+ */
+export function againGoal(task: Pick<TeamTask, "id" | "goal" | "status" | "verified" | "error" | "output">): string {
+  const asked = task.goal.split(LAST_TIME)[0]!;
+  const ran = task.status === "failed" || (task.status === "done" && !task.verified);
+  const end = ran ? taskEnd(task) : null;
+  if (!end?.why) return asked;
+  const review = task.output.split("\n\nReview:")[1]?.split("\nWorkspace:")[0]?.trim() ?? "";
+  const lines = [
+    `${asked}${LAST_TIME}${task.id}), it ended without verified work: ${end.why}`,
+    end.said ? `What it said of its work: ${cut(end.said, 600)}` : null,
+    // (A verdict alone, PASS or FAIL, says nothing more.)
+    /\s/.test(review) ? `What the independent review said: ${cut(review, 1500)}` : null,
+  ];
+  return lines.filter(Boolean).join("\n").slice(0, 8000);
+}

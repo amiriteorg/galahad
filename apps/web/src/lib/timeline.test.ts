@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamMessage, TeamRoom, TeamTask } from "@galahad/core/team";
-import { giveAgain, timeline, timelineTasks } from "./timeline.ts";
+import { againGoal, giveAgain, timeline, timelineTasks } from "./timeline.ts";
 
 const message = (id: string, createdAt: number, speaker = "owner"): TeamMessage => ({ id, room: "dm-ada", speaker, speakerName: speaker, text: id, createdAt, chainId: "c" });
 const task = (id: string, createdAt: number, more: Partial<TeamTask> = {}): TeamTask => ({ id, room: "dm-ada", assignee: "ada", title: id, goal: "Do it", dependsOn: [], gates: [], status: "done", verified: true, progress: "", output: "", error: null, chainId: "c", createdAt, updatedAt: createdAt + 500, ...more });
@@ -48,8 +48,19 @@ describe("a knight's timeline", () => {
 });
 
 describe("giving the same task again", () => {
-  test("is the same goal, gates and knight in the same room, as a new task", () => {
+  test("is the same goal, gates and knight in the same room, as a new task, with what came of it last time", () => {
     const failed = task("task-failed", 5, { status: "failed", verified: false, error: "gave-up", title: " Fix the importer ", goal: "Fix it", gates: ["bun test"], dependsOn: ["task-first"], output: "old", progress: "old" });
-    expect(giveAgain(failed)).toEqual({ room: "dm-ada", assignee: "ada", title: "Fix the importer", goal: "Fix it", gates: ["bun test"], dependsOn: ["task-first"], again: failed.id });
+    expect(giveAgain(failed)).toEqual({ room: "dm-ada", assignee: "ada", title: "Fix the importer", goal: "Fix it\n\nLast time (task-failed), it ended without verified work: It gave up.\nWhat it said of its work: old", gates: ["bun test"], dependsOn: ["task-first"], again: failed.id });
+  });
+
+  test("the next try starts from the last: why, what the knight said, what the review said; only the latest try's, and nothing for work stopped or verified", () => {
+    const output = "I made kilo work.\n\nReview: REVISE\nMega still parses as milli.\nWorkspace: /work/tasks/x";
+    const unverified = task("task-second", 6, { status: "done", verified: false, goal: "Parse units.\n\nLast time (task-first), it ended without verified work: It gave up.", output });
+    expect(againGoal(unverified)).toBe("Parse units.\n\nLast time (task-second), it ended without verified work: The work was not independently verified.\nWhat it said of its work: I made kilo work.\nWhat the independent review said: REVISE\nMega still parses as milli.");
+    // A verdict alone says nothing more; a long word is cut; the goal stays within a task's limit.
+    expect(againGoal({ ...unverified, output: `${"y".repeat(900)}\n\nReview: FAIL\nWorkspace: /w`, goal: "g".repeat(7990) })).toHaveLength(8000);
+    expect(againGoal({ ...unverified, output: "\n\nReview: FAIL" })).toBe("Parse units.\n\nLast time (task-second), it ended without verified work: The work was not independently verified.");
+    for (const status of ["stopped", "interrupted", "queued"] as const) expect(againGoal({ ...unverified, status })).toBe("Parse units.");
+    expect(againGoal({ ...unverified, verified: true })).toBe("Parse units.");
   });
 });

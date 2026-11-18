@@ -129,6 +129,31 @@ enum TaskCard {
         return (why, said)
     }
 
+    /// Where a try's lesson begins in a goal: replaced by the next try's, never piled up.
+    private static let lastTime = "\n\nLast time ("
+
+    /// What a task given again is asked: what was asked before, and when it ran and wasn't verified, what came of it (why,
+    /// what the knight said of its work, what the independent review said), so the next try starts from there. Only the
+    /// latest try's is kept; a task stopped, cut off or verified is asked again as it was (the PWA's againGoal).
+    static func againGoal(_ task: TeamTask) -> String {
+        let asked = task.goal.components(separatedBy: lastTime)[0]
+        let ran = task.status == "failed" || (task.status == "done" && !task.verified)
+        guard ran, let ended = end(task), let why = ended.why else { return asked }
+        let reviewed = (task.output ?? "").components(separatedBy: "\n\nReview:")
+        let review = reviewed.count > 1 ? Markdown.trim(reviewed[1].components(separatedBy: "\nWorkspace:")[0]) : ""
+        var lines = ["\(asked)\(lastTime)\(task.id)), it ended without verified work: \(why)"]
+        if let said = ended.said { lines.append("What it said of its work: \(cut(said, 600))") }
+        // (A verdict alone, PASS or FAIL, says nothing more.)
+        if review.utf16.contains(where: Markdown.isSpace) { lines.append("What the independent review said: \(cut(review, 1500))") }
+        let units = Array(lines.joined(separator: "\n").utf16)
+        return String(decoding: units.prefix(8000), as: UTF16.self)
+    }
+
+    private static func cut(_ text: String, _ max: Int) -> String {
+        let units = Array(text.utf16)
+        return units.count > max ? String(decoding: units.prefix(max - 1), as: UTF16.self) + "…" : text
+    }
+
     /// A proposal approved or declined; work in hand stopped; work that ended unverified resumed or given again; verified
     /// work it kept shipped as a pull request (not a fix: that goes onto its own).
     static func actions(_ task: TeamTask) -> [Action] {

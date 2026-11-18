@@ -25,7 +25,7 @@ import { ART, CANVAS, SHOWN } from "../../web/src/lib/knight-eyes.ts";
 import { connectorState } from "../../web/src/lib/connector-state.ts";
 import { noticeFrom } from "../../web/src/lib/notices.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
-import { timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
+import { againGoal, timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
 import { givenLine, keptChanges, proposedLine, shippedLine, steppedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
 import { knightModelChoices, knightModelsLine, knightRoleLine, knightRoles, knightWorksOn, removalPlan, teamSpeaker, teammateId, toggleKnightModel } from "../../web/src/lib/team.ts";
 import { budgetFrom } from "../../web/src/lib/give.ts";
@@ -750,6 +750,8 @@ const adaTasks = [
   task("declined", "ada", "stopped", { createdAt: at(7), proposedBy: "ada", error: "Declined by you." }),
   // Shipped from an app: its pull request said, and nothing more to ship; a fix goes onto its own pull request's branch.
   task("shipped", "ada", "done", { verified: true, createdAt: at(120), output: "Units parse.\n\nReview: PASS", changes: { artifact: `art_${"c".repeat(22)}`, files: 1, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" }, shipped: { url: "https://github.com/amiriteorg/galahad/pull/12", pr: 12 } }),
+  // Given again with what came of it: why, what it said, what the review said (a goal that held an earlier try's lesson loses it).
+  task("revised", "ada", "failed", { createdAt: at(100), error: "unverified", goal: "Parse SI units.\n\nLast time (task-older000000), it ended without verified work: It gave up.", output: "I made kilo work.\n\nReview: REVISE\nMega still parses as milli: src/units.ts:14.\nWorkspace: /work/tasks/task-revised00000" }),
   task("fixing", "ada", "done", { verified: true, createdAt: at(110), output: "Checks pass.\n\nReview: PASS", changes: { artifact: `art_${"d".repeat(22)}`, files: 1, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" }, fix: { connector: "github", owner: "amiriteorg", repo: "galahad", branch: "galahad/units", pr: 12, head: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" } }),
 ];
 const adaRoom = { id: "dm-ada", direct: true, members: ["ada"] };
@@ -762,7 +764,7 @@ const timelines = {
   sinceAt: at(100),
   since: timeline(adaMessages, timelineTasks(adaRoom, adaTasks), { since: at(100) }).map((item) => item.key),
   speakers: adaMessages.map((message) => teamSpeaker(message, snapshot.teammates)),
-  cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), kept: keptChanges(t)?.text ?? null, proposed: proposedLine(t, t.proposedBy === "ada" ? "Ada" : null), stepped: steppedLine(t), shipped: shippedLine(t)?.text ?? null })),
+  cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), kept: keptChanges(t)?.text ?? null, proposed: proposedLine(t, t.proposedBy === "ada" ? "Ada" : null), stepped: steppedLine(t), shipped: shippedLine(t)?.text ?? null, again: againGoal(t) })),
 };
 
 // ---- where a notice came from, in words (the PWA's lib/notices.ts) ----------------------------------------------------
