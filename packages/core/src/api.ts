@@ -12,7 +12,7 @@ import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 import { TrialRecord, TrialRunId, type TrialRunSettings } from "./trials.ts";
 import { HarnessOptions, TrialPins, VariantName } from "./trials.ts";
 import type { Usage } from "./spend.ts";
-import { PricedModel, PriceSchema, SpendLines, type TrialSpent } from "./usage.ts";
+import { PricedModel, PriceSchema, SpendLines, type TrialSpent, UsageBudgetInput } from "./usage.ts";
 import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
@@ -1002,6 +1002,10 @@ export const routes = {
   removePrice: { method: "POST", path: "/api/prices/remove", scope: "brain:write", input: z.strictObject({ model: PricedModel }) },
   /** This node's own count of its model calls, by day, who asked, role and model (never a prompt or an answer), and your prices. */
   usage: { method: "POST", path: "/api/usage", scope: "mind:read", input: z.strictObject({ days: z.number().int().min(1).max(366).optional() }) },
+  /** This period's model calls on this node at your prices, against your budget for them: a meter's numbers. */
+  usageMeter: { method: "GET", path: "/api/usage/meter", scope: "mind:read", input: null },
+  /** Your budget for this node's model calls (a line to watch, never a stop): a day's or a month's, or none. */
+  setUsageBudget: { method: "POST", path: "/api/usage/budget", scope: "brain:write", input: UsageBudgetInput },
 
   // ---- Compute: what the fleet can carry, and how he spends it (compute.ts) ----------
   /** The census: every node's body, what it measured, its ceiling, slots in use and waiting; his plan; the day's budget. */

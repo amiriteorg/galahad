@@ -53,6 +53,31 @@ export interface UsageRow extends UsageLine {
   who: string;
 }
 
+/** A budget for this node's model calls, in US dollars at your prices: a day's, or a month's (none: `usd` null). A line to
+ * watch, never a stop: work goes on past it (a task's own budget is what stops a task). */
+export const UsageBudgetInput = z.strictObject({ usd: z.number().positive().max(100_000).nullable(), per: z.enum(["day", "month"]).default("month") });
+export type UsageBudgetInput = z.infer<typeof UsageBudgetInput>;
+
+/** What a meter shows: this period's model calls on this node at your prices, against the budget (`GET /api/usage/meter`). */
+export interface UsageMeter {
+  node: string;
+  per: "day" | "month";
+  /** The period's first day, YYYY-MM-DD (UTC). */
+  since: string;
+  budgetUsd: number | null;
+  spentUsd: number;
+  /** Every call in it was counted and priced: `spentUsd` is the whole of it, not a lower bound. */
+  complete: boolean;
+  /** Models that answered in it with no price of yours: their tokens aren't in `spentUsd`. */
+  unpriced: string[];
+  tokens: number;
+  calls: number;
+  /** What is left of the budget, never below zero (null with none). */
+  leftUsd: number | null;
+  /** What cost most in it, most first (tokens for one with no price): at most five. */
+  top: { model: string; usd: number | null; tokens: number }[];
+}
+
 /** What `GET /api/usage` answers: this node's calls (never another node's), and the owner's prices. */
 export interface UsageView {
   node: string;

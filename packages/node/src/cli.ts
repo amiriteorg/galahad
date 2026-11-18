@@ -185,7 +185,8 @@ Work
   price | price set <provider/model | provider/*> <$/M in> <$/M out> [--cached x] | price rm <provider/model>
                                   your prices, per million tokens: tokens are always counted, money only where
                                   you've stated a price
-  usage [--days 30]               this node's model calls: tokens by model, role, who asked and day
+  usage [--days 30]               this node's model calls: tokens by model, role, who asked and day, and the meter
+  usage budget <usd|off> [--per day|month]  your budget for them, a line to watch (a month's unless --per day)
   do "<goal>" [--net isolated|gateway|online] [--on ultra] [--steps 30] [--timeout 300] [--keep] [--effort auto|1|2|3]
                                   a quest: plan → work in a fresh sandbox → independent review → remembered.
                                   --effort spends more compute for a better answer: that many attempts at once,
@@ -616,6 +617,8 @@ async function main(): Promise<void> {
       "destroy-workspace": { type: "boolean" },
       remake: { type: "boolean" },
       follow: { type: "boolean" },
+      // usage budget <usd> [--per day|month]
+      per: { type: "string" },
       // roundtable changes <knight> [--task <id>] [--files]: a task of its by name, and the files without the diff.
       task: { type: "string" },
       files: { type: "boolean" },
@@ -1470,7 +1473,7 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "prices":
     case "usage": {
       try {
-        process.exit(command === "usage" ? await usageCommand(new Admin(home), flags) : await priceCommand(new Admin(home), sub, rest, flags));
+        process.exit(command === "usage" ? await usageCommand(new Admin(home), flags, sub, rest) : await priceCommand(new Admin(home), sub, rest, flags));
       } catch (error) {
         if (error instanceof UsageError) fail(error.message);
         throw error;

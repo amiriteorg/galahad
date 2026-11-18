@@ -61,11 +61,21 @@ struct RoundtableView: View {
         return rows.filter { $0.name.localizedStandardContains(words) || $0.line.localizedStandardContains(words) }
     }
 
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var width
+    #endif
+
     var body: some View {
         List(selection: selection) {
             if let trouble = session.trouble {
                 Section { TroubleRow(trouble: trouble) }
             }
+            #if os(iOS)
+            // What the model calls came to, against your budget (an iPad has it at its sidebar's foot).
+            if width == .compact, session.usage != nil {
+                Section { UsageMeterView(session: session) }
+            }
+            #endif
             knights
             if !rooms.isEmpty {
                 Section("Rooms") {

@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { type Price, PriceSchema, type Usage, type UsageRow } from "@galahad/core";
+import { costOf, mergeSpend, type Price, PriceSchema, spendTotal, type Usage, type UsageBudgetInput, type UsageLine, type UsageMeter, type UsageRow } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
 
 /*
@@ -30,6 +30,50 @@ export class UsageStore {
       input INTEGER NOT NULL DEFAULT 0, output INTEGER NOT NULL DEFAULT 0,
       cached INTEGER NOT NULL DEFAULT 0, reasoning INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (day, who, role, model))`);
+    db.exec("CREATE TABLE IF NOT EXISTS usage_budget (k TEXT PRIMARY KEY, usd REAL, per TEXT NOT NULL)");
+  }
+
+  /** Your budget for this node's calls: a day's or a month's, in US dollars at your prices (null: none). */
+  budget(): { usd: number | null; per: "day" | "month" } {
+    const row = this.db.query<{ usd: number | null; per: string }, []>("SELECT usd, per FROM usage_budget WHERE k = 'budget'").get();
+    return { usd: row?.usd ?? null, per: row?.per === "day" ? "day" : "month" };
+  }
+
+  setBudget(input: UsageBudgetInput): { usd: number | null; per: "day" | "month" } {
+    this.db.query("INSERT INTO usage_budget (k, usd, per) VALUES ('budget', ?, ?) ON CONFLICT (k) DO UPDATE SET usd = excluded.usd, per = excluded.per").run(input.usd, input.per);
+    return this.budget();
+  }
+
+  /** This period's calls (today, or this month so far, UTC) at your prices, against the budget. */
+  meter(node: string, prices: Record<string, Price>): UsageMeter {
+    const { usd: budgetUsd, per } = this.budget();
+    const today = dayOf(this.now());
+    const since = per === "day" ? today : `${today.slice(0, 8)}01`;
+    const rows = this.db
+      .query<UsageRow, [string]>("SELECT day, who, role, model, calls, unknown, input, output, cached, reasoning FROM usage_daily WHERE day >= ?")
+      .all(since);
+    const lines: UsageLine[] = rows.map(({ day: _day, who: _who, ...line }) => line);
+    const cost = costOf(lines, prices);
+    const total = spendTotal(lines);
+    const byModel = [...new Set(lines.map((l) => l.model))].map((model) => {
+      const of = mergeSpend(lines.filter((l) => l.model === model));
+      const priced = costOf(of, prices);
+      return { model, usd: priced.unpriced.length ? null : priced.usd, tokens: spendTotal(of).tokens };
+    });
+    byModel.sort((a, b) => (b.usd ?? -1) - (a.usd ?? -1) || b.tokens - a.tokens);
+    return {
+      node,
+      per,
+      since,
+      budgetUsd,
+      spentUsd: cost.usd,
+      complete: cost.complete,
+      unpriced: cost.unpriced,
+      tokens: total.tokens,
+      calls: total.calls,
+      leftUsd: budgetUsd === null ? null : Math.max(0, budgetUsd - cost.usd),
+      top: byModel.slice(0, 5),
+    };
   }
 
   /** One model call that ended: its tokens as the provider reported them, or null when it reported nothing. */

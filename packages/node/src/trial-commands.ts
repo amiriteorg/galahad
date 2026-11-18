@@ -23,6 +23,7 @@ import {
   type TrialVariant,
   type TrialView,
   type UsageLine,
+  type UsageMeter,
   type UsageView,
   usdLabel,
 } from "@galahad/core";
@@ -431,8 +432,27 @@ export async function priceCommand(node: NodeClient, sub: string | undefined, re
   return 0;
 }
 
-/** `galahad usage [--days 30]`: this node's own count of its model calls. */
-export async function usageCommand(node: NodeClient, flags: Readonly<Record<string, unknown>>): Promise<number> {
+/** The meter in a line: what this period's calls came to at your prices, against your budget and what is left. */
+export function meterLine(m: UsageMeter): string {
+  const period = m.per === "day" ? "Today" : "This month";
+  const spent = `${m.complete || m.spentUsd === 0 ? "" : "at least "}${usdLabel(m.spentUsd)}`;
+  const against = m.budgetUsd === null ? "no budget (galahad usage budget <usd> sets one)" : `of ${usdLabel(m.budgetUsd)}, ${m.leftUsd ? `${usdLabel(m.leftUsd)} left` : "spent"}`;
+  return `${period}: ${spent} ${against} · ${tokensLabel(m.tokens)} tokens in ${m.calls} call${m.calls === 1 ? "" : "s"}${m.unpriced.length ? ` · no price for ${m.unpriced.join(", ")}` : ""}`;
+}
+
+/** `galahad usage [--days 30]`: this node's own count of its model calls, the meter first; `galahad usage budget`: your budget. */
+export async function usageCommand(node: NodeClient, flags: Readonly<Record<string, unknown>>, sub?: string, args: readonly string[] = []): Promise<number> {
+  if (sub === "budget") {
+    // Your budget for this node's calls: a month's (or --per day), or off.
+    const raw = args[0];
+    const per = str(flags, "per") ?? "month";
+    if (per !== "day" && per !== "month") bad("--per is day or month");
+    if (!raw) return bad("usage: galahad usage budget <usd|off> [--per day|month]");
+    const usd = raw === "off" ? null : Number(raw.replace(/^\$/, ""));
+    if (usd !== null && !(Number.isFinite(usd) && usd > 0 && usd <= 100_000)) bad("a budget is an amount in US dollars above 0, like 25, or off");
+    console.log(meterLine(await node.call<UsageMeter>("setUsageBudget", { usd, per })));
+    return 0;
+  }
   const daysRaw = str(flags, "days");
   const days = daysRaw === undefined ? 30 : Number(daysRaw);
   if (!Number.isInteger(days) || days < 1 || days > 366) bad("--days must be a whole number from 1 to 366");
@@ -443,6 +463,9 @@ export async function usageCommand(node: NodeClient, flags: Readonly<Record<stri
   }
   const lines = (rows: typeof view.rows): UsageLine[] => rows.map(({ day: _day, who: _who, ...line }) => line);
   console.log(`${bold(`Model calls on ${view.node}`)} ${dim(`since ${view.since} (UTC) · tokens as the providers reported them · money at your prices`)}`);
+  // The meter first: this period against your budget (a node from before it has none to say).
+  const meter = await node.call<UsageMeter>("usageMeter").catch(() => null);
+  if (meter) console.log(`  ${meterLine(meter)}`);
   console.log(`  ${spendLabel(mergeSpend(lines(view.rows)), view.prices)}`);
   const group = (title: string, key: (r: (typeof view.rows)[number]) => string): void => {
     console.log(`\n${bold(title)}`);

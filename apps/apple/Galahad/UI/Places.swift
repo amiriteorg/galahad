@@ -122,6 +122,12 @@ struct PlacesSidebar<Foot: View>: View {
         #endif
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
+                // What the model calls came to, against your budget.
+                if session.usage != nil {
+                    UsageMeterView(session: session)
+                        .padding(.horizontal, Space.s4)
+                        .padding(.vertical, Space.s3)
+                }
                 if let trouble = session.trouble {
                     TroubleRow(trouble: trouble)
                         .font(.callout)

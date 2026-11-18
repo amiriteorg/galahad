@@ -24,6 +24,9 @@ import Observation
     private(set) var screenSessions: [ScreenSessionView] = []
     private(set) var turns: [TurnView] = []
     private(set) var quests: [QuestView] = []
+    /// This period's model calls on the node at your prices, against your budget (nil: not read yet, or a node from
+    /// before the meter).
+    private(set) var usage: UsageMeter?
     /// The Inbox has been read at least once, so its count means something.
     private(set) var inboxLoaded = false
     /// The node is away, or won't accept this device: said once, above everything.
@@ -98,6 +101,7 @@ import Observation
         async let screens = attempt { try await client.get("/api/screen/sessions", as: Listed.self).sessions ?? [] }
         async let turns = attempt { try await client.get("/api/turns", as: Listed.self) }
         async let quests = attempt { try await client.get("/api/quests", as: Listed.self).quests ?? [] }
+        async let usage = attempt { try await client.get("/api/usage/meter", as: UsageMeter.self) }
 
         switch await me {
         case .success(let me): (whoami, trouble) = (me, nil)
@@ -125,6 +129,23 @@ import Observation
             await chat.noticed(chats: listed.chats, turns: self.turns, with: client)
         }
         if case .success(let list) = await quests { self.quests = list }
+        if case .success(let meter) = await usage { self.usage = meter }
+    }
+
+    /// Your budget for the node's model calls (a line to watch, never a stop): a day's or a month's, or none.
+    func setBudget(usd: Double?, per: String) async throws {
+        struct Budget: Encodable {
+            let usd: Double?
+            let per: String
+            // (None goes as null, never left out: the node takes null for no budget.)
+            func encode(to encoder: any Encoder) throws {
+                var keyed = encoder.container(keyedBy: Keys.self)
+                try keyed.encode(usd, forKey: .usd)
+                try keyed.encode(per, forKey: .per)
+            }
+            enum Keys: String, CodingKey { case usd, per }
+        }
+        usage = try await client.post("/api/usage/budget", Budget(usd: usd, per: per), as: UsageMeter.self)
     }
 
     /// Your answer to an approval: nothing leaves until you approve it.

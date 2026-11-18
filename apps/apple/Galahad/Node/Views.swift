@@ -299,3 +299,24 @@ struct TeamChangesView: Decodable, Sendable {
     let cut: Bool
     var redacted: Bool? = nil
 }
+
+/// This period's model calls on the node at your prices, against your budget (`GET /api/usage/meter`).
+struct UsageMeter: Decodable, Sendable, Equatable {
+    struct Top: Decodable, Sendable, Equatable, Hashable {
+        let model: String
+        let usd: Double?
+        let tokens: Int
+    }
+    /// day · month
+    let per: String
+    let since: String
+    let budgetUsd: Double?
+    let spentUsd: Double
+    /// Every call was counted and priced: `spentUsd` is the whole of it, not a lower bound.
+    let complete: Bool
+    let unpriced: [String]
+    let tokens: Int
+    let calls: Int
+    let leftUsd: Double?
+    let top: [Top]
+}

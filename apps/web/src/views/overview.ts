@@ -1,4 +1,4 @@
-import type { FleetView, SecretView } from "@galahad/core";
+import type { FleetView, SecretView, UsageMeter } from "@galahad/core";
 import { isUnavailable } from "../api.ts";
 import type { View } from "../context.ts";
 import { ledgerSignature } from "../lib/activity.ts";
@@ -8,6 +8,7 @@ import { button, dot, empty, linkButton, pageBody, pageHead, section, skeletonRo
 import { h, keepPlace, replace } from "../ui/dom.ts";
 import { ledgerItem } from "./activity.ts";
 import { inHandSection } from "./in-hand.ts";
+import { usageTile } from "./usage-meter.ts";
 import { doctorSection } from "./doctor-card.ts";
 import { startNewChat } from "./chat.ts";
 import { isOnline, openInvite } from "./fleet.ts";
@@ -23,6 +24,7 @@ export const overviewView: View = (root, ctx, { scope }) => {
   const recent = h("div", { class: "card" }, skeletonRows(4));
   const lede = ctx.whoami.fleetName ? `Fleet ${ctx.whoami.fleetName}, through ${ctx.whoami.nodeName}.` : `Through ${ctx.whoami.nodeName}.`;
   let vault: { count: number; unlocked: boolean } | null = null;
+  let usage: UsageMeter | null = null;
   let ledgerMissing = false;
   let ledgerSeen = "";
 
@@ -54,6 +56,8 @@ export const overviewView: View = (root, ctx, { scope }) => {
         }),
       );
     }
+    // What this period's model calls came to against your budget (a node from before the meter has none to say).
+    if (usage) tiles.push(usageTile(ctx, usage, (next) => { usage = next; renderStats(ctx.live.fleet.value); }));
     if (fleet) tiles.push(statTile({ label: "Mind", icon: "memory", value: fleet.events.toLocaleString(), note: "events in the shared mind", href: "#/memory" }));
     // The mandate's north star (#28): how often you stepped in on the knights' work, per task done and verified.
     const star = ctx.live.team.value?.northStar;
@@ -69,6 +73,16 @@ export const overviewView: View = (root, ctx, { scope }) => {
       );
     }
     replace(stats, ...tiles);
+  }
+
+  async function loadUsage(): Promise<void> {
+    if (!ctx.can("mind:read")) return;
+    try {
+      usage = await ctx.api.get<UsageMeter>("/api/usage/meter", scope.signal);
+      if (!scope.disposed) renderStats(ctx.live.fleet.value);
+    } catch {
+      /* no tile: a node from before the meter */
+    }
   }
 
   async function loadVault(): Promise<void> {
@@ -172,6 +186,10 @@ export const overviewView: View = (root, ctx, { scope }) => {
   scope.add(ctx.live.team.subscribe(() => keepPlace(root, () => renderStats(ctx.live.fleet.value))));
   scope.add(vaultChanged.subscribe(() => void loadVault()));
   void loadVault();
+  void loadUsage();
+  // Its numbers move as calls are made: looked at again each minute while the page is open.
+  const usageTimer = setInterval(() => void loadUsage(), 60_000);
+  scope.add(() => clearInterval(usageTimer));
   void loadLedger();
   scope.interval(() => void loadLedger(), 15_000);
 };

@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bodyFingerprint, type Calibration, ceilingThreads, costOf, type Price, REFERENCE_SINGLE, routes, type RouteName, spendTotal, type TrialView, type UsageView } from "@galahad/core";
+import { bodyFingerprint, type Calibration, ceilingThreads, costOf, type Price, REFERENCE_SINGLE, routes, type RouteName, spendTotal, type TrialView, type UsageMeter, type UsageView } from "@galahad/core";
 import { ENGINEERING_SUITE, pose, type QuestEvent } from "@galahad/brain";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
@@ -223,6 +223,19 @@ describe("the node's own count, and your prices", () => {
     await expect(call("setPrice", { model: "x/y", input: -1, output: 1 })).rejects.toThrow(/400/);
     expect((await call<{ prices: Record<string, Price> }>("removePrice", { model: "stand-in/*" })).prices).toEqual({ "stand-in/counted": { input: 2, output: 8, cached: 0.2 } });
     await expect(call("removePrice", { model: "stand-in/*" })).rejects.toThrow(/404/);
+  });
+
+  test("the meter: this month's calls at your prices against your budget, which is yours alone to set", async () => {
+    const meter = await call<UsageMeter>("usageMeter");
+    expect(meter).toMatchObject({ per: "month", budgetUsd: null, leftUsd: null });
+    expect(meter.calls).toBeGreaterThan(0);
+    const set = await call<UsageMeter>("setUsageBudget", { usd: 25, per: "day" });
+    expect(set).toMatchObject({ per: "day", budgetUsd: 25 });
+    expect(set.leftUsd).toBeCloseTo(25 - set.spentUsd, 9);
+    const { token } = await call<{ token: string }>("mintArm", { label: "spender" });
+    await expect(call("setUsageBudget", { usd: 1000, per: "month" }, token)).rejects.toThrow(/403/);
+    await expect(call("setUsageBudget", { usd: -1 })).rejects.toThrow(/400/);
+    expect((await call<UsageMeter>("setUsageBudget", { usd: null })).budgetUsd).toBeNull();
   });
 });
 

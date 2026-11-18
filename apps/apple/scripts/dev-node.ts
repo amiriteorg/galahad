@@ -172,6 +172,8 @@ const stream = (text: string, delayMs: number): Response => {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: word } }] })}\n\n`));
           if (delayMs) await sleep(delayMs);
         }
+        // What a provider says the call came to, as OpenAI's API ends a stream: so the usage meter has numbers.
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 42_000, completion_tokens: 1_800 } })}\n\n`));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       },
@@ -320,6 +322,9 @@ const until = async (what: string, probe: () => unknown | Promise<unknown>, time
 await until("the node's calibration", () => started.store.lww(`calibration:${started.identity.id}`) !== null);
 await admin("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${model.port}/v1` });
 for (const role of ["planner", "engineer", "reviewer", "swift"]) await admin("setRoster", { role, models: [`stand-in/${role}`] });
+// A price for the stand-in, and a day's budget, so the usage meter shows a spend against something.
+await admin("setPrice", { model: "stand-in/*", input: 3, output: 15 });
+await admin("setUsageBudget", { usd: 1, per: "day" });
 
 // ---------- the Roundtable ----------
 const knights = [
