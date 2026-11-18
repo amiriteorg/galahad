@@ -268,12 +268,23 @@ extension Highlight {
     }
 }
 
-/// The Roundtable from above: the ring and the knights' chairs in the ink, Galahad's seat in his red.
+/// The Roundtable from above: the ring and the knights' chairs in the ink, Galahad's seat in his red. On a row chosen with
+/// a fill of the ink (a Mac's sidebar, its window in front), where the ink would vanish, it is white as the row's words are.
 struct RoundtableMark: View {
     var size: CGFloat = 28
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
-        Image(.roundtable).resizable().scaledToFit().frame(width: size, height: size).accessibilityLabel("The Roundtable")
+        Group {
+            if prominence == .increased {
+                Image(.roundtable).renderingMode(.template).resizable().foregroundStyle(.primary)
+            } else {
+                Image(.roundtable).resizable()
+            }
+        }
+        .scaledToFit()
+        .frame(width: size, height: size)
+        .accessibilityLabel("The Roundtable")
     }
 }
 
