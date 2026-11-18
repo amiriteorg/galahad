@@ -4,7 +4,7 @@ import Install from "../components/Install.astro";
 import Knight from "../components/Knight.astro";
 import RoundTable from "../components/RoundTable.astro";
 import Swing from "../components/Swing.astro";
-import { BUN_VERSION, COMPARE, INSTALLER_SHA256, PHASING, REPO, SIZE, TRIALS, TRIALS_HARD, compact, doc } from "../lib/facts.ts";
+import { BUN_VERSION, COMPARE, INSTALLER_SHA256, MAC, PHASING, RELEASES, REPO, SIZE, TRIALS, TRIALS_HARD, compact, doc } from "../lib/facts.ts";
 
 /* An example Roundtable at work: six knights, each in its room (its VM), each showing in its eyes what it is doing,
    with one line of it as the app's roster says it. Illustrative, and the caption says so. */
@@ -56,7 +56,7 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
             </div>
             <p class="front-note">
               For macOS and Linux, never as root. <a href="/install">Read the script</a> first, or{" "}
-              <a href="#install">see each step</a>.
+              <a href="#install">see each step</a>. There is also <a href="#download">an app for the Mac</a>.
             </p>
           </div>
 
@@ -445,7 +445,7 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
           is in testing. On a Mac it is an app of its own, signed and notarized, that keeps itself up to date and can
           make that Mac a node.
         </p>
-        <p class="more"><a href={doc("GETTING-STARTED")}>Pair your phone</a> · <a href="https://github.com/amiriteorg/galahad/releases/latest">Galahad for Mac</a></p>
+        <p class="more"><a href={doc("GETTING-STARTED")}>Pair your phone</a> · <a href="#download">Galahad for Mac</a></p>
       </div>
       <div class="detail-drawing">
         <div class="handset" aria-label="The app's Roundtable, an example" role="img">
@@ -507,7 +507,30 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
           The script is <a href="/install">galahad.sh/install</a>, SHA-256 <code>{INSTALLER_SHA256}</code>.
         </p>
       </div>
-      <p class="more"><a href={REPO}>The source on GitHub</a></p>
+
+      <div class="get" id="download">
+        <h3>Or the app.</h3>
+        <div class="get-mac">
+          <svg class="get-plan" viewBox="0 0 56 40" aria-hidden="true" focusable="false"><rect x="8" y="3" width="40" height="27" rx="3" /><path d="M3 34h50l-2.5 3.5h-45Z" /></svg>
+          <p class="get-what">
+            <b>Galahad for Mac</b>
+            <span>{MAC.version} ({MAC.build}), <span class="nb">{MAC.date}</span></span>
+            <span>{MAC.size}, for macOS {MAC.macOS} on Apple silicon</span>
+          </p>
+          <a class="get-button" href={MAC.url} aria-label={`Download Galahad for Mac, ${MAC.size}`}>Download</a>
+        </div>
+        <div class="entrance-notes">
+          <p>
+            Signed with Apple's Developer ID and notarized, it keeps itself up to date from galahad.sh. Paired with your
+            node, it is your Roundtable on the Mac; its first window can also make that Mac a node.
+          </p>
+          <p>
+            The iPhone and iPad app is in testing on TestFlight. Until it is in the App Store, the app installs on any
+            phone from your node, as a web app: <a href={doc("GETTING-STARTED")}>pair your phone</a>.
+          </p>
+        </div>
+        <p class="more"><a href={RELEASES}>Every release, with what changed</a> <span class="nb">· <a href={REPO}>The source on GitHub</a></span></p>
+      </div>
     </div>
   </section>
 

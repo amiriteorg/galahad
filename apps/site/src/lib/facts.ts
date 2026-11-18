@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import installer from "../../../../scripts/install.sh?raw";
 import pin from "../../../../scripts/bun-pin.sh?raw";
+import appcast from "../../public/mac/appcast.xml?raw";
 
 export const REPO = "https://github.com/amiriteorg/galahad";
 export const DOCS = `${REPO}/tree/main/docs`;
@@ -16,6 +17,31 @@ export const INSTALL = "curl -fsSL https://galahad.sh | bash";
 export const INSTALLER = installer;
 export const INSTALLER_SHA256 = createHash("sha256").update(installer).digest("hex");
 export const BUN_VERSION = /^BUN_VERSION=([0-9.]+)$/m.exec(pin)?.[1] ?? "";
+
+/**
+ * Galahad for Mac as its update feed offers it (public/mac/appcast.xml, which apps/apple/scripts/mac-release.sh writes
+ * with each build): the newest notarized build, linked where it is published, so the page and the app's own updates
+ * always name the same one. A feed it can't read fails the build, rather than a page with a broken download.
+ */
+export const MAC = (() => {
+  const field = (pattern: RegExp): string => {
+    const found = pattern.exec(appcast)?.[1];
+    if (!found) throw new Error(`the Mac's feed (public/mac/appcast.xml) has no ${pattern.source}`);
+    return found;
+  };
+  const url = field(/<enclosure\b[^>]*\burl="([^"]+)"/);
+  if (!url.startsWith(`${REPO}/releases/download/`)) throw new Error(`the Mac's feed links outside the repository's releases: ${url}`);
+  return {
+    version: field(/<sparkle:shortVersionString>([^<]+)</),
+    build: field(/<sparkle:version>([^<]+)</),
+    macOS: field(/<sparkle:minimumSystemVersion>([^<]+)</).replace(/\.0$/, ""),
+    url,
+    size: `${Math.round(Number(field(/<enclosure\b[^>]*\blength="(\d+)"/)) / 1e6)} MB`,
+    date: new Date(field(/<pubDate>([^<]+)<\/pubDate>/)).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }),
+  };
+})();
+/** Every build published, each with what changed. */
+export const RELEASES = `${REPO}/releases`;
 
 /** The commit the site was built from, for its title block; nothing when it isn't built from a checkout. */
 export const COMMIT = (() => {

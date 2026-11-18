@@ -342,6 +342,7 @@ h1 {
   line-height: 1.45;
   color: var(--ink-2);
   text-align: center;
+  text-wrap: balance;
 }
 
 /* The rooms: a grid on ink, so the gaps between rooms are the partitions. */
@@ -1906,6 +1907,85 @@ tr[data-ours] .fp-value {
 .sha code {
   overflow-wrap: anywhere;
   font-size: 0.8em;
+}
+
+/* F, the other door: the app, framed as the line is, its one action filled in the ink. */
+.get {
+  max-width: 70ch;
+  margin-bottom: 28px;
+  padding-top: 28px;
+  border-top: 1px solid var(--rule);
+}
+
+.get h3 {
+  margin: 0 0 18px;
+  font-size: clamp(1.25rem, 1.05rem + 0.7vw, 1.5rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.get-mac {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 18px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 24px;
+  padding: 16px 16px 16px 20px;
+  border: 2px solid var(--ink);
+  background: var(--floor);
+}
+
+.get-plan {
+  flex: none;
+  width: 44px;
+  height: 32px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.get-what {
+  display: grid;
+  flex: 1 1 15rem;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+}
+
+.get-what b {
+  font-weight: 650;
+}
+
+.get-what span {
+  color: var(--ink-2);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.get-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    scale 120ms var(--ease-out),
+    background-color 120ms var(--ease-out);
+}
+
+.get-button:hover {
+  background: color-mix(in srgb, var(--ink) 84%, var(--paper));
+}
+
+.get-button:active {
+  scale: 0.97;
 }
 
 /* ---------- reading pages: the Oath, the 404 ---------- */
