@@ -53,6 +53,7 @@ function daysPhrase(set: Set<number>): string {
 /** "every 30m" → "Every 30 minutes", "0 7 * * 1-5" → "Weekdays at 07:00"; null when it's best left as written. */
 export function describeSchedule(input: string): string | null {
   const text = normal(input).toLowerCase();
+  if (text === "never") return "Only when woken";
   const every = text.match(/^every (\d{1,4}) ?([mhd])$/);
   if (every) {
     const n = Number(every[1]);
@@ -83,6 +84,7 @@ export function describeSchedule(input: string): string | null {
 export function scheduleProblem(input: string): string | null {
   const text = normal(input);
   if (!text) return "Choose when it runs.";
+  if (text.toLowerCase() === "never") return null;
   if (/^every\b/i.test(text)) return /^every \d{1,4} ?[mhd]$/i.test(text) ? null : 'Write it as "every 30m", "every 2h" or "every 1d".';
   if (ALIASES[text.toLowerCase()]) return null;
   return text.split(" ").length === 5 ? null : 'Use "every 30m" (m, h or d) or a five-field cron line such as "0 7 * * 1-5".';

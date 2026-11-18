@@ -253,13 +253,17 @@ Archive (this node's: everything kept for good, searched by words and meaning)
   archive verify                  re-hash every stored file now (it runs daily too)
   archive budget [<n>]            summaries a day by the swift role (unset: a local model only)
 
-Loops (work on a schedule, on one node; every run is recorded in the mind)
+Loops (work on a schedule or when something happens, on one node; every run is recorded in the mind)
   loop ls | loop runs [name] | loop run <name> | loop pause|resume|rm <name>
   loop add <name> (--every 30m | --cron "0 7 * * 1-5") [--tz Europe/Copenhagen] [--on ultra] [--label text]
        --heartbeat [--checklist "…"]                    look around; notices in your inbox
      | --quest "<goal>" [--net isolated|gateway|online] [--steps 20] [--gate "<command>" …]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
-  loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set heartbeat --every 1h
+       [--wake …]… [--cooldown 10m]    what else wakes it (no --every or --cron: only that), as data, never orders:
+         --wake webhook                 a POST to /hooks/<name>, signed with its secret (shown once; loop hook <name>: a new one)
+         --wake "gmail <search words>"  new mail a search finds (also outlook); read every few minutes
+         --wake "github <owner>/<repo> [ci.failed,pushed] [branch]"   a failed CI run (the default), or a push
+  loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set heartbeat --every 1h; --no-wakes
   loop drafts                     loops Galahad drafted when you asked for one in chat (they run nothing until added)
   loop add --draft <id> [--on n]  add a draft as he drafted it · loop dismiss <id>: drop it
   heartbeat                       run the heartbeat's checks now and print what they find
@@ -529,6 +533,10 @@ async function main(): Promise<void> {
       apply: { type: "boolean" },
       every: { type: "string" },
       cron: { type: "string" },
+      // What else wakes a loop: --wake webhook | "gmail <words>" | "github owner/repo [ci.failed,pushed]" (repeatable).
+      wake: { type: "string", multiple: true },
+      "no-wakes": { type: "boolean" },
+      cooldown: { type: "string" },
       tz: { type: "string" },
       heartbeat: { type: "boolean" },
       checklist: { type: "string" },

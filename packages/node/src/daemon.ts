@@ -41,6 +41,7 @@ import { LoopRunner, loopRecords } from "./loops.ts";
 import { LoopDrafts } from "./loop-drafts.ts";
 import { ConnectorRequests } from "./connector-requests.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
+import { WakeWatcher } from "./wakes.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
 import { createApp } from "./server.ts";
@@ -87,6 +88,8 @@ export interface DaemonOptions {
   loopIntervalMs?: number;
   /** How often the pull requests this node shipped have their checks read (false: never, for tests). */
   ciWatchMs?: number | false;
+  /** How often what wakes its loops (mail, GitHub) is read (false: never, for tests). */
+  wakeWatchMs?: number | false;
   /** Let the fleet's founding node create its default loop, the heartbeat (default true; GALAHAD_HEARTBEAT=off disables). */
   defaultHeartbeat?: boolean;
   /** Outbound fetch for connectors (tests). */
@@ -670,6 +673,21 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     }
   }
   loops.start(opts.loopIntervalMs);
+  // What else wakes its loops (wakes.ts): new mail and GitHub events, read every few minutes as each loop; webhooks
+  // come in through the server.
+  const wakeWatcher = new WakeWatcher({
+    store,
+    identity,
+    local,
+    log,
+    read: async (connector, tool, args, by) => {
+      const outcome = await connectors.call({ connector, tool, args }, { kind: "agent", by });
+      if (outcome.status !== "done") throw new Error(`${connector}.${tool} asked for approval, which a read never does`);
+      return outcome.result;
+    },
+    wake: (loop, events) => loops.wake(loop, events),
+  });
+  if (opts.wakeWatchMs !== false) wakeWatcher.start(opts.wakeWatchMs);
   notify.start();
   // After you ship: this node follows each pull request it shipped until its checks end (ci-watch.ts).
   const ciWatch = new CiWatch({
@@ -749,6 +767,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       // The archive starts nothing new, and its round under way (an embedding call) is cut off.
       await archive.stop();
       await loops.stop();
+      await wakeWatcher.stop();
       await ciWatch.stop();
       await connectors.drain();
       await Promise.race([Promise.all([finished, turnsEnded]), Bun.sleep(opts.shutdownGraceMs ?? SHUTDOWN_GRACE_MS)]);

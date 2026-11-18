@@ -43,8 +43,11 @@ import {
   sha256B64u,
   isTimeZone,
   type LoopTask,
+  DEFAULT_WAKE_COOLDOWN_MS,
   type LoopDraftView,
+  LoopName,
   type LoopView,
+  type LoopWake,
   nextRun,
   type NoticeView,
   type DeviceView,
@@ -177,6 +180,8 @@ import { BankError, type BankService } from "./bank/service.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
+import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
+import { randomBytes } from "node:crypto";
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
 import type { ConnectorRequest, ConnectorRequests } from "./connector-requests.ts";
 import { SignInError, SignIns } from "./sign-ins.ts";
@@ -1060,8 +1065,40 @@ export function createApp(ctx: AppContext) {
         next: loop.enabled && loop.schedule ? nextRun(loop.schedule, Number.isFinite(since) ? since : now, loop.tz) : null,
         last: last ? runView(last) : null,
         running: loop.on === ctx.identity.id ? ctx.loops.isRunning(loop.name) : null,
+        wakes: loop.wakes,
+        cooldownMs: loop.cooldownMs,
+        hook: loop.wakes.some((w) => w.kind === "webhook") ? `/hooks/${loop.name}` : null,
       };
     });
+  }
+
+  /** A new secret for a loop's webhook, sealed in the vault (the old one stops working): shown once, to whoever set it. */
+  function mintHookSecret(loop: string): string {
+    const secret = randomBytes(32).toString("hex");
+    ctx.vault.set(hookSecretName(loop), secret, { label: `The webhook of loop ${loop}` });
+    return secret;
+  }
+
+  /**
+   * A loop's webhook (PLAN #13): no device signs it, the loop's own secret does, as GitHub signs. Every refusal reads
+   * the same, so a stranger learns nothing of which loops there are; what a signed one says wakes the loop as data.
+   */
+  async function hookRequest(req: Request, name: string): Promise<Response> {
+    const refused = new HttpError(401, "not a signed webhook of a loop here");
+    const loop = LoopName.safeParse(name).success ? loopRecords(ctx.store).find((l) => l.name === name) : undefined;
+    if (!loop || loop.on !== ctx.identity.id || !loop.wakes.some((w) => w.kind === "webhook")) throw refused;
+    if (Number(req.headers.get("content-length") ?? 0) > HOOK_MAX_BYTES) throw new HttpError(413, `a webhook's body is at most ${HOOK_MAX_BYTES / 1024} KB`);
+    const body = new Uint8Array(await req.arrayBuffer());
+    if (body.length > HOOK_MAX_BYTES) throw new HttpError(413, `a webhook's body is at most ${HOOK_MAX_BYTES / 1024} KB`);
+    let secret: string;
+    try {
+      secret = ctx.vault.reveal(hookSecretName(name));
+    } catch {
+      throw refused;
+    }
+    if (!hookSigned(secret, body, req.headers.get("x-hub-signature-256") ?? req.headers.get("x-galahad-signature"))) throw refused;
+    const event = hookEvent(body, { delivery: req.headers.get("x-github-delivery") ?? req.headers.get("x-galahad-delivery"), github: req.headers.get("x-github-event") }, Date.now());
+    return json({ ok: true, woken: ctx.loops.wake(name, [event]) > 0 }, 202);
   }
 
   function loopDraftView(draft: LoopDraft): LoopDraftView {
@@ -3327,14 +3364,25 @@ export function createApp(ctx: AppContext) {
       const tz = input.tz ?? "UTC";
       if (!isTimeZone(tz)) throw new HttpError(400, `unknown time zone "${tz}" (use an IANA name such as Europe/Copenhagen)`);
       try {
-        checkSchedule(input.schedule, tz, Date.now());
+        checkSchedule(input.schedule, tz, Date.now(), Boolean(input.wakes?.length));
       } catch (error) {
         throw new HttpError(400, (error as Error).message);
       }
       // What he wrote is shown to you, and becomes a loop's text if you add it: no keys in it.
-      guardAgainstSecrets(JSON.stringify(input.task), input.label ?? "", input.why ?? "");
+      guardAgainstSecrets(JSON.stringify(input.task), JSON.stringify(input.wakes ?? []), input.label ?? "", input.why ?? "");
       const on = input.on ? fullNode(input.on).id : null;
-      const draft = ctx.loopDrafts.add({ name: input.name, schedule: input.schedule, tz, on, task: input.task, label: input.label ?? null, why: input.why ?? null, by: p.label ?? p.kind });
+      const draft = ctx.loopDrafts.add({
+        name: input.name,
+        schedule: input.schedule,
+        tz,
+        on,
+        task: input.task,
+        wakes: input.wakes ?? [],
+        cooldownMs: input.cooldownMs ?? null,
+        label: input.label ?? null,
+        why: input.why ?? null,
+        by: p.label ?? p.kind,
+      });
       return { draft: loopDraftView(draft) };
     },
     dismissLoopDraft: (input) => {
@@ -3351,13 +3399,15 @@ export function createApp(ctx: AppContext) {
       const schedule: string = input.schedule ?? existing!.scheduleText;
       const tz: string = input.tz ?? existing?.tz ?? "UTC";
       if (!isTimeZone(tz)) throw new HttpError(400, `unknown time zone "${tz}" (use an IANA name such as Europe/Copenhagen)`);
+      const wakes: LoopWake[] = input.wakes ?? existing?.wakes ?? [];
+      const cooldownMs = input.cooldownMs ?? existing?.cooldownMs ?? DEFAULT_WAKE_COOLDOWN_MS;
       try {
-        checkSchedule(schedule, tz, Date.now());
+        checkSchedule(schedule, tz, Date.now(), wakes.length > 0);
       } catch (error) {
         throw new HttpError(400, (error as Error).message);
       }
       // Loops replicate in plaintext and their text reaches models: no keys in them.
-      guardAgainstSecrets(JSON.stringify(task), input.label ?? "");
+      guardAgainstSecrets(JSON.stringify(task), JSON.stringify(wakes), input.label ?? "");
       const keep = existing && ctx.store.activeDevice(existing.on) ? existing.on : null;
       const on = input.on ? fullNode(input.on).id : (keep ?? defaultRunner(task).id);
       const label: string | undefined = input.label ?? existing?.label ?? undefined;
@@ -3370,13 +3420,31 @@ export function createApp(ctx: AppContext) {
         task: task as unknown as Record<string, unknown>,
         ...(label ? { label } : {}),
       });
+      // What else wakes it: written only when given, and only for a loop that has or had any, so the rest add nothing.
+      if ((input.wakes !== undefined || input.cooldownMs !== undefined) && (wakes.length || existing?.wakes.length)) {
+        ctx.store.emit(ctx.identity, "loop.wakes", { name: input.name, wakes: wakes as unknown as Record<string, unknown>[], cooldownMs });
+      }
+      // Its webhook's secret: made with its first webhook and shown this once; gone with its last.
+      const hooked = wakes.some((w) => w.kind === "webhook");
+      const hookSecret = hooked && !ctx.vault.has(hookSecretName(input.name)) ? mintHookSecret(input.name) : undefined;
+      if (!hooked && ctx.vault.has(hookSecretName(input.name))) ctx.vault.delete(hookSecretName(input.name));
       // A draft you added leaves the Inbox: it is a loop now.
       if (input.draft) ctx.loopDrafts.remove(input.draft);
-      return { loop: loopViews().find((l) => l.name === input.name) };
+      return { loop: loopViews().find((l) => l.name === input.name), ...(hookSecret ? { hookSecret } : {}) };
+    },
+    loopHook: (input) => {
+      const loop = loopRecords(ctx.store).find((l) => l.name === input.name);
+      if (!loop) throw new HttpError(404, `no loop "${input.name}"`);
+      if (!loop.wakes.some((w) => w.kind === "webhook")) throw new HttpError(409, `loop ${input.name} has no webhook (galahad loop set ${input.name} --wake webhook)`);
+      return { path: `/hooks/${loop.name}`, node: ctx.store.device(loop.on)?.name ?? loop.on, secret: mintHookSecret(loop.name) };
     },
     removeLoop: (input) => {
-      if (!loopRecords(ctx.store).some((l) => l.name === input.name)) throw new HttpError(404, `no loop "${input.name}"`);
+      const loop = loopRecords(ctx.store).find((l) => l.name === input.name);
+      if (!loop) throw new HttpError(404, `no loop "${input.name}"`);
+      // What woke it goes first, so a loop of the same name made later doesn't inherit it.
+      if (loop.wakes.length) ctx.store.emit(ctx.identity, "loop.wakes", { name: input.name, wakes: [], cooldownMs: 0 });
       ctx.store.emit(ctx.identity, "loop.removed", { name: input.name });
+      if (ctx.vault.has(hookSecretName(input.name))) ctx.vault.delete(hookSecretName(input.name));
       return { ok: true };
     },
     runLoop: async (input, p) => {
@@ -3769,6 +3837,8 @@ export function createApp(ctx: AppContext) {
       return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, onUsage: toolCalled });
     }
 
+    // A loop's webhook: signed by the loop's own secret, not by a device (hookRequest).
+    if (req.method === "POST" && path.startsWith("/hooks/")) return hookRequest(req, path.slice("/hooks/".length));
     if (req.method === "POST" && path === "/link/pair/request") return json(ctx.pairing.request(await req.json()));
     if (req.method === "POST" && path === "/link/pair/status") {
       const input = StatusInput.parse(await req.json());

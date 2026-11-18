@@ -870,6 +870,13 @@ export class MindStore {
         this.putLww(`loop:${bodyOf(event, "loop.removed").name}`, event, null);
         return null;
       }
+      case "loop.wakes": {
+        // Its own key, written only by this kind: a mind that never woke a loop keeps the digest it had.
+        if (!isFullNode(signer)) return "only full nodes may set what wakes a loop";
+        const body = bodyOf(event, "loop.wakes");
+        this.putLww(`loopwake:${body.name}`, event, body.wakes.length ? (body as Json) : null);
+        return null;
+      }
       case "loop.ran": {
         // A record of what that node did, read straight from the log (see loopRuns); only its latest slot is kept here.
         if (signer.kind !== "node") return "only nodes run loops";

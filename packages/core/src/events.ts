@@ -150,6 +150,11 @@ export const Bodies = {
     label: z.string().max(128).optional(),
   }),
   "loop.removed": z.strictObject({ name: LoopName }),
+  /**
+   * What else wakes a loop, besides its schedule: all of it, replacing what was (an empty list: none). Its own kind, so
+   * a node from before it keeps every loop it had; each wake stays loosely typed, like a task, for the same reason.
+   */
+  "loop.wakes": z.strictObject({ name: LoopName, wakes: z.array(Open).max(8), cooldownMs: z.number().int().min(0).max(7 * 24 * 3600_000) }),
   /** One run of a loop, recorded by the node that ran it. `slot` is the scheduled time (null when run by hand). */
   "loop.ran": z.strictObject({
     loop: LoopName,

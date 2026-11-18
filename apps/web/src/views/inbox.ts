@@ -1,4 +1,4 @@
-import type { ActionView, LoopDraftView, NoticeView, ScreenSessionView } from "@galahad/core";
+import type { ActionView, LoopDraftView, LoopView, NoticeView, ScreenSessionView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { noticeFrom } from "../lib/notices.ts";
@@ -14,7 +14,8 @@ import { factRow } from "./about-you.ts";
 import { CLASS_INFO, deviceName } from "./activity.ts";
 import { connectorRequestCard } from "./connectors.ts";
 import { openInvite, pairingCard } from "./fleet.ts";
-import { describeTask, findingRow, loopsChanged } from "./loops.ts";
+import { describeWakes } from "../lib/wakes.ts";
+import { describeTask, findingRow, loopsChanged, showHookSecret } from "./loops.ts";
 import { openOrderFromAction } from "./orders.ts";
 import { secretRequestCard } from "./vault.ts";
 
@@ -80,9 +81,20 @@ function loopDraftCard(ctx: Ctx, draft: LoopDraftView): HTMLElement {
     busy(trigger, async () => {
       try {
         if (adding) {
-          await ctx.api.post("/api/loops", { name: draft.name, schedule: draft.schedule, tz: draft.tz, task: draft.task, ...(draft.on ? { on: draft.on } : {}), ...(draft.label ? { label: draft.label } : {}), draft: draft.id });
+          const { loop, hookSecret } = await ctx.api.post<{ loop: LoopView; hookSecret?: string }>("/api/loops", {
+            name: draft.name,
+            schedule: draft.schedule,
+            tz: draft.tz,
+            task: draft.task,
+            ...(draft.wakes.length ? { wakes: draft.wakes } : {}),
+            ...(draft.cooldownMs ? { cooldownMs: draft.cooldownMs } : {}),
+            ...(draft.on ? { on: draft.on } : {}),
+            ...(draft.label ? { label: draft.label } : {}),
+            draft: draft.id,
+          });
           loopsChanged.update((n) => n + 1);
-          toast(`Added loop ${draft.name}`, { tone: "ok", description: "It runs on its schedule from now: see Loops." });
+          toast(`Added loop ${draft.name}`, { tone: "ok", description: draft.schedule === "never" ? "It runs when what wakes it happens: see Loops." : "It runs on its schedule from now: see Loops." });
+          if (hookSecret) showHookSecret(loop, hookSecret);
         } else {
           await ctx.api.post("/api/loops/drafts/dismiss", { id: draft.id });
           toast("Dismissed", { tone: "info", description: "Nothing was added." });
@@ -101,10 +113,11 @@ function loopDraftCard(ctx: Ctx, draft: LoopDraftView): HTMLElement {
       leadTone: "agent",
       top: true,
       title: h("span", { class: "row wrap" }, h("span", {}, draft.label ?? draft.name), h("span", { class: "mono tiny subtle" }, draft.name)),
-      sub: `${draft.schedule}${draft.tz !== "UTC" ? ` (${draft.tz})` : ""}${draft.on ? ` on ${draft.on}` : ""}`,
+      sub: `${draft.schedule === "never" ? "Only when woken" : `${draft.schedule}${draft.tz !== "UTC" ? ` (${draft.tz})` : ""}`}${draft.on ? ` on ${draft.on}` : ""}`,
       meta: [h("span", {}, `Drafted by ${draft.by === "galahad" ? "Galahad" : draft.by}`), h("span", { title: new Date(draft.at).toLocaleString() }, relativeTime(draft.at))],
     }),
     h("p", { class: "small muted wrap-anywhere" }, describeTask(draft.task)),
+    draft.wakes.length ? h("p", { class: "small muted wrap-anywhere" }, describeWakes(draft.wakes, draft.cooldownMs)) : null,
     draft.why ? h("div", { class: "quote small" }, draft.why) : null,
     note(draft.replaces ? `Adding it replaces your loop ${draft.name}. ` : "", `It runs nothing until you add it. Unanswered, it's gone ${relativeTime(draft.expires)}.`),
     mayAdd

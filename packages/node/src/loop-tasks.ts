@@ -15,6 +15,10 @@ import { selfAct, type SelfActionOutcome, type SelfSnapshot } from "./self-actio
 import { type NodeClient, runNodeQuest } from "./quest-cli.ts";
 import { learnedLines } from "./skills-quest.ts";
 import { streamedError } from "./server.ts";
+import { wokenData } from "./wakes.ts";
+
+/** A quest's goal is at most this long (core's LoopTask), what woke its run included. */
+const QUEST_GOAL_CHARS = 4000;
 
 /*
  * What each kind of loop does when it runs. A loop acts as Galahad on his own,
@@ -378,7 +382,9 @@ export function loopExecutor(deps: LoopTaskDeps) {
         try {
           const client = new LocalClient(`http://127.0.0.1:${deps.port}`, token);
           // Your gates go with it as you gave them; on his own, the planner proposes none of its own.
-          const { outcome, learned, usage } = await runNodeQuest(client, { goal: task.goal, network: task.network, maxSteps: task.maxSteps, ...(task.gates?.length ? { gates: task.gates } : {}) }, { signal: ctx.signal });
+          // What woke it goes with its goal as data from outside, within the goal's own limit (wakes.ts).
+          const goal = `${task.goal}${wokenData(ctx.woken, QUEST_GOAL_CHARS - task.goal.length)}`;
+          const { outcome, learned, usage } = await runNodeQuest(client, { goal, network: task.network, maxSteps: task.maxSteps, ...(task.gates?.length ? { gates: task.gates } : {}) }, { signal: ctx.signal });
           const gated = outcome.gates?.some((g) => g.exitCode !== 0) ?? false;
           const review = outcome.status !== "done" && outcome.review ? ` ${gated ? "Never reviewed:" : "Reviewer:"} ${outcome.review.trim()}` : "";
           return {

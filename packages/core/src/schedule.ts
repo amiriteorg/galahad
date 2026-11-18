@@ -1,6 +1,7 @@
 /*
- * When a loop runs: "every 30m", "every 2h", "every 1d", or a five-field cron
- * line ("0 7 * * 1-5") read in an IANA time zone. Pure and deterministic: the
+ * When a loop runs: "every 30m", "every 2h", "every 1d", a five-field cron
+ * line ("0 7 * * 1-5") read in an IANA time zone, or "never" (only what wakes
+ * it: a webhook, new mail, a GitHub event). Pure and deterministic: the
  * same schedule, zone and instant always give the same next run, on any node.
  *
  * Intervals are aligned to the clock (every 30m runs at :00 and :30 UTC), so a
@@ -9,6 +10,7 @@
  */
 
 export type Schedule =
+  | { kind: "never"; text: "never" }
   | { kind: "every"; ms: number; text: string }
   | {
       kind: "cron";
@@ -74,6 +76,7 @@ function field(text: string, min: number, max: number, names: string[] = [], nam
 
 export function parseSchedule(input: string): Schedule {
   const text = input.trim().replace(/\s+/g, " ");
+  if (/^never$/i.test(text)) return { kind: "never", text: "never" };
   const every = text.match(/^every (\d{1,4}) ?([mhd])$/i);
   if (every) {
     const ms = Number(every[1]) * UNITS[every[2]!.toLowerCase()]!;
@@ -145,6 +148,7 @@ export function zonedParts(ms: number, tz: string): { month: number; day: number
 
 /** The first run strictly after `after`, or null if the schedule never runs (say, 31 February). */
 export function nextRun(schedule: Schedule, after: number, tz = "UTC"): number | null {
+  if (schedule.kind === "never") return null;
   if (schedule.kind === "every") return Math.floor(after / schedule.ms) * schedule.ms + schedule.ms;
   let t = Math.floor(after / MINUTE) * MINUTE + MINUTE;
   // Skip whole days, then hours, then minutes. Stepping from wall-clock parts each
@@ -173,6 +177,7 @@ export const CATCH_UP_MS = 7 * UNITS.d!;
  * Missed runs are not replayed one by one; a node that was away runs once.
  */
 export function dueRun(schedule: Schedule, since: number, now: number, tz = "UTC"): number | null {
+  if (schedule.kind === "never") return null;
   if (schedule.kind === "every") {
     const slot = Math.floor(now / schedule.ms) * schedule.ms;
     return slot > since ? slot : null;

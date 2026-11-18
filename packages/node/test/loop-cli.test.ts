@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import type { LoopDraftView, RouteName } from "@galahad/core";
-import { loopCommand } from "../src/loop-cli.ts";
+import { loopCommand, parseWake } from "../src/loop-cli.ts";
 
 /* `galahad loop drafts`, `loop add --draft` and `loop dismiss` at a terminal, against what the node would answer. */
 
@@ -11,6 +11,8 @@ const draft: LoopDraftView = {
   tz: "Europe/Copenhagen",
   on: null,
   task: { kind: "call", connector: "github", tool: "pulls", args: { owner: "amiriteorg", repo: "galahad" } },
+  wakes: [],
+  cooldownMs: null,
   label: "Open pull requests, each weekday",
   why: "You asked to see the open pull requests every weekday at 8.",
   by: "galahad",
@@ -19,13 +21,19 @@ const draft: LoopDraftView = {
   replaces: false,
 };
 
-function node(drafts: LoopDraftView[] = [draft]) {
+function node(drafts: LoopDraftView[] = [draft], hookSecret?: string) {
   const asked: { name: RouteName; input: unknown }[] = [];
   const api = {
     async call<T>(name: RouteName, input?: unknown): Promise<T> {
       asked.push({ name, input });
       if (name === "loopDrafts") return { drafts } as T;
-      if (name === "setLoop") return { loop: { name: draft.name, schedule: draft.schedule, tz: draft.tz, onName: "keep", task: draft.task, next: null } } as T;
+      if (name === "setLoop") {
+        const given = input as { name: string; schedule?: string; wakes?: unknown[]; cooldownMs?: number };
+        const wakes = given.wakes ?? [];
+        const loop = { name: given.name, schedule: given.schedule ?? draft.schedule, tz: draft.tz, onName: "keep", task: draft.task, next: null, wakes, cooldownMs: given.cooldownMs ?? 600_000, hook: wakes.some((w) => (w as { kind: string }).kind === "webhook") ? `/hooks/${given.name}` : null };
+        return { loop, ...(hookSecret ? { hookSecret } : {}) } as T;
+      }
+      if (name === "loopHook") return { path: "/hooks/deploys", node: "ultra", secret: "f".repeat(64) } as T;
       return { ok: true } as T;
     },
   };
@@ -67,4 +75,53 @@ test("a draft that's gone says so, and adds nothing; dismissing one asks the nod
   expect(asked.map((a) => a.name)).toEqual(["loopDrafts"]);
   await printed(() => loopCommand(api, "dismiss", [draft.id], {}));
   expect(asked.at(-1)).toEqual({ name: "dismissLoopDraft", input: { id: draft.id } });
+});
+
+test("what wakes a loop, as you'd say it at a terminal", () => {
+  expect(parseWake("webhook")).toEqual({ kind: "webhook" });
+  expect(parseWake("gmail from:boss@example.com is:unread")).toEqual({ kind: "mail", connector: "gmail", query: "from:boss@example.com is:unread" });
+  expect(parseWake("outlook")).toEqual({ kind: "mail", connector: "outlook" });
+  // A GitHub wake with no events named wakes on a failed CI run; a branch narrows that to its own runs.
+  expect(parseWake("github amiriteorg/galahad")).toEqual({ kind: "github", owner: "amiriteorg", repo: "galahad", on: ["ci.failed"] });
+  expect(parseWake("github amiriteorg/galahad ci.failed,pushed main")).toEqual({ kind: "github", owner: "amiriteorg", repo: "galahad", on: ["ci.failed", "pushed"], branch: "main" });
+  expect(() => parseWake("github amiriteorg")).toThrow(/--wake "github <owner>\/<repo>/);
+  expect(() => parseWake("github amiriteorg/galahad merged")).toThrow(/ci.failed or pushed, not "merged"/);
+  expect(() => parseWake("slack #general")).toThrow(/--wake webhook/);
+  expect(() => parseWake("webhook please")).toThrow(/--wake webhook/);
+});
+
+test("a loop with something to wake it and no schedule runs only when woken; its webhook's secret is shown once, with how to sign", async () => {
+  const { api, asked } = node([draft], "a".repeat(64));
+  const lines = await printed(() => loopCommand(api, "add", ["deploys"], { wake: ["webhook"], quest: "Read what the deploy said and tell me if it failed", cooldown: "15m" }));
+  expect(asked.at(-1)).toEqual({
+    name: "setLoop",
+    input: { name: "deploys", schedule: "never", task: { kind: "quest", goal: "Read what the deploy said and tell me if it failed", network: "isolated" }, wakes: [{ kind: "webhook" }], cooldownMs: 15 * 60_000 },
+  });
+  const out = lines.join("\n");
+  expect(out).toContain("deploys: only when woken on keep");
+  expect(out).toContain("wakes on a webhook (a burst within 15 min wakes it once)");
+  expect(out).toContain("POST /hooks/deploys");
+  expect(out).toContain(`Secret, shown this once (galahad loop hook <name> makes a new one): ${"a".repeat(64)}`);
+  expect(out).toContain("X-Hub-Signature-256: sha256=");
+  await expect(loopCommand(api, "set", ["deploys"], { cooldown: "soon" })).rejects.toThrow(/--cooldown takes minutes or hours/);
+});
+
+test("set leaves what wakes a loop alone unless given; --no-wakes clears it; hook makes a new secret", async () => {
+  const { api, asked } = node();
+  await printed(() => loopCommand(api, "set", ["deploys"], { every: "1h" }));
+  expect(asked.at(-1)!.input).toEqual({ name: "deploys", schedule: "every 1h" });
+  await printed(() => loopCommand(api, "set", ["deploys"], { "no-wakes": true }));
+  expect(asked.at(-1)!.input).toEqual({ name: "deploys", wakes: [] });
+  const lines = await printed(() => loopCommand(api, "hook", ["deploys"], {}));
+  expect(asked.at(-1)).toEqual({ name: "loopHook", input: { name: "deploys" } });
+  expect(lines.join("\n")).toContain("f".repeat(64));
+});
+
+test("a draft with something to wake it is listed with it, and added with it", async () => {
+  const woken: LoopDraftView = { ...draft, schedule: "never", wakes: [{ kind: "mail", connector: "gmail", query: "from:boss@example.com" }], cooldownMs: 30 * 60_000 };
+  const lines = await printed(() => loopCommand(node([woken]).api, "drafts", [], {}));
+  expect(lines.join("\n")).toContain('wakes on new Gmail mail matching "from:boss@example.com" (a burst within 30 min wakes it once)');
+  const { api, asked } = node([woken]);
+  await printed(() => loopCommand(api, "add", [], { draft: woken.id }));
+  expect(asked.at(-1)!.input).toMatchObject({ schedule: "never", wakes: woken.wakes, cooldownMs: 30 * 60_000, draft: woken.id });
 });

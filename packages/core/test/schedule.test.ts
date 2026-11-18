@@ -50,6 +50,14 @@ describe("schedules", () => {
     expect(next("0 0 29 2 *", "2026-03-01T00:00:00Z", "Europe/Copenhagen")).toBe("2028-02-28T23:00:00.000Z");
   });
 
+  test('"never": a loop that only something else wakes has no run and is never due', () => {
+    for (const text of ["never", " NEVER "]) expect(parseSchedule(text)).toEqual({ kind: "never", text: "never" });
+    const never = parseSchedule("never");
+    expect(nextRun(never, Date.UTC(2026, 10, 18))).toBeNull();
+    expect(dueRun(never, Number.NEGATIVE_INFINITY, Date.UTC(2026, 10, 18))).toBeNull();
+    expect(() => parseSchedule("never ever")).toThrow(ScheduleError);
+  });
+
   test("malformed cron lines are refused with a reason", () => {
     for (const bad of ["61 * * * *", "* * *", "* * * * * *", "1-x * * * *", "5-1 * * * *", "*/0 * * * *", "0 0 32 * *", "0 0 * 13 *", "0 0 * * 8", ""]) {
       expect(() => parseSchedule(bad)).toThrow(ScheduleError);

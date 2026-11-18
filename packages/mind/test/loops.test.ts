@@ -73,6 +73,38 @@ describe("loops in the log", () => {
     expect(storeA.lwwPrefix("loop:")).toHaveLength(0);
   });
 
+  test("what wakes a loop: its own key, the last word stands on every replica, and only full nodes write it", () => {
+    const { a, b, storeA, storeB } = fleet();
+    storeA.emit(a, "loop.set", loop(b.id, "deploys"));
+    const before = storeA.digest();
+    const wakes = [{ kind: "webhook" }, { kind: "github", owner: "amiriteorg", repo: "galahad", on: ["ci.failed"] }];
+    storeA.emit(a, "loop.wakes", { name: "deploys", wakes, cooldownMs: 600_000 });
+    expect(storeA.digest()).not.toBe(before);
+    expect(storeA.lww<{ wakes: unknown[] }>("loopwake:deploys")?.value?.wakes).toEqual(wakes);
+    // The loop itself, and its key, are as they were: a node from before this kind keeps every loop.
+    expect(storeA.lwwPrefix("loop:").map((e) => e.key)).toEqual(["loop:deploys"]);
+    // A newer node's wake it can't read is still kept as it came (loosely typed in the log).
+    storeB.emit(b, "loop.wakes", { name: "deploys", wakes: [{ kind: "telepathy", strength: 9 }], cooldownMs: 60_000 });
+    syncInto(storeB, storeA);
+    syncInto(storeA, storeB);
+    expect(storeA.digest()).toBe(storeB.digest());
+    expect(storeA.lww<{ wakes: unknown[] }>("loopwake:deploys")?.value?.wakes).toEqual([{ kind: "telepathy", strength: 9 }]);
+    // An empty list is none: the key holds nothing, and listing what wakes loops shows nothing for it.
+    storeA.emit(a, "loop.wakes", { name: "deploys", wakes: [], cooldownMs: 0 });
+    expect(storeA.lwwPrefix("loopwake:")).toHaveLength(0);
+  });
+
+  test("a mind that never woke a loop keeps the digest it had", () => {
+    const one = fleet();
+    const two = fleet();
+    for (const { a, b, storeA } of [one, two]) storeA.emit(a, "loop.set", loop(b.id));
+    one.storeA.emit(one.a, "loop.removed", { name: "heartbeat" });
+    two.storeA.emit(two.a, "loop.removed", { name: "heartbeat" });
+    // Removing a loop writes no wake key of its own (the node says it has none first, when it had any).
+    expect(one.storeA.lwwPrefix("loopwake:")).toHaveLength(0);
+    expect(one.storeA.lww("loopwake:heartbeat")).toBeNull();
+  });
+
   test("a revoked node's later loop definitions don't count", () => {
     const { a, b, storeA, storeB } = fleet();
     revokeDevice(storeA, a, b.id, "lost");

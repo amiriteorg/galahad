@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
-import type { LoopTask } from "@galahad/core";
+import type { LoopTask, LoopWake } from "@galahad/core";
 
 /*
  * Loops Galahad drafted when you asked for one in chat (core api.ts, LoopDraftInput). A draft is only a suggestion
@@ -20,6 +20,9 @@ export interface LoopDraft {
   /** The node it would run on (its id), when the draft names one. */
   on: string | null;
   task: LoopTask;
+  /** What else would wake it (a draft from before these were kept has none). */
+  wakes: LoopWake[];
+  cooldownMs: number | null;
   label: string | null;
   why: string | null;
   by: string;
@@ -48,7 +51,7 @@ export class LoopDrafts {
     return this.db
       .query<{ data: string }, [number]>("SELECT data FROM loop_drafts WHERE expires > ? ORDER BY at DESC, id")
       .all(now)
-      .map((row) => JSON.parse(row.data) as LoopDraft);
+      .map((row) => ({ wakes: [], cooldownMs: null, ...(JSON.parse(row.data) as Partial<LoopDraft>) }) as LoopDraft);
   }
 
   get(id: string, now = Date.now()): LoopDraft | null {

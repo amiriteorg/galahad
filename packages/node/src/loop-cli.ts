@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type ActionView, type ArgValue, type ConnectorLibraryView, type ConnectorRequestView, type ConnectorView, type FindingView, type LoopDraftView, type LoopRunView, type LoopTask, type LoopView, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
+import { type ActionView, type ArgValue, type ConnectorLibraryView, type ConnectorRequestView, type ConnectorView, describeWake, type FindingView, GITHUB_WAKE_EVENTS, type LoopDraftView, type LoopRunView, type LoopTask, type LoopView, type LoopWake, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
 import { CATALOG } from "@galahad/brain";
 
 /*
@@ -32,8 +32,63 @@ export function describeTask(task: LoopTask | null): string {
   return `call ${task.connector}.${task.tool}${args ? ` ${args}` : ""}`;
 }
 
+/** What wakes a loop besides its schedule, in a line ("" when nothing does). */
+export function describeWakes(wakes: readonly LoopWake[], cooldownMs: number | null): string {
+  if (!wakes.length) return "";
+  const minutes = cooldownMs ? Math.round(cooldownMs / 60_000) : null;
+  return `wakes on ${wakes.map(describeWake).join(" · ")}${minutes ? ` (a burst within ${minutes} min wakes it once)` : ""}`;
+}
+
+/**
+ * `--wake` as you'd say it: webhook · gmail [search words] · outlook [words] · github owner/repo [ci.failed,pushed] [branch].
+ * A GitHub wake with no events named wakes on a failed CI run.
+ */
+export function parseWake(spec: string): LoopWake {
+  const [kind, ...rest] = spec.trim().split(/\s+/);
+  const usage = 'give --wake webhook, --wake "gmail <search words>", --wake "outlook <words>" or --wake "github <owner>/<repo> [ci.failed,pushed] [branch]"';
+  if (kind === "webhook" && !rest.length) return { kind: "webhook" };
+  if (kind === "gmail" || kind === "outlook") return { kind: "mail", connector: kind, ...(rest.length ? { query: rest.join(" ") } : {}) };
+  if (kind === "github") {
+    const [slug, events, branch, extra] = rest;
+    const [owner, repo, more] = (slug ?? "").split("/");
+    if (!owner || !repo || more !== undefined || extra !== undefined) throw new Error(usage);
+    const on = (events ?? "ci.failed").split(",");
+    const unknown = on.find((e) => !(GITHUB_WAKE_EVENTS as readonly string[]).includes(e));
+    if (unknown) throw new Error(`a GitHub wake is ${GITHUB_WAKE_EVENTS.join(" or ")}, not "${unknown}"`);
+    return { kind: "github", owner, repo, on: on as (typeof GITHUB_WAKE_EVENTS)[number][], ...(branch ? { branch } : {}) };
+  }
+  throw new Error(usage);
+}
+
+/** `--cooldown 10m` (m or h) in ms. */
+function cooldownFrom(flags: Flags): number | undefined {
+  const text = str(flags, "cooldown");
+  if (text === undefined) return undefined;
+  const m = /^(\d{1,4})\s*([mh])$/.exec(text.trim());
+  if (!m) throw new Error('--cooldown takes minutes or hours, such as "10m" or "1h"');
+  return Number(m[1]) * (m[2] === "h" ? 3600_000 : 60_000);
+}
+
+/** A webhook's secret, shown once, with how to sign a body for it. */
+function printHook(path: string, secret: string, node: string): void {
+  console.log(`Its webhook: POST ${bold(path)} on ${node}'s address (where this CLI reaches it, the same port).`);
+  console.log(`Secret, shown this once (galahad loop hook <name> makes a new one): ${bold(secret)}`);
+  console.log(dim("Sign each body as GitHub does: X-Hub-Signature-256: sha256=<the HMAC-SHA256 of the body with the secret, in hex>. GitHub's own webhooks work as they are."));
+  console.log(dim(`  body='{"hello":"world"}'; sig=$(printf %s "$body" | openssl dgst -sha256 -hmac "<secret>" -r | cut -d' ' -f1)`));
+  console.log(dim(`  curl -X POST -H "X-Hub-Signature-256: sha256=$sig" -H 'Content-Type: application/json' -d "$body" http://<node>:7777${path}`));
+}
+
+/** What a loop is now, after it was set: its schedule, where it runs, its task, what wakes it, its next run. */
+function printSet(loop: LoopView, hookSecret: string | undefined): void {
+  const when_ = loop.schedule === "never" ? "only when woken" : `${loop.schedule}${loop.tz !== "UTC" ? ` (${loop.tz})` : ""}`;
+  console.log(`Loop ${bold(loop.name)}: ${when_} on ${loop.onName}, ${describeTask(loop.task)}.${loop.schedule === "never" ? "" : ` Next run ${when(loop.next)}.`}`);
+  if (loop.wakes.length) console.log(`  ${describeWakes(loop.wakes, loop.cooldownMs)}.`);
+  if (hookSecret && loop.hook) printHook(loop.hook, hookSecret, loop.onName ?? loop.on);
+}
+
 function printRun(run: LoopRunView, loop?: string): void {
-  const head = `${MARK[run.status] ?? "?"} ${dim(new Date(run.started).toLocaleString())}${loop ? ` ${bold(loop)}` : ""} ${run.status}${run.slot === null ? dim(" (by hand)") : ""}`;
+  const how = run.run.startsWith("w") ? dim(" (woken)") : run.slot === null ? dim(" (by hand)") : "";
+  const head = `${MARK[run.status] ?? "?"} ${dim(new Date(run.started).toLocaleString())}${loop ? ` ${bold(loop)}` : ""} ${run.status}${how}`;
   console.log(`  ${head}\n      ${run.summary.replace(/\n/g, "\n      ")}`);
 }
 
@@ -136,6 +191,7 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
         const state = loop.enabled ? (loop.running ? bold("running") : "on") : dim("paused");
         console.log(`  ${bold(loop.name.padEnd(16))} ${state.padEnd(tty ? 7 : 7)}  ${loop.schedule}${loop.tz !== "UTC" ? ` (${loop.tz})` : ""} on ${loop.onName ?? loop.on.slice(0, 12)}`);
         console.log(`  ${" ".repeat(16)} ${dim(describeTask(loop.task))}${loop.problem ? `  ${bold(loop.problem)}` : ""}`);
+        if (loop.wakes.length) console.log(`  ${" ".repeat(16)} ${dim(describeWakes(loop.wakes, loop.cooldownMs))}`);
         console.log(`  ${" ".repeat(16)} ${dim(`next ${loop.enabled ? when(loop.next) : "—"}`)}${loop.last ? dim(` · last ${MARK[loop.last.status]} ${loop.last.summary.split("\n")[0]!.slice(0, 80)}`) : ""}`);
       }
       return;
@@ -146,6 +202,7 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
       for (const draft of drafts) {
         console.log(`  ${bold(draft.id)}  ${bold(draft.name)}: ${draft.schedule}${draft.tz !== "UTC" ? ` (${draft.tz})` : ""}${draft.on ? ` on ${draft.on}` : ""}${draft.replaces ? dim(" (replaces your loop of that name)") : ""}`);
         console.log(`  ${" ".repeat(draft.id.length)}  ${dim(describeTask(draft.task))}`);
+        if (draft.wakes.length) console.log(`  ${" ".repeat(draft.id.length)}  ${dim(describeWakes(draft.wakes, draft.cooldownMs))}`);
         if (draft.why) console.log(`  ${" ".repeat(draft.id.length)}  ${dim(`why: ${draft.why}`)}`);
       }
       if (drafts.length) console.log(dim("Add one: galahad loop add --draft <id> · dismiss one: galahad loop dismiss <id>"));
@@ -165,34 +222,47 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
         const draft = drafts.find((d) => d.id === str(flags, "draft"));
         if (!draft) throw new Error(`no draft ${str(flags, "draft")} (it was added, dismissed, or a week went by): galahad loop drafts`);
         const on = str(flags, "on") ?? draft.on;
-        const { loop } = await api.call<{ loop: LoopView }>("setLoop", {
+        const { loop, hookSecret } = await api.call<{ loop: LoopView; hookSecret?: string }>("setLoop", {
           name: draft.name,
           schedule: draft.schedule,
           tz: draft.tz,
           task: draft.task,
+          ...(draft.wakes.length ? { wakes: draft.wakes } : {}),
+          ...(draft.cooldownMs ? { cooldownMs: draft.cooldownMs } : {}),
           ...(on ? { on } : {}),
           ...(draft.label ? { label: draft.label } : {}),
           draft: draft.id,
         });
-        console.log(`Loop ${bold(loop.name)}: ${loop.schedule}${loop.tz !== "UTC" ? ` (${loop.tz})` : ""} on ${loop.onName}, ${describeTask(loop.task)}. Next run ${when(loop.next)}.`);
+        printSet(loop, hookSecret);
         return;
       }
-      if (!name) throw new Error(`usage: galahad loop ${sub} <name> (--every 30m | --cron "0 7 * * *") [--tz Zone] [--on node] (--heartbeat | --quest "goal" | --call connector.tool [--arg k=v])`);
+      if (!name) throw new Error(`usage: galahad loop ${sub} <name> (--every 30m | --cron "0 7 * * *" | --wake …) [--tz Zone] [--on node] (--heartbeat | --quest "goal" | --call connector.tool [--arg k=v])`);
       const every = str(flags, "every");
       const cron = str(flags, "cron");
       if (every && cron) throw new Error("give --every or --cron, not both");
-      const schedule = every ? `every ${every}` : cron;
+      const wakes = flags["no-wakes"] ? [] : list(flags, "wake").length ? list(flags, "wake").map(parseWake) : undefined;
+      // Something to wake it and no schedule: it runs only when woken.
+      const schedule = every ? `every ${every}` : (cron ?? (sub === "add" && wakes?.length ? "never" : undefined));
       const task = await taskFrom(api, flags);
-      if (sub === "add" && (!schedule || !task)) throw new Error("a new loop needs --every or --cron, and --heartbeat, --quest or --call");
-      const { loop } = await api.call<{ loop: LoopView }>("setLoop", {
+      if (sub === "add" && (!schedule || !task)) throw new Error("a new loop needs --every, --cron or something to wake it (--wake), and --heartbeat, --quest or --call");
+      const cooldownMs = cooldownFrom(flags);
+      const { loop, hookSecret } = await api.call<{ loop: LoopView; hookSecret?: string }>("setLoop", {
         name,
         ...(schedule ? { schedule } : {}),
         ...(str(flags, "tz") ? { tz: str(flags, "tz") } : {}),
         ...(str(flags, "on") ? { on: str(flags, "on") } : {}),
         ...(task ? { task } : {}),
+        ...(wakes ? { wakes } : {}),
+        ...(cooldownMs ? { cooldownMs } : {}),
         ...(str(flags, "label") ? { label: str(flags, "label") } : {}),
       });
-      console.log(`Loop ${bold(loop.name)}: ${loop.schedule}${loop.tz !== "UTC" ? ` (${loop.tz})` : ""} on ${loop.onName}, ${describeTask(loop.task)}. Next run ${when(loop.next)}.`);
+      printSet(loop, hookSecret);
+      return;
+    }
+    case "hook": {
+      if (!name) throw new Error("usage: galahad loop hook <name>   (a new secret for its webhook; the old one stops working)");
+      const hook = await api.call<{ path: string; node: string; secret: string }>("loopHook", { name });
+      printHook(hook.path, hook.secret, hook.node);
       return;
     }
     case "pause":
@@ -221,7 +291,7 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
       return;
     }
     default:
-      throw new Error("usage: galahad loop ls | add | set | pause | resume | rm | run | runs | drafts | dismiss");
+      throw new Error("usage: galahad loop ls | add | set | pause | resume | rm | run | runs | hook | drafts | dismiss");
   }
 }
 

@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { fuzzyMatch, rank } from "./fuzzy.ts";
 import { type Block, type Inline, inlineText, parseInline, parseMarkdown, safeHref } from "./markdown.ts";
 import { describeSchedule, scheduleProblem } from "./schedule.ts";
+import { describeWake as describeWakeHere, describeWakes } from "./wakes.ts";
+import { describeWake, type LoopWake } from "@galahad/core";
 import { detectProvider, detectSignIn, matchRanges, parseCommand, planLine, providerSetup, roleParts } from "./text.ts";
 import { countdown, duration, hlcMs, minutesLabel, relativeTime } from "./time.ts";
 
@@ -279,6 +281,31 @@ describe("time", () => {
     expect(countdown(9 * 60_000 + 5_000)).toBe("9:05");
     expect(minutesLabel(90)).toBe("1 h 30 min");
     expect(minutesLabel(24 * 60)).toBe("1 d");
+  });
+});
+
+describe("what wakes a loop", () => {
+  const wakes: LoopWake[] = [
+    { kind: "webhook" },
+    { kind: "mail", connector: "gmail", query: "from:boss@example.com" },
+    { kind: "mail", connector: "outlook" },
+    { kind: "github", owner: "amiriteorg", repo: "galahad", on: ["ci.failed", "pushed"], branch: "main" },
+    { kind: "github", owner: "amiriteorg", repo: "site", on: ["pushed"] },
+  ];
+
+  test("is said here as the node and the terminal say it", () => {
+    for (const wake of wakes) expect(describeWakeHere(wake)).toBe(describeWake(wake));
+    expect(describeWakeHere(wakes[3]!)).toBe("a failed CI run on main or a push in amiriteorg/galahad");
+  });
+
+  test("in a sentence with its cooldown, and nothing when nothing else wakes it", () => {
+    expect(describeWakes(wakes.slice(0, 2), 15 * 60_000)).toBe('Also wakes on a webhook · new Gmail mail matching "from:boss@example.com"; a burst within 15 min is one run.');
+    expect(describeWakes([], 60_000)).toBe("");
+  });
+
+  test('"never" is a schedule here too: it runs only when woken', () => {
+    expect(describeSchedule("never")).toBe("Only when woken");
+    expect(scheduleProblem("Never")).toBeNull();
   });
 });
 

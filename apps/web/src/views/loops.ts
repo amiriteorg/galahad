@@ -1,8 +1,9 @@
-import type { ConnectorView, FindingView, LoopRunView, LoopTask, LoopView, SelfActionView } from "@galahad/core";
+import type { ConnectorView, FindingView, LoopRunView, LoopTask, LoopView, LoopWake, SelfActionView } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { gatesFromText } from "../lib/quests.ts";
 import { describeSchedule, scheduleProblem } from "../lib/schedule.ts";
+import { describeWake, describeWakes } from "../lib/wakes.ts";
 import { shortId } from "../lib/text.ts";
 import { absoluteTime, duration, relativeTime } from "../lib/time.ts";
 import type { NetworkMode } from "../types.ts";
@@ -57,10 +58,31 @@ const PRESETS: { label: string; schedule: string }[] = [
   { label: "Hourly", schedule: "0 * * * *" },
   { label: "Daily 07:00", schedule: "0 7 * * *" },
   { label: "Weekdays 07:00", schedule: "0 7 * * 1-5" },
+  { label: "Only when woken", schedule: "never" },
 ];
 
 const clip = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
 const firstLine = (text: string) => clip(text.split("\n")[0]?.trim() ?? "", 200);
+
+/** A webhook's secret, shown this once (never copied for you: select it), with how to sign a body for it. */
+export function showHookSecret(loop: { name: string; hook: string | null; onName: string | null }, secret: string): void {
+  const path = loop.hook ?? `/hooks/${loop.name}`;
+  openSheet({
+    title: `The webhook of ${loop.name}`,
+    description: "Its secret is shown this once. A new one, from the loop's card, retires it.",
+    size: "wide",
+    body: h(
+      "div",
+      { class: "stack" },
+      field("Address", h("div", { class: "copyfield" }, h("code", {}, `POST ${path}`)), { hint: `On ${loop.onName ?? "its node"}, at the address and port your devices reach it on.` }),
+      field("Secret", h("div", { class: "copyfield" }, h("code", {}, secret)), { hint: "Select it to copy it, and keep it where the sender keeps its keys." }),
+      note(
+        "Sign each body as GitHub does: the header X-Hub-Signature-256 is sha256= and the HMAC-SHA256 of the body with this secret, in hex. GitHub's own webhooks work as they are. ",
+        "What a webhook says reaches the loop's run as data, never as orders.",
+      ),
+    ),
+  });
+}
 
 export function describeTask(task: LoopTask | null): string {
   if (!task) return "A task this node can't read.";
@@ -169,6 +191,73 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     existing && !nodes.some((n) => n.id === existing.on) ? h("option", { value: existing.on, selected: true }, `${existing.onName ?? shortId(existing.on)} (unavailable)`) : null,
     ...nodes.map((n) => h("option", { value: n.id, selected: n.id === existing?.on }, n.name)),
   );
+
+  // What else wakes it (a webhook, new mail, a GitHub event): taken by a run as data, never as orders.
+  const wakes: LoopWake[] = [...(existing?.wakes ?? [])];
+  const wakeList = h("div", { class: "stack tight", "aria-live": "polite" });
+  const renderWakes = (): void =>
+    replace(
+      wakeList,
+      ...(wakes.length
+        ? wakes.map((wake, at) =>
+            h(
+              "div",
+              { class: "row" },
+              h("span", { class: "small grow wrap-anywhere" }, describeWake(wake)),
+              button(`Remove ${describeWake(wake)}`, { size: "sm", variant: "ghost", iconOnly: true, icon: "x", onClick: () => (wakes.splice(at, 1), renderWakes()) }),
+            ),
+          )
+        : [h("p", { class: "small muted" }, "Nothing else: only its schedule.")]),
+    );
+  const wakeKind = h("select", { class: "select" }, h("option", { value: "webhook" }, "A webhook"), h("option", { value: "gmail" }, "New Gmail mail"), h("option", { value: "outlook" }, "New Outlook mail"), h("option", { value: "github" }, "GitHub"));
+  const plain = { type: "text", autocomplete: "off", autocorrect: "off", spellcheck: "false", autocapitalize: "off" };
+  const wakeQuery = h("input", { class: "input", ...plain, maxlength: 200, placeholder: "Search words (optional), e.g. from:boss@example.com" });
+  const wakeRepo = h("input", { class: "input mono", ...plain, maxlength: 201, placeholder: "owner/repo" });
+  const wakeBranch = h("input", { class: "input mono", ...plain, maxlength: 200, placeholder: "Branch (optional): only its failed runs" });
+  const onFailed = h("input", { type: "checkbox", checked: true });
+  const onPush = h("input", { type: "checkbox" });
+  const mailFields = h("div", { hidden: true }, field("Mail it finds", wakeQuery, { hint: "Only mail from now on wakes it; it's read every few minutes, as this loop." }));
+  const githubFields = h(
+    "div",
+    { class: "stack tight", hidden: true },
+    h("div", { class: "fields" }, field("Repository", wakeRepo), field("Branch", wakeBranch)),
+    h("div", { class: "scope-list" }, h("label", { class: "scope" }, onFailed, h("span", {}, "A failed CI run")), h("label", { class: "scope" }, onPush, h("span", {}, "A push"))),
+  );
+  const syncWakeKind = (): void => {
+    mailFields.hidden = wakeKind.value !== "gmail" && wakeKind.value !== "outlook";
+    githubFields.hidden = wakeKind.value !== "github";
+  };
+  wakeKind.addEventListener("change", syncWakeKind);
+  const addWake = button("Add", {
+    size: "sm",
+    icon: "plus",
+    onClick: () => {
+      replace(status);
+      let wake: LoopWake;
+      if (wakeKind.value === "webhook") {
+        if (wakes.some((w) => w.kind === "webhook")) return void stop("It has a webhook already.", wakeKind);
+        wake = { kind: "webhook" };
+      } else if (wakeKind.value === "gmail" || wakeKind.value === "outlook") {
+        const words = wakeQuery.value.trim();
+        if (findSecrets(words).length) return void stop("That looked like a key. Loops are shared in plaintext; keys belong in the vault.", wakeQuery);
+        wake = { kind: "mail", connector: wakeKind.value, ...(words ? { query: words } : {}) };
+      } else {
+        const [owner, repo, more] = wakeRepo.value.trim().split("/");
+        if (!owner || !repo || more !== undefined || !/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(repo)) return void stop("Name the repository as owner/repo.", wakeRepo);
+        const branch = wakeBranch.value.trim();
+        if (branch && !/^[A-Za-z0-9._/-]{1,200}$/.test(branch)) return void stop("A branch is letters, digits and . _ / -", wakeBranch);
+        const on = [...(onFailed.checked ? (["ci.failed"] as const) : []), ...(onPush.checked ? (["pushed"] as const) : [])];
+        if (!on.length) return void stop("Choose what wakes it: a failed CI run, a push, or both.", onFailed);
+        wake = { kind: "github", owner, repo, on, ...(branch ? { branch } : {}) };
+      }
+      if (wakes.length >= 4) return void stop("Four things at most wake a loop.", wakeKind);
+      wakes.push(wake);
+      wakeQuery.value = wakeRepo.value = wakeBranch.value = "";
+      renderWakes();
+    },
+  });
+  const cooldown = h("input", { class: "input tnum", type: "number", min: 1, max: 1440, step: 1, inputmode: "numeric", value: String(Math.round((existing?.cooldownMs ?? 600_000) / 60_000)) });
+  renderWakes();
 
   // What
   let kind: LoopTask["kind"] = task0?.kind ?? "heartbeat";
@@ -311,6 +400,9 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
         }
         const built = buildTask();
         if ("problem" in built) return stop(built.problem, built.focus);
+        if (when.toLowerCase() === "never" && !wakes.length) return stop("Only when woken needs something to wake it: add a webhook, mail or GitHub below.", wakeKind);
+        const minutes = Number(cooldown.value);
+        if (wakes.length && (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440)) return stop("A burst is one run within 1 to 1,440 minutes.", cooldown);
         const body = {
           name: loopName,
           schedule: when,
@@ -318,12 +410,15 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
           task: built.task,
           label: label.value.trim(),
           ...(where.value && where.value !== existing?.on ? { on: where.value } : {}),
+          // Only a loop that has or had something to wake it says so (the rest add nothing to the log).
+          ...(wakes.length || existing?.wakes.length ? { wakes, cooldownMs: minutes * 60_000 } : {}),
         };
         void busy(save, async () => {
           try {
-            const { loop } = await ctx.api.post<{ loop: LoopView }>("/api/loops", body);
+            const { loop, hookSecret } = await ctx.api.post<{ loop: LoopView; hookSecret?: string }>("/api/loops", body);
             sheet.close();
             loopsChanged.update((n) => n + 1);
+            if (hookSecret) showHookSecret(loop, hookSecret);
             toast(`${loop.name} ${existing ? "saved" : "added"}`, {
               tone: "ok",
               description: loop.enabled && loop.next ? `Next run ${relativeTime(loop.next)}, on ${loop.onName ?? "its node"}.` : `It runs on ${loop.onName ?? "its node"}.`,
@@ -343,6 +438,16 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
       h("div", { class: "chips", role: "group", "aria-label": "Common schedules" }, ...presetChips.map((p) => p.chip)),
       field("Schedule", schedule, { hint: preview }),
     ),
+    h(
+      "div",
+      { class: "stack tight" },
+      h("div", { class: "label" }, "What else wakes it"),
+      wakeList,
+      h("div", { class: "fields" }, field("Add", wakeKind), h("div", { class: "row end" }, addWake)),
+      mailFields,
+      githubFields,
+      field("A burst is one run within", cooldown, { hint: "minutes. What woke a run reaches it as data, never as orders." }),
+    ),
     h("div", { class: "fields" }, field("Time zone", tz, { hint: "The clock a cron line is read in." }), field("Runs on", where, { hint: "Exactly one full node runs it." })),
     zones,
     h("div", { class: "stack tight" }, h("div", { class: "label" }, "What it does"), kindControl.el),
@@ -355,7 +460,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   );
   const sheet = openSheet({
     title: existing ? `Change ${existing.name}` : "Add a loop",
-    description: "Work Galahad does on a schedule, on one node.",
+    description: "Work Galahad does on a schedule or when something happens, on one node.",
     body: form,
     size: "wide",
     initialFocus: () => (existing ? schedule : name),
@@ -410,7 +515,7 @@ function runsList(ctx: Ctx, runs: LoopRunView[]): HTMLElement {
         top: true,
         title: h("span", { class: "row wrap" }, badge(st.label, st.tone), h("span", { class: "tiny subtle", title: absoluteTime(run.started) }, relativeTime(run.started))),
         sub: run.summary ? h("span", { class: "pre-wrap" }, run.summary) : null,
-        meta: [h("span", {}, duration(Math.max(0, run.finished - run.started))), h("span", {}, run.slot === null ? "by hand" : "on schedule"), h("span", {}, `on ${deviceName(ctx, run.node)}`)],
+        meta: [h("span", {}, duration(Math.max(0, run.finished - run.started))), h("span", {}, run.run.startsWith("w") ? "woken" : run.slot === null ? "by hand" : "on schedule"), h("span", {}, `on ${deviceName(ctx, run.node)}`)],
       });
     }),
     { flat: true },
@@ -446,6 +551,23 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
         void refresh();
       } catch (error) {
         toast(`Couldn't start ${loop.name}`, { tone: "error", description: errorMessage(error) });
+      }
+    });
+  }
+
+  async function newHookSecret(loop: LoopView, trigger: HTMLButtonElement): Promise<void> {
+    const ok = await confirmAction({
+      title: `A new secret for ${loop.name}'s webhook?`,
+      body: "The one its sender has stops working at once, until you give it the new one.",
+      confirmLabel: "Make a new secret",
+    });
+    if (!ok) return;
+    await busy(trigger, async () => {
+      try {
+        const { secret } = await ctx.api.post<{ path: string; node: string; secret: string }>("/api/loops/hook", { name: loop.name });
+        showHookSecret(loop, secret);
+      } catch (error) {
+        toast("No new secret", { tone: "error", description: errorMessage(error) });
       }
     });
   }
@@ -509,6 +631,7 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
         meta: [words ? h("span", { title: loop.schedule }, words) : h("span", { class: "mono" }, loop.schedule), h("span", {}, loop.tz), h("span", {}, `on ${loop.onName ?? deviceName(ctx, loop.on)}`)],
       }),
         h("p", { class: "small muted wrap-anywhere" }, describeTask(loop.task)),
+        loop.wakes.length ? h("p", { class: "small muted wrap-anywhere" }, describeWakes(loop.wakes, loop.cooldownMs)) : null,
         loop.problem ? callout("warn", loop.problem) : null,
         h(
           "div",
@@ -517,7 +640,9 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
             ? h("span", {}, "Paused: it won't run until you resume it.")
             : loop.next
               ? h("span", { class: "tnum", title: absoluteTime(loop.next) }, `Next ${relativeTime(loop.next)}`)
-              : null,
+              : loop.schedule === "never"
+                ? h("span", {}, "Runs when woken.")
+                : null,
           last && st
             ? [badge(st.label, st.tone, st.icon), h("span", { title: absoluteTime(last.finished) }, `last ${relativeTime(last.finished)}`)]
             : h("span", {}, "Hasn't run yet."),
@@ -535,6 +660,7 @@ export const loopsView: View = (root, ctx, { scope, opts }) => {
                 onClick: (event) => void setEnabled(loop, !loop.enabled, event.currentTarget as HTMLButtonElement),
               }),
               button("Change", { size: "sm", variant: "ghost", icon: "edit", onClick: () => openLoopSheet(ctx, loop) }),
+              loop.hook ? button("New webhook secret", { size: "sm", variant: "ghost", icon: "key", onClick: (event) => void newHookSecret(loop, event.currentTarget as HTMLButtonElement) }) : null,
               h("span", { class: "spacer" }),
               button(`Remove ${loop.name}`, { size: "sm", variant: "ghost", iconOnly: true, icon: "trash", onClick: () => void remove(loop) }),
             )

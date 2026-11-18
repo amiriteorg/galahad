@@ -159,6 +159,51 @@ export const LoopTask = z.discriminatedUnion("kind", [
 ]);
 export type LoopTask = z.infer<typeof LoopTask>;
 
+/** What wakes a loop on GitHub: a workflow run that failed, or a push to the repository. */
+export const GITHUB_WAKE_EVENTS = ["ci.failed", "pushed"] as const;
+const GitHubName = z.string().regex(/^[A-Za-z0-9_.-]{1,100}$/);
+
+/**
+ * What else wakes a loop, besides its schedule (PLAN #13). Whatever woke it reaches the run as outside data, never as
+ * instructions; a burst within the loop's cooldown wakes it once, with all of it. Only what happens from the moment a
+ * wake is set counts: the mail already in your inbox, and the runs GitHub already has, never wake it.
+ */
+export const LoopWake = z.discriminatedUnion("kind", [
+  /** A POST to the node's /hooks/<loop>, signed with the loop's own secret: HMAC-SHA256 of the body, as GitHub signs. */
+  z.strictObject({ kind: z.literal("webhook") }),
+  /** New mail in your Gmail or Outlook that a search finds (Gmail's search words, or Outlook's), read every few minutes. */
+  z.strictObject({ kind: z.literal("mail"), connector: z.enum(["gmail", "outlook"]), query: z.string().trim().min(1).max(200).optional() }),
+  /** A GitHub repository, read every few minutes: a workflow run that failed (on one branch, if named), or a push. */
+  z.strictObject({
+    kind: z.literal("github"),
+    owner: GitHubName,
+    repo: GitHubName,
+    on: z.array(z.enum(GITHUB_WAKE_EVENTS)).min(1).max(GITHUB_WAKE_EVENTS.length),
+    branch: z.string().regex(/^[A-Za-z0-9._/-]{1,200}$/).optional(),
+  }),
+]);
+export type LoopWake = z.infer<typeof LoopWake>;
+
+/** A wake in a few words, the same on every surface. */
+export function describeWake(wake: LoopWake): string {
+  switch (wake.kind) {
+    case "webhook":
+      return "a webhook";
+    case "mail":
+      return `new ${wake.connector === "gmail" ? "Gmail" : "Outlook"} mail${wake.query ? ` matching "${wake.query}"` : ""}`;
+    case "github": {
+      const what = wake.on.map((on) => (on === "ci.failed" ? `a failed CI run${wake.branch ? ` on ${wake.branch}` : ""}` : "a push"));
+      return `${what.join(" or ")} in ${wake.owner}/${wake.repo}`;
+    }
+  }
+}
+
+export const MAX_LOOP_WAKES = 4;
+/** A burst within this wakes a loop once (unless the loop says otherwise). */
+export const DEFAULT_WAKE_COOLDOWN_MS = 10 * 60_000;
+export const LoopWakes = z.array(LoopWake).max(MAX_LOOP_WAKES);
+export const WakeCooldownMs = z.number().int().min(60_000).max(24 * 3600_000);
+
 /**
  * A loop Galahad drafted because you asked for one in chat ("every weekday at 8, check my open PRs"). It is only a
  * draft: it waits in your Inbox, and becomes a loop only when you add it (setLoop with its `draft`), as you'd add one
@@ -171,6 +216,9 @@ export const LoopDraftInput = z.strictObject({
   tz: z.string().max(64).optional(),
   on: NodeRef.optional(),
   task: LoopTask,
+  /** What else wakes it ("never" as the schedule: only these). */
+  wakes: LoopWakes.optional(),
+  cooldownMs: WakeCooldownMs.optional(),
   label: z.string().max(128).optional(),
   /** What you asked for, in his words: shown with the draft. */
   why: z.string().max(500).optional(),
@@ -829,10 +877,18 @@ export const routes = {
       enabled: z.boolean().optional(),
       task: LoopTask.optional(),
       label: z.string().max(128).optional(),
+      /** What else wakes it, all of them (an empty list: only its schedule); left out, it keeps its own. */
+      wakes: LoopWakes.optional(),
+      cooldownMs: WakeCooldownMs.optional(),
       /** The draft this adds (loopDrafts): it leaves your Inbox once the loop is set. */
       draft: LoopDraftId.optional(),
     }),
   },
+  /**
+   * A new secret for a loop's webhook, shown this once (the old one stops working): what signs a POST to its path.
+   * Setting a loop's first webhook makes one and shows it the same way.
+   */
+  loopHook: { method: "POST", path: "/api/loops/hook", scope: "brain:write", input: z.strictObject({ name: LoopName }) },
   loopDrafts: { method: "GET", path: "/api/loops/drafts", scope: "mind:read", input: null },
   /** Galahad's draft of a loop you asked for in chat: never a loop until you add it (setLoop, brain:write). */
   draftLoop: { method: "POST", path: "/api/loops/drafts", scope: "chat", input: LoopDraftInput },
@@ -1427,6 +1483,10 @@ export interface LoopView {
   last: LoopRunView | null;
   /** Known only on the node that runs it. */
   running: boolean | null;
+  /** What else wakes it (PLAN #13); its webhook's path on the node that runs it, when it has one. */
+  wakes: LoopWake[];
+  cooldownMs: number;
+  hook: string | null;
 }
 
 export interface ConnectorRequestView {
@@ -1455,6 +1515,8 @@ export interface LoopDraftView {
   /** The node it would run on, by name, when the draft names one. */
   on: string | null;
   task: LoopTask;
+  wakes: LoopWake[];
+  cooldownMs: number | null;
   label: string | null;
   why: string | null;
   /** Who drafted it: Galahad, in a chat. */

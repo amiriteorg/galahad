@@ -1,7 +1,9 @@
 import type { Database } from "bun:sqlite";
 import {
+  DEFAULT_WAKE_COOLDOWN_MS,
   dueRun,
   LoopTask,
+  LoopWake,
   type LoopRunView,
   type NodeIdentity,
   nextRun,
@@ -14,16 +16,21 @@ import {
 import type { MindStore } from "@galahad/mind";
 
 /*
- * Loops: work Galahad does on a schedule. A loop lives in the mind (so every
- * device sees it and its history) and names exactly one node that runs it, so it
- * never runs twice. That node's runner wakes every few seconds, finds loops that
- * are due, and runs each one at most once per slot:
+ * Loops: work Galahad does on a schedule, or when something happens. A loop lives
+ * in the mind (so every device sees it and its history) and names exactly one node
+ * that runs it, so it never runs twice. That node's runner wakes every few seconds,
+ * finds loops that are due, and runs each one at most once per slot:
  *
  *   - a run is marked in local storage before it starts and recorded in the mind
  *     (`loop.ran`) when it ends; a crash in between is recorded as interrupted on
  *     the next start, never rerun;
  *   - a node that was away runs a missed loop once, not once per missed slot;
  *   - a run that outlives its deadline is stopped.
+ *
+ * What else wakes a loop (PLAN #13: a webhook, new mail, a GitHub event) comes in
+ * through wake(): kept in local storage until a run takes it, so a restart loses
+ * none; the first wakes the loop at once, and the rest of a burst wait out the
+ * loop's cooldown and go to one run together. A run takes them as outside data.
  */
 
 export interface LoopRecord {
@@ -38,6 +45,21 @@ export interface LoopRecord {
   label: string | null;
   updatedHlc: string;
   updatedAt: number;
+  /** What else wakes it (PLAN #13), as this node reads them, and how long a burst waits to be one run. */
+  wakes: LoopWake[];
+  cooldownMs: number;
+}
+
+/** One thing that happened which wakes a loop: someone else's words, so a run takes it as data. */
+export interface WakeEvent {
+  /** Unique per loop: the same event never wakes it twice. */
+  id: string;
+  source: LoopWake["kind"];
+  at: number;
+  /** One line: what happened. */
+  text: string;
+  /** What came with it, bounded (a webhook's body, a mail's first lines). */
+  detail?: string;
 }
 
 export const hlcMs = (hlc: string): number => Number(hlc.split(".")[0]);
@@ -52,10 +74,23 @@ interface StoredLoop {
   label?: string;
 }
 
+interface StoredWakes {
+  wakes: unknown[];
+  cooldownMs: number;
+}
+
 export function loopRecords(store: MindStore): LoopRecord[] {
+  const woken = new Map(store.lwwPrefix<StoredWakes>("loopwake:").map((entry) => [entry.key.slice("loopwake:".length), entry.value!]));
   return store.lwwPrefix<StoredLoop>("loop:").map((entry) => {
     const stored = entry.value!;
     const problems: string[] = [];
+    // A wake a newer node wrote, which this one can't read, is left out and said; the rest still wake it.
+    const wakes: LoopWake[] = [];
+    for (const raw of woken.get(stored.name)?.wakes ?? []) {
+      const wake = LoopWake.safeParse(raw);
+      if (wake.success) wakes.push(wake.data);
+      else problems.push("one of what wakes it isn't understood here (written by a newer version?)");
+    }
     let schedule: Schedule | null = null;
     try {
       schedule = parseSchedule(stored.schedule);
@@ -81,6 +116,8 @@ export function loopRecords(store: MindStore): LoopRecord[] {
       label: stored.label ?? null,
       updatedHlc: entry.hlc,
       updatedAt: hlcMs(entry.hlc),
+      wakes,
+      cooldownMs: woken.get(stored.name)?.cooldownMs || DEFAULT_WAKE_COOLDOWN_MS,
     };
   });
 }
@@ -103,6 +140,8 @@ export interface RunContext {
   run: string;
   slot: number | null;
   signal: AbortSignal;
+  /** What woke this run (empty when its schedule or you did). */
+  woken: WakeEvent[];
 }
 
 export interface RunResult {
@@ -129,6 +168,10 @@ export interface LoopRunnerOptions {
 
 export class LoopError extends Error {}
 
+/** Waiting events kept per loop at most (the oldest go first), and how long a taken one is kept so it never wakes it twice. */
+const MAX_WAITING = 50;
+const KEEP_TAKEN_MS = 7 * 24 * 3600_000;
+
 export class LoopRunner {
   private readonly now: () => number;
   private readonly active = new Map<string, { run: string; controller: AbortController; done: Promise<void> }>();
@@ -137,6 +180,9 @@ export class LoopRunner {
   constructor(private readonly o: LoopRunnerOptions) {
     this.now = o.now ?? Date.now;
     o.local.exec("CREATE TABLE IF NOT EXISTS loop_runs (loop TEXT NOT NULL, run TEXT NOT NULL, slot INTEGER, started INTEGER NOT NULL, PRIMARY KEY (loop, run))");
+    // What woke a loop and waits for a run (taken: the run that took it), and when each loop was last woken.
+    o.local.exec("CREATE TABLE IF NOT EXISTS loop_wakes (loop TEXT NOT NULL, id TEXT NOT NULL, at INTEGER NOT NULL, event TEXT NOT NULL, taken TEXT, PRIMARY KEY (loop, id))");
+    o.local.exec("CREATE TABLE IF NOT EXISTS loop_woke (loop TEXT PRIMARY KEY, at INTEGER NOT NULL)");
   }
 
   /** Record runs a previous process left unfinished, then wake every `intervalMs`. */
@@ -147,6 +193,7 @@ export class LoopRunner {
     for (const row of leftovers) {
       this.record(row.loop, row.run, row.slot, row.started, { status: "interrupted", summary: "The node stopped during this run; it was not rerun." });
     }
+    this.o.local.query("DELETE FROM loop_wakes WHERE at < ?").run(this.now() - KEEP_TAKEN_MS);
     this.tick();
     this.timer = setInterval(() => this.tick(), intervalMs);
   }
@@ -182,8 +229,45 @@ export class LoopRunner {
       if (this.active.has(loop.name)) continue;
       if (this.active.size >= (this.o.maxConcurrent ?? 2)) return;
       const slot = this.due(loop, now);
-      if (slot !== null) this.launch(loop as RunnableLoop, slot);
+      // A scheduled run takes whatever waits; the cooldown holds back only the runs waking adds.
+      const woken = slot !== null ? this.waiting(loop.name) : this.wokenNow(loop, now);
+      if (slot !== null || woken.length) this.launch(loop as RunnableLoop, slot, woken);
     }
+  }
+
+  /**
+   * Something happened that wakes a loop of this node's (a webhook, new mail, a GitHub event): kept until a run takes
+   * it, the same event once. A paused loop, or one that runs elsewhere, isn't woken. Returns how many were new.
+   */
+  wake(name: string, events: readonly WakeEvent[]): number {
+    const loop = this.mine().find((l) => l.name === name);
+    if (!loop || !loop.enabled || !loop.task || !loop.schedule) return 0;
+    let added = 0;
+    for (const event of events.slice(-MAX_WAITING)) {
+      added += this.o.local.query("INSERT OR IGNORE INTO loop_wakes (loop, id, at, event, taken) VALUES (?, ?, ?, ?, NULL)").run(name, event.id, event.at, JSON.stringify(event)).changes;
+    }
+    // A flood keeps its newest: the oldest waiting go first.
+    this.o.local
+      .query("DELETE FROM loop_wakes WHERE loop = ? AND taken IS NULL AND id NOT IN (SELECT id FROM loop_wakes WHERE loop = ? AND taken IS NULL ORDER BY at DESC, id DESC LIMIT ?)")
+      .run(name, name, MAX_WAITING);
+    if (added) this.tick();
+    return added;
+  }
+
+  /** What waits to wake a loop, oldest first. */
+  waiting(name: string): WakeEvent[] {
+    return this.o.local
+      .query<{ event: string }, [string]>("SELECT event FROM loop_wakes WHERE loop = ? AND taken IS NULL ORDER BY at, id")
+      .all(name)
+      .map((row) => JSON.parse(row.event) as WakeEvent);
+  }
+
+  /** What a run would take now: everything waiting, once the loop's cooldown since it was last woken has passed. */
+  private wokenNow(loop: LoopRecord, now: number): WakeEvent[] {
+    if (!loop.enabled || !loop.task || !loop.schedule) return [];
+    const last = this.o.local.query<{ at: number }, [string]>("SELECT at FROM loop_woke WHERE loop = ?").get(loop.name)?.at;
+    if (last !== undefined && now - last < loop.cooldownMs) return [];
+    return this.waiting(loop.name);
   }
 
   /** Run a loop now, by hand (it doesn't count as its scheduled run). */
@@ -192,7 +276,7 @@ export class LoopRunner {
     if (!loop) throw new LoopError(`loop ${name} doesn't run on this node`);
     if (!loop.task || !loop.schedule) throw new LoopError(`loop ${name} can't run here: ${loop.problem}`);
     if (this.active.has(name)) throw new LoopError(`loop ${name} is already running`);
-    return { run: this.launch(loop as RunnableLoop, null) };
+    return { run: this.launch(loop as RunnableLoop, null, []) };
   }
 
   /** Resolves when a loop's current run (if any) has finished: for tests and graceful stops. */
@@ -201,22 +285,29 @@ export class LoopRunner {
     await Promise.all(runs.map((a) => a.done));
   }
 
-  private launch(loop: RunnableLoop, slot: number | null): string {
+  private launch(loop: RunnableLoop, slot: number | null, woken: readonly WakeEvent[]): string {
     const started = this.now();
-    const run = slot === null ? `m${started.toString(36)}` : `s${slot.toString(36)}`;
+    const run = slot !== null ? `s${slot.toString(36)}` : woken.length ? `w${started.toString(36)}` : `m${started.toString(36)}`;
     this.o.local.query("INSERT OR IGNORE INTO loop_runs (loop, run, slot, started) VALUES (?, ?, ?, ?)").run(loop.name, run, slot, started);
+    if (woken.length) {
+      // Taken by this run (kept a week, so the same event never wakes it twice); a crash in it doesn't rerun them.
+      const take = this.o.local.query("UPDATE loop_wakes SET taken = ? WHERE loop = ? AND id = ?");
+      for (const event of woken) take.run(run, loop.name, event.id);
+      this.o.local.query("INSERT INTO loop_woke (loop, at) VALUES (?, ?) ON CONFLICT (loop) DO UPDATE SET at = excluded.at").run(loop.name, started);
+    }
     const controller = new AbortController();
     const deadline = setTimeout(() => controller.abort(), this.o.deadlineMs ?? 2 * 60 * 60_000);
     const done = (async () => {
       let result: RunResult;
       try {
-        result = await this.o.execute(loop, { run, slot, signal: controller.signal });
+        result = await this.o.execute(loop, { run, slot, signal: controller.signal, woken: [...woken] });
         if (controller.signal.aborted && result.status === "ok") result = { status: "attention", summary: `Stopped: ${result.summary}` };
       } catch (error) {
         result = { status: "failed", summary: controller.signal.aborted ? "Stopped at its deadline." : String((error as Error).message ?? error) };
       } finally {
         clearTimeout(deadline);
       }
+      if (woken.length) result = { ...result, summary: `${wokenBy(woken, slot !== null)} ${result.summary}` };
       this.record(loop.name, run, slot, started, result);
       this.active.delete(loop.name);
       try {
@@ -247,13 +338,26 @@ export class LoopRunner {
   }
 }
 
-/** Check a schedule and zone the way a runner will read them; returns the next run. */
-export function checkSchedule(text: string, tz: string, now: number): number {
+/** One line naming what woke a run (or what a scheduled run took with it): the first event, and how many came with it. */
+export function wokenBy(woken: readonly WakeEvent[], scheduled = false): string {
+  const first = woken[0]!.text.split("\n")[0]!.slice(0, 160);
+  return `${scheduled ? "With" : "Woken by"} ${first}${woken.length > 1 ? ` (and ${woken.length - 1} more)` : ""}.`;
+}
+
+/**
+ * Check a schedule and zone the way a runner will read them; returns the next run (null for "never", which only a
+ * loop with something else to wake it may have).
+ */
+export function checkSchedule(text: string, tz: string, now: number, woken = false): number | null {
   let schedule: Schedule;
   try {
     schedule = parseSchedule(text);
   } catch (error) {
     throw new LoopError(error instanceof ScheduleError ? error.message : "bad schedule");
+  }
+  if (schedule.kind === "never") {
+    if (!woken) throw new LoopError('"never" is for a loop that something else wakes: give it a webhook, mail or GitHub to wake on');
+    return null;
   }
   const next = nextRun(schedule, now, tz);
   if (next === null) throw new LoopError("that schedule never runs");
