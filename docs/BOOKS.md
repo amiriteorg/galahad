@@ -45,7 +45,7 @@ Dinero's own MCP server (`https://mcp.dinero.dk/`, Dinero Pro or Total) is in Ga
 Its tools come classed as your ruling says, and you can change any of them (`galahad connector refresh dinero --class <tool>=<class>`):
 
 - **Without asking:** reading anything, and creating drafts of vouchers, invoices, offers and credit notes, with the contacts, products and files they need.
-- **Asks you first:** booking, registering a payment, sending, changing what is there, and deleting.
+- **Asks you first:** booking, registering a payment, sending, changing what is there (attaching a file to a voucher's card among it: Dinero's own words say it changes the books), and deleting.
 
 Dinero's tools come with long guidance of their own (which VAT account a sale goes on, whether an amount includes VAT). Galahad keeps them in short and reads each one whole from Dinero before he calls it, so that guidance is what he works from.
 

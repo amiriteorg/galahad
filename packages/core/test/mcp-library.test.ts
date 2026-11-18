@@ -46,9 +46,11 @@ describe("the library of hosted MCP servers", () => {
     );
     expect(classes).toEqual({
       BookVoucher: "outward", book_finance_voucher: "outward", add_invoice_payment: "outward", add_purchase_payment: "outward", send_trade_offer: "outward", update_contact: "outward", submit_feedback: "outward",
+      // Attaching a file to a voucher's card changes the books (Dinero's own words): it asks, as changing what is there does.
+      attach_file_to_voucher_card: "outward",
       delete_invoice_draft: "delete", delete_purchase_voucher_draft: "delete",
       GetContactByName: "read", GetInboxEmailAddresses: "read", get_report: "read", list_invoices: "read", list_vouchers: "read", SearchBankTransactions: "read",
-      create_invoice: "create", CreatePurchaseVoucher: "create", CreateFinanceVoucher: "create", create_contact: "create", create_trade_offer: "create", generate_invoice_from_trade_offer: "create", upload_file: "create", attach_file_to_voucher_card: "create",
+      create_invoice: "create", CreatePurchaseVoucher: "create", CreateFinanceVoucher: "create", create_contact: "create", create_trade_offer: "create", generate_invoice_from_trade_offer: "create", upload_file: "create",
       // A tool it doesn't name is left to the server's hints (and asks, where they say nothing).
       open_upload_dialog: null,
     });

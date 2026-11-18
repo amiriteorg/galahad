@@ -60,7 +60,8 @@ type ToolClass = ConnectorTool["class"];
  *
  * Dinero's is the owner's ruling for the knight that keeps the books (18 November 2026, "Drafts on its own"): it
  * reads, and prepares drafts (vouchers, invoices, offers, credit notes, the contacts and products they name, the files
- * they carry) without asking; booking, registering a payment, sending, changing what is there and deleting ask you.
+ * they carry, uploaded) without asking; booking, registering a payment, sending, changing what is there (attaching a
+ * file to a voucher's card among it) and deleting ask you.
  */
 export const MCP_TOOL_CLASSES: Readonly<Record<string, readonly (readonly [pattern: string, toolClass: ToolClass])[]>> = {
   dinero: [
@@ -69,6 +70,8 @@ export const MCP_TOOL_CLASSES: Readonly<Record<string, readonly (readonly [patte
     ["send*", "outward"],
     ["update*", "outward"],
     ["submit*", "outward"],
+    // Attaching a file to a voucher's card changes the books, Dinero's own description says: it asks.
+    ["attach*", "outward"],
     ["delete*", "delete"],
     ["get*", "read"],
     ["list*", "read"],
@@ -76,7 +79,6 @@ export const MCP_TOOL_CLASSES: Readonly<Record<string, readonly (readonly [patte
     ["create*", "create"],
     ["generate*", "create"],
     ["upload*", "create"],
-    ["attach*", "create"],
   ],
 };
 
