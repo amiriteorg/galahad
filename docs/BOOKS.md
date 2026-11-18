@@ -49,6 +49,10 @@ Its tools come classed as your ruling says, and you can change any of them (`gal
 
 Dinero's tools come with long guidance of their own (which VAT account a sale goes on, whether an amount includes VAT). Galahad keeps them in short and reads each one whole from Dinero before he calls it, so that guidance is what he works from.
 
+### A bilag to the payment it documents
+
+A payment booked from the bank without its bilag stands open on a card in Dinero (`list_voucher_file_cards`). `galahad books attach --org <id> --card <card> --file <Drive file id> --why "…"` puts that bilag into Dinero's archive as it is: the node reads its bytes from Drive and hands them to Dinero's `upload_file` with their length and SHA-256, which Dinero checks, so no model ever types a file out (`books.ts`). Attaching it to the card is then filed for your approval, with why that bilag is that payment's: the invoice, its amount and its date, against the payment's.
+
 Dinero's own advice stands: check the work. Its server can't catch a model's mistakes, and booking is permanent. Take Galahad's access away in Dinero under **Konto → Brugerprofil → Gå til Visma Connect → Autoriserede applikationer**.
 
 ## Banks

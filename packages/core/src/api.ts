@@ -180,6 +180,18 @@ export const BilagCopyInput = z.strictObject({
 });
 export type BilagCopyInput = z.infer<typeof BilagCopyInput>;
 
+/** A bilag from your Drive into Dinero, to the card of the payment it documents (docs/BOOKS.md). */
+export const BooksAttachInput = z.strictObject({
+  organizationId: z.number().int().positive(),
+  /** The voucher file card: a payment booked without its bilag (list_voucher_file_cards). */
+  card: z.string().uuid(),
+  /** The bilag's id in Drive. */
+  file: z.string().regex(/^[A-Za-z0-9_-]{10,100}$/),
+  /** Why this bilag is this payment's: your approval card says it. */
+  why: z.string().trim().min(1).max(500),
+});
+export type BooksAttachInput = z.infer<typeof BooksAttachInput>;
+
 /** What wakes a loop on GitHub: a workflow run that failed, a push to the repository, a new issue or a new pull request. */
 export const GITHUB_WAKE_EVENTS = ["ci.failed", "pushed", "issue.opened", "pr.opened"] as const;
 const GITHUB_WAKE_WORDS: Record<(typeof GITHUB_WAKE_EVENTS)[number], string> = { "ci.failed": "a failed CI run", pushed: "a push", "issue.opened": "a new issue", "pr.opened": "a new pull request" };
@@ -929,6 +941,8 @@ export const routes = {
   bilag: { method: "GET", path: "/api/bilag", scope: "fleet:admin", input: null },
   /** Copy the bilag of mail a search finds (what came before a bilag loop's wakes), a batch a call: `next` goes on. */
   bilagCopy: { method: "POST", path: "/api/bilag/copy", scope: "fleet:admin", input: BilagCopyInput },
+  /** A bilag into Dinero's archive as it is, its attaching to a payment's card filed for your approval (books.ts). Yours alone. */
+  booksAttach: { method: "POST", path: "/api/books/attach", scope: "fleet:admin", input: BooksAttachInput },
   loopDrafts: { method: "GET", path: "/api/loops/drafts", scope: "mind:read", input: null },
   /** Telegram (PLAN #19): whether a bot of yours talks to Galahad through this node, and which account it answers. */
   telegram: { method: "GET", path: "/api/telegram", scope: "mind:read", input: null },

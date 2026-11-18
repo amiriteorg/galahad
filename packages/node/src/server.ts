@@ -187,6 +187,7 @@ import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram
 import { OutcomeError, OutcomeRunner } from "./outcomes.ts";
 import { offerFix } from "./ci-back.ts";
 import type { BilagService } from "./bilag.ts";
+import type { BooksAttach, BooksAttached } from "./books.ts";
 import { ShipManifest } from "./ship.ts";
 import { randomBytes } from "node:crypto";
 import type { LoopDraft, LoopDrafts } from "./loop-drafts.ts";
@@ -256,6 +257,8 @@ export interface AppContext {
   connectorRequests: ConnectorRequests;
   /** Bilag copied from your mail to Google Drive (bilag.ts): what was copied, and copying what came before the loop's wakes. */
   bilag?: BilagService;
+  /** A bilag from Drive into Dinero, to the payment it documents (books.ts). */
+  books?: (input: BooksAttach) => Promise<BooksAttached>;
   /** The heartbeat's checks, run here and now (no writes). */
   heartbeatCheck: () => Promise<FindingView[]>;
   /** The doctor: one look at this node's whole installation (doctor.ts). It changes nothing. */
@@ -3583,6 +3586,16 @@ export function createApp(ctx: AppContext) {
       ownerOnly(p);
       if (!ctx.bilag) throw new HttpError(503, "this node copies no bilag");
       return connectorErrors(() => ctx.bilag!.copy(input));
+    },
+    booksAttach: async (input, p) => {
+      ownerOnly(p);
+      if (!ctx.books) throw new HttpError(503, "this node keeps no books");
+      try {
+        return await connectorErrors(() => ctx.books!(input));
+      } catch (error) {
+        if (error instanceof HttpError) throw error;
+        throw new HttpError(502, redact(String((error as Error).message ?? error)).slice(0, 500));
+      }
     },
     loopHook: (input) => {
       const loop = loopRecords(ctx.store).find((l) => l.name === input.name);

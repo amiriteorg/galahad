@@ -6,6 +6,7 @@ import {
   type ArgValue,
   type BuiltRequest,
   buildCall,
+  buildMcpCall,
   ConnectorArgs,
   ConnectorError,
   ConnectorManifest,
@@ -238,6 +239,34 @@ export class ConnectorService {
       input: schema.length > 24_000 ? { note: `its schema is ${schema.length} characters; the first 24,000 follow`, schema: schema.slice(0, 24_000) } : (live.inputSchema ?? {}),
       changed: live.schema !== tool.schema,
     };
+  }
+
+  /**
+   * A file into an MCP server's tool, for the node's own work that no model sees (books.ts: a bilag from Drive into
+   * Dinero). Its bytes are more than a call's arguments carry (32 KB, because an approval's replicate), and no model
+   * types them out. Only a tool classed create, through the oath like any call, the request a line in the ledger
+   * without the bytes. Never an agent's: no route or tool reaches this.
+   */
+  async handFile(connector: string, tool: string, args: Record<string, ArgValue>, why: string): Promise<ConnectorResult> {
+    const manifest = this.manifest(connector);
+    let built: ReturnType<typeof buildMcpCall>;
+    try {
+      built = buildMcpCall(manifest, tool, args);
+    } catch (error) {
+      throw new ConnectorCallError(400, (error as Error).message);
+    }
+    if (built.class !== "create") throw new ConnectorCallError(403, `${manifest.label}'s ${tool} is ${built.class}: the node hands a file only to a tool that creates`);
+    // A key in the small arguments is refused as anywhere; the file's own bytes are no one's words.
+    if (argStrings(args).some((text) => text.length <= 8000 && findSecrets(text).length)) {
+      throw new ConnectorCallError(422, "an argument looks like a credential; connectors take keys from the vault, never from arguments");
+    }
+    const resource = `connector.${manifest.id}`;
+    const target = `mcp ${built.remote}`;
+    const decision = decide({ class: built.class, resource, target });
+    if (decision.verdict !== "allow") throw new ConnectorCallError(403, decision.verdict === "deny" ? decision.reason : `${manifest.label}: ${built.class} would ask`);
+    const result = await this.send(manifest, { ...built, target });
+    this.o.ledger({ class: built.class, resource, target, verdict: "allow", reason: decision.reason, detail: `by the node: ${why} · ${excerpt(result, 300)}`.slice(0, 2000) });
+    return result;
   }
 
   /**

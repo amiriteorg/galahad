@@ -17,7 +17,7 @@ import { GovernedSandboxHost } from "./compute/governed-host.ts";
 import { Governor } from "./compute/governor.ts";
 import { modelSpeed, sandboxStart } from "./compute/measure.ts";
 import { ComputeService, liveHost, type Measure } from "./compute/service.ts";
-import { ArmTokens } from "./arms.ts";
+import { ArmTokens, GALAHAD_ARM } from "./arms.ts";
 import { ArtifactStore } from "./artifacts.ts";
 import { artifactsAdapter, chatsAdapter, investigationsAdapter, memoriesAdapter, skillsAdapter, trialsAdapter } from "./archive/adapters.ts";
 import { LocalDiskBackend } from "./archive/blobs.ts";
@@ -42,6 +42,7 @@ import { LoopDrafts } from "./loop-drafts.ts";
 import { ConnectorRequests } from "./connector-requests.ts";
 import { giveBack, reviewBack, wantsReviews } from "./ci-back.ts";
 import { BilagService } from "./bilag.ts";
+import { attachBilag } from "./books.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { WakeWatcher } from "./wakes.ts";
 import { TelegramGateway } from "./telegram.ts";
@@ -604,6 +605,16 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     connectorRequests,
     // Bilag from your mail to Google Drive, copied by the node itself (bilag.ts), read in this node's time zone.
     bilag: new BilagService({ transfer: (connector, step) => connectors.transfer(connector, step), local, tz: () => Intl.DateTimeFormat().resolvedOptions().timeZone }),
+    // A bilag into Dinero by the node's own hands; attaching it to a payment's card is Galahad's to ask you.
+    books: (input) =>
+      attachBilag(
+        {
+          transfer: (connector, step) => connectors.transfer(connector, step),
+          handFile: (connector, tool, args, why) => connectors.handFile(connector, tool, args, why),
+          ask: (call) => connectors.call(call, { kind: "agent", by: GALAHAD_ARM }),
+        },
+        input,
+      ),
     heartbeatCheck: () => lookAround(taskDeps),
     bank,
     chats,

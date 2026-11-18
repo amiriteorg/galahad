@@ -69,6 +69,8 @@ of its own; "roundtable", "squires" and "team" are the same command)
   bilag on [--folder Bilag]        a loop that copies each new mail's bilag on its own, woken by Gmail, Outlook or both
   bilag copy --from gmail|outlook [--query "…"] [--folder Bilag]
                                     copy the bilag of mail that came before, a batch at a time until none is left
+  books attach --org <id> --card <voucher card> --file <Drive file id> --why "…"
+                                    a bilag from Drive into Dinero as it is; attaching it to the payment's card asks you
   roundtable files <knight> [/work/path]  a folder of its workspace (its VM's /work; galahad: his computer's)
   roundtable read <knight> </work/path>  one file of it (anything like a key redacted)
   roundtable changes <knight> [--task <id>] [--files]  what its latest task (or that one) changed: files, then the diff
@@ -566,6 +568,8 @@ async function main(): Promise<void> {
       bilag: { type: "boolean" },
       folder: { type: "string" },
       query: { type: "string" },
+      org: { type: "string" },
+      card: { type: "string" },
       // An outcome he owns: outcome add "<title>" --goal "…" --knight id… --budget-usd 20 [--done "…"] [--report-hour 9].
       goal: { type: "string" },
       done: { type: "string" },
@@ -1976,6 +1980,16 @@ Evidence: galahad artifact ${i!.artifact}`));
       for (const b of status.latest) console.log(`  ${new Date(b.at).toLocaleDateString()}  ${b.name}${b.link ? dim(`  ${b.link}`) : ""}`);
       const missing = ["gdrive", "gmail", "outlook"].filter((id) => !ready(id));
       if (missing.length) console.log(dim(`\nNot connected yet: ${missing.join(", ")} (docs/BOOKS.md says how).`));
+      return;
+    }
+    case "books": {
+      // A bilag from your Drive into Dinero, to the payment it documents (books.ts); attaching it asks you.
+      if (sub !== "attach") fail('usage: galahad books attach --org <Dinero organization id> --card <voucher card id> --file <Drive file id> --why "…"');
+      const org = Number(str("org"));
+      if (!Number.isInteger(org) || org <= 0 || !str("card") || !str("file") || !str("why")) fail('usage: galahad books attach --org <Dinero organization id> --card <voucher card id> --file <Drive file id> --why "…"');
+      const done = await new Admin(home).call<{ name: string; bytes: number; sha256: string; fileGuid: string; action: string | null }>("booksAttach", { organizationId: org, card: str("card"), file: str("file"), why: str("why") });
+      console.log(`${bold(done.name)} is in Dinero's archive (${done.bytes} bytes, SHA-256 ${done.sha256.slice(0, 12)}…, file ${done.fileGuid}).`);
+      console.log(done.action ? `Attaching it to the payment's card waits for you: action ${done.action} (your Inbox, or galahad action approve ${done.action}).` : "It is attached to the payment's card.");
       return;
     }
     case "outcome":
