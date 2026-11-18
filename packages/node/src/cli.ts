@@ -616,6 +616,9 @@ async function main(): Promise<void> {
       "destroy-workspace": { type: "boolean" },
       remake: { type: "boolean" },
       follow: { type: "boolean" },
+      // roundtable changes <knight> [--task <id>] [--files]: a task of its by name, and the files without the diff.
+      task: { type: "string" },
+      files: { type: "boolean" },
       "poll-ms": { type: "string" },
       // The archive's filters and ideas.
       trust: { type: "string" },
