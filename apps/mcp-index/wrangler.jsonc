@@ -1,0 +1,16 @@
+{
+  // Galahad's MCP library index (README.md): a Worker that reads the official MCP Registry every ten minutes, keeps the
+  // servers that are their service's own, ranks and probes them, and serves the library at mcp.galahad.sh. Deployed
+  // with the site's wrangler (apps/site), which pins its version: no package of its own.
+  "$schema": "../site/node_modules/wrangler/config-schema.json",
+  "name": "galahad-mcp-index",
+  "compatibility_date": "2026-10-01",
+  "main": "./src/worker.ts",
+  "d1_databases": [{ "binding": "DB", "database_name": "galahad-mcp-index", "database_id": "47e0f226-1a9a-475b-8d1b-6c0f6142e5d4" }],
+  // A run every ten minutes; the Public Suffix List again on Mondays (worker.ts WEEKLY, the same string).
+  "triggers": { "crons": ["*/10 * * * *", "17 3 * * 1"] },
+  "routes": [{ "pattern": "mcp.galahad.sh", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true }
+}
