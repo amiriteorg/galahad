@@ -170,6 +170,12 @@ describe("when he speaks, and when he stays silent", () => {
     expect(plan([worse], { told: new Map([["notice:disk", { alert: true }]]) }).send).toEqual([]);
   });
 
+  test("a loop of yours that tells you: told by its name and fixed words, never what woke it (often others' words)", () => {
+    const boss = { key: "tell:boss-mail:w1", severity: "info", source: "tell:boss-mail", dismissed: false };
+    expect(toldItem(boss)).toEqual({ key: "notice:tell:boss-mail:w1", kind: "told", alert: false, title: "Galahad: boss-mail", body: "What you asked to be told about has happened. The Inbox says what.", open: "inbox", needs: ["mind:read"] });
+    expect([toldItem({ ...boss, dismissed: true }), toldItem({ ...boss, severity: "warn" }), toldItem({ ...boss, source: "tell:Not A Name" })]).toEqual([null, null, null]);
+  });
+
   test("a rule of yours told of a command: its own kind, the rule's name and fixed words, never the command (a model's words)", () => {
     const pushes = { key: "rule:pushes:q-1", severity: "info", source: "rule:pushes", dismissed: false };
     expect(toldItem(pushes)).toEqual({ key: "notice:rule:pushes:q-1", kind: "told", alert: false, title: "Galahad: your rule pushes", body: "A command it matches has run. The Inbox says which, where and how it ended.", open: "inbox", needs: ["mind:read"] });

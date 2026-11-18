@@ -247,6 +247,7 @@ interface NoticeValue {
   source: string;
   node?: string;
   dismissed?: boolean;
+  at?: number;
 }
 
 /**
@@ -300,6 +301,24 @@ export function loopNotice(store: MindStore, identity: NodeIdentity, loop: strin
   const severity: Severity = status === "failed" ? "warn" : "info";
   if (current && current.title === title && current.body === body && current.severity === severity) return;
   store.emit(identity, "notice.raised", { key, severity, title, body, source: `loop:${loop}`, at: now });
+}
+
+/** A loop that tells you keeps this many of its notices standing (the oldest go): each run is its own, so each is told. */
+export const TELLS_KEPT = 5;
+
+/**
+ * A run of a loop that tells you (its task `tell`): a notice of its own in your Inbox, with what woke it, told on your
+ * phone by the loop's name only (core notify.ts, toldItem). Its source names the loop; the oldest beyond a few go.
+ */
+export function tellNotice(store: MindStore, identity: NodeIdentity, loop: { name: string; label: string | null }, run: string, summary: string, now: number): void {
+  const key = `tell:${loop.name}:${run}`;
+  const body = summary.trim().slice(0, 600) || "It happened.";
+  store.emit(identity, "notice.raised", { key, severity: "info", title: loop.label ?? `Loop ${loop.name}`, body, source: `tell:${loop.name}`, at: now });
+  const standing = store
+    .lwwPrefix<NoticeValue>(`notice:tell:${loop.name}:`)
+    .map((entry) => ({ key: entry.key.slice("notice:".length), at: entry.value!.at ?? 0 }))
+    .sort((a, b) => b.at - a.at);
+  for (const old of standing.slice(TELLS_KEPT)) store.emit(identity, "notice.cleared", { key: old.key });
 }
 
 export const HEARTBEAT_OK = "HEARTBEAT_OK";

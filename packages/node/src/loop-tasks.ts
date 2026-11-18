@@ -364,6 +364,9 @@ export function loopExecutor(deps: LoopTaskDeps) {
         const tidied = quietly(deps, "skills (tidy-up)", () => deps.skills?.tidy(task.selfAction !== false) ?? null);
         return tidied?.stale ? { ...result, summary: `${result.summary} Marked ${tidied.stale} skill${tidied.stale === 1 ? "" : "s"} stale.`.slice(0, 2000) } : result;
       }
+      case "tell":
+        // What woke it is told by the runner (Woken by …); the notice is raised when the run is recorded (daemon).
+        return { status: "ok", summary: task.text ?? (ctx.woken.length ? "" : "It's time.") };
       case "call": {
         const outcome = await deps.connectors.call(
           { connector: task.connector, tool: task.tool, args: task.args ?? {} },

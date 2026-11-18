@@ -28,6 +28,7 @@ export function describeTask(task: LoopTask | null): string {
   if (!task) return "(a task this version can't read)";
   if (task.kind === "heartbeat") return `${task.checklist ? "heartbeat + your checklist" : "heartbeat"}${task.selfAction === false ? " (self-action off)" : ""}`;
   if (task.kind === "quest") return `quest (${task.network}${task.gates?.length ? `, ${task.gates.length} gate${task.gates.length === 1 ? "" : "s"}` : ""}): ${task.goal.length > 70 ? `${task.goal.slice(0, 70)}…` : task.goal}`;
+  if (task.kind === "tell") return `tell you${task.text ? `: ${task.text}` : " what woke it"}`;
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${v}`).join(" ");
   return `call ${task.connector}.${task.tool}${args ? ` ${args}` : ""}`;
 }
@@ -157,8 +158,10 @@ function printDiscovered(connector: ConnectorView, d: { server: string | null; t
 }
 
 async function taskFrom(api: Api, flags: Flags): Promise<LoopTask | undefined> {
-  const kinds = ["heartbeat", "quest", "call"].filter((k) => flags[k] !== undefined);
-  if (kinds.length > 1) throw new Error("give one of --heartbeat, --quest or --call");
+  const kinds = ["heartbeat", "quest", "call", "tell"].filter((k) => flags[k] !== undefined || (k === "tell" && flags.say !== undefined));
+  if (kinds.length > 1) throw new Error("give one of --heartbeat, --quest, --call or --tell");
+  // Tell you: a notice each run, with what woke it (and your words, --say "…").
+  if (flags.tell || str(flags, "say")) return { kind: "tell", ...(str(flags, "say") ? { text: str(flags, "say")! } : {}) };
   if (flags.heartbeat) return { kind: "heartbeat", ...(str(flags, "checklist") ? { checklist: str(flags, "checklist")! } : {}) };
   if (str(flags, "quest")) {
     const steps = str(flags, "steps");
@@ -245,7 +248,7 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
       // Something to wake it and no schedule: it runs only when woken.
       const schedule = every ? `every ${every}` : (cron ?? (sub === "add" && wakes?.length ? "never" : undefined));
       const task = await taskFrom(api, flags);
-      if (sub === "add" && (!schedule || !task)) throw new Error("a new loop needs --every, --cron or something to wake it (--wake), and --heartbeat, --quest or --call");
+      if (sub === "add" && (!schedule || !task)) throw new Error("a new loop needs --every, --cron or something to wake it (--wake), and --heartbeat, --quest, --call or --tell");
       const cooldownMs = cooldownFrom(flags);
       const { loop, hookSecret } = await api.call<{ loop: LoopView; hookSecret?: string }>("setLoop", {
         name,

@@ -133,6 +133,26 @@ describe("a loop woken by its webhook", () => {
     expect((await call("loopHook", { name: "nothing" })).status).toBe(404);
   });
 
+  test("a loop that tells you: each run a notice of its own with what woke it, the oldest beyond five gone", async () => {
+    const set = await json<{ hookSecret: string }>(await call("setLoop", { name: "doorbell", schedule: "never", task: { kind: "tell", text: "Someone rang" }, wakes: [{ kind: "webhook" }], cooldownMs: 60_000 }));
+    const body = JSON.stringify({ ring: 1 });
+    expect((await hook("doorbell", body, { "x-hub-signature-256": sign(body, set.hookSecret), "x-galahad-delivery": "ring-1" })).status).toBe(202);
+    await runsOf("doorbell", 1);
+    type Notice = { key: string; title: string; body: string; source: string };
+    const tells = async () => (await json<{ notices: Notice[] }>(await call("notices", undefined))).notices.filter((n) => n.source === "tell:doorbell");
+    expect(await tells()).toEqual([expect.objectContaining({ title: "Loop doorbell", body: "Woken by a webhook. Someone rang" })]);
+    // Six more runs (by hand: the cooldown holds the next webhook back a minute): a notice each, five kept.
+    for (let n = 0; n < 6; n++) {
+      daemon.loops.runNow("doorbell");
+      await daemon.loops.settled("doorbell");
+    }
+    const kept = await tells();
+    expect(kept).toHaveLength(5);
+    expect(kept.every((n) => n.key.startsWith("tell:doorbell:"))).toBe(true);
+    expect(new Set(kept.map((n) => n.key)).size).toBe(5);
+    expect((await call("removeLoop", { name: "doorbell" })).status).toBe(200);
+  });
+
   test("removed, its webhook and secret go with it, and a loop of its name made later wakes on nothing", async () => {
     expect((await call("removeLoop", { name: "deploys" })).status).toBe(200);
     expect(await secretNames()).not.toContain("loop-hook:deploys");

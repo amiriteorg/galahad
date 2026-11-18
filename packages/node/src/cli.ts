@@ -264,6 +264,7 @@ Loops (work on a schedule or when something happens, on one node; every run is r
        --heartbeat [--checklist "…"]                    look around; notices in your inbox
      | --quest "<goal>" [--net isolated|gateway|online] [--steps 20] [--gate "<command>" …]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
+     | --tell [--say "…"]                              tell you: a notice each run, your loop's name on your phone
        [--wake …]… [--cooldown 10m]    what else wakes it (no --every or --cron: only that), as data, never orders:
          --wake webhook                 a POST to /hooks/<name>, signed with its secret (shown once; loop hook <name>: a new one)
          --wake "gmail <search words>"  new mail a search finds (also outlook); read every few minutes
@@ -542,6 +543,8 @@ async function main(): Promise<void> {
       wake: { type: "string", multiple: true },
       "no-wakes": { type: "boolean" },
       cooldown: { type: "string" },
+      // A loop that tells you: --tell, with your words --say "…".
+      say: { type: "string" },
       tz: { type: "string" },
       heartbeat: { type: "boolean" },
       checklist: { type: "string" },

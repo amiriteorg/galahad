@@ -156,6 +156,11 @@ export const LoopTask = z.discriminatedUnion("kind", [
   }),
   /** One connector tool; outward and delete tools file an approval request instead. */
   z.strictObject({ kind: z.literal("call"), connector: ConnectorId, tool: ToolName, args: ConnectorArgs.optional() }),
+  /**
+   * Tell you (PLAN #37): a notice in your Inbox each run, with what woke it, and on your phone your loop's name. No
+   * model, no sandbox: "tell me when my boss emails", or a reminder on a schedule. `text`: what to say, in your words.
+   */
+  z.strictObject({ kind: z.literal("tell"), text: z.string().trim().min(1).max(200).optional() }),
 ]);
 export type LoopTask = z.infer<typeof LoopTask>;
 

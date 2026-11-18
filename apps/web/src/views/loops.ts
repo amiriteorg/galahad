@@ -51,6 +51,7 @@ const KIND: Record<LoopTask["kind"], { label: string; icon: IconName }> = {
   heartbeat: { label: "Heartbeat", icon: "activity" },
   quest: { label: "Quest", icon: "compass" },
   call: { label: "Connector", icon: "plug" },
+  tell: { label: "Tell me", icon: "bell" },
 };
 
 const PRESETS: { label: string; schedule: string }[] = [
@@ -94,6 +95,7 @@ export function describeTask(task: LoopTask | null): string {
     const gates = task.gates?.length ? ` Done means ${task.gates.length === 1 ? "this passes" : `these ${task.gates.length} pass`}: ${clip(task.gates.join(" · "), 160)}` : "";
     return `Quest, ${NETWORK[task.network]?.label.toLowerCase() ?? task.network}: ${clip(task.goal, 160)}${gates}`;
   }
+  if (task.kind === "tell") return `Tells you${task.text ? `: ${clip(task.text, 160)}` : ", with what woke it"}: a notice in your Inbox, and your loop's name on your phone.`;
   const args = Object.entries(task.args ?? {}).map(([k, v]) => `${k}=${String(v)}`).join(" ");
   return `Calls ${task.connector}.${task.tool}${args ? ` ${clip(args, 120)}` : ""}`;
 }
@@ -334,7 +336,14 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   connectorSelect.addEventListener("change", () => syncTools());
   toolSelect.addEventListener("change", () => syncArgs());
 
-  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel };
+  const tellText = h("input", { class: "input", type: "text", autocomplete: "off", maxlength: 200, placeholder: "e.g. Your boss wrote", value: task0?.kind === "tell" ? (task0.text ?? "") : "" });
+  const tellPanel = h(
+    "div",
+    { class: "stack" },
+    h("p", { class: "small muted" }, "No model, no sandbox: each run is a notice in your Inbox with what woke it, and your phone says this loop's name. Put it with something to wake it (\"tell me when my boss emails\"), or a schedule for a reminder."),
+    field("What to say (optional)", tellText),
+  );
+  const panels: Record<LoopTask["kind"], HTMLElement> = { heartbeat: heartbeatPanel, quest: questPanel, call: callPanel, tell: tellPanel };
   const showKind = () => {
     for (const [k, panel] of Object.entries(panels)) panel.hidden = k !== kind;
   };
@@ -363,6 +372,11 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
       const typed = gatesFromText(gatesField.value);
       if ("problem" in typed) return { problem: typed.problem, focus: gatesField };
       return { task: { kind: "quest", goal: text, network, ...(maxSteps ? { maxSteps } : {}), ...(typed.gates.length ? { gates: typed.gates } : {}) } };
+    }
+    if (kind === "tell") {
+      const text = tellText.value.trim();
+      if (findSecrets(text).length) return { problem: "That looked like a key. Loops are shared in plaintext; keys belong in the vault.", focus: tellText };
+      return { task: { kind: "tell", ...(text ? { text } : {}) } };
     }
     if (!connectorSelect.value) return { problem: "Choose a connector.", focus: connectorSelect };
     if (!toolSelect.value || !args) return { problem: "Choose a tool.", focus: toolSelect };

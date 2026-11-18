@@ -563,6 +563,7 @@ A **loop** is work Galahad does on a schedule, or when something happens: `every
 | `heartbeat` | Galahad's regular look around (below), then what he may fix himself (self-action, below) |
 | `quest` | A quest in a fresh sandbox (§8⅞), through a short-lived **arm token**: its sandboxes are its own and ephemeral, its memories are `untrusted`, and it can't touch the vault, devices or the roster. Its task may carry your gates (`gates`): a run whose gates never pass is never `ok` |
 | `call` | One connector tool (§10). A loop is Galahad acting on his own, never you, so an outward or delete tool files an approval request instead of running |
+| `tell` | Tells you: each run a notice of its own in your Inbox, with what woke it and your words (`text`), and on your phone only the loop's name and fixed words (the `told` kind), since what woke it is often others' words. No model, no sandbox. With a wake it's "tell me when my boss emails"; with a schedule, a reminder. Five of a loop's notices stand at most, the oldest going |
 
 A loop a fleet still holds whose task this version no longer has (`reflect`, his journal; `review`, his review of the 3D world; both removed on 14 November 2026) stays in the mind and is still listed. It never runs, a run by hand is refused, and every surface says its task no longer exists and how to remove it (`galahad loop rm <name>`); the heartbeat and the other loops go on.
 

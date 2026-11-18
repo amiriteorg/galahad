@@ -163,7 +163,7 @@ export interface LoopRunnerOptions {
   /** No run lasts longer than this. */
   deadlineMs?: number;
   /** After each run is recorded (e.g. to tell you when a loop needs a look). */
-  onFinished?: (loop: RunnableLoop, result: RunResult) => void;
+  onFinished?: (loop: RunnableLoop, result: RunResult, run: string) => void;
 }
 
 export class LoopError extends Error {}
@@ -311,7 +311,7 @@ export class LoopRunner {
       this.record(loop.name, run, slot, started, result);
       this.active.delete(loop.name);
       try {
-        this.o.onFinished?.(loop, result);
+        this.o.onFinished?.(loop, result, run);
       } catch (error) {
         this.o.log(`loop ${loop.name}: ${(error as Error).message}`);
       }

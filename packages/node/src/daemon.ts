@@ -35,7 +35,7 @@ import { buildAssets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, presence, probeCapabilities } from "./capabilities.ts";
 import { keepAwake } from "./keep-awake.ts";
 import { ConnectorService } from "./connectors.ts";
-import { loopNotice } from "./heartbeat.ts";
+import { loopNotice, tellNotice } from "./heartbeat.ts";
 import { cheapestRole, computeUpkeep, type LoopTaskDeps, lookAround, loopExecutor } from "./loop-tasks.ts";
 import { LoopRunner, loopRecords } from "./loops.ts";
 import { LoopDrafts } from "./loop-drafts.ts";
@@ -471,8 +471,10 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     local,
     log,
     execute: loopExecutor(taskDeps),
-    onFinished: (loop, result) => {
-      if (loop.task.kind !== "heartbeat") loopNotice(store, identity, loop.name, result.status, result.summary, Date.now());
+    onFinished: (loop, result, run) => {
+      // A loop that tells you leaves a notice each run; the rest leave one when a run needs a look (cleared by a good one).
+      if (loop.task.kind === "tell" && result.status === "ok") tellNotice(store, identity, loop, run, result.summary, Date.now());
+      else if (loop.task.kind !== "heartbeat") loopNotice(store, identity, loop.name, result.status, result.summary, Date.now());
     },
   });
   // Self-action's hands.

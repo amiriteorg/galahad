@@ -125,3 +125,12 @@ test("a draft with something to wake it is listed with it, and added with it", a
   await printed(() => loopCommand(api, "add", [], { draft: woken.id }));
   expect(asked.at(-1)!.input).toMatchObject({ schedule: "never", wakes: woken.wakes, cooldownMs: 30 * 60_000, draft: woken.id });
 });
+
+test("a loop that tells you: --tell, and your words with --say", async () => {
+  const { api, asked } = node();
+  await printed(() => loopCommand(api, "add", ["boss-mail"], { wake: ["gmail from:boss@example.com"], say: "Your boss wrote" }));
+  expect(asked.at(-1)!.input).toMatchObject({ name: "boss-mail", schedule: "never", task: { kind: "tell", text: "Your boss wrote" }, wakes: [{ kind: "mail", connector: "gmail", query: "from:boss@example.com" }] });
+  await printed(() => loopCommand(api, "add", ["plants"], { cron: "0 9 * * 1", tell: true }));
+  expect(asked.at(-1)!.input).toMatchObject({ name: "plants", schedule: "0 9 * * 1", task: { kind: "tell" } });
+  await expect(loopCommand(api, "add", ["both"], { every: "1h", tell: true, heartbeat: true })).rejects.toThrow(/give one of --heartbeat, --quest, --call or --tell/);
+});
