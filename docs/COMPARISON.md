@@ -1,13 +1,13 @@
 # How Galahad compares
 
-Galahad next to five agents people use for the same work, surface by surface: where each one runs, how its work is kept apart and checked, and how you reach it from a browser, a desktop and a phone. Read on **16 November 2026** from each project's own releases, documentation and App Store listings; every fact has its source below. Products change quickly (Rakazo shipped seven releases between 3 and 12 November), so this page says when it was true, and is redone rather than guessed at.
+Galahad next to five agents people use for the same work, surface by surface: where each one runs, how its work is kept apart and checked, and how you reach it from a browser, a desktop and a phone. Read on **16 November 2026** from each project's own releases, documentation and App Store listings; every fact has its source below. On **18 November** three more were read the same way (T3 Code, Orchestrator.inc and OpenHands, in [their own section](#three-more-18-november)), and the five's releases since. Products change quickly (Rakazo shipped seven releases between 3 and 12 November), so this page says when it was true, and is redone rather than guessed at.
 
 | | Version on 16 Nov | Licence |
 |---|---|---|
 | **Galahad** | `main` | Apache-2.0 |
-| **Hermes Agent** (Nous Research) | 0.23.1, 9 Nov [H2] | MIT [H13] |
-| **Rakazo** (elie222) | 0.11.0, 12 Nov [R1] | Apache-2.0 [R13] |
-| **OpenMausBot** | 0.1.161, 15 Nov [M1] | Apache-2.0, with a source-available `enterprise/` part [M2] |
+| **Hermes Agent** (Nous Research) | 0.23.1, 9 Nov [H2]; 0.23.2 on 16 Nov [H14] | MIT [H13] |
+| **Rakazo** (elie222) | 0.11.0, 12 Nov [R1]; 0.12.0 on 16 Nov [R14] | Apache-2.0 [R13] |
+| **OpenMausBot** | 0.1.161, 15 Nov [M1]; 0.1.169 on 17 Nov [M11] | Apache-2.0, with a source-available `enterprise/` part [M2] |
 | **Grok Bot** (xAI, on Cursor) | hosted; iOS app 1.26.0, 14 Nov [G2] | closed |
 | **Dots** (OpenAI, in ChatGPT) | hosted, since 29 Sep [D9] | closed |
 
@@ -57,15 +57,43 @@ Galahad declined a model screening risky actions on purpose: what needs you stay
 | **Grok Bot** | Slack, Teams, X Chat, @bot on X [G7][G8][G10] | Slack, email and GitHub events [G11] |
 | **Dots** | Slack, Teams, calls, iMessage/RCS texting (beta) [D2] | The Slack channels and events you name [D1] |
 
+## Three more, 18 November
+
+| | Version, licence | Where the work runs, and how it's kept apart | Checking the work | Clients | Reach |
+|---|---|---|---|---|---|
+| **T3 Code** (pingdotgg) | 0.1.10, 17 Nov; MIT [T1][T2] | It drives the coding tools you're signed in to (Claude Code, Codex, Cursor, OpenCode, Grok Build and any ACP agent, about eleven) on your machine, a worktree per thread; the default permission is Full access on the host [T1][T5] | None enforced; its "Auto" approval is the provider's own model review [T5]. A watched pull request wakes the agent on failed checks, comments and conflicts [T7] | Desktop on macOS, Windows and Linux; web; App Store and Google Play [T1] | An MCP server for outside agents, with OAuth [T6]; a scheduler; no chat apps |
+| **Orchestrator.inc** | 0.15.3, 16 Nov; Apache-2.0 [A1][A2] | An orchestrator agent plans and starts a worker per piece, each in a worktree of its own on your machine (worktrees only) [A1][A4] | An optional reviewer agent; a failed CI run, review comments and conflicts go back to the worker that owns the branch, on by default [A1][A3] | Desktop on macOS, Windows and Linux; iPhone and Android apps [A1] | Approvals on the phone; no chat apps found |
+| **OpenHands** (Agent Canvas) | 1.41.0, 16 Nov; MIT [O1][O2] | OpenHands, Claude Code, Codex, Gemini or any ACP agent on your machine, Docker, a VM or a cloud; its first quickstart runs with full access to your files [O1] | Hooks; none enforced. It publishes the OpenHands Index, five public benchmarks [O3] | A web app (Electron) [O1] | Automations on a schedule or webhooks: Slack, GitHub, Linear [O1] |
+
+Since 16 November, among the five: Rakazo 0.12 can hand coding work to a T3 Code environment over MCP and stops a loop whose tool keeps returning the same result [R14]; OpenMausBot's new bots on a Mac or Windows work on "This computer" by default (0.1.165) and it caps spend per day and month [M11]; Hermes Agent's subagents survive a restart [H14]; Dots is on by default for eligible Enterprise, Edu and Healthcare workspaces from 18 November and can reach a local computer while the ChatGPT app is open [D10][D11]. Nothing new from Grok Bot was confirmed.
+
 ## Where Galahad leads, and where it trails
 
-**Leads.** Each knight's work is in a VM of its own, on hardware you own. Work counts as done only through gates and an independent reviewer, and only Galahad publishes numbers for it. Keys are sealed and pinned, and no model or VM ever holds one. Pairing is signed per request. It is small enough to read: about 85,000 lines against Hermes Agent's 1.2 million (the [site](https://galahad.sh/#scale) draws them to scale). Any model or coding plan serves any role.
+**Leads.** Each knight's work is in a VM of its own, on hardware you own: of the eight others, none keeps every agent's work apart by default (the coding consoles run on your host or in a worktree; Grok Bot's bots share one computer). Work counts as done only through gates and an independent reviewer, and an auditor watches a long run. Keys are sealed and pinned, and no model or VM ever holds one. Pairing is signed per request; an approval is your word on a card, never a model's score. Local models on any node serve the whole fleet, and any model or coding plan serves any role. It is small enough to read: about 85,000 lines against Hermes Agent's 1.2 million (the [site](https://galahad.sh/#scale) draws them to scale).
 
-**Trails.** No chat apps yet, and nothing but schedules starts work. The iPhone app is in testing, not in the App Store, and there is no Android app of its own, and the Mac app is its only desktop one (17 November). The trials say how well Galahad does on its own suite; nothing yet measures it against the others on the same tasks. What comes next is in the [PLAN](PLAN.md).
+**Trails.** It doesn't yet count its own north star, human interventions per completed task (#28). A failed check on a pull request it shipped is a notice for you, where Orchestrator.inc and T3 Code send it back to the agent (#29). It runs four coding tools, where T3 Code and OpenHands run any ACP agent (#30). No chat apps yet, and only schedules start work (#19, #13); nothing rewinds or forks a task (#15). The iPhone app is in testing, not in the App Store (#33), there is no Android app of its own, and the Mac app is its only desktop one. Its numbers are eight tasks of its own; OpenHands publishes an index of public benchmarks, and nothing yet measures Galahad against the others on the same tasks (#32). What comes next is in the [PLAN](PLAN.md).
 
 ## Sources
 
-Read on 16 November 2026.
+Read on 16 November 2026; T, A, O, H14, R14, M11, D10 and D11 on 18 November.
+
+- **T1** https://github.com/pingdotgg/t3code (README), https://t3.codes
+- **T2** https://github.com/pingdotgg/t3code/releases/tag/v0.1.10
+- **T5** https://github.com/pingdotgg/t3code/blob/main/docs/user/permission-modes.md
+- **T6** https://github.com/pingdotgg/t3code/blob/main/docs/user/outside-agents.md
+- **T7** https://github.com/pingdotgg/t3code/blob/main/docs/user/source-control.md
+- **A1** https://github.com/OrchestratorInc/agent-orchestrator (README)
+- **A2** https://github.com/OrchestratorInc/agent-orchestrator/releases/tag/v0.15.3
+- **A3** https://github.com/OrchestratorInc/agent-orchestrator/blob/main/frontend/e2e/ci-auto-inject.spec.ts
+- **A4** https://docs.orchestrator.inc
+- **O1** https://github.com/OpenHands/OpenHands (README)
+- **O2** https://github.com/OpenHands/OpenHands/releases/tag/v1.41.0
+- **O3** https://openhands.dev/blog/openhands-index
+- **H14** https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.2
+- **R14** https://github.com/elie222/rakazo/releases/tag/v0.12.0
+- **M11** https://github.com/milind-soni/OpenMausBot/releases (0.1.165 to 0.1.169)
+- **D10** https://learn.chatgpt.com/docs/dots
+- **D11** https://learn.chatgpt.com/docs/dots/computers-and-apps
 
 - **H1** https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.0
 - **H2** https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.1
