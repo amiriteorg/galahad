@@ -1,26 +1,47 @@
 # Learn: Galahad teaches
 
-**A place in the iPhone and iPad app where Galahad teaches you what you choose. He checks everything he shows you before you see it, and brings it back until you know it.** The owner asked for it on 18 November 2026: "start thinking about and planning out a learning section/edification. highly optimized for the ios app and ipadOS app. Making Galahad the ultimate tutor, being able to create beautiful visualizations, graphs, figures, displays, challenges, and much more. plan it out first. research learning and education strategies specifically for mid to high IQ people with adhd/autism, people who are lazy and unmotivated."
+**Galahad becomes a tutor from one file, not from new parts of the apps: [galahad.sh/TUTOR.md](https://galahad.sh/TUTOR.md).** The owner asked on 18 November 2026 for "a learning section… Making Galahad the ultimate tutor, being able to create beautiful visualizations, graphs, figures, displays, challenges", researched for curious, capable learners whose attention follows interest; and later that day: "dont build in learning too much into the apps, but more like a fetchable install/TUTOR.md file on the website, which enables the best tutor, and environment to learn all different kinds of subjects, sciences, programming, robotics, AI. just make sure Galahad can create visual elements, and such aids."
 
-Status: designed 18 November 2026, and the owner answered its questions the same day ([their answers](#the-owners-answers)): two learners, many subjects, €50 a month, the MIT-licensed libraries, and no new tab. Nothing is built yet; phase 1 is next. The research it rests on, with every source, is in [LEARN-EVIDENCE](LEARN-EVIDENCE.md).
+Status, 18 November 2026: TUTOR.md is on galahad.sh (`apps/site/public/TUTOR.md`), and Galahad's guide to what an answer can show (`SHOW_GUIDE` in `packages/brain/src/persona.ts`) names the visual aids a tutor needs. The built-in design that came first ([set aside](#set-aside-the-built-in-design)) is kept on a local branch, not shipped. The research it all rests on, with every source, is in [LEARN-EVIDENCE](LEARN-EVIDENCE.md).
+
+## TUTOR.md
+
+**The tutor's rules and the environment to learn in, in one file a tutor reads: Galahad, or any capable agent.**
+
+- **What it says.** How a session goes (review first, a prediction or an attempt before any explanation, a worked example that fades, a short check, a stop), how to help (never the answer before an attempt; help in steps), that every answer, number and figure is worked out with code before it is shown, how to show things, how to remember what the learner knows and bring it back, how to teach someone under 18, what never to do, and what to install for each kind of subject. Each rule is one of the [ten findings](#ten-findings-ten-rules) below, said as an instruction.
+- **On your node.** `curl -fsSL https://galahad.sh/TUTOR.md -o TUTOR.md && galahad project set tutor --name Tutor --instructions-file TUTOR.md` makes a project whose instructions are the file; its chats are the tutor's, and the instructions go with every answer in them. The file is held under a project's 8,000 characters for that (5,264 now), and passes the node's own checks for project instructions.
+- **Anywhere else.** Another agent is told to read the file and follow it.
+- **What it uses of Galahad, all of which he has:** `sandbox_run` with the Lab image, or his own computer, to check answers and compute figures; `remember` and `recall` for a note per subject on what the learner knows and when to ask again; and his answer blocks for showing things (below).
+- **The environment for each subject.** Python with numpy, scipy, sympy, pandas, matplotlib and pint for everyone; the Lab image for physics and engineering (FEniCSx, gmsh, OpenFOAM, OpenSees, ngspice, Cantera, CoolProp, build123d, MuJoCo); MuJoCo, and Gazebo with ROS, for robotics; scikit-learn and PyTorch for AI; Python, Node or Bun and git for programming; Biopython and RDKit for biology and chemistry.
+
+## The visual aids
+
+**What a tutor needs to show, Galahad's answers can show, on every device, with nothing new to install.**
+
+- **Data:** a `chart` block (lines, areas, bars, stacks). **A quick check:** a `choices` block, which a tap answers. **A procedure:** a `steps` block.
+- **A figure or a diagram:** an `artifact` page of inline SVG, with each label beside what it names; it shows at once, with no script to run.
+- **Maths:** plain text with Unicode in prose (x², ½, √, π, v₀), since no LaTeX is drawn in a chat; anything bigger, MathML in a page, which the browsers and the Apple apps draw themselves.
+- **Something to explore or simulate:** an `artifact` page with a canvas and a few sliders; its scripts run only when the learner presses Run, sealed off from the network, the node and their data.
+- **Correct before beautiful:** a figure's numbers are worked out with code first and drawn from them, since audits of AI-drawn diagrams find vectors missing or pointing the wrong way ([§7](LEARN-EVIDENCE.md#7-visuals-predict-then-reveal-works-and-motion-earns-its-place-only-as-content)).
+- **Still:** nothing moves by itself; motion only under the learner's hand, which is what the evidence supports ([§7](LEARN-EVIDENCE.md#motion-what-the-evidence-supports-banning-and-where-it-helps)) and the owner's word for the whole app.
 
 ## Who it's for
 
-**Two learners to begin with: the owner, and the owner's sister, who is 13 ([Two learners](#two-learners)).** The research was asked for the first kind, and much of it was done with the second: the interleaving, personalisation and tutoring trials below were run with students of her age.
+**Two learners to begin with: the owner, and the owner's sister, who is 13 ([A young learner](#a-young-learner)).** The research was asked for the first kind, and much of it was done with the second: the interleaving, personalisation and tutoring trials below were run with students of her age.
 
 **A capable, curious adult whose attention follows interest.** They see the why quickly, and tire fast of what they already know. They are slow to start anything that looks like a chore, and put off by noise, pressure and things that move. Some people like this have ADHD or are autistic, or both, and many were never told.
 
 - **No labels.** Learn never asks about, diagnoses or labels anyone, and nothing in it depends on knowing. What helps these learners costs nobody else anything: questions in place of rereading, spaced review, a plan said up front, short starts and a still screen work for nearly every learner ([evidence §1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads)). It is the curb cut: made for one need, used by everyone.
 - **"Lazy" is the wrong word.** Putting things off follows how aversive a task is and how little you expect to succeed at it, and it works as short-term mood repair ([§5](LEARN-EVIDENCE.md#5-motivation-value-and-return-beat-pressure-and-points)). Starting is the bottleneck, and a hard start is a property of the task: too big, too vague, too dull or too uncertain. So Learn fixes the task. Each task is small and says what it is and how long it takes. It pays off within minutes, and it is about something you chose.
-- **The evidence for this learner is thin.** No controlled study has tested an AI tutor with ADHD, autistic or twice-exceptional adults ([what the evidence does not settle](LEARN-EVIDENCE.md#what-the-evidence-does-not-settle)). Learn is built on what works for nearly everyone, without what this learner finds aversive, and it is measured on its one learner ([Measuring it](#measuring-it)).
+- **The evidence for this learner is thin.** No controlled study has tested an AI tutor with ADHD, autistic or twice-exceptional adults ([what the evidence does not settle](LEARN-EVIDENCE.md#what-the-evidence-does-not-settle)). The tutor is built on what works for nearly everyone, without what this learner finds aversive, and judged by what its learner can do unaided later.
 
 ## Ten findings, ten rules
 
-**Each row is what the evidence says, turned into what Learn does.** How strong each finding is, and what it was tested on, is in the evidence.
+**Each row is what the evidence says, turned into what the tutor does (TUTOR.md says each as an instruction).** How strong each finding is, and what it was tested on, is in the evidence.
 
-| The evidence | What Learn does | Evidence |
+| The evidence | What the tutor does | Evidence |
 |---|---|---|
-| **Retrieval with feedback, spaced over time, is the core.** Answering beats rereading (g = 0.50; 0.73 with feedback, [Rowland 2014](https://doi.org/10.1037/a0037559)), and spaced practice beats massed (g = 0.74). Small studies of ADHD and autistic adults find the same benefit. Learners feel the opposite: 78% learned more from spacing, and 78% rated massing as good or better. | Most of Learn is answering, not reading: low-stakes questions, each followed by an explanation, brought back on a schedule. Success is what you can do unaided days later, never how easy it felt. | [§1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads) |
+| **Retrieval with feedback, spaced over time, is the core.** Answering beats rereading (g = 0.50; 0.73 with feedback, [Rowland 2014](https://doi.org/10.1037/a0037559)), and spaced practice beats massed (g = 0.74). Small studies of ADHD and autistic adults find the same benefit. Learners feel the opposite: 78% learned more from spacing, and 78% rated massing as good or better. | Most of it is answering, not reading: low-stakes questions, each followed by an explanation, brought back when they're due (a day, three days, a week, a month). Success is what you can do unaided days later, never how easy it felt. | [§1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads) |
 | **Skip the known, topic by topic.** Extra help helps novices (d = 0.51) and hurts those who already know (d = −0.43, [Tetzlaff et al. 2025](https://doi.org/10.1016/j.learninstruc.2025.102142)). Boredom goes with ADHD traits (r = .40) and with learning nothing new. Ability is uneven (under 5% of the top 1% of students had a flat profile), and high ability can hide difficulty. | A short check places you in each topic, and "I know this" is always there: a quick check, then the topic is skipped. Help fades as you get things right. A topic new to you is taught in full, however quick you are elsewhere. | [§1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads), [§2](LEARN-EVIDENCE.md#2-adhd-delay-and-boredom-are-robust-while-popular-frameworks-are-untested), [§4](LEARN-EVIDENCE.md#4-high-ability-and-2e-boredom-signals-a-task-problem-and-ability-hides-difficulty) |
 | **A prediction or an attempt before the explanation.** Prequestions lift memory for what they ask (g = 0.58). Students who predicted a demonstration's outcome got 77% right, against 70% for watching it and 61% for no demonstration ([Crouch et al. 2004](https://www.otffeo.on.ca/en/wp-content/uploads/sites/2/2014/11/Mazur_demo-article.pdf)). | Every explanation starts with you committing to an answer: a choice, a number, a sketch. The explanation then works from what you said. | [§1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads), [§7](LEARN-EVIDENCE.md#7-visuals-predict-then-reveal-works-and-motion-earns-its-place-only-as-content) |
 | **Worked examples, then fading.** In maths, worked examples help novices (g = 0.48), and fading them aids far transfer. A 2025 preprint finds questions alone do less in mathematics (g = 0.22). | A multi-step idea comes as an example you step through, then one with steps left for you, then one of your own. | [§1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads) |
@@ -35,395 +56,46 @@ Status: designed 18 November 2026, and the owner answered its questions the same
 
 **The most dangerous thing an AI tutor gets wrong is being sure of something false, and Galahad has machines to check with.**
 
-- **Programs check, not models.** The answers are checked in the Lab, the sandbox image built for mathematics, physics and engineering (`sandbox/lab/`). It carries SymPy, SciPy, Pint for units, Z3 and more, each proven against a known answer by `lab-check`, with a read-only root and no network.
-  - An expression is compared with its key by SymPy, and a number with its tolerance and units.
-  - Code is run against its tests.
-  - The data behind every figure is computed there, never written from memory. Audits of AI-made diagrams find vectors missing or pointing the wrong way ([§7](LEARN-EVIDENCE.md#7-visuals-predict-then-reveal-works-and-motion-earns-its-place-only-as-content)).
-
-  This is the mandate's first rule, verify, don't assert, and the rule the trials already keep: programs grade, never models ([TRIALS](TRIALS.md)).
-- **An independent reviewer.** Before a lesson is shown, the reviewer role reads it with its checks' results, as it reviews a quest's work.
-- **Your context, when you say so.** He knows your projects, your chats and what your connectors reach. A subject can be built from them, such as statistics from your home's sensors or concurrency from your own repository. That happens only when you say so, and a lesson says what it used.
-- **Your machines.** What you got wrong, when you study and how long each thing took all stay in the mind, on your node.
-- **Knights.** A knight can prepare a whole course while you're away (written, checked and reviewed) and leave it in your Inbox.
-- **The meter.** Making and reviewing lessons costs model calls. They go on the usage meter, under your budget (`galahad usage budget`).
-
-## Two learners
-
-**Learn has two learners from the start: the owner, and the owner's sister, who is 13 and learns on an iPad** (the owner's word, 18 November 2026: "for others too, my sister 13yo"). Each has their own space: subjects, lessons, review and progress are kept by learner, never mixed.
-
-- **Her iPad sees only Learn.** It is paired to the owner's node like any device, but with one scope, `learn`: it can't see the owner's chats, Inbox, approvals, keys, knights, mail or bank, and can't talk to Galahad with his tools. The app on it opens straight into her Learn.
-- **Her tutor has no tools but the checker.** No computer, no connectors, no web, no memory of the owner's: it teaches from the lesson and her answers.
-- **What the owner sees of hers:** her subjects and how she is doing (what she has learned, what is due), not her conversations with the tutor, unless she shares one. The owner runs the node, so nothing on it is hidden from them in principle; the app says so to her.
-- **Age-aware.** A learner has an age band; hers sets the tutor's words, its examples and what it won't go into ([A young learner](#a-young-learner)).
+- **Programs check, not models.** He works out answers and figures in the Lab, the sandbox image built for mathematics, physics and engineering (`sandbox/lab/`, through `sandbox_run`), or in his own computer. The Lab carries SymPy, SciPy, Pint for units, Z3 and more, each proven against a known answer by `lab-check`, with a read-only root and no network. An expression is compared with its key by SymPy, a number with its tolerance and units, code run against its tests, and a figure's data computed, never written from memory. This is the mandate's first rule, verify, don't assert, and the trials' rule: programs grade, never models ([TRIALS](TRIALS.md)).
+- **Your context, when you say so.** He knows your projects, your chats and what your connectors reach, so a subject can be taught from them (statistics from your home's sensors, concurrency from your own repository) when you ask.
+- **Your machines.** What he notes of what you know stays in the mind, on your node.
+- **Knights.** A knight can prepare material while you're away, checked and reviewed as any task is.
+- **The meter.** Tutoring is model calls like any chat: they show on the usage meter, against your budget there (`galahad usage budget`).
 
 ## A young learner
 
-**Both model providers the roster uses allow products for minors, with conditions, and Learn meets them by design.**
+**Both model providers the roster uses allow products for minors, with conditions; TUTOR.md's rules for a learner under 18 meet those that are a tutor's to keep.**
 
 - **Anthropic** (its guidance for organizations serving minors, dated 16 March 2026): age assurance so only intended users get in, content moderation and filtering, monitoring and reporting, guidance for minors on safe use, Anthropic's child-safety system prompt where offered, compliance with child-safety and privacy law, and telling the user they are talking to an AI ([source](https://support.claude.com/en/articles/9307344-responsible-use-of-anthropic-s-models-guidelines-for-organizations-serving-minors)).
 - **OpenAI** (its under-18 API guidance): no personal data of a child under 13, or under the age of digital consent where they live, without zero data retention; age-appropriate content filters; monitoring with an escalation path for high-risk exchanges ([source](https://developers.openai.com/api/docs/guides/safety-checks/under-18-api-guidance)).
-- **A personal subscription is for its holder.** Her tutoring never runs on a coding plan or a consumer subscription; only on API keys whose terms allow it, or on local models.
+- **A personal subscription is for its holder.** A chat's answer never runs on a coding plan (they give only coding work), and a consumer subscription is for the one who holds it.
 
-What Learn does for her:
+What TUTOR.md has the tutor do for someone under 18: say plainly that it is an AI, keep to learning and to what suits their age, ask for nothing personal, answer anything harmful or frightening with care and point them to a trusted adult, and use no tool that acts in the world for them. Since the owner's sister is 13, her parents should know what it is and agree; that is for the family.
 
-- **Her words stay home by default.** Her live tutor and the grading of her short answers run on the local models on the owner's Mac mini, so nothing she types leaves the family's machines. Her lessons are written by the strongest model from the topic and her level alone, never from what she said, and checked in the Lab like anyone's.
-- **Filtered, both ways.** Her questions and the tutor's answers pass a content check for her age before they are shown; the tutor runs with a child-safety system prompt and keeps to the subject.
-- **An escalation path.** If an exchange touches harm to herself or others, the tutor answers with care, points her to a trusted adult, and the owner gets an Inbox notice that something needs a look (not the conversation itself).
-- **Told plainly.** Her first screen says Galahad is an AI, what is kept and where, and who can see what.
-- **Her parents.** Since she is 13, they should know what it is and agree; that is for the family, and Learn doesn't pretend to check it.
-
-## The shape: no new tab
-
-**Learn lives where each learner already is, not in a fourth tab** (the owner's word: "some other way to engage with it").
-
-- **For the owner, through Galahad.** "Teach me…" in his chat starts a subject; Learn This on any message makes questions from it. When review is due or a lesson he prepared is ready, his chat opens with a card for it ("Review · 3 minutes"), and his ring turns green, as it does for a new answer. A lesson opens as a page of its own from the card.
-- **For her, the whole app.** Her iPad's app opens into her Learn home: Today, her subjects, and "Teach me…". There is nothing else on it.
-- **For both, a widget** with one question on the Home Screen or the Lock Screen, and a nudge only if asked for (phase 2).
-- The Mac gets Learn later, as a window, as Build is. The PWA draws the same blocks, more simply, and the terminal has `galahad learn`.
-
-### Today
-
-**What's worth doing now, in minutes.** Today shows two to four options, always one light and one deep, so you choose what fits the day; Learn never asks about your focus or your health. After a gap of days it says welcome back and offers three minutes that pick up where you were, and the rest waits. Nothing counts what's overdue: no "214 due", no red badge.
-
-Her iPad's home, and the page a card in Galahad's chat opens to:
-
-```
-+-----------------------------------+
-| Learn                             |
-|                                   |
-| Today                             |
-| +-------------------------------+ |
-| | Review                  3 min | |
-| | Four questions: Bayes' rule   | |
-| | and hash tables               | |
-| +-------------------------------+ |
-| +-------------------------------+ |
-| | Continue               12 min | |
-| | Conditional probability,      | |
-| | part 2 of 5                   | |
-| +-------------------------------+ |
-|                                   |
-| Subjects                          |
-| Probability         6 of 14 known |
-| Swift concurrency    2 of 9 known |
-| Teach me something...             |
-|                                   |
-+-----------------------------------+
-```
-
-### Subjects
-
-**Each subject is a list of its topics, and later a still map of them.** It shows what you know (checked), what you're learning, what comes next and what each topic opens. "I know this", anywhere, leads to a quick check, and the topic is skipped once the check holds.
-
-### Starting a subject
-
-**Anything can start one:** "Teach me…" in Learn, Learn This on a message in any chat, a photo or a PDF of a page, or a project ("teach me this repository").
-
-- **Two questions come first:** what you want to be able to do with it, and what you're into. Each offers two to four answers, plus your own words.
-- **A two-minute placement check** runs while the first lesson is made.
-- **The next lesson is always made before you need it**, so a lesson never starts with a wait.
-
-### A lesson
-
-**A lesson says its plan first:** "Three parts, about 12 minutes." Then, in order:
-
-1. **Predict.** You commit to an answer: a choice, a number or a sketch.
-2. **See.** The figure or the result your prediction was about.
-3. **Why.** The explanation, worked from what you said: "You said 99%. Of the 1,000 people, about 11 test positive, and one of them has it."
-4. **A worked example**, a step at a time as you tap, with "why does this follow?" on the step that matters.
-5. **A faded example**, with some steps left for you.
-6. **Your turn:** a problem of your own.
-7. **A short check.**
-8. **A stop point:** "That's it. Two of these come back on Thursday." It never asks "one more?".
-
-```
-+--------------------+----------------------------------------------------------+
-| Probability        | Conditional probability                      Part 2 of 5 |
-|                    | Three parts, about 12 minutes                I know this |
-| Known              |                                                          |
-|   Counting         | Predict first                                            |
-|   Events           | A test is right 99 times in 100. One person in           |
-| Learning           | 1,000 has the condition. You test positive. How          |
-|   Conditional      | likely is it that you have it?                           |
-| Next               |                                                          |
-|   Bayes' rule      |    ( 99% )     ( 50% )     ( 9% )     ( 1% )             |
-|   Base rates       |                                                          |
-|                    | +------------------------------------------------------+ |
-|                    | | 1,000 people as a grid of squares, the               | |
-|                    | | ones who have it marked: drawn once                  | |
-|                    | | you've answered, and still                           | |
-|                    | +------------------------------------------------------+ |
-|                    |                                                          |
-|                    | Ask about this...                                        |
-+--------------------+----------------------------------------------------------+
-```
-
-### Review
-
-**One question at a time, low stakes, each followed by an explanation.** The same idea comes back asked in new ways (a number, then why, then a use), which is what carries it to problems you haven't seen ([§1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads)).
-
-- **The schedule is FSRS**, the open spaced-repetition algorithm that Anki offers. In its benchmark it predicts recall better than Anki's older SM-2 for 99.6% of users ([§8](LEARN-EVIDENCE.md#8-products-each-gets-something-right-and-misses-this-learner-somewhere)).
-- **Two settings:** how much you want to remember (90%, say), and minutes a day. The questions worth most come first, and what doesn't fit waits.
-- **A review of an advanced topic counts for the earlier topics it uses** (Math Academy's idea), so you aren't asked again what a harder question just showed you know.
-
-### Help, feedback and pushback
-
-- **Help is a ladder:** a nudge, a hint, a step, then the solution. Each rung opens after an attempt, so the solution is never the way to "done". A solution shown becomes a worked example, and its question comes back later in a new form.
-- **Feedback explains.** Never a bare "Correct". A right answer gets why it's right; a wrong one gets what it got right and where it turned. A confident wrong answer is the most interesting kind and is treated as one: curiosity rose after a confident error, while a bare "correct" nearly ended it ([§5](LEARN-EVIDENCE.md#5-motivation-value-and-return-beat-pressure-and-points)).
-- **Pushback meets the check.** Told he's wrong, he runs the check again and says what it shows. He gives way to evidence, never to insistence.
-
-### How he talks, and when he's quiet
-
-- **Text first.** He uses precise words, defines a term where it first appears, takes a terse answer as it is, and never coaches anyone toward a way of talking.
-- **Read aloud is an option**, in the system's own voice (text-to-speech helps readers with reading difficulties, d = 0.35, [§9](LEARN-EVIDENCE.md#9-phone-and-tablet-seconds-on-the-phone-minutes-on-the-ipad-and-a-still-screen)). It isn't voice chat, which the owner ruled out for now.
-- **Quiet in a session.** Nothing from Learn interrupts one. A note after a long stretch ("You've been at this an hour") is there for anyone who wants it, off by default.
-
-### Starting without trying (phase 2)
-
-**A start should cost one tap.** Notifications do start sessions: app opens rose 3.5-fold within the hour. Their effect fades with repetition, and relevance counted for more than timing ([§9](LEARN-EVIDENCE.md#9-phone-and-tablet-seconds-on-the-phone-minutes-on-the-ipad-and-a-still-screen)).
-
-- **A widget with one question**, on the Home Screen or the Lock Screen. A tap opens straight to it.
-- **A nudge, only if you ask for one.**
-  - Its time comes from a plan you make once, in conversation: "when will you do it, and after what?" ("after coffee, one question").
-  - Its words are the question itself, never "don't lose your progress".
-  - It is a new notification kind, off by default.
-  - It comes at most once a day, inside your quiet hours.
-  - It is never Time Sensitive, never sent during a session, and never worded the same way twice.
-
-```
-+--------------------------------------+
-| Learn                                |
-|                                      |
-| Why does a hash table get slower     |
-| as it fills up?                      |
-|                                      |
-|                               Answer |
-+--------------------------------------+
-```
-
-### What Learn never does
-
-| Never | Why |
-|---|---|
-| Streaks you can lose, points, XP, levels, badges, leaderboards, negative points | Rewards for doing undermine interest, and incentives get gamed (Math Academy's "XP hackers", Duolingo learners keeping "the tree gold"). A broken streak hurts most when you blame yourself ([§5](LEARN-EVIDENCE.md#5-motivation-value-and-return-beat-pressure-and-points), [§8](LEARN-EVIDENCE.md#8-products-each-gets-something-right-and-misses-this-learner-somewhere)) |
-| Random rewards, guilt, loss-framed messages, anything built to keep you in the app | An ethical risk, and in the EU a legal one: the AI Act's Article 5 bans AI that exploits disability-related vulnerabilities in harmful ways ([§5](LEARN-EVIDENCE.md#5-motivation-value-and-return-beat-pressure-and-points)) |
-| Mascots, confetti, spinners, pulsing, autoplay, flashing, haptics on by default | Decorative motion lowers learning and catches attention against your will, and over half of autistic youth are sensory over-responsive ([§7](LEARN-EVIDENCE.md#motion-what-the-evidence-supports-banning-and-where-it-helps), [§9](LEARN-EVIDENCE.md#9-phone-and-tablet-seconds-on-the-phone-minutes-on-the-ipad-and-a-still-screen)). The owner's word for the whole app already says nothing spins or moves for as long as a state lasts ([DESIGN](DESIGN.md)) |
-| Timers on questions, timed reading, high stakes | High-stakes quizzes erased the testing benefit, and reading on a screen suffers most under time pressure ([§1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads), [§9](LEARN-EVIDENCE.md#9-phone-and-tablet-seconds-on-the-phone-minutes-on-the-ipad-and-a-still-screen)) |
-| Repeating what you know to fill a session | Help hurts those who already know, and boredom follows learning nothing new ([§1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads), [§2](LEARN-EVIDENCE.md#2-adhd-delay-and-boredom-are-robust-while-popular-frameworks-are-untested)) |
-| A nudge mid-session, the same wording twice, a Time Sensitive alert | Apple keeps Time Sensitive for what happens within the hour, and repeated wording wears out ([§9](LEARN-EVIDENCE.md#9-phone-and-tablet-seconds-on-the-phone-minutes-on-the-ipad-and-a-still-screen)) |
-| Diagnosing, labelling, moralising about effort | [Who it's for](#who-its-for) |
-| Claims to treat ADHD, train attention or deliver "two sigma" | Cognitive training doesn't transfer to schoolwork. "Two sigma" came from two three-week experiments with schoolchildren. Lumosity settled with the FTC for $2 million over such claims ([§2](LEARN-EVIDENCE.md#2-adhd-delay-and-boredom-are-robust-while-popular-frameworks-are-untested), [§6](LEARN-EVIDENCE.md#6-ai-tutoring-guardrails-prevent-harm-and-broad-gains-stay-small), [§8](LEARN-EVIDENCE.md#8-products-each-gets-something-right-and-misses-this-learner-somewhere)) |
-
-## Blocks: the visuals and the challenges
-
-**A lesson is made of blocks, as his answers already are.** Core's `packages/core/src/blocks.ts` says what an answer may show beyond words:
-
-- Each block is fenced, and its language names it.
-- Its reader has no imports, checks every field and caps every size, because what a model writes is untrusted.
-- A block its reader refuses is shown as the code it is, with why.
-
-The five kinds it has stay as they are: `chart`, `stats`, `choices`, `steps` and `artifact`. An `artifact` is a sealed page whose scripts run only when you press Run, and which loads nothing from the network. Learn adds seven:
-
-| Block | What it shows | What you do with it |
-|---|---|---|
-| `figure` | A function's plot, a number line, geometry (points, segments, vectors, angles, circles), a graph or a tree, a grid or a table. Each label sits on the figure, beside what it names (labels on the figure: g = 0.63, [§1](LEARN-EVIDENCE.md#1-retrieval-and-spacing-lead-and-feeling-fluent-misleads)) | Read it; a question may ask you to tap a part or label one |
-| `explore` | A figure with one to three controls: a slider, a switch | Move a control and the figure redraws under your finger. Its question asks you to find something ("make it cross zero twice"), as interaction for its own sake cut accuracy ([§7](LEARN-EVIDENCE.md#7-visuals-predict-then-reveal-works-and-motion-earns-its-place-only-as-content)) |
-| `predict` | A question answered before the reveal | Commit with a choice, a number or a sketch. You draw the curve you expect, and the true one is drawn over yours ([Kim, Reinecke & Hullman 2017](https://idl.uw.edu/papers/explaining-the-gap)) |
-| `question` | One of eight forms: a choice; a number, with its tolerance and unit; an expression, checked symbolically; a short answer, graded against a rubric you can read; steps to put in order; a figure to label; code, run against tests; or, on an iPad, handwriting, read back to you as typeset maths to confirm before it's checked | Answer it, then read why |
-| `worked` | A worked example in steps | Reveal a step at a time and say why the key one follows; a faded example leaves steps for you |
-| `challenge` | A larger problem with a real payoff: a program that runs, a fit to your own data, a proof | Work at it, with hints opened only by attempts |
-| `sheet` | A topic on one page: its key figure, its terms, a worked example | Keep it, and come back to it |
-
-**An explorable can't do anything but draw.**
-
-- **Its language is tiny.** Its expressions are made of:
-  - numbers;
-  - its parameters, each with a range;
-  - `+ - * / ^`;
-  - a fixed set of functions (`sin`, `cos`, `exp`, `log`, `sqrt`, `abs`, `min`, `max`).
-
-  It has no loops and no names it doesn't know, and nothing it can reach.
-- **TypeScript and Swift give the same values.** Each evaluates the language, and the parity vectors hold both to the same results. Those vectors already hold the Apple app to core: `apps/apple/GalahadTests/Fixtures/core-vectors.json`, made by `apps/apple/scripts/vectors.ts`.
-- **Anything bigger is a page.** A simulation with physics in it is an `artifact` page, sealed as every page is.
-
-### How a figure is made
-
-- **Declared, not drawn.** Galahad writes a figure as a spec (its data, marks and labels), never as a picture. The app draws it in its own type and colours, in light and dark, at any size.
-  - On the iPhone and iPad it is drawn with Swift Charts and Canvas, and Swift Charts' audio graphs read it out to VoiceOver.
-  - In the PWA it is drawn as SVG.
-- **Computed, not guessed.** A figure's numbers come from code run in the Lab (a function sampled, a dataset worked out). The spec keeps that code, so the figure can be checked again.
-- **Still by default.** A figure moves only under your finger, and it redraws at once, with no tweening. Nothing plays by itself.
-
-### On each device
-
-- **iPad:** the lesson sits beside its conversation, as the workspace sits beside a chat. Pencil and finger both draw, with PencilKit; finger drawing did as well as a pencil, or better, for recall in two tablet studies ([§7](LEARN-EVIDENCE.md#7-visuals-predict-then-reveal-works-and-motion-earns-its-place-only-as-content)).
-- **iPhone:** one column. Review fits in a minute or two, since a phone session runs about a minute ([§9](LEARN-EVIDENCE.md#9-phone-and-tablet-seconds-on-the-phone-minutes-on-the-ipad-and-a-still-screen)). A lesson works there too, sketched by finger.
-- **Haptics:** optional, and off by default.
-
-## How it works
-
-**Learn is built from what Galahad already has: the mind, chats, the Lab, the reviewer, the usage meter and notifications.**
-
-### Core
-
-- `packages/core/src/learn.ts`: the contracts, in zod, and the new blocks' readers in `blocks.ts`'s style.
-- **Learners.** `learn.learner.set` names a learner (the owner, or another person), their age band, which models may hear their words (any, or local only) and the devices that are theirs. Every other event below carries its learner.
-- **A scope, `learn`**, for a device that may do nothing else: the Learn routes, as its learner. The owner's devices reach Learn with the scopes they have.
-- The events:
-
-| Event | What it holds | Kept as |
-|---|---|---|
-| `learn.learner.set` | A learner: name, age band, models allowed (any, or local only), their devices | Last writer wins, by learner |
-| `learn.subject.set` | A subject: its name, what you want to do with it, your interests, the context you allowed | Last writer wins, by subject |
-| `learn.lesson.kept` | A lesson: its blocks, its checks and their results, the models that wrote and reviewed it | Once, by lesson |
-| `learn.item.set` | A question kept for review: its prompt, its key, its check, its topic | Last writer wins, by item |
-| `learn.attempt` | An answer: the item, when, what you said, whether it held, the help it took and how long | Appended, never replaced |
-| `learn.settings.set` | How much to remember, minutes a day, and the nudge with its plan | Last writer wins |
-| `learn.params.set` (phase 5) | FSRS's weights, fitted to your history | Last writer wins |
-
-- **Each new kind comes with a migration.** That means a `SCHEMA_VERSION` bump and a migrate branch that replays, as `secret.request.dismissed` had (`packages/mind/src/store.ts`). The convergence property tests take the new kinds in: any order gives the same digest, and a rebuild gives the same state.
-- **The schedule is a view.** An item's FSRS state is folded from its attempts, in their order on the log, with fixed parameters. So every replica works out the same schedule whatever order the events arrived in, and nothing is stored that the attempts don't already say.
-
-### Routes
-
-Each lives in `packages/core/src/api.ts` with the scope `learn`, which the owner's devices hold too, and acts as the learner the device belongs to. A lesson's live tutor has a route of its own in the same scope, without the chat route's tools.
-
-| Route | What it does | Scope |
-|---|---|---|
-| `GET /api/learn/today` | What Today offers, sized in minutes | `learn` |
-| `POST /api/learn/subjects` | A subject started or changed | `learn` |
-| `POST /api/learn/lessons/make` | A lesson made, checked and reviewed for a subject | `learn` |
-| `POST /api/learn/lessons/get` | A lesson to show, its blocks without their keys | `learn` |
-| `POST /api/learn/answer` | An answer checked: its feedback, and the help it opens | `learn` |
-| `POST /api/learn/tutor` | A question about the lesson, answered with no tools | `learn` |
-| `POST /api/learn/settings` | Your two settings and the nudge | `learn` |
-| `POST /api/learn/learners` | A learner named, their age band, models and devices (the owner's alone) | `fleet:admin` |
-
-**The key stays on the node until it's earned.** A question reaches your device without its answer, and your answer goes to the node to be checked. The solution comes back only after attempts. There is nothing to peek at in the page and nothing to talk the tutor out of, because it isn't there.
-
-As in the trials, the thing measured can't write its marks: whether an answer held is the checker's result, recorded by the node, never the tutor's say.
-
-### The node
-
-- **Roles.** A new built-in role, `tutor`, writes lessons and tutors in them.
-  - It runs on the planner's models until you hire its own, as the `fold` chore runs on the swift role's models until you do (`packages/brain/src/roster.ts`).
-  - The owner prefers the strongest models, and a trial sweep (`galahad trial sweep`) will say which teach best.
-  - A short answer is graded on the tutor's or the swift role's models, and its grade is labelled a judgment, never "verified".
-- **The budget.** €50 a month for all of Learn, both learners (the owner's word). It is a stop, not only a line: when the month's spend reaches it, new lessons and the live tutor wait until next month or until the owner raises it, and Learn says so; review and lessons already made go on, as they need no model. Learn's spend shows on the usage meter as its own line.
-- **The checker.** Fixed Python scripts run in a Lab sandbox, each with its input as arguments and never through a shell, as `packages/node/src/project-git.ts` runs git in his computer. They check:
-  - an expression against its key (SymPy);
-  - a number against its tolerance and units (Pint);
-  - code against its tests, in a throwaway folder with a time limit;
-  - a function, sampled for a figure.
-
-  Where it can be, a key is solved a second, independent way, as `scripts/trials-crosscheck.py` does for the trials. On a node with no sandbox host, a block whose check can't run says Not checked on it: no silent pass. How fast a check answers is measured in phase 1; if a fresh sandbox is too slow, one is kept warm while you're in a lesson.
-- **Making a lesson:**
-  1. The tutor writes the blocks and their checks.
-  2. The node runs every check.
-  3. What fails goes back to the tutor with the error, a bounded number of times.
-  4. The reviewer role reads the lesson and its checks' results, on its own.
-  5. The lesson is kept.
-
-  Its cost goes on the usage meter, and what failed is said on the lesson.
-- **The live tutor.** A lesson's conversation is a kept chat with `lesson` set, as a Build thread is a chat with `project` set. It sees the lesson, your attempts, and how much help the node allows at that point.
-- **Later, a course from a knight.** A knight prepares a whole subject as a quest whose gates are its lessons' checks, reviewed as any quest is. It arrives in your Inbox.
-
-### The apps
-
-- **Apple:**
-  - Learn's cards in Galahad's chat and its pages (no tab), and, on a device whose only scope is `learn`, the app opening into Learn;
-  - the blocks' views, maths typeset with SwiftMath (MIT, approved by the owner on 18 November);
-  - PencilKit for sketches and handwriting.
-
-  Phase 2 adds a WidgetKit extension that shows the next question from an App Group container the app writes, so the widget holds no key.
-- **The schedule** is ts-fsrs (MIT, approved by the owner; 6.0.0, released 28 October 2026), on the node.
-- **The PWA** draws the same blocks in SVG, with pointer events for sketches.
-- **The terminal:** `galahad learn` shows Today, runs review for text and number questions, and shows a lesson as text.
-- **The docs:** this page, [ARCHITECTURE](ARCHITECTURE.md) and the [plan](PLAN.md), as each part is built.
-
-## Measuring it
-
-**Learn is judged by what you can do unaided later, never by how long you spend in it.**
-
-### The tutor's scorecard
-
-`bun run bench tutor` is a new suite: a model plays the learner against the tutor. Every run costs model calls, so each is asked for first.
-
-| Measure | Target |
-|---|---|
-| Answers given before an attempt | Under 1 in 100 (the Eedi tutor withheld answers until an attempt in 98.8% of chats, [LearnLM Team & Eedi 2026](https://services.google.com/fh/files/misc/learnlm_oct26.pdf)) |
-| Giving way to wrong pushback, on questions a check can settle | 0 |
-| Keys or figures the checker finds wrong after review | 0: any one is a bug |
-| Blocks shown unverified where a check exists | 0 |
-| Time to the first question | Its baseline is the first run |
-
-Free, in `bun run check`:
-
-- FSRS, held to the reference implementation's vectors;
-- the expression language, held to the same values in TypeScript and Swift;
-- every new block reader's refusals.
-
-### Your learning
-
-Kept on your node, yours alone:
-
-- **Recall at the horizon:** of the questions due a week or more after their last review, how many you answered unaided, against what FSRS predicted.
-- **Transfer:** questions on topics you know, in a form you haven't seen.
-- **Minutes per item kept.**
-- **Returns:** after a gap, whether you came back. This measures the design, and is never shown to you as a streak.
-
-Never counted as success: minutes in the app, sessions, streaks, practice scores. Unguarded AI raised practice scores 48% while exam scores fell 17% ([§6](LEARN-EVIDENCE.md#6-ai-tutoring-guardrails-prevent-harm-and-broad-gains-stay-small)).
-
-**Honest limits.** With one learner, these numbers say whether Learn works for you, and nothing more. No claim will be made beyond that; unsupported claims cost Lumosity its FTC settlement ([§8](LEARN-EVIDENCE.md#8-products-each-gets-something-right-and-misses-this-learner-somewhere)).
-
-**The mandate.** Learn sits outside the [mandate](MANDATE.md)'s four numbers, which are a coding agent's: it is the owner's ask. It is held to the mandate's method all the same:
-
-- verify, don't assert: every key and figure is checked by a program;
-- no silent pass: an unchecked block says so;
-- measured: it has its own suite;
-- its cost seen: the usage meter.
-
-## Phases
-
-**Each phase is usable on its own, and told by its own measure.** Teaching comes first. Getting you started comes second, because dosage is what limits every learning product ([§8](LEARN-EVIDENCE.md#8-products-each-gets-something-right-and-misses-this-learner-somewhere)). The rest follows.
-
-1. **The core loop, for two learners, in the checkable subjects (maths, physics, programming).**
-   - **It adds:** learners and the `learn` scope, so her iPad opens into her Learn and nothing else; Today, in Galahad's chat for the owner and as her home; a subject started from "Teach me…", with its topics and a placement check; and lessons of text and maths, `figure`, `predict`, `question` (a choice, a number, an expression) and `worked`; the young-learner safeguards; the €50 budget.
-   - **It also adds:** review on FSRS within your minutes; checks in the Lab, and the reviewer, before anything is shown; the live tutor; `galahad learn`; and the PWA's first view.
-   - **Told by:** the scorecard's free parts and the tutor suite, then your own recall at the horizon after a few weeks.
-2. **Starting without trying.** The widget, the nudge you ask for with its plan, welcome back after a gap, and review credit for earlier topics. Told by returns after a gap, and by how many starts come from the widget and the nudge.
-3. **Hands on the figure.** `explore`, sketched predictions, handwriting with the Pencil, labelling and ordering, geometry and graphs. Told by the parity vectors, and by transfer on topics taught with them.
-4. **Challenges, and your own world.** Code run in a sandbox, challenges with real payoffs, examples from your projects and connectors (asked for, and shown), and `sheet`. Told by challenges finished, and by transfer.
-5. **Courses from a knight.** A whole subject made by a knight while you're away, the subject drawn as a still map, and FSRS fitted to your history (`learn.params.set`). Told by the quest's checks and review, and by recall against FSRS's prediction before and after fitting.
-6. **Subjects checked another way, simulations and the Mac.** Biology's descriptive parts, with every claim sourced, quoted and checked against its source; design, where the learner makes something and the tutor's critique against a rubric is labelled a judgment, never "checked"; free-form simulations as sealed pages; and Learn on the Mac. Told by the claims the reviewer finds unsupported, held at 0.
-
-**The subjects the owner named, and how each is checked:** maths, physics and programming by a program from phase 1 (SymPy, Pint, tests run); civil engineering and robotics by the Lab's own tools (statics and structures with units, kinematics and control simulated) from phase 3; biology's quantitative side (genetics, population models, kinetics) by a program, its descriptive side by sources (phase 6); design by judgment, labelled (phase 6). A subject outside these is taken on in whichever of the three ways fits it, and says which.
-
-Not taken:
-
-- **Voice chat:** the owner's word, for now.
-- **Anything social:** shared scores, rankings.
-- **A marketplace of courses:** there is no one to share them with yet, as with skills ([PLAN](PLAN.md)).
+**Open, the owner's to decide:** with TUTOR.md, a learner's chats are kept on your node like your own, and any device that may chat sees every chat there and reaches Galahad's tools within its scopes. A device of the sister's own that sees only her learning, with a tutor that has no tools, needs the separation the [set-aside](#set-aside-the-built-in-design) work had (a device paired for Learn alone, acting only as its learner).
 
 ## Privacy and limits
 
-- **What you got wrong stays on your machines**, in the mind on your node. Model providers see a lesson's content and your answers as they see any chat; grading on a local model keeps your answers at home, and for the sister it is the rule ([A young learner](#a-young-learner)).
-- **Learn keeps what you answered, never who you are:** no traits, no health, no diagnosis.
+- **What he notes of what you know stays on your machines**, in the mind on your node; the model providers see a tutoring chat as they see any chat.
+- **He notes what you learned, never who you are:** no traits, no health, no diagnosis.
 - **Nothing is built to hold you in the app**, in keeping with the EU AI Act's Article 5 ([§5](LEARN-EVIDENCE.md#5-motivation-value-and-return-beat-pressure-and-points)).
 - **It claims to treat nothing.**
+
+## Set aside: the built-in design
+
+**First designed, then partly built, before the owner chose the file: kept on the local branch `t3/learn-built-in`, never shipped.**
+
+- **On the node** (built and tested): learners besides the owner with devices of their own, a scope `learn` that reaches Learn alone, subjects of questions Galahad wrote and the Lab checked, answers checked by a program (numbers within a tolerance; formulas compared by computing both), review on a schedule (ts-fsrs, MIT), a monthly budget that stops new subjects, and `galahad learn`.
+- **In the apps** (written and compiled, never released): a Learn page on the iPhone and iPad (the whole app on a device for Learn alone), a review card in Galahad's chat, and the web app's Learn page.
+- **What it would still have needed:** lessons of blocks (figures, explorables, sketches, worked examples), a live tutor without tools, and a widget.
 
 ## The owner's answers
 
 On 18 November 2026:
 
-1. **Subjects:** "Physics Maths Bio Robotics Civil engineering Programming Design and much more." Phase 1 takes the ones a program can check (maths, physics, programming); the rest follow by how each is checked ([Phases](#phases)).
-2. **Learners:** "for others too, my sister 13yo. She uses an iPad." ([Two learners](#two-learners), [A young learner](#a-young-learner).)
-3. **Budget:** €50 a month, as a stop ([The node](#the-node)).
-4. **Dependencies:** the MIT-licensed ones: ts-fsrs for the schedule and SwiftMath for maths (both checked MIT on 18 November).
-5. **A tab:** no, "some other way to engage with it" ([The shape](#the-shape-no-new-tab)).
-6. **"Displays":** no particular meaning; the figures, explorables and sheets cover it.
-
-Still open, with what Learn does until the owner says otherwise:
-
-- **Her tutor's models.** Local only (her words never leave home), or the strongest API model under the safeguards above. Learn starts with local only.
-- **What the owner sees of hers.** Learn starts with progress, not conversations.
+1. **Subjects:** "Physics Maths Bio Robotics Civil engineering Programming Design and much more." TUTOR.md takes all of them: a program checks what can be computed, sources what can't, and a judgment is labelled as one.
+2. **Learners:** "for others too, my sister 13yo. She uses an iPad." ([A young learner](#a-young-learner); a device of her own is the open question there.)
+3. **Budget:** €50 a month. With no Learn of its own, tutoring is ordinary chats on the usage meter, whose budget is a line to watch (`galahad usage budget`).
+4. **Dependencies:** the MIT-licensed ones (ts-fsrs, SwiftMath). TUTOR.md needs neither: the set-aside work used ts-fsrs, and maths is Unicode in a chat and MathML in a page.
+5. **A tab:** no, "some other way to engage with it". Then the file, in place of anything in the apps.
+6. **"Displays":** no particular meaning; [the visual aids](#the-visual-aids) cover it.

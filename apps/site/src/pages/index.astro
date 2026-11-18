@@ -26,6 +26,8 @@ const STEP = 250_000;
 const marks = Array.from({ length: Math.floor((widest * 1.05) / STEP) + 1 }, (_, i) => i * STEP);
 
 const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
+/** What makes him a tutor on your node: the file, kept as a project's instructions (public/TUTOR.md). */
+const TUTOR_INSTALL = "curl -fsSL https://galahad.sh/TUTOR.md -o TUTOR.md && galahad project set tutor --name Tutor --instructions-file TUTOR.md";
 ---
 
 <Base
@@ -538,6 +540,21 @@ const PLAN = "curl -fsSL https://galahad.sh | bash -s -- --plan";
           </p>
         </div>
         <p class="more"><a href={RELEASES}>Every release, with what changed</a> <span class="nb">· <a href={REPO}>The source on GitHub</a></span></p>
+      </div>
+
+      <div class="get" id="tutor">
+        <h3>Or a tutor.</h3>
+        <div class="entrance-notes">
+          <p>
+            <a href="/TUTOR.md">galahad.sh/TUTOR.md</a> makes him a tutor for maths and the sciences, programming,
+            robotics and AI: he asks before he explains, checks every answer with code, draws figures and simulations
+            to explore, and brings back what you learned until you know it. On your node:
+          </p>
+          <p>
+            <code>{TUTOR_INSTALL.split(" ").map((word, i) => <>{i > 0 && " "}<span class="nb">{word}</span></>)}</code>
+          </p>
+          <p>Then learn in the Tutor project's chats. Any other agent can read the same file and follow it.</p>
+        </div>
       </div>
     </div>
   </section>
