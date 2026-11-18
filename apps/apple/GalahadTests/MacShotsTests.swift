@@ -138,7 +138,7 @@ struct MacShots {
 
         for (look, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
-            for (place, name) in [(MacPlace.roundtable, "roundtable"), (.knight("ada"), "knight"), (.galahad, "chat"), (.inbox, "inbox"), (.thisMac, "this-mac")] {
+            for (place, name) in [(Place.roundtable, "roundtable"), (.knight("ada"), "knight"), (.galahad, "chat"), (.inbox, "inbox"), (.thisMac, "this-mac")] {
                 MacApp.shared.place = place
                 try await Task.sleep(for: .seconds(3))
                 try await snap(main, "main-\(name)-\(look)")
