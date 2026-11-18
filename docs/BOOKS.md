@@ -13,7 +13,7 @@ e-conomic comes later, if you move to it: it has no official agent access, and D
 
 ## Bilag to Google Drive ✅
 
-Each attachment of new mail that is a bilag by its kind is copied as it is into your Drive: a PDF, a picture of one, or an XML e-invoice, but not a picture set in the mail's words and not a logo's few kilobytes. It goes in `Bilag/<year>/<month>/` and is named for the day the mail came, who sent it, and its own name: `2026-11-19 Telia – Faktura.pdf`. A file copied once is never copied again, whichever mail carries it again.
+Each attachment of new mail that is a bilag by its kind is copied as it is into your Drive: a PDF, a picture of one, or an XML e-invoice, but not a picture set in the mail's words and not a logo's few kilobytes. It goes in `Bilag/<year>/<month>/` and is named for the day the mail came, who sent it, and its own name: `2026-11-19 Telia – Faktura.pdf`. A file copied once is never copied again, whichever mail carries it again. A mail you forwarded (a supplier's invoice sent on to yourself) is named for who first sent it, as the forwarded mail says, and `galahad bilag names` renames the copies made before that.
 
 It is the node's own work, and no model is in it. The bytes go from Gmail's or Microsoft's API straight to Drive's, each under its own sign-in and pinned to its own address, and every request is a line in the ledger. Galahad reads all of your Drive but writes only files of his own there, in folders he made and marked with a mark only he can see: a folder of yours named Bilag is left as it is.
 

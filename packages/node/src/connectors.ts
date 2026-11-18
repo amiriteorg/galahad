@@ -270,10 +270,11 @@ export class ConnectorService {
   }
 
   /**
-   * Bytes to or from a connector, for the node's own work that no model sees (bilag.ts): a read or a create only,
-   * through the oath like any call, and each one a line in the ledger. Never an agent's: no tool reaches this.
+   * Bytes to or from a connector, for the node's own work that no model sees (bilag.ts): a read, a create, or a change
+   * to what it made (a bilag's name), through the oath like any call, and each one a line in the ledger. Never an
+   * agent's: no tool reaches this.
    */
-  async transfer(connector: string, step: { method: "GET" | "POST" | "PUT"; path: string; headers?: Record<string, string>; body?: Uint8Array | string; class: "read" | "create"; why: string; max: number }): Promise<Transferred> {
+  async transfer(connector: string, step: { method: "GET" | "POST" | "PUT" | "PATCH"; path: string; headers?: Record<string, string>; body?: Uint8Array | string; class: "read" | "create" | "modify"; why: string; max: number }): Promise<Transferred> {
     const manifest = this.manifest(connector);
     const origin = new URL(manifest.origin).origin;
     // A path on the connector's own origin (its base path first), or a whole address there (a resumable upload's).

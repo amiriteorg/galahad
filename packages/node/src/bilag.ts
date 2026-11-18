@@ -33,7 +33,7 @@ export const BILAG_QUERY: Record<Mailbox, string> = {
 /** The connectors' requests, as the node makes them (ConnectorService.transfer). */
 export type Transfer = (
   connector: string,
-  step: { method: "GET" | "POST" | "PUT"; path: string; headers?: Record<string, string>; body?: Uint8Array | string; class: "read" | "create"; why: string; max: number },
+  step: { method: "GET" | "POST" | "PUT" | "PATCH"; path: string; headers?: Record<string, string>; body?: Uint8Array | string; class: "read" | "create" | "modify"; why: string; max: number },
 ) => Promise<Transferred>;
 
 export interface BilagDeps {
@@ -90,6 +90,27 @@ export function senderOf(from: string): string {
   return clean(domain ?? address, 60) || "unknown";
 }
 
+// A mail forwarded, by its subject (Fwd:, Fw:, VS: …) or by the words above the mail it carries. ("Original Message"
+// heads a reply's quote as well as a forward, so it is not one of them: a supplier's reply quoting you stays theirs.)
+const FORWARDED_SUBJECT = /^\s*(?:fwd?|vs|wg|tr|rv|vb|vidaresend|videresendt)\s*:/i;
+const FORWARDED_MARK = /-{2,}\s*(?:forwarded message|videresendt (?:meddelelse|besked|mail)|weitergeleitete nachricht|vidarebefordrat meddelande)\s*-{2,}|^\s*(?:begin forwarded message|start på videresendt (?:besked|meddelelse)|anfang der weitergeleiteten nachricht)\s*:/im;
+const FROM_LINE = /^[>\s*]*(?:from|fra|von|från)\s*:\s*\**\s*(.+?)\s*$/gim;
+
+/**
+ * Who first sent a mail that was forwarded (you, forwarding a supplier's invoice to yourself): the From line of the mail
+ * it carries, as its words show it. Null when it wasn't forwarded, or its words name no address.
+ */
+export function forwardedFrom(subject: string, text: string): string | null {
+  const mark = FORWARDED_MARK.exec(text);
+  if (!mark && !FORWARDED_SUBJECT.test(subject)) return null;
+  for (const match of (mark ? text.slice(mark.index) : text).matchAll(FROM_LINE)) {
+    // (Outlook writes "Name <a@b.dk<mailto:a@b.dk>>" or "Name [mailto:a@b.dk]".)
+    const line = match[1]!.replace(/<mailto:[^>]*>/gi, "").replace(/\[mailto:([^\]]+)\]/i, "<$1>").replace(/\*+/g, "").trim();
+    if (line.includes("@")) return line;
+  }
+  return null;
+}
+
 /** Where a bilag goes in Drive: its year's and month's folders, and its name (the day it came, who sent it, its own name). */
 export function bilagPlace(at: number, tz: string, from: string, name: string): { year: string; month: string; file: string } {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(at)).map((p) => [p.type, p.value]));
@@ -100,8 +121,8 @@ export function bilagPlace(at: number, tz: string, from: string, name: string): 
 const enc = encodeURIComponent;
 
 /** One JSON answer from a connector (refused unless it is a 2xx). */
-async function json(deps: BilagDeps, connector: string, path: string, why: string, max = 8 * 2 ** 20): Promise<any> {
-  const got = await deps.transfer(connector, { method: "GET", path, class: "read", why, max });
+async function json(deps: BilagDeps, connector: string, path: string, why: string, max = 8 * 2 ** 20, headers?: Record<string, string>): Promise<any> {
+  const got = await deps.transfer(connector, { method: "GET", path, class: "read", why, max, ...(headers ? { headers } : {}) });
   return answer(got, connector);
 }
 
@@ -117,12 +138,33 @@ function answer(got: Transferred, connector: string): any {
 }
 
 interface Mail {
+  /** Who sent it, or who first did, when it was forwarded. */
   from: string;
+  forwarded: boolean;
   at: number;
   attached: Attached[];
 }
 
-type GmailPart = { filename?: string; mimeType?: string; headers?: { name: string; value: string }[]; body?: { attachmentId?: string; size?: number }; parts?: GmailPart[] };
+type GmailPart = { filename?: string; mimeType?: string; headers?: { name: string; value: string }[]; body?: { attachmentId?: string; size?: number; data?: string }; parts?: GmailPart[] };
+
+/** A Gmail message's own words: its first plain text part, else its HTML's text. */
+function gmailText(part: GmailPart | undefined): string {
+  let html = "";
+  const walk = (p: GmailPart | undefined): string | null => {
+    if (!p) return null;
+    if (!p.filename && p.body?.data && p.mimeType === "text/plain") return Buffer.from(p.body.data, "base64url").toString("utf8");
+    if (!p.filename && p.body?.data && p.mimeType === "text/html" && !html) html = Buffer.from(p.body.data, "base64url").toString("utf8");
+    for (const child of p.parts ?? []) {
+      const found = walk(child);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+  return walk(part) ?? htmlText(html);
+}
+
+const htmlText = (html: string): string =>
+  html.replace(/<(br|\/p|\/div|\/tr)\b[^>]*>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&nbsp;/g, " ");
 const header = (headers: { name: string; value: string }[] | undefined, name: string): string | null => headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
 
 /** A Gmail message's sender, when it came, and what it carries: every part with a name and an attachment's id. */
@@ -140,22 +182,26 @@ export function gmailAttached(message: { internalDate?: string; payload?: GmailP
     for (const child of part.parts ?? []) walk(child);
   };
   walk(message.payload);
-  return { from: header(message.payload?.headers, "From") ?? "", at: Number(message.internalDate) || 0, attached };
+  const first = forwardedFrom(header(message.payload?.headers, "Subject") ?? "", gmailText(message.payload));
+  return { from: first ?? header(message.payload?.headers, "From") ?? "", forwarded: first !== null, at: Number(message.internalDate) || 0, attached };
 }
 
 /** An Outlook message's sender, when it came, and its file attachments (an item or a link attached is no file). */
-export function outlookAttached(message: { from?: { emailAddress?: { name?: string; address?: string } }; receivedDateTime?: string }, list: { value?: Record<string, unknown>[] }): Mail {
+export function outlookAttached(message: { from?: { emailAddress?: { name?: string; address?: string } }; receivedDateTime?: string; subject?: string; body?: { contentType?: string; content?: string } }, list: { value?: Record<string, unknown>[] }): Mail {
   const who = message.from?.emailAddress;
-  const from = who?.name && who.address ? `${who.name} <${who.address}>` : (who?.address ?? who?.name ?? "");
+  const sender = who?.name && who.address ? `${who.name} <${who.address}>` : (who?.address ?? who?.name ?? "");
+  const words = message.body?.contentType === "html" ? htmlText(message.body.content ?? "") : (message.body?.content ?? "");
+  const first = forwardedFrom(message.subject ?? "", words);
   const attached = (list.value ?? [])
     .filter((a) => a["@odata.type"] === "#microsoft.graph.fileAttachment" && typeof a.id === "string" && typeof a.name === "string")
     .map((a) => ({ id: a.id as string, name: a.name as string, type: String(a.contentType ?? "").toLowerCase(), size: Number(a.size) || 0, inline: a.isInline === true }));
-  return { from, at: Date.parse(message.receivedDateTime ?? "") || 0, attached };
+  return { from: first ?? sender, forwarded: first !== null, at: Date.parse(message.receivedDateTime ?? "") || 0, attached };
 }
 
 async function readMail(deps: BilagDeps, mailbox: Mailbox, id: string): Promise<Mail> {
   if (mailbox === "gmail") return gmailAttached(await json(deps, "gmail", `/gmail/v1/users/me/messages/${enc(id)}?format=full`, "read what a mail carries (bilag)"));
-  const message = await json(deps, "outlook", `/v1.0/me/messages/${enc(id)}?$select=from,receivedDateTime`, "read who sent a mail (bilag)");
+  // (Its words as text, to know who first sent a mail that was forwarded.)
+  const message = await json(deps, "outlook", `/v1.0/me/messages/${enc(id)}?$select=from,receivedDateTime,subject,body`, "read who sent a mail (bilag)", 8 * 2 ** 20, { prefer: 'outlook.body-content-type="text"' });
   const list = await json(deps, "outlook", `/v1.0/me/messages/${enc(id)}/attachments?$select=id,name,contentType,size,isInline`, "read what a mail carries (bilag)");
   return outlookAttached(message, list);
 }
@@ -291,6 +337,38 @@ export async function findMail(deps: BilagDeps, mailbox: Mailbox, query: string,
   return { ids, next: typeof got?.["@odata.nextLink"] === "string" ? got["@odata.nextLink"] : null };
 }
 
+/**
+ * Copies made before a forwarded mail was named for who first sent it: each one's mail read again and, where it was
+ * forwarded, the copy given that sender's name in Drive, its day and its own name as they were. Only Galahad's own
+ * files are renamed, and nothing else about them changes.
+ */
+export async function renameForwarded(deps: BilagDeps): Promise<{ renamed: { from: string; to: string }[]; failed: string[] }> {
+  tables(deps.local);
+  const rows = deps.local.query<{ sha256: string; file: string; name: string }, []>("SELECT sha256, file, name FROM bilag_copied ORDER BY at").all();
+  const partOf = deps.local.query<{ part: string }, [string]>("SELECT part FROM bilag_seen WHERE sha256 = ? ORDER BY at LIMIT 1");
+  const mails = new Map<string, Promise<Mail>>();
+  const done = { renamed: [] as { from: string; to: string }[], failed: [] as string[] };
+  for (const row of rows) {
+    const at = /^(gmail|outlook):([^:]+):/.exec(partOf.get(row.sha256)?.part ?? "");
+    const split = row.name.indexOf(" – ");
+    if (!at || split < 11) continue;
+    try {
+      const key = `${at[1]}:${at[2]}`;
+      if (!mails.has(key)) mails.set(key, readMail(deps, at[1] as Mailbox, at[2]!));
+      const mail = await mails.get(key)!;
+      if (!mail.forwarded) continue;
+      const name = `${row.name.slice(0, 10)} ${senderOf(mail.from)}${row.name.slice(split)}`;
+      if (name === row.name) continue;
+      answer(await deps.transfer("gdrive", { method: "PATCH", path: `/drive/v3/files/${enc(row.file)}?fields=id,name`, headers: { "content-type": "application/json; charset=UTF-8" }, body: JSON.stringify({ name }), class: "modify", why: `name a bilag for who first sent it: ${name}`, max: 1 << 20 }), "gdrive");
+      deps.local.query("UPDATE bilag_copied SET name = ? WHERE sha256 = ?").run(name, row.sha256);
+      done.renamed.push({ from: row.name, to: name });
+    } catch (error) {
+      done.failed.push(`${row.name}: ${String((error as Error).message ?? error).slice(0, 200)}`);
+    }
+  }
+  return done;
+}
+
 /** Bilag from a mailbox's mail as a search finds it, a batch a call, and what has been copied: the CLI's `galahad bilag`. */
 export class BilagService {
   constructor(private readonly d: { transfer: Transfer; local: Database; tz: () => string }) {}
@@ -300,6 +378,11 @@ export class BilagService {
     const found = await findMail(deps, input.from, input.query ?? BILAG_QUERY[input.from], Math.min(input.limit ?? 50, BILAG_LIMITS.mails), input.page);
     const report = await copyBilag(deps, found.ids.map((id) => ({ mailbox: input.from, id })), input.folder);
     return { ...report, found: found.ids.length, next: found.next };
+  }
+
+  /** Copies of forwarded mail named for who first sent it (renameForwarded). */
+  names(): Promise<{ renamed: { from: string; to: string }[]; failed: string[] }> {
+    return renameForwarded({ transfer: this.d.transfer, local: this.d.local, tz: this.d.tz() });
   }
 
   status(limit = 10): { copied: number; latest: { name: string; link: string | null; at: number }[] } {

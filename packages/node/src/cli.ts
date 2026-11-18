@@ -69,6 +69,7 @@ of its own; "roundtable", "squires" and "team" are the same command)
   bilag on [--folder Bilag]        a loop that copies each new mail's bilag on its own, woken by Gmail, Outlook or both
   bilag copy --from gmail|outlook [--query "…"] [--folder Bilag]
                                     copy the bilag of mail that came before, a batch at a time until none is left
+  bilag names                      copies of forwarded mail renamed for who first sent them (a bilag you forwarded yourself)
   books attach --org <id> --card <voucher card> --file <Drive file id> --why "…"
                                     a bilag from Drive into Dinero as it is; attaching it to the payment's card asks you
   roundtable files <knight> [/work/path]  a folder of its workspace (its VM's /work; galahad: his computer's)
@@ -1974,7 +1975,14 @@ Evidence: galahad artifact ${i!.artifact}`));
         console.log(`Loop ${bold(loop.name)}: new mail in ${mail.join(" and ")} that holds a receipt or an invoice wakes it, and its bilag go to Google Drive (${str("folder") ?? "Bilag"}/<year>/<month>). Mail already there: galahad bilag copy --from ${mail[0]}`);
         return;
       }
-      if (sub) fail("usage: galahad bilag [on | copy --from gmail|outlook]");
+      if (sub === "names") {
+        const { renamed, failed } = await admin.call<{ renamed: { from: string; to: string }[]; failed: string[] }>("bilagNames", {});
+        for (const r of renamed) console.log(`  ${dim(r.from)}\n  → ${r.to}`);
+        for (const why of failed) console.log(dim(`  ✗ ${why}`));
+        console.log(`${bold(`${renamed.length} bilag`)} renamed for who first sent them${failed.length ? `; ${failed.length} couldn't be` : ""}.`);
+        return;
+      }
+      if (sub) fail("usage: galahad bilag [on | copy --from gmail|outlook | names]");
       const status = await admin.call<{ copied: number; latest: { name: string; link: string | null; at: number }[] }>("bilag");
       console.log(`${bold(`${status.copied} bilag`)} copied to Google Drive`);
       for (const b of status.latest) console.log(`  ${new Date(b.at).toLocaleDateString()}  ${b.name}${b.link ? dim(`  ${b.link}`) : ""}`);

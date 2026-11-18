@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { LoopWake } from "@galahad/core";
 import type { Transferred } from "@galahad/brain";
-import { BILAG_QUERY, bilagPlace, bilagSummary, copyBilag, findMail, isBilag, senderOf, type Transfer } from "../src/bilag.ts";
+import { BILAG_QUERY, bilagPlace, bilagSummary, copyBilag, findMail, forwardedFrom, isBilag, renameForwarded, senderOf, type Transfer } from "../src/bilag.ts";
 
 /*
  * Bilag to Google Drive (bilag.ts): what counts as one, where it goes and under what name, and the copying itself,
@@ -25,8 +25,9 @@ function services() {
   const notYours = (id: string) => ({ ...ok({ error: { message: `The user has not granted the app 123 write access to the file ${id}.` } }), ok: false, status: 403 });
   let next = 0;
   let goneFolders = false;
-  const gmail: Record<string, { from: string; at: number; parts: { name: string; type: string; size: number; data?: Uint8Array; inline?: boolean }[] }> = {};
-  const outlook: Record<string, { from: { name: string; address: string }; at: string; attachments: { id: string; name: string; type: string; size: number; data?: Uint8Array; inline?: boolean; item?: boolean }[] }> = {};
+  const renames: { file: string; name: string }[] = [];
+  const gmail: Record<string, { from: string; at: number; subject?: string; text?: string; parts: { name: string; type: string; size: number; data?: Uint8Array; inline?: boolean }[] }> = {};
+  const outlook: Record<string, { from: { name: string; address: string }; at: string; subject?: string; text?: string; attachments: { id: string; name: string; type: string; size: number; data?: Uint8Array; inline?: boolean; item?: boolean }[] }> = {};
   const transfer: Transfer = async (connector, step) => {
     calls.push({ connector, method: step.method, path: step.path, class: step.class, ...(step.body === undefined ? {} : { body: step.body }), ...(step.headers ? { headers: step.headers } : {}) });
     const url = new URL(step.path, "https://example.test");
@@ -42,9 +43,9 @@ function services() {
       return ok({
         internalDate: String(mail.at),
         payload: {
-          headers: [{ name: "From", value: mail.from }],
+          headers: [{ name: "From", value: mail.from }, ...(mail.subject ? [{ name: "Subject", value: mail.subject }] : [])],
           parts: [
-            { mimeType: "text/plain", body: { size: 40 } },
+            { mimeType: "text/plain", body: { size: 40, ...(mail.text ? { data: Buffer.from(mail.text).toString("base64url") } : {}) } },
             ...mail.parts.map((p) => ({ filename: p.name, mimeType: p.type, headers: p.inline ? [{ name: "Content-Disposition", value: "inline" }, { name: "Content-ID", value: "<logo>" }] : [{ name: "Content-Disposition", value: `attachment; filename="${p.name}"` }], body: { attachmentId: `att-${p.name}`, size: p.size } })),
           ],
         },
@@ -56,7 +57,7 @@ function services() {
       const mail = outlook[decodeURIComponent(m?.[1] ?? "")]!;
       if (m?.[3]) return raw(mail.attachments.find((a) => a.id === decodeURIComponent(m[3]!))!.data!);
       if (m?.[2]) return ok({ value: mail.attachments.map((a) => ({ "@odata.type": a.item ? "#microsoft.graph.itemAttachment" : "#microsoft.graph.fileAttachment", id: a.id, name: a.name, contentType: a.type, size: a.size, isInline: a.inline === true })) });
-      return ok({ from: { emailAddress: mail.from }, receivedDateTime: mail.at });
+      return ok({ from: { emailAddress: mail.from }, receivedDateTime: mail.at, ...(mail.subject ? { subject: mail.subject } : {}), ...(mail.text ? { body: { contentType: "text", content: mail.text } } : {}) });
     }
     // Drive: all of it to read, yours as well as Galahad's own; only a folder it made carries its mark.
     if (url.pathname === "/drive/v3/files" && step.method === "GET") {
@@ -75,6 +76,11 @@ function services() {
       folders.set(`${meta.parents[0]}/${meta.name}`, id);
       return ok({ id });
     }
+    if (url.pathname.startsWith("/drive/v3/files/") && step.method === "PATCH") {
+      const name = (JSON.parse(String(step.body)) as { name: string }).name;
+      renames.push({ file: decodeURIComponent(url.pathname.slice("/drive/v3/files/".length)), name });
+      return ok({ id: "renamed", name });
+    }
     if (url.pathname === "/upload/drive/v3/files" && url.searchParams.get("uploadType") === "resumable") return ok({}, { location: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=u1" });
     if (url.pathname === "/upload/drive/v3/files") {
       if (goneFolders) {
@@ -91,7 +97,7 @@ function services() {
     throw new Error(`no stand-in for ${connector} ${step.method} ${step.path}`);
   };
   const deps = { transfer, local: new Database(":memory:"), tz: "Europe/Copenhagen" };
-  return { deps, calls, files, folders, marks, yours, gmail, outlook, loseFolders: () => void (goneFolders = true) };
+  return { deps, calls, files, folders, marks, yours, renames, gmail, outlook, loseFolders: () => void (goneFolders = true) };
 }
 
 describe("what is a bilag, and where it goes", () => {
@@ -114,6 +120,20 @@ describe("what is a bilag, and where it goes", () => {
     expect(senderOf("<no-reply@billing.example>")).toBe("billing.example");
     expect(bilagPlace(LATE, "Europe/Copenhagen", "Telia <faktura@telia.dk>", "Faktura 11/2026.pdf")).toEqual({ year: "2026", month: "11", file: "2026-11-19 Telia – Faktura 11 2026.pdf" });
     expect(bilagPlace(LATE, "UTC", "faktura@telia.dk", "f.pdf").file).toBe("2026-11-18 telia.dk – f.pdf");
+  });
+
+  test("who first sent a forwarded mail: its From line, in Gmail's, Outlook's and Apple's words, English or Danish; none when it wasn't forwarded", () => {
+    expect(forwardedFrom("Fwd: Faktura", "---------- Forwarded message ---------\nFrom: Telenor <faktura@telenor.dk>\nDate: Mon")).toBe("Telenor <faktura@telenor.dk>");
+    expect(forwardedFrom("Faktura", "Se her.\n---------- Videresendt meddelelse ---------\nFra: Telenor <faktura@telenor.dk>\n")).toBe("Telenor <faktura@telenor.dk>");
+    expect(forwardedFrom("VS: Faktura", "________________________________\nFra: Hetzner <billing@hetzner.com<mailto:billing@hetzner.com>>\nSendt: 17. nov")).toBe("Hetzner <billing@hetzner.com>");
+    expect(forwardedFrom("FW: Invoice", "From: Stripe [mailto:receipts@stripe.com]\nSent: Monday")).toBe("Stripe <receipts@stripe.com>");
+    expect(forwardedFrom("Faktura", "Begin forwarded message:\n\nFrom: *Topaz Labs* <billing@topazlabs.com>\n")).toBe("Topaz Labs <billing@topazlabs.com>");
+    // Not forwarded: a From line in the words is just words, and a reply's quote of yours leaves it the sender's.
+    expect(forwardedFrom("Din regning", "From: someone@else.dk wrote about it")).toBeNull();
+    expect(forwardedFrom("RE: Faktura", "Her er fakturaen.\n\n-----Original Message-----\nFrom: William <me@blxmp.dk>\nSent: Monday")).toBeNull();
+    expect(forwardedFrom("FW: Faktura", "-----Original Message-----\nFrom: Telenor <faktura@telenor.dk>\nSent: Monday")).toBe("Telenor <faktura@telenor.dk>");
+    // Forwarded, but naming no one with an address: who sent it stands.
+    expect(forwardedFrom("Fwd: kvittering", "From: the shop\n")).toBeNull();
   });
 
   test("the words a bilag loop wakes on fit a mail wake, for both mailboxes", () => {
@@ -188,6 +208,36 @@ describe("copying them", () => {
     expect(s.files.map((f) => f.parents)).toEqual([["folder-3"]]);
     expect([...s.folders.keys()]).toEqual(["root/Bilag", "folder-1/2026", "folder-2/11"]);
     expect(s.marks).toEqual([{ galahad: "bilag" }, { galahad: "bilag" }, { galahad: "bilag" }]);
+  });
+
+  test("a mail you forwarded is named for who first sent it, from Gmail or Outlook; one you didn't, for who sent it", async () => {
+    const s = services();
+    s.gmail.g1 = { from: "William <me@wckd.dk>", at: LATE, subject: "Fwd: Din faktura", text: "Til bogføring.\n\n---------- Forwarded message ---------\nFrom: Telenor <faktura@telenor.dk>\nDate: Wed, Nov 18, 2026\nSubject: Din faktura\n", parts: [{ name: "Faktura.pdf", type: "application/pdf", size: 40_000, data: pdf("telenor") }] };
+    s.outlook.o1 = { from: { name: "William", address: "me@blxmp.dk" }, at: "2026-11-18T09:00:00Z", subject: "VS: Kvittering", text: "________________________________\nFra: Hetzner Online GmbH <billing@hetzner.com>\nSendt: 17. november 2026\nEmne: Kvittering\n", attachments: [{ id: "a1", name: "Invoice.pdf", type: "application/pdf", size: 30_000, data: pdf("hetzner") }] };
+    s.gmail.g2 = { from: '"Telia" <faktura@telia.dk>', at: LATE, subject: "Din regning", text: "From: someone@else.dk wrote about it", parts: [{ name: "Regning.pdf", type: "application/pdf", size: 40_000, data: pdf("telia") }] };
+    const report = await copyBilag(s.deps, [{ mailbox: "gmail", id: "g1" }, { mailbox: "outlook", id: "o1" }, { mailbox: "gmail", id: "g2" }]);
+    expect(report.copied.map((c) => c.name)).toEqual(["2026-11-19 Telenor – Faktura.pdf", "2026-11-18 Hetzner Online GmbH – Invoice.pdf", "2026-11-19 Telia – Regning.pdf"]);
+    // Outlook's words are asked for as text.
+    expect(s.calls.find((c) => c.connector === "outlook" && c.path.includes("$select=from"))!.headers).toEqual({ prefer: 'outlook.body-content-type="text"' });
+  });
+
+  test("copies made before are renamed for who first sent their forwarded mail: their day and own name as they were, the rest left alone", async () => {
+    const s = services();
+    s.gmail.g1 = { from: "William <me@wckd.dk>", at: LATE, subject: "Fwd: Din faktura", text: "---------- Videresendt meddelelse ---------\nFra: Telenor <faktura@telenor.dk>\nDato: 18. nov. 2026\n", parts: [{ name: "Faktura.pdf", type: "application/pdf", size: 40_000 }] };
+    s.gmail.g2 = { from: '"Telia" <faktura@telia.dk>', at: LATE, parts: [{ name: "Regning.pdf", type: "application/pdf", size: 40_000 }] };
+    const local = s.deps.local;
+    await copyBilag(s.deps, []);
+    local.query("INSERT INTO bilag_copied (sha256, file, name, link, at) VALUES (?, ?, ?, ?, ?)").run("aa", "file-a", "2026-11-19 William – Faktura.pdf", null, 1);
+    local.query("INSERT INTO bilag_copied (sha256, file, name, link, at) VALUES (?, ?, ?, ?, ?)").run("bb", "file-b", "2026-11-19 Telia – Regning.pdf", null, 2);
+    local.query("INSERT INTO bilag_seen (part, sha256, at) VALUES (?, ?, ?)").run("gmail:g1:Faktura.pdf:40000", "aa", 1);
+    local.query("INSERT INTO bilag_seen (part, sha256, at) VALUES (?, ?, ?)").run("gmail:g2:Regning.pdf:40000", "bb", 2);
+    const done = await renameForwarded(s.deps);
+    expect(done).toEqual({ renamed: [{ from: "2026-11-19 William – Faktura.pdf", to: "2026-11-19 Telenor – Faktura.pdf" }], failed: [] });
+    expect(s.renames).toEqual([{ file: "file-a", name: "2026-11-19 Telenor – Faktura.pdf" }]);
+    expect(s.calls.filter((c) => c.method === "PATCH").every((c) => c.connector === "gdrive" && c.class === "modify")).toBe(true);
+    expect(local.query<{ name: string }, []>("SELECT name FROM bilag_copied ORDER BY at").all().map((r) => r.name)).toEqual(["2026-11-19 Telenor – Faktura.pdf", "2026-11-19 Telia – Regning.pdf"]);
+    // Again, nothing is left to rename.
+    expect((await renameForwarded(s.deps)).renamed).toEqual([]);
   });
 
   test("a mail that can't be read is said, and the rest are copied", async () => {

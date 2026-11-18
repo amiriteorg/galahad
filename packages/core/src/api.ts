@@ -941,6 +941,8 @@ export const routes = {
   bilag: { method: "GET", path: "/api/bilag", scope: "fleet:admin", input: null },
   /** Copy the bilag of mail a search finds (what came before a bilag loop's wakes), a batch a call: `next` goes on. */
   bilagCopy: { method: "POST", path: "/api/bilag/copy", scope: "fleet:admin", input: BilagCopyInput },
+  /** Copies of forwarded mail named for who first sent it, in Drive (bilag.ts renameForwarded). Yours alone. */
+  bilagNames: { method: "POST", path: "/api/bilag/names", scope: "fleet:admin", input: z.strictObject({}) },
   /** A bilag into Dinero's archive as it is, its attaching to a payment's card filed for your approval (books.ts). Yours alone. */
   booksAttach: { method: "POST", path: "/api/books/attach", scope: "fleet:admin", input: BooksAttachInput },
   loopDrafts: { method: "GET", path: "/api/loops/drafts", scope: "mind:read", input: null },

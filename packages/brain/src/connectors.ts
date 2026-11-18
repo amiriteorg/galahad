@@ -181,7 +181,7 @@ export interface Transferred {
 export async function transferConnectorBytes(
   ctx: SendContext,
   manifest: ConnectorManifest,
-  request: { method: "GET" | "POST" | "PUT"; url: string; headers?: Record<string, string>; body?: Uint8Array | string; max: number },
+  request: { method: "GET" | "POST" | "PUT" | "PATCH"; url: string; headers?: Record<string, string>; body?: Uint8Array | string; max: number },
 ): Promise<Transferred> {
   if (new URL(request.url).origin !== new URL(manifest.origin).origin) throw new ConnectorError(`refusing a request off ${manifest.label}'s origin`);
   const headers = new Headers({ accept: "*/*", "user-agent": "galahad/0.1 (+https://galahad.bot)" });

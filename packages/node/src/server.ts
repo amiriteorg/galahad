@@ -3587,6 +3587,11 @@ export function createApp(ctx: AppContext) {
       if (!ctx.bilag) throw new HttpError(503, "this node copies no bilag");
       return connectorErrors(() => ctx.bilag!.copy(input));
     },
+    bilagNames: (_input, p) => {
+      ownerOnly(p);
+      if (!ctx.bilag) throw new HttpError(503, "this node copies no bilag");
+      return connectorErrors(() => ctx.bilag!.names());
+    },
     booksAttach: async (input, p) => {
       ownerOnly(p);
       if (!ctx.books) throw new HttpError(503, "this node keeps no books");
