@@ -13,6 +13,11 @@ export interface CatalogEntry {
   needsOrigin?: boolean;
   /** Where to get a key, shown when it's missing. */
   keyHelp?: string;
+  /**
+   * The shape of the service's own ids where they look like keys (Drive's files, Graph's messages): its answers keep
+   * them and its tools take them. Keys by their known shapes, and the connector's own, are refused and redacted still.
+   */
+  ids?: RegExp;
 }
 
 const owner = { type: "string", pattern: "[A-Za-z0-9_.-]{1,100}", required: true } as const;
@@ -35,6 +40,14 @@ const compose = {
   body: { type: "string", required: true, description: "its words, plain text" },
   replyTo: { type: "string", pattern: "[A-Za-z0-9=_+/-]{6,512}", description: "the id of the message it answers" },
 } as const;
+
+/** A shipped connector's own ids, where it says what they look like (CatalogEntry.ids); one of yours by the same name, elsewhere, has none. */
+export function publicIds(manifest: Pick<ConnectorManifest, "id" | "origin">): ((token: string) => boolean) | undefined {
+  const entry = Object.hasOwn(CATALOG, manifest.id) ? CATALOG[manifest.id] : undefined;
+  const shape = entry?.ids;
+  if (!shape || entry.manifest.origin !== manifest.origin) return undefined;
+  return (token) => shape.test(token);
+}
 
 export const CATALOG: Record<string, CatalogEntry> = {
   github: {
@@ -324,6 +337,8 @@ export const CATALOG: Record<string, CatalogEntry> = {
   },
   outlook: {
     keyHelp: "it signs in with Microsoft, through an app you register once in Microsoft Entra (docs/MAIL.md says how)",
+    // A message's id and its conversation's, as Graph gives them (AAMk…, AQMk…, AAQk…).
+    ids: /^A[AQ][MQ]k[A-Za-z0-9_+/=-]{28,196}$/,
     manifest: {
       id: "outlook",
       label: "Outlook",
@@ -345,6 +360,8 @@ export const CATALOG: Record<string, CatalogEntry> = {
   // The owner's word of 18 November 2026: bilag copied from your mail (node bilag.ts), and all of your Drive to read
   // (drive.readonly). Galahad writes only files of its own there (drive.file), and changes or deletes nothing of yours.
   gdrive: {
+    // A file's or a folder's id, and a page's token.
+    ids: /^[A-Za-z0-9_-]{32,200}$/,
     keyHelp: "it signs in with Google, through the app you registered for Gmail with the Google Drive API on and the drive.readonly and drive.file scopes added (docs/BOOKS.md)",
     manifest: {
       id: "gdrive",

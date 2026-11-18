@@ -1,5 +1,6 @@
 import { type BuiltRequest, ConnectorError, ConnectorManifest, redact } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
+import { publicIds } from "./connector-catalog.ts";
 import { accessToken, type OAuthContext, readKeep } from "./oauth.ts";
 
 /*
@@ -148,7 +149,8 @@ export async function sendConnectorRequest(ctx: SendContext, manifest: Connector
   });
   const { text, truncated } = await readCapped(response, MAX_RESPONSE_BYTES);
   const known = key ? [key, Buffer.from(key).toString("base64")] : [];
-  const clean = redact(text, known);
+  const ids = publicIds(manifest);
+  const clean = redact(text, known, ids ? { isPublic: ids } : {});
   const clipped = clean.length > RETURNED_CHARS;
   return {
     ok: response.ok,

@@ -146,6 +146,26 @@ describe("sending a request", () => {
     expect(result.body).toContain("[redacted]");
   });
 
+  test("a service's own ids are its own, not keys: Drive's file ids and Graph's mail ids come back whole; a key never does, nor another service's ids", async () => {
+    const driveId = "1wvUWlyaIe7610BS3JpoTY7JC7UIdxi1U";
+    const mailId = "AAMkADVhYzM0NjQ3LTVmYzYtNDQ4Yi1hNGQ0LTFiYzBkZjQxMmQ4NQBGAAAAAACxFakeMessageId=";
+    const leaked = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789";
+    const { fetch } = recorder(() => Response.json({ files: [{ id: driveId }], messages: [{ id: mailId }], echoed: leaked }));
+    const answer = async (manifest: ConnectorManifest) =>
+      (await sendConnectorRequest({ vault: vault(), fetch }, manifest, { kind: "http", method: "GET", url: `${manifest.origin}/x`, headers: {}, class: "read", target: "GET /x" })).body;
+    const shipped = (id: string, over: Partial<ConnectorManifest> = {}) => ConnectorManifest.parse({ ...CATALOG[id]!.manifest, auth: undefined, ...over });
+    const drive = await answer(shipped("gdrive"));
+    expect(drive).toContain(driveId);
+    expect(drive).not.toContain(mailId);
+    expect(drive).not.toContain(leaked);
+    const mail = await answer(shipped("outlook"));
+    expect(mail).toContain(mailId);
+    expect(mail).not.toContain(driveId);
+    expect(mail).not.toContain(leaked);
+    // One of yours by the same name, somewhere else, is held to every rule.
+    expect(await answer(shipped("gdrive", { origin: "https://drive.example.test" }))).not.toContain(driveId);
+  });
+
   test("answers are size-capped", async () => {
     const { fetch } = recorder(() => new Response("x".repeat(MAX_RESPONSE_BYTES + 10_000)));
     const open = ConnectorManifest.parse({ ...forge, auth: undefined });

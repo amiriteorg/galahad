@@ -211,6 +211,17 @@ describe("connectors", () => {
     expect(response.status).toBe(422);
   });
 
+  test("a service's own ids aren't keys: a Drive file or folder by its id is asked for (here, before any sign-in, it can't be); a key still can't", async () => {
+    expect((await admin("setConnector", { id: "gdrive" })).status).toBe(200);
+    const id = "1wvUWlyaIe7610BS3JpoTY7JC7UIdxi1U";
+    for (const [tool, args] of [["file", { id }], ["files", { q: `'${id}' in parents and trashed = false` }]] as const) {
+      const asked = await admin("callConnector", { connector: "gdrive", tool, args });
+      expect([tool, asked.status, asked.body.error]).toEqual([tool, 424, expect.stringContaining("needs the app you registered")]);
+    }
+    expect((await admin("callConnector", { connector: "gdrive", tool: "files", args: { q: "name contains 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789'" } })).status).toBe(422);
+    await admin("removeConnector", { id: "gdrive" });
+  });
+
   test("creating is Galahad's to do: an agent's create runs at once", async () => {
     const created = await arm<{ status: string }>("callConnector", { connector: "forge", tool: "bucket.create", args: { name: "galahad-cache" } });
     expect(created.body.status).toBe("done");

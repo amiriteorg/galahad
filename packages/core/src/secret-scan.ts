@@ -216,13 +216,13 @@ export function findSecrets(text: string, opts: ScanOptions = {}): SecretFinding
   return findings.sort((a, b) => a.index - b.index);
 }
 
-/** Replace known secret values and anything secret-shaped with a marker. */
-export function redact(text: string, knownValues: (string | null | undefined)[] = []): string {
+/** Replace known secret values and anything secret-shaped with a marker (what `opts` says is public aside). */
+export function redact(text: string, knownValues: (string | null | undefined)[] = [], opts: ScanOptions = {}): string {
   let out = text;
   for (const value of knownValues) if (value && value.length >= 6) out = out.split(value).join("[redacted]");
   // One key can match several patterns (an Anthropic key is also an sk-… key): one marker per span.
   const spans: { index: number; end: number; kind: string }[] = [];
-  for (const f of findSecrets(out)) {
+  for (const f of findSecrets(out, opts)) {
     const last = spans.at(-1);
     if (last && f.index < last.end) last.end = Math.max(last.end, f.index + f.length);
     else spans.push({ index: f.index, end: f.index + f.length, kind: f.kind });

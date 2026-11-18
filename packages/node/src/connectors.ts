@@ -38,6 +38,7 @@ import {
   discoverMcpTools,
   excerpt,
   fitMcpTools,
+  publicIds,
   installedConnector,
   keyState,
   type MergeReport,
@@ -136,8 +137,10 @@ export class ConnectorService {
       throw new ConnectorCallError(403, `${manifest.label} is Galahad's alone: ask your liege to let you use it (connector_request), and use it once they do`);
     }
     const args = ConnectorArgs.parse(input.args ?? {});
-    // Arguments leave this machine (and approvals replicate in plaintext): no keys in them, however deep.
-    if (argStrings(args).some((text) => findSecrets(text).length)) {
+    // Arguments leave this machine (and approvals replicate in plaintext): no keys in them, however deep. The service's
+    // own ids aren't keys (a Drive file's, an Outlook message's), where the catalog says what they look like.
+    const ids = publicIds(manifest);
+    if (argStrings(args).some((text) => findSecrets(text, ids ? { isPublic: ids } : {}).length)) {
       throw new ConnectorCallError(422, "an argument looks like a credential; connectors take keys from the vault, never from arguments");
     }
     let request: ConnectorRequest;
