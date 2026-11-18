@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { highlight, LONG } from "./highlight.ts";
+import { highlight, languageOf, LONG } from "./highlight.ts";
 
 const tones = (code: string, lang: string) => highlight(code, lang).map((p) => (p.tone ? `${p.tone}:${p.text}` : p.text));
 
@@ -45,5 +45,15 @@ describe("code, coloured by what each part is", () => {
     expect(highlight(long, "swift")).toEqual([{ text: long }]);
     // An unclosed string or comment runs to the end, and nothing is lost.
     for (const [code, lang] of [['say("open', "swift"], ["/* never closed", "ts"], ["'''x", "py"]] as const) expect(highlight(code, lang).map((p) => p.text).join("")).toBe(code);
+  });
+});
+
+describe("a file's language, by its name", () => {
+  test("its extension, a few named, or none", () => {
+    expect(languageOf("/work/src/app.ts")).toBe("ts");
+    expect(languageOf("config.YML")).toBe("yaml");
+    expect(languageOf("README.md")).toBe("");
+    expect(languageOf("Dockerfile")).toBe("sh");
+    expect(languageOf(".env")).toBe("");
   });
 });

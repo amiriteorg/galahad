@@ -1029,6 +1029,13 @@
       .tok-added { color: light-dark(#116329, #7ee2a8); background: light-dark(#dafbe1, rgb(46 160 67 / 0.18)); }
       .tok-removed { color: light-dark(#82071e, #ffa198); background: light-dark(#ffebe9, rgb(248 81 73 / 0.16)); }
       .tok-meta { color: var(--text-3); font-weight: 600; }
+      .tok-added-text { color: light-dark(#116329, #7ee2a8); }
+      .tok-removed-text { color: light-dark(#82071e, #ffa198); }
+      /* A knight's workspace, read (views/workspace.ts): its folders, files and changed files as rows to open. */
+      button.workspace-entry { width: 100%; text-align: left; background: none; border: 0; font: inherit; color: inherit; cursor: pointer; gap: 10px; }
+      button.workspace-entry:hover:not(:disabled) { background: var(--surface-2); }
+      button.workspace-entry:disabled { cursor: default; opacity: 0.6; }
+      .workspace-status { width: 14px; text-align: center; font-weight: 700; }
       .md .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
       .md table { border-collapse: collapse; width: 100%; font-size: 0.93em; }
       .md th, .md td { padding: 7px 10px; border-top: 1px solid var(--border); text-align: left; vertical-align: top; }

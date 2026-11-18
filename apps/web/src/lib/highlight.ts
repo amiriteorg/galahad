@@ -174,3 +174,13 @@ function diffPieces(code: string): Piece[] {
   }
   return out;
 }
+
+/** The language a file is written in, by its name (for its colours), or "" when it isn't one highlight knows. */
+export function languageOf(path: string): string {
+  const name = path.split("/").at(-1) ?? path;
+  if (name === "Dockerfile" || name === "Makefile") return "sh";
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) return "";
+  const ext = name.slice(dot + 1).toLowerCase();
+  return ({ md: "", markdown: "", yml: "yaml", h: "c", hpp: "cpp", mts: "ts", cts: "ts" } as Record<string, string>)[ext] ?? ext;
+}

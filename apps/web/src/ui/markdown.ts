@@ -57,7 +57,7 @@ function inlines(nodes: Inline[]): Node[] {
   });
 }
 
-function codeBlock(block: { lang: string; v: string }): HTMLElement {
+export function codeBlock(block: { lang: string; v: string }): HTMLElement {
   const copy = h("button", { class: "btn ghost sm", type: "button", "aria-label": "Copy code" }, icon("copy", { size: 13 }), h("span", {}, "Copy"));
   copy.addEventListener("click", () => void copyText(block.v, "Code copied"));
   return h(

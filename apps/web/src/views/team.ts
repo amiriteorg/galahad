@@ -29,6 +29,7 @@ import { desktopViewer, type DesktopViewer } from "./desktop.ts";
 import { liveTrail, type LiveTrail, taskCard } from "./task-card.ts";
 import { controlTeam, editKnight, editNotes, editRoom, giveTask, growVm, provisionVm, remakeVm, removeKnight, setEngram } from "./team-forms.ts";
 import { openTerminal } from "./terminal.ts";
+import { openWorkspace } from "./workspace.ts";
 
 /*
  * A knight, or a room, as one timeline: what was said and the tasks given, in the order they happened, each task a
@@ -444,6 +445,9 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
                   { class: "row wrap" },
                   // A real terminal where the VM is on the node you are talking to (terminals aren't forwarded); else the console.
                   ctx.can("sandbox") ? (person.workspace?.node === ctx.whoami.node ? button("Open terminal", { size: "sm", icon: "terminal", onClick: () => void openTerminal(ctx, { id: vm.id, name: `${person.name}'s VM` }) }) : button("Open console", { size: "sm", icon: "terminal", onClick: () => openConsole(ctx, vm, person.workspace?.node ?? null) })) : null,
+                  // Its files and what its latest task changed, read (views/workspace.ts).
+                  ctx.can("sandbox") ? button("Files", { size: "sm", icon: "folder", onClick: () => openWorkspace(ctx, person, "files") }) : null,
+                  ctx.can("sandbox") ? button("Changes", { size: "sm", icon: "code", onClick: () => openWorkspace(ctx, person, "changes") }) : null,
                   button("Check status", { size: "sm", icon: "refresh", onClick: () => void refreshWorkspace(person.id) }),
                   canEdit ? button("Give it more", { size: "sm", icon: "plus", onClick: () => growVm(ctx, person, vm, madeVm(person)) }) : null,
                   canEdit ? button("Make VM again", { size: "sm", icon: "retry", onClick: () => remakeVm(ctx, person, vm, madeVm(person)) }) : null,
