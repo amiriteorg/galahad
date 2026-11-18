@@ -291,11 +291,13 @@ describe("what wakes a loop", () => {
     { kind: "mail", connector: "outlook" },
     { kind: "github", owner: "amiriteorg", repo: "galahad", on: ["ci.failed", "pushed"], branch: "main" },
     { kind: "github", owner: "amiriteorg", repo: "site", on: ["pushed"] },
+    { kind: "github", owner: "amiriteorg", repo: "galahad", on: ["issue.opened", "pr.opened", "ci.failed"] },
   ];
 
   test("is said here as the node and the terminal say it", () => {
     for (const wake of wakes) expect(describeWakeHere(wake)).toBe(describeWake(wake));
     expect(describeWakeHere(wakes[3]!)).toBe("a failed CI run on main or a push in amiriteorg/galahad");
+    expect(describeWakeHere(wakes[5]!)).toBe("a new issue or a new pull request or a failed CI run in amiriteorg/galahad");
   });
 
   test("in a sentence with its cooldown, and nothing when nothing else wakes it", () => {

@@ -164,8 +164,9 @@ export const LoopTask = z.discriminatedUnion("kind", [
 ]);
 export type LoopTask = z.infer<typeof LoopTask>;
 
-/** What wakes a loop on GitHub: a workflow run that failed, or a push to the repository. */
-export const GITHUB_WAKE_EVENTS = ["ci.failed", "pushed"] as const;
+/** What wakes a loop on GitHub: a workflow run that failed, a push to the repository, a new issue or a new pull request. */
+export const GITHUB_WAKE_EVENTS = ["ci.failed", "pushed", "issue.opened", "pr.opened"] as const;
+const GITHUB_WAKE_WORDS: Record<(typeof GITHUB_WAKE_EVENTS)[number], string> = { "ci.failed": "a failed CI run", pushed: "a push", "issue.opened": "a new issue", "pr.opened": "a new pull request" };
 const GitHubName = z.string().regex(/^[A-Za-z0-9_.-]{1,100}$/);
 
 /**
@@ -178,7 +179,7 @@ export const LoopWake = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("webhook") }),
   /** New mail in your Gmail or Outlook that a search finds (Gmail's search words, or Outlook's), read every few minutes. */
   z.strictObject({ kind: z.literal("mail"), connector: z.enum(["gmail", "outlook"]), query: z.string().trim().min(1).max(200).optional() }),
-  /** A GitHub repository, read every few minutes: a workflow run that failed (on one branch, if named), or a push. */
+  /** A GitHub repository, read every few minutes: a workflow run that failed (on one branch, if named), a push, a new issue or pull request. */
   z.strictObject({
     kind: z.literal("github"),
     owner: GitHubName,
@@ -197,7 +198,7 @@ export function describeWake(wake: LoopWake): string {
     case "mail":
       return `new ${wake.connector === "gmail" ? "Gmail" : "Outlook"} mail${wake.query ? ` matching "${wake.query}"` : ""}`;
     case "github": {
-      const what = wake.on.map((on) => (on === "ci.failed" ? `a failed CI run${wake.branch ? ` on ${wake.branch}` : ""}` : "a push"));
+      const what = wake.on.map((on) => (on === "ci.failed" && wake.branch ? `a failed CI run on ${wake.branch}` : GITHUB_WAKE_WORDS[on]));
       return `${what.join(" or ")} in ${wake.owner}/${wake.repo}`;
     }
   }

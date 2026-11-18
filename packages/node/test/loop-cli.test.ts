@@ -85,7 +85,8 @@ test("what wakes a loop, as you'd say it at a terminal", () => {
   expect(parseWake("github amiriteorg/galahad")).toEqual({ kind: "github", owner: "amiriteorg", repo: "galahad", on: ["ci.failed"] });
   expect(parseWake("github amiriteorg/galahad ci.failed,pushed main")).toEqual({ kind: "github", owner: "amiriteorg", repo: "galahad", on: ["ci.failed", "pushed"], branch: "main" });
   expect(() => parseWake("github amiriteorg")).toThrow(/--wake "github <owner>\/<repo>/);
-  expect(() => parseWake("github amiriteorg/galahad merged")).toThrow(/ci.failed or pushed, not "merged"/);
+  expect(parseWake("github amiriteorg/galahad issue.opened,pr.opened")).toEqual({ kind: "github", owner: "amiriteorg", repo: "galahad", on: ["issue.opened", "pr.opened"] });
+  expect(() => parseWake("github amiriteorg/galahad merged")).toThrow(/ci.failed or pushed or issue.opened or pr.opened, not "merged"/);
   expect(() => parseWake("slack #general")).toThrow(/--wake webhook/);
   expect(() => parseWake("webhook please")).toThrow(/--wake webhook/);
 });

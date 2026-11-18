@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { canonical, describeWake, type Json, type LoopWake, type NodeIdentity, redact } from "@galahad/core";
+import { installedConnector } from "@galahad/brain";
 import type { MindStore } from "@galahad/mind";
 import { loopRecords, type WakeEvent } from "./loops.ts";
 
@@ -10,7 +11,8 @@ import { loopRecords, type WakeEvent } from "./loops.ts";
  *   - a webhook: a POST to /hooks/<loop>, signed with the loop's own secret (sealed in the vault as loop-hook:<loop>)
  *     the way GitHub signs: X-Hub-Signature-256 (or X-Galahad-Signature) is "sha256=" and the HMAC-SHA256 of the body;
  *   - new mail: the mail connector's search, every few minutes, as the loop (a read, logged like any other);
- *   - GitHub: the repository's failed Actions runs and its last push, read the same way.
+ *   - GitHub: the repository's failed Actions runs, its last push, and its new issues and pull requests, read the same
+ *     way (through the owner's own GitHub connector when there is one).
  *
  * Only what happens after a wake is set counts: its first look notes what is already there. What comes in is someone
  * else's words: bounded, what looks like a key left out, and handed to the run as data, never as instructions.
@@ -34,6 +36,24 @@ export function hookSigned(secret: string, body: Uint8Array, header: string | nu
 /** Bounded, and what looks like a key left out: it reaches models. */
 function clip(text: string, chars = DETAIL_CHARS): string {
   return redact(text.length > chars ? `${text.slice(0, chars)}…` : text);
+}
+
+/** A new issue or pull request, as one event: its title and who opened it, its words as someone else's. */
+function opened(repo: string, item: Record<string, unknown>, pull: boolean, now: number): WakeEvent {
+  const what = pull ? "pull request" : "issue";
+  const title = typeof item.title === "string" && item.title.trim() ? item.title.trim() : "(no title)";
+  const by = typeof (item.user as { login?: unknown } | undefined)?.login === "string" ? (item.user as { login: string }).login : "someone";
+  const association = typeof item.author_association === "string" ? ` (${item.author_association.toLowerCase().replace(/_/g, " ")})` : "";
+  const labels = Array.isArray(item.labels) ? item.labels.flatMap((l) => (typeof (l as { name?: unknown })?.name === "string" ? [(l as { name: string }).name] : [])) : [];
+  return {
+    id: `github:${pull ? "pr" : "issue"}:${repo}#${item.number}`,
+    source: "github",
+    at: now,
+    text: clip(`a new ${what} in ${repo}: #${item.number} ${title} (by ${by})`, 300),
+    detail: clip(
+      [`${pull ? "Pull request" : "Issue"} #${item.number}: ${typeof item.html_url === "string" ? item.html_url : ""}`, `By: ${by}${association}`, ...(labels.length ? [`Labels: ${labels.join(", ")}`] : []), "", typeof item.body === "string" ? item.body : ""].join("\n").trim(),
+    ),
+  };
 }
 
 /** A signed webhook, as one event: named by its delivery (or its body's hash), so the same one never wakes a loop twice. */
@@ -164,9 +184,12 @@ export class WakeWatcher {
       );
     }
     const repo = `${wake.owner}/${wake.repo}`;
+    // Through the owner's own GitHub connector when there is one (github-<owner>, with that owner's token), as a ship goes.
+    const own = `github-${wake.owner.toLowerCase()}`;
+    const github = installedConnector(this.o.store, own) ? own : "github";
     const events: WakeEvent[] = [];
     if (wake.on.includes("ci.failed")) {
-      const found = (await answer("github", "runs", { owner: wake.owner, repo: wake.repo, status: "failure", per_page: 20, ...(wake.branch ? { branch: wake.branch } : {}) })) as { workflow_runs?: unknown };
+      const found = (await answer(github, "runs", { owner: wake.owner, repo: wake.repo, status: "failure", per_page: 20, ...(wake.branch ? { branch: wake.branch } : {}) })) as { workflow_runs?: unknown };
       const runs = Array.isArray(found?.workflow_runs) ? (found.workflow_runs as Record<string, unknown>[]) : [];
       events.push(
         ...this.fresh(
@@ -196,9 +219,18 @@ export class WakeWatcher {
       );
     }
     if (wake.on.includes("pushed")) {
-      const found = (await answer("github", "repo", { owner: wake.owner, repo: wake.repo })) as { pushed_at?: unknown };
+      const found = (await answer(github, "repo", { owner: wake.owner, repo: wake.repo })) as { pushed_at?: unknown };
       const at = typeof found?.pushed_at === "string" ? found.pushed_at : null;
       if (at) events.push(...this.fresh(loop, `${key}:pushed`, [{ id: at, event: { id: `github:push:${repo}:${at}`, source: "github", at: now, text: `a push to ${repo} (at ${at})` } }]));
+    }
+    if (wake.on.includes("issue.opened") || wake.on.includes("pr.opened")) {
+      // One read for both: GitHub lists pull requests among the issues (each with a pull_request), newest first.
+      const found = await answer(github, "issues", { owner: wake.owner, repo: wake.repo, state: "open", per_page: 20 });
+      const listed = Array.isArray(found) ? (found as Record<string, unknown>[]) : [];
+      for (const [on, pulls] of [["issue.opened", false], ["pr.opened", true]] as const) {
+        if (!wake.on.includes(on)) continue;
+        events.push(...this.fresh(loop, `${key}:${on}`, listed.flatMap((item) => (typeof item?.number === "number" && ("pull_request" in item) === pulls ? [{ id: String(item.number), event: opened(repo, item, pulls, now) }] : []))));
+      }
     }
     return events;
   }

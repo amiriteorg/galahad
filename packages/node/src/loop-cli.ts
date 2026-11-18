@@ -41,12 +41,12 @@ export function describeWakes(wakes: readonly LoopWake[], cooldownMs: number | n
 }
 
 /**
- * `--wake` as you'd say it: webhook · gmail [search words] · outlook [words] · github owner/repo [ci.failed,pushed] [branch].
+ * `--wake` as you'd say it: webhook · gmail [search words] · outlook [words] · github owner/repo [ci.failed,pushed,issue.opened,pr.opened] [branch].
  * A GitHub wake with no events named wakes on a failed CI run.
  */
 export function parseWake(spec: string): LoopWake {
   const [kind, ...rest] = spec.trim().split(/\s+/);
-  const usage = 'give --wake webhook, --wake "gmail <search words>", --wake "outlook <words>" or --wake "github <owner>/<repo> [ci.failed,pushed] [branch]"';
+  const usage = 'give --wake webhook, --wake "gmail <search words>", --wake "outlook <words>" or --wake "github <owner>/<repo> [ci.failed,pushed,issue.opened,pr.opened] [branch]"';
   if (kind === "webhook" && !rest.length) return { kind: "webhook" };
   if (kind === "gmail" || kind === "outlook") return { kind: "mail", connector: kind, ...(rest.length ? { query: rest.join(" ") } : {}) };
   if (kind === "github") {

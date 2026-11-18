@@ -278,7 +278,8 @@ Loops (work on a schedule or when something happens, on one node; every run is r
        [--wake …]… [--cooldown 10m]    what else wakes it (no --every or --cron: only that), as data, never orders:
          --wake webhook                 a POST to /hooks/<name>, signed with its secret (shown once; loop hook <name>: a new one)
          --wake "gmail <search words>"  new mail a search finds (also outlook); read every few minutes
-         --wake "github <owner>/<repo> [ci.failed,pushed] [branch]"   a failed CI run (the default), or a push
+         --wake "github <owner>/<repo> [ci.failed,pushed,issue.opened,pr.opened] [branch]"
+                                        a failed CI run (the default), a push, a new issue or pull request
   loop set <name> [same options]  change a loop (what you leave out stays), e.g. loop set heartbeat --every 1h; --no-wakes
   loop drafts                     loops Galahad drafted when you asked for one in chat (they run nothing until added)
   loop add --draft <id> [--on n]  add a draft as he drafted it · loop dismiss <id>: drop it
@@ -549,7 +550,7 @@ async function main(): Promise<void> {
       apply: { type: "boolean" },
       every: { type: "string" },
       cron: { type: "string" },
-      // What else wakes a loop: --wake webhook | "gmail <words>" | "github owner/repo [ci.failed,pushed]" (repeatable).
+      // What else wakes a loop: --wake webhook | "gmail <words>" | "github owner/repo [ci.failed,pushed,issue.opened,pr.opened]" (repeatable).
       wake: { type: "string", multiple: true },
       "no-wakes": { type: "boolean" },
       cooldown: { type: "string" },

@@ -218,12 +218,21 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   const wakeBranch = h("input", { class: "input mono", ...plain, maxlength: 200, placeholder: "Branch (optional): only its failed runs" });
   const onFailed = h("input", { type: "checkbox", checked: true });
   const onPush = h("input", { type: "checkbox" });
+  const onIssue = h("input", { type: "checkbox" });
+  const onPull = h("input", { type: "checkbox" });
   const mailFields = h("div", { hidden: true }, field("Mail it finds", wakeQuery, { hint: "Only mail from now on wakes it; it's read every few minutes, as this loop." }));
   const githubFields = h(
     "div",
     { class: "stack tight", hidden: true },
     h("div", { class: "fields" }, field("Repository", wakeRepo), field("Branch", wakeBranch)),
-    h("div", { class: "scope-list" }, h("label", { class: "scope" }, onFailed, h("span", {}, "A failed CI run")), h("label", { class: "scope" }, onPush, h("span", {}, "A push"))),
+    h(
+      "div",
+      { class: "scope-list" },
+      h("label", { class: "scope" }, onFailed, h("span", {}, "A failed CI run")),
+      h("label", { class: "scope" }, onPush, h("span", {}, "A push")),
+      h("label", { class: "scope" }, onIssue, h("span", {}, "A new issue")),
+      h("label", { class: "scope" }, onPull, h("span", {}, "A new pull request")),
+    ),
   );
   const syncWakeKind = (): void => {
     mailFields.hidden = wakeKind.value !== "gmail" && wakeKind.value !== "outlook";
@@ -248,8 +257,8 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
         if (!owner || !repo || more !== undefined || !/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(repo)) return void stop("Name the repository as owner/repo.", wakeRepo);
         const branch = wakeBranch.value.trim();
         if (branch && !/^[A-Za-z0-9._/-]{1,200}$/.test(branch)) return void stop("A branch is letters, digits and . _ / -", wakeBranch);
-        const on = [...(onFailed.checked ? (["ci.failed"] as const) : []), ...(onPush.checked ? (["pushed"] as const) : [])];
-        if (!on.length) return void stop("Choose what wakes it: a failed CI run, a push, or both.", onFailed);
+        const on = [...(onFailed.checked ? (["ci.failed"] as const) : []), ...(onPush.checked ? (["pushed"] as const) : []), ...(onIssue.checked ? (["issue.opened"] as const) : []), ...(onPull.checked ? (["pr.opened"] as const) : [])];
+        if (!on.length) return void stop("Choose what wakes it: a failed CI run, a push, a new issue or a new pull request.", onFailed);
         wake = { kind: "github", owner, repo, on, ...(branch ? { branch } : {}) };
       }
       if (wakes.length >= 4) return void stop("Four things at most wake a loop.", wakeKind);
