@@ -70,7 +70,7 @@ of its own; "roundtable", "squires" and "team" are the same command)
   bilag copy --from gmail|outlook [--query "…"] [--folder Bilag]
                                     copy the bilag of mail that came before, a batch at a time until none is left
   bilag names                      copies of forwarded mail renamed for who first sent them (a bilag you forwarded yourself)
-  books attach --org <id> --card <voucher card> --file <Drive file id> --why "…"
+  books attach --org <id> --card <voucher card> --file <Drive file id> | --dinero-file <id> --why "…"
                                     a bilag from Drive into Dinero as it is; attaching it to the payment's card asks you
   roundtable files <knight> [/work/path]  a folder of its workspace (its VM's /work; galahad: his computer's)
   roundtable read <knight> </work/path>  one file of it (anything like a key redacted)
@@ -571,6 +571,7 @@ async function main(): Promise<void> {
       query: { type: "string" },
       org: { type: "string" },
       card: { type: "string" },
+      "dinero-file": { type: "string" },
       // An outcome he owns: outcome add "<title>" --goal "…" --knight id… --budget-usd 20 [--done "…"] [--report-hour 9].
       goal: { type: "string" },
       done: { type: "string" },
@@ -1992,11 +1993,17 @@ Evidence: galahad artifact ${i!.artifact}`));
     }
     case "books": {
       // A bilag from your Drive into Dinero, to the payment it documents (books.ts); attaching it asks you.
-      if (sub !== "attach") fail('usage: galahad books attach --org <Dinero organization id> --card <voucher card id> --file <Drive file id> --why "…"');
+      const usage = 'usage: galahad books attach --org <Dinero organization id> --card <voucher card id> --file <Drive file id> | --dinero-file <id in Dinero\'s archive> --why "…"';
+      if (sub !== "attach") fail(usage);
       const org = Number(str("org"));
-      if (!Number.isInteger(org) || org <= 0 || !str("card") || !str("file") || !str("why")) fail('usage: galahad books attach --org <Dinero organization id> --card <voucher card id> --file <Drive file id> --why "…"');
-      const done = await new Admin(home).call<{ name: string; bytes: number; sha256: string; fileGuid: string; action: string | null }>("booksAttach", { organizationId: org, card: str("card"), file: str("file"), why: str("why") });
-      console.log(`${bold(done.name)} is in Dinero's archive (${done.bytes} bytes, SHA-256 ${done.sha256.slice(0, 12)}…, file ${done.fileGuid}).`);
+      if (!Number.isInteger(org) || org <= 0 || !str("card") || !str("file") === !str("dinero-file") || !str("why")) fail(usage);
+      const done = await new Admin(home).call<{ name: string | null; bytes: number | null; sha256: string | null; fileGuid: string; action: string | null }>("booksAttach", {
+        organizationId: org,
+        card: str("card"),
+        ...(str("file") ? { file: str("file") } : { dineroFile: str("dinero-file") }),
+        why: str("why"),
+      });
+      if (done.name) console.log(`${bold(done.name)} is in Dinero's archive (${done.bytes} bytes, SHA-256 ${done.sha256!.slice(0, 12)}…, file ${done.fileGuid}).`);
       console.log(done.action ? `Attaching it to the payment's card waits for you: action ${done.action} (your Inbox, or galahad action approve ${done.action}).` : "It is attached to the payment's card.");
       return;
     }

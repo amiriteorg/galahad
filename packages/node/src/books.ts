@@ -27,30 +27,34 @@ export interface BooksAttach {
   organizationId: number;
   /** The voucher file card (list_voucher_file_cards): a payment booked without its bilag. */
   card: string;
-  /** The bilag's id in Drive. */
-  file: string;
+  /** The bilag's id in Drive, to put into Dinero's archive first; or dineroFile, one already there. */
+  file?: string | undefined;
+  dineroFile?: string | undefined;
   /** Why this bilag is this payment's, as your approval card says it. */
   why: string;
 }
 
 export interface BooksAttached {
-  name: string;
-  bytes: number;
-  sha256: string;
+  /** What was put into Dinero's archive now (null: the file was there already). */
+  name: string | null;
+  bytes: number | null;
+  sha256: string | null;
   fileGuid: string;
   /** The approval that attaching it waits on; null when it needed none (its class runs freely). */
   action: string | null;
 }
 
 const GUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+/** A file's id in Dinero's archive, as it names one (`vnobcolxk7d4…`: not a Guid, whatever it's called). */
+const FILE_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
-/** The fileGuid in what Dinero answered an upload with: its JSON's, else the one Guid it names. */
+/** The fileGuid in what Dinero answered an upload with: its JSON's, the one its words name, else the one Guid in them. */
 export function fileGuidOf(body: string): string | null {
   try {
     const found = (function look(value: unknown): string | null {
       if (!value || typeof value !== "object") return null;
       for (const [key, inner] of Object.entries(value)) {
-        if (/^fileguid$/i.test(key) && typeof inner === "string" && GUID.test(inner)) return inner;
+        if (/^fileguid$/i.test(key) && typeof inner === "string" && FILE_ID.test(inner)) return inner;
         const deeper = look(inner);
         if (deeper) return deeper;
       }
@@ -60,7 +64,7 @@ export function fileGuidOf(body: string): string | null {
   } catch {
     /* words, not JSON */
   }
-  const named = /fileGuid\W{0,6}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(body)?.[1];
+  const named = /fileGuid\W{0,6}([A-Za-z0-9_-]{8,64})/i.exec(body)?.[1];
   if (named) return named;
   const all = body.match(new RegExp(GUID.source, "gi")) ?? [];
   return new Set(all.map((g) => g.toLowerCase())).size === 1 ? all[0]! : null;
@@ -77,9 +81,11 @@ function json(got: { ok: boolean; status: number; bytes: Uint8Array }, what: str
   return parsed;
 }
 
-/** A bilag from Drive into Dinero's archive, and the attaching of it to a payment's card asked of you. */
+/** A bilag from Drive into Dinero's archive (or one there already), and the attaching of it to a payment's card asked of you. */
 export async function attachBilag(deps: BooksDeps, input: BooksAttach): Promise<BooksAttached> {
-  const id = encodeURIComponent(input.file);
+  if (!input.file === !input.dineroFile) throw new Error("give the bilag's Drive file, or a file already in Dinero's archive: one of them");
+  if (input.dineroFile) return { name: null, bytes: null, sha256: null, ...(await askAttach(deps, input, input.dineroFile)) };
+  const id = encodeURIComponent(input.file!);
   const meta = json(await deps.transfer("gdrive", { method: "GET", path: `/drive/v3/files/${id}?fields=name,mimeType,size&supportsAllDrives=true`, class: "read", why: "the bilag to attach in Dinero", max: 1 << 20 }), "the bilag");
   if (typeof meta?.name !== "string") throw new Error("gdrive gave no file by that id");
   const got = await deps.transfer("gdrive", { method: "GET", path: `/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, class: "read", why: `the bytes of ${meta.name}, for Dinero`, max: BOOKS_MAX_BYTES });
@@ -95,6 +101,11 @@ export async function attachBilag(deps: BooksDeps, input: BooksAttach): Promise<
   if (!up.ok) throw new Error(`Dinero didn't take ${meta.name}: ${up.body.slice(0, 300)}`);
   const fileGuid = fileGuidOf(up.body);
   if (!fileGuid) throw new Error(`Dinero took ${meta.name} but named no fileGuid for it: ${up.body.slice(0, 200)}`);
+  return { name: meta.name, bytes: bytes.length, sha256, ...(await askAttach(deps, input, fileGuid)) };
+}
+
+/** Attaching a file in Dinero's archive to a payment's card: Galahad's call, which asks you where its class says so. */
+async function askAttach(deps: BooksDeps, input: BooksAttach, fileGuid: string): Promise<{ fileGuid: string; action: string | null }> {
   const asked = await deps.ask({ connector: BOOKS, tool: "attach_file_to_voucher_card", args: { organizationId: input.organizationId, voucherGuid: input.card, fileGuid }, why: input.why });
-  return { name: meta.name, bytes: bytes.length, sha256, fileGuid, action: asked.status === "asked" ? (asked.action ?? null) : null };
+  return { fileGuid, action: asked.status === "asked" ? (asked.action ?? null) : null };
 }

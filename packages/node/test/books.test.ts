@@ -52,6 +52,15 @@ describe("a bilag into Dinero", () => {
     expect(r.asked).toEqual([{ connector: "dinero", tool: "attach_file_to_voucher_card", args: { organizationId: 517264, voucherGuid: CARD, fileGuid: GUID }, why: "Topaz Labs' invoice TS-13398360, $69.00 on 12 Nov: the 467.81 kr paid on 13 Nov" }]);
   });
 
+  test("a file already in Dinero's archive is attached as it is: nothing is read from Drive or uploaded again", async () => {
+    const r = rig();
+    const done = await attachBilag(r.deps, { organizationId: 517264, card: CARD, dineroFile: "vnobcolxk7d4cvdavcycz80mlzzxh1rl", why: "Topaz Labs' invoice, already in Dinero" });
+    expect(done).toEqual({ name: null, bytes: null, sha256: null, fileGuid: "vnobcolxk7d4cvdavcycz80mlzzxh1rl", action: "a_AAAAAAAAAAAAAAAA" });
+    expect([r.read, r.handed]).toEqual([[], []]);
+    expect(r.asked[0]!.args).toEqual({ organizationId: 517264, voucherGuid: CARD, fileGuid: "vnobcolxk7d4cvdavcycz80mlzzxh1rl" });
+    await expect(attachBilag(r.deps, { organizationId: 1, card: CARD, why: "x" })).rejects.toThrow(/one of them/);
+  });
+
   test("nothing is asked of you when Dinero didn't take the file, or named no file for it; a file Drive won't give isn't handed on", async () => {
     const refused = rig({ upload: { ok: false, status: 200, contentType: "text/plain", body: "sha256 mismatch", truncated: false, durationMs: 1, mcp: true } });
     await expect(attachBilag(refused.deps, { organizationId: 1, card: CARD, file: "1OkWvpScarizjR3P3b0h_GUhYHoubXY2D", why: "x" })).rejects.toThrow(/Dinero didn't take .*sha256 mismatch/);
@@ -65,6 +74,9 @@ describe("a bilag into Dinero", () => {
   });
 
   test("the file Dinero names: its JSON's fileGuid, the one its words name, or the only Guid in them", () => {
+    // What Dinero answered on 19 November 2026: its file ids aren't Guids.
+    expect(fileGuidOf('{"fileGuid":"vnobcolxk7d4cvdavcycz80mlzzxh1rl","uploadedByteCount":32942}')).toBe("vnobcolxk7d4cvdavcycz80mlzzxh1rl");
+    expect(fileGuidOf("Uploaded. fileGuid: vnobcolxk7d4cvdavcycz80mlzzxh1rl")).toBe("vnobcolxk7d4cvdavcycz80mlzzxh1rl");
     expect(fileGuidOf(JSON.stringify({ result: { file: { fileGuid: GUID } } }))).toBe(GUID);
     expect(fileGuidOf(`Uploaded. fileGuid: ${GUID}`)).toBe(GUID);
     expect(fileGuidOf(`Stored as ${GUID} (${GUID}).`)).toBe(GUID);

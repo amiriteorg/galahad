@@ -181,15 +181,18 @@ export const BilagCopyInput = z.strictObject({
 export type BilagCopyInput = z.infer<typeof BilagCopyInput>;
 
 /** A bilag from your Drive into Dinero, to the card of the payment it documents (docs/BOOKS.md). */
-export const BooksAttachInput = z.strictObject({
-  organizationId: z.number().int().positive(),
-  /** The voucher file card: a payment booked without its bilag (list_voucher_file_cards). */
-  card: z.string().uuid(),
-  /** The bilag's id in Drive. */
-  file: z.string().regex(/^[A-Za-z0-9_-]{10,100}$/),
-  /** Why this bilag is this payment's: your approval card says it. */
-  why: z.string().trim().min(1).max(500),
-});
+export const BooksAttachInput = z
+  .strictObject({
+    organizationId: z.number().int().positive(),
+    /** The voucher file card: a payment booked without its bilag (list_voucher_file_cards). */
+    card: z.string().uuid(),
+    /** The bilag's id in Drive, to put into Dinero's archive first; or dineroFile, a file already there. */
+    file: z.string().regex(/^[A-Za-z0-9_-]{10,100}$/).optional(),
+    dineroFile: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),
+    /** Why this bilag is this payment's: your approval card says it. */
+    why: z.string().trim().min(1).max(500),
+  })
+  .refine((input) => !input.file !== !input.dineroFile, "give the bilag's Drive file, or a file already in Dinero's archive: one of them");
 export type BooksAttachInput = z.infer<typeof BooksAttachInput>;
 
 /** What wakes a loop on GitHub: a workflow run that failed, a push to the repository, a new issue or a new pull request. */
