@@ -617,19 +617,39 @@ export async function orderCommand(api: Api, sub: string | undefined, rest: stri
   }
 }
 
-/** One line for `galahad status`: loops, what needs you, what waits for your answer. */
+/** One line for `galahad status`: loops, and what needs you, every kind the apps' Inbox holds, each with where to answer it. */
 export async function statusLine(api: Api): Promise<void> {
-  const [loops, notices, actions] = await Promise.all([
+  // How many of a route's list wait for you (none from a node too old to have the route).
+  const waiting = <T>(route: RouteName, list: (body: any) => T[], open: (item: T) => boolean = () => true): Promise<number> =>
+    api.call(route).then((body) => list(body).filter(open).length).catch(() => 0);
+  const [loops, ...counts] = await Promise.all([
     api.call<{ loops: LoopView[] }>("loops").then((r) => r.loops).catch(() => [] as LoopView[]),
-    api.call<{ notices: NoticeView[] }>("notices").then((r) => r.notices.filter((n) => !n.dismissed)).catch(() => [] as NoticeView[]),
-    api.call<{ actions: ActionView[] }>("actions").then((r) => r.actions.filter((a) => a.state === "waiting")).catch(() => [] as ActionView[]),
+    waiting<NoticeView>("notices", (b) => b.notices, (n) => !n.dismissed),
+    waiting<ActionView>("actions", (b) => b.actions, (a) => a.state === "waiting"),
+    waiting("secretRequests", (b) => b.requests),
+    waiting("pairings", (b) => b.pairings),
+    waiting("aboutYou", (b) => b.proposed),
+    waiting("loopDrafts", (b) => b.drafts),
+    waiting("connectorRequests", (b) => b.requests),
+    waiting<{ state: string }>("screenSessions", (b) => b.sessions, (s) => s.state === "waiting"),
   ]);
+  const said = (n: number, one: string, many: string, where = "") => `${n} ${n === 1 ? one : many}${where ? ` (${where})` : ""}`;
+  const [notices, actions, keys, pairings, facts, drafts, connectors, screens] = counts as number[];
+  const needs = [
+    notices ? said(notices, "notice", "notices") : "",
+    actions ? said(actions, "waiting for your answer", "waiting for your answer", "galahad action ls") : "",
+    keys ? said(keys, "key asked for", "keys asked for", "galahad secret list") : "",
+    pairings ? said(pairings, "device asking to join", "devices asking to join", "galahad pairings") : "",
+    facts ? said(facts, "fact to keep", "facts to keep", "galahad about") : "",
+    drafts ? said(drafts, "loop drafted", "loops drafted", "galahad loop drafts") : "",
+    connectors ? said(connectors, "connector asked for", "connectors asked for", "galahad connectors requests") : "",
+    screens ? said(screens, "ask to use a Mac", "asks to use a Mac", "galahad screen sessions") : "",
+  ].filter(Boolean);
   const beat = loops.find((l) => l.name === "heartbeat")?.last;
   const parts = [
     `${loops.length} loop${loops.length === 1 ? "" : "s"}`,
     beat ? `heartbeat ${MARK[beat.status]} ${new Date(beat.finished).toLocaleTimeString()}` : "no heartbeat yet",
-    notices.length ? bold(`${notices.length} notice${notices.length === 1 ? "" : "s"}`) : "nothing needs you",
-    ...(actions.length ? [bold(`${actions.length} waiting for your answer (galahad action ls)`)] : []),
+    ...(needs.length ? needs.map(bold) : ["nothing needs you"]),
   ];
   console.log(`\n  ${parts.join(" · ")}`);
 }
