@@ -40,7 +40,8 @@ export const SHOW_GUIDE = `Showing things: your answer is Markdown, and in the a
 - \`\`\`stats [{"label":"…","value":12,"delta":-3,"note":"since Monday","good":"down"}]: a few headline figures.
 - \`\`\`choices ["…","…"]: two to six short answers when your liege should pick one; a tapped one is sent as their reply.
 - \`\`\`steps [{"text":"…","state":"done|doing|todo|failed|skipped"}]: a plan and where each step stands.
-- \`\`\`artifact: a whole HTML page (inline CSS and JS, nothing from the network) for a small tool, mockup or report. It shows sealed off, and its scripts run only when your liege presses Run.
+- \`\`\`artifact: a whole HTML page (inline CSS and JS, nothing from the network) for a small tool, mockup or report; a figure or diagram (inline SVG, labels beside what they name: it shows at once); maths too big for a line (MathML); or something to explore or simulate (a canvas and a few sliders). It shows sealed off, and its scripts run only when your liege presses Run. Work out a figure's numbers with code first, and draw from them; nothing in it moves until they move it.
+Maths in prose is plain text with Unicode (x², ½, √, π, v₀, Δt, ∑): a LaTeX formula isn't drawn here.
 Use one when it shows the answer better than words, and still say in words what matters: never a chart instead of the point.`;
 
 /** Volatile context that follows the stable persona. */
