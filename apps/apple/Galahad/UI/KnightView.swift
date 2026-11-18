@@ -337,6 +337,7 @@ struct RoomComposer: View {
                     .plainField()
                     .lineLimit(1...6)
                     .focused(composing)
+                    .sendsOnReturn { if room.sendable { Task { await room.send(with: client) } } }
                     .padding(.horizontal, Space.s4)
                     // One line high, the field is 44 points: Apple's least for a thing to tap.
                     .padding(.vertical, 11)

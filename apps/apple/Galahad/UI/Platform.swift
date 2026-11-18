@@ -223,6 +223,25 @@ private struct ReadingWidth: ViewModifier {
         }
     }
 }
+
+/// The words being typed, wherever the keyboard is: whether an input method is still composing them, and a new line.
+enum Typing {
+    static var composing: Bool { (UIResponder.typing as? UITextInput)?.markedTextRange != nil }
+    /// An iPad's field puts in a new line of its own for Shift- or Option-Return.
+    static func newLine() -> Bool { false }
+}
+
+extension UIResponder {
+    private static weak var found: UIResponder?
+    /// What has the keyboard now, found by asking it to say so.
+    static var typing: UIResponder? {
+        found = nil
+        UIApplication.shared.sendAction(#selector(foundTyping), to: nil, from: nil, for: nil)
+        return found
+    }
+
+    @objc private func foundTyping() { UIResponder.found = self }
+}
 #else
 
 extension Color {
@@ -264,4 +283,30 @@ extension View {
     /// A Mac's field draws its own bezel; inside a message box's glass or a quiet fill, it draws none.
     func plainField() -> some View { textFieldStyle(.plain) }
 }
+
+/// The words being typed, in the key window's field: whether an input method is still composing them, and a new line.
+enum Typing {
+    private static var editor: NSTextView? { NSApp.keyWindow?.firstResponder as? NSTextView }
+    static var composing: Bool { editor?.hasMarkedText() == true }
+    /// A Mac's field takes Shift-Return as Return, so the new line is put in where Option-Return puts it, at the cursor.
+    static func newLine() -> Bool {
+        guard let editor else { return false }
+        editor.insertNewlineIgnoringFieldEditor(nil)
+        return true
+    }
+}
 #endif
+
+extension View {
+    /// Return sends a message box's words from a keyboard you type on (a Mac's, an iPad's), and Shift- or Option-Return
+    /// starts a new line. A keyboard on the screen is left as it is: its Return is a new line, and the arrow sends.
+    func sendsOnReturn(_ send: @escaping () -> Void) -> some View {
+        onKeyPress(.return, phases: .down) { press in
+            // A word an input method is still composing is its to finish.
+            if Typing.composing { return .ignored }
+            if !press.modifiers.isDisjoint(with: [.shift, .option]) { return Typing.newLine() ? .handled : .ignored }
+            send()
+            return .handled
+        }
+    }
+}

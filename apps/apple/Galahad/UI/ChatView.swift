@@ -243,6 +243,7 @@ struct Composer: View {
                     .id(chat.sent)
                     .lineLimit(1...6)
                     .focused(composing)
+                    .sendsOnReturn(send)
                     .padding(.horizontal, Space.s4)
                     // One line high, the field is 44 points: Apple's least for a thing to tap.
                     .padding(.vertical, 11)
@@ -259,12 +260,7 @@ struct Composer: View {
                     .accessibilityLabel("Stop Galahad answering")
                 } else {
                     let empty = !chat.sendable
-                    Button {
-                        let typing = composing.wrappedValue
-                        chat.send(with: client)
-                        // The new box takes the keyboard where the old one had it, so it stays up for the next message.
-                        if typing { Task { @MainActor in composing.wrappedValue = true } }
-                    } label: {
+                    Button(action: send) {
                         Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(Prominent.label(dimmed: empty)).frame(width: 30, height: 30)
                     }
                     .buttonStyle(.glassProminent)
@@ -275,6 +271,15 @@ struct Composer: View {
                 }
             }
         }
+    }
+
+    /// What's in the box, sent (by its button, or Return): never while he answers, and only words or files that are up.
+    private func send() {
+        guard !chat.answering, chat.sendable else { return }
+        let typing = composing.wrappedValue
+        chat.send(with: client)
+        // The new box takes the keyboard where the old one had it, so it stays up for the next message.
+        if typing { Task { @MainActor in composing.wrappedValue = true } }
     }
 }
 
