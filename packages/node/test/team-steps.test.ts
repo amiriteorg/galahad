@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkpointCommand, quote, REPO_TASK_START } from "../src/team-runtime.ts";
@@ -47,6 +47,25 @@ test("a step is kept as a commit under its own ref, its files as they stood (not
   const [, , after] = sh(here(checkpointCommand(join(dir, "t1"), "task-aaaaaaaaaaaa", 3, `${tree} ${parent}`))).split(" ");
   expect(after).toBe(sh("git rev-parse HEAD", join(dir, "t1")));
 });
+
+test("a change made in the same tick as the task's index was written is kept: the index is copied with its time, so git still reads what its times can't tell it", async () => {
+  // Linux stamps files by a coarse clock, so a same-size change written within one tick of the index looks unchanged by
+  // its times; git then checks the file itself because the index is no older than the entry (racy git). A copy of the
+  // index made with a new time hid that, and a step was once kept with "one" for "two" (1 run in 60 on Ultra, 19
+  // November 2026). Here the clock is made coarse on purpose: whole seconds, no ctime, the times set by hand.
+  const { dir, sh, here } = scratch();
+  sh("git init -q repo && cd repo && git config core.checkStat minimal && git config core.trustctime false && echo one > a.txt && git add a.txt && git commit -qm base");
+  sh("git -C repo worktree add -q --detach ../t1 HEAD");
+  const t1 = join(dir, "t1");
+  const cached = Number(/mtime: (\d+):/.exec(sh("git ls-files --debug a.txt", t1))![1]);
+  writeFileSync(join(t1, "a.txt"), "two\n");
+  const named = sh("git rev-parse --git-path index", t1);
+  for (const path of [join(t1, "a.txt"), named.startsWith("/") ? named : join(t1, named)]) utimesSync(path, cached, cached);
+  // (The step is kept a second later: a copy with a new time is then newer than the entry, and git trusts the times.)
+  await Bun.sleep(1100);
+  const [commit] = sh(here(checkpointCommand(t1, "task-cccccccccccc", 1, ""))).split(" ");
+  expect(sh(`git -C repo show ${commit}:a.txt`)).toBe("two");
+}, 30_000);
 
 test("a task started from a step has its files as they stood after it, its HEAD where the step's was, and the first task's base for its changes; the first task's later work stays its own", () => {
   const { dir, sh, here } = scratch();

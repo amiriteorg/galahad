@@ -209,8 +209,9 @@ export function checkpointCommand(root: string, task: string, step: number, last
   return [
     `cd ${quote(root)}`,
     "mkdir -p /work/.agent/checkpoints",
-    // (The task's own index copied first, so only what changed is read again.)
-    `{ cp "$(git rev-parse --git-path index)" ${quote(index)} 2>/dev/null || rm -f ${quote(index)}; }`,
+    // (The task's own index copied first, so only what changed is read again; with its time, so git still reads a file
+    // written in the same tick as the index, whose times can't tell it changed: a copy with a new time hid that.)
+    `{ cp -p "$(git rev-parse --git-path index)" ${quote(index)} 2>/dev/null || rm -f ${quote(index)}; }`,
     `GIT_INDEX_FILE=${quote(index)} git add -A . >/dev/null 2>&1`,
     `T=$(GIT_INDEX_FILE=${quote(index)} git write-tree)`,
     "P=$(git rev-parse HEAD)",
