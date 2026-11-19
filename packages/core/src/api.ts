@@ -4,7 +4,7 @@ import { AttachmentId, AttachmentName, AttachmentRef, AttachmentType } from "./a
 export { AttachmentId, AttachmentName, AttachmentRef, AttachmentType };
 import { AgentLabel, ConnectorArgs, ToolName } from "./connectors.ts";
 import { MCP_AUTHS, MCP_CATEGORIES, type McpCategory, type McpIndexEntry } from "./mcp-index.ts";
-import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity, SCREEN_SESSION_MAX_MINUTES, ScreenSessionId } from "./events.ts";
+import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity, SCREEN_SESSION_MAX_MINUTES, ScreenSessionId, THINKING_EFFORTS } from "./events.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
 import { RuleInput, RuleName, RuleToldInput, RuleTrippedInput } from "./rules.ts";
@@ -55,6 +55,11 @@ export const ChatMessage = z
     content: z.string().max(400_000),
     /** Your files with it, kept on the node (uploadAttachment). An answer carries none. */
     attachments: z.array(AttachmentRef).min(1).max(ATTACHMENT_LIMITS.perMessage).optional(),
+    /**
+     * How hard the model thinks from this message on: a quest's loop says it for each turn by what the turn is (brain
+     * roster.ts STEP_EFFORT), and a role you pinned (setRosterEffort) thinks at your level instead. Absent: the role's.
+     */
+    effort: z.enum(THINKING_EFFORTS).optional(),
   })
   .refine((m) => m.content.length > 0 || (m.role === "user" && !!m.attachments), "a message has words, or files it carries")
   .refine((m) => m.role === "user" || !m.attachments, "only your messages carry files");
@@ -633,6 +638,16 @@ export const routes = {
     path: "/api/roster",
     scope: "brain:write",
     input: z.strictObject({ role: Name, models: z.array(ModelRef).max(16) }),
+  },
+  /**
+   * How hard a role's models think: `auto` (the default), by what each step of the work needs, routine turns less and
+   * hard ones more (brain roster.ts STEP_EFFORT); or one level you choose, whatever the step.
+   */
+  setRosterEffort: {
+    method: "POST",
+    path: "/api/roster/effort",
+    scope: "brain:write",
+    input: z.strictObject({ role: Name, effort: z.enum(["auto", ...THINKING_EFFORTS]) }),
   },
   chat: {
     method: "POST",

@@ -12,6 +12,10 @@ import { Scope } from "./scopes.ts";
 import { SkillId, SkillVersionId } from "./skills-input.ts";
 import { TrialId, TrialRecord, TrialRunId } from "./trials.ts";
 
+/** How hard a model thinks for an answer (Anthropic's `effort`; other providers' models choose for themselves). */
+export const THINKING_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
+
 /*
  * The mind is an append-only log of these events. Each event is content-addressed
  * (id = sha256 of its canonical unsigned form) and signed by the node that wrote it,
@@ -138,6 +142,11 @@ export const Bodies = {
     detail: z.string().max(2000).optional(),
   }),
   "roster.set": z.strictObject({ role: Name, models: z.array(z.string().min(1).max(256)).max(16) }),
+  /**
+   * How hard a role's models think (LWW by role): `auto`, by what each step of the work needs (brain roster.ts
+   * STEP_EFFORT), or one level you chose, whatever the step. A kind of its own, so a node from before it keeps it unread.
+   */
+  "roster.effort": z.strictObject({ role: Name, effort: z.enum(["auto", ...THINKING_EFFORTS]) }),
   /** A loop: work Galahad does on a schedule, on one named node (LWW by name). */
   "loop.set": z.strictObject({
     name: LoopName,

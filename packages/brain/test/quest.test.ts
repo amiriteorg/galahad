@@ -442,6 +442,33 @@ describe("a reply of the engineer's that runs away", () => {
   });
 });
 
+describe("how hard each step thinks (your word, 19 November 2026: never fixed, always adaptable)", () => {
+  test("a plan and a review think carefully; the loop's first turn too; a turn after work that failed thinks hardest, one after a command that ran clean, or a look that found nothing, less; work sent back, hardest", async () => {
+    const h = harness({
+      engineer: [sh("cat a.ts"), sh("bun test"), sh("grep -n missing a.ts"), "DONE\nFixed.", sh("bun test"), "DONE\nFixed and tested."],
+      reviewer: ["REVISE\nThe test still fails.", "PASS\nIt holds."],
+      outputs: [{ stdout: "the file\n" }, { exitCode: 1, stdout: "1 fail\n" }, { exitCode: 1, stdout: "" }, { stdout: "1 pass\n" }],
+    });
+    expect((await h.run).status).toBe("done");
+    const by = (role: QuestRole) => h.seen.filter((x) => x.role === role).map((x) => x.messages);
+    expect(by("planner")[0]![0]!.effort).toBe("high");
+    expect(by("reviewer").map((messages) => messages[0]!.effort)).toEqual(["high", "high"]);
+    // The engineer's last conversation, each of its messages of his liege's side with the level it was said with.
+    const last = by("engineer").at(-1)!;
+    const said = last.filter((m) => m.role === "user").map((m) => [m.content.split("\n")[0]!.slice(0, 17), m.effort]);
+    expect(said).toEqual([
+      ["Quest: make it so", "high"],
+      ["exit 0 · 5 ms", "medium"],
+      ["exit 1 · 5 ms", "xhigh"],
+      ["exit 1 · 5 ms", "medium"],
+      [said[4]![0], "xhigh"],
+      ["exit 0 · 5 ms", "medium"],
+    ]);
+    // Once said, a message keeps its level on every later turn, so what a provider cached is sent again as it was.
+    for (const turn of by("engineer")) for (const [i, m] of turn.entries()) expect(m.effort).toBe(last[i]!.effort);
+  });
+});
+
 describe("a long quest's conversation stays affordable, and stays the same", () => {
   test("older observations become excerpts a batch at a time: between batches every turn's conversation begins with the turn before's, whole", async () => {
     const n = 26;

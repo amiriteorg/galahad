@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
-import { roleModels, roster, workRole } from "../src/index.ts";
+import { pinnedEffort, roleModels, roster, workRole } from "../src/index.ts";
 
 function mind() {
   const identity = newNodeIdentity();
   const store = new MindStore(":memory:");
   foundFleet(store, identity, { fleetName: "camelot", nodeName: "n" });
   const hire = (role: string, models: string[]) => store.emit(identity, "roster.set", { role, models });
-  return { store, hire };
+  const pin = (role: string, effort: "auto" | "low" | "medium" | "high" | "xhigh" | "max") => store.emit(identity, "roster.effort", { role, effort });
+  return { store, hire, pin };
 }
 
 describe("the role a knight's work runs on", () => {
@@ -51,5 +52,21 @@ describe("roles you make", () => {
     expect(listed.fold!.description).toContain("story");
     // A name a knight can't carry is still yours to hire models for.
     expect(listed["Odd.Name"]).toMatchObject({ custom: true, forKnights: false });
+  });
+});
+
+describe("how hard a role's models think", () => {
+  test("as each step needs, unless you pin it to a level; pinned back to auto, by the step again", () => {
+    const { store, pin } = mind();
+    expect(roster(store).engineer!.effort).toBe("auto");
+    expect(pinnedEffort(store, "engineer")).toBeNull();
+    pin("engineer", "medium");
+    expect(roster(store).engineer!.effort).toBe("medium");
+    expect(pinnedEffort(store, "engineer")).toBe("medium");
+    // Every other role still thinks by the step.
+    expect(roster(store).planner!.effort).toBe("auto");
+    pin("engineer", "auto");
+    expect(pinnedEffort(store, "engineer")).toBeNull();
+    expect(roster(store).engineer!.effort).toBe("auto");
   });
 });

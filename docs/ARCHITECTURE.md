@@ -209,7 +209,7 @@ Add an API key once, and every full node can use it. The key never appears in th
 
 **Roles, not vendors.** Each role is an ordered list of `<provider>/<model>` refs. The first one that answers wins.
 
-| Role | Default | Effort |
+| Role | Default | Effort for a call that names no step |
 |---|---|---|
 | `planner` | `anthropic/claude-opus-5-5` | high |
 | `engineer` | `anthropic/claude-opus-5-5` | xhigh |
@@ -217,6 +217,8 @@ Add an API key once, and every full node can use it. The key never appears in th
 | `swift` | `ollama/*` → `llamacpp/*` → `anthropic/claude-haiku-5-5` | low |
 | `decider` | *none until you hire one*, e.g. `cloudflare-ai/typesafe/jev` | low |
 | `embedder` | *none until you hire one*; `deploy.sh --embedder` hires `ollama/qwen3-embedding:0.6b` on the server (§10⅔) | n/a |
+
+**How hard each step thinks, never fixed** (your word, 19 November 2026: "never fixed, always adaptable, and smart/clever routing for optimized performance and low cost"). A call that is a step of the work says how hard its model is to think, by what the step is (`STEP_EFFORT`, brain roster.ts): a quest's plan and its review at `high`; the loop's first turn at `high`; a turn after a command that ran clean, or a look that found nothing, at `medium`; a turn after work that failed (a test, a build), after work sent back, or in which an audit's steer is said, at `xhigh`; an audit, which only asks whether the work is on its task, at `low`. The level rides on the message (`effort` on a chat message), so it reaches the model whether the quest is a knight's, in-process, or `galahad do`'s, through the chat route. On Anthropic's own API, on the models that take it (Fable 5.1, Mythos 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Haiku 5.5), the call keeps its first message's level and each change is a system message of its own with no words (beta `mid-conversation-output-config-2026-07-01`), which holds from there on: what was sent before is sent again byte for byte, so the cached beginning stays (changing the call's own level from one turn to the next would start the cache again each time). Any other Anthropic model or endpoint thinks at the first level throughout; other providers' models choose for themselves, as before. **Yours to pin:** `galahad roster effort <role> <low|medium|high|xhigh|max>` (or **Thinks** in a role's sheet on the Models page) holds a role to one level whatever the step, and `auto` puts it back (`roster.effort`, LWW by role, a kind of its own, so a node from before it keeps it unread).
 
 The **decider** is a different kind of model: TypeSafe's System One (Jev) answers typed questions about a state (yes/no, a choice among named options, a score on an ordered rubric) with calibrated probabilities instead of text (`galahad decide`, the `decide` route, MCP `decide`). Through Cloudflare AI Gateway it goes to Cloudflare's unified `ai/run` for your account, your gateway named in `cf-aig-gateway-id` and TypeSafe's key stored with Cloudflare; the gateway token, pinned to `gateway.ai.cloudflare.com`, may go to that one route as well, a route fixed in code. With a TypeSafe key of your own it goes to `https://api.typesafe.ai/v1/systemone`.
 

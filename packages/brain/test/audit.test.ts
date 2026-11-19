@@ -40,7 +40,9 @@ function engineer(script: { engineer: string[]; reviewer: string[] }, options: P
   const audits = () => events.filter((e): e is Extract<QuestEvent, { type: "audit" }> => e.type === "audit");
   const asked = () => seen.filter((s) => s.role === "reviewer").map((s) => s.messages.at(-1)!.content);
   const told = () => seen.filter((s) => s.role === "engineer").map((s) => s.messages.at(-1)!.content);
-  return { run, audits, asked, told };
+  /** How hard each call was asked to think: its last message's level. */
+  const efforts = (role: QuestRole) => seen.filter((s) => s.role === role).map((s) => s.messages.at(-1)!.effort);
+  return { run, audits, asked, told, efforts };
 }
 
 describe("an audit's answer", () => {
@@ -106,6 +108,15 @@ describe("the engineer's own loop, audited", () => {
     expect(q.asked()[1]).not.toContain("$ echo step 20\n");
     // He worked on to the end he chose, and his work was judged as anyone's.
     expect(outcome).toMatchObject({ status: "done", steps: 2 * AUDIT_EVERY.steps + 5, summary: "The parser is written and tested." });
+  });
+
+  test("an audit, which only asks whether the work is on its task, thinks little; the turn its steer is said in thinks hardest", async () => {
+    const q = engineer({ engineer: [...commands(AUDIT_EVERY.steps + 2), "DONE\nWritten."], reviewer: ["STEER\nWrite the test first.", "PASS\nIt holds."] }, { audit: true });
+    expect((await q.run).status).toBe("done");
+    // The audit at low, then the review as carefully as ever.
+    expect(q.efforts("reviewer")).toEqual(["low", "high"]);
+    expect(q.efforts("engineer")[AUDIT_EVERY.steps]).toBe("xhigh");
+    expect(q.efforts("engineer")[AUDIT_EVERY.steps - 1]).toBe("medium");
   });
 
   test("an audit that answers STOP, as audits once could, is heard as a steer: its words are said to him and the work goes on", async () => {

@@ -53,7 +53,7 @@ export interface ToolImage {
  * A message as a model is given it: its words, and the pictures that go with it (yours, attached to it in your chat,
  * which the node reads from where it keeps them): data, never instructions. A model that can't see gets them in words.
  */
-export type ModelMessage = Pick<ChatMessage, "role" | "content"> & { images?: ToolImage[] };
+export type ModelMessage = Pick<ChatMessage, "role" | "content" | "effort"> & { images?: ToolImage[] };
 
 /** A message's pictures, for a model that can't see them: that each is there, and what it is, in words. */
 export function picturesInWords(content: string, images: ToolImage[]): string {
@@ -134,6 +134,8 @@ export const INTERJECTED = "(I paused here: my liege sent a new message.)";
 
 /** Models that accept Anthropic's server-side refusal fallback ("default" routing). */
 const SERVER_FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"]);
+/** Claude's models that take a change of effort inside a conversation (beta mid-conversation-output-config-2026-07-01). */
+const EFFORT_INSIDE = /^claude-(fable-5-1|mythos-5-1|opus-5-5|opus-5|sonnet-5-5|haiku-5-5)(-\d{8})?$/;
 
 /** Claude via the official SDK: adaptive thinking, explicit effort, streaming, tools. */
 export function anthropicConversation(input: CompletionInput): Conversation {
@@ -149,8 +151,21 @@ export function anthropicConversation(input: CompletionInput): Conversation {
     : [input.system, input.context].filter(Boolean).join("\n\n");
   const picture = (i: ToolImage) => ({ type: "image" as const, source: { type: "base64" as const, media_type: i.mediaType, data: i.data } });
   const words = (text: string) => (text ? [{ type: "text" as const, text }] : []);
+  // How hard it thinks: the level its first message says (or the call's), for the whole conversation, so the cached
+  // beginning stays the same from turn to turn; a later message that says another is preceded by a system message
+  // saying so (no words, only the level), which holds from there on. A model or an endpoint that can't take that
+  // thinks at the first level throughout: changing the call's own level would start the cache again each time.
+  const effort = input.messages.find((m) => m.role === "user")?.effort ?? input.effort;
+  const inside = firstParty && EFFORT_INSIDE.test(input.model);
+  let level = effort;
   // A message's own pictures lead it, before its words (a message of yours may be pictures alone).
-  const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.map((m) => ({ role: m.role, content: m.images?.length ? [...m.images.map(picture), ...words(m.content)] : m.content }));
+  const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.flatMap((m): Anthropic.Beta.BetaMessageParam[] => {
+    const said = { role: m.role, content: m.images?.length ? [...m.images.map(picture), ...words(m.content)] : m.content };
+    if (!inside || m.role !== "user" || !m.effort || m.effort === level) return [said];
+    level = m.effort;
+    return [{ role: "system", content: [], output_config: { effort: m.effort } }, said];
+  });
+  const betas = [...(serverFallback ? ["server-side-fallback-2026-07-01"] : []), ...(messages.some((m) => m.role === "system") ? ["mid-conversation-output-config-2026-07-01"] : [])];
   // Pictures given with the question lead the last user message.
   const asked = messages.findLast((m) => m.role === "user");
   if (input.images?.length && asked) {
@@ -177,9 +192,10 @@ export function anthropicConversation(input: CompletionInput): Conversation {
             ...(firstParty ? { cache_control: { type: "ephemeral" as const } } : {}),
             messages,
             thinking: { type: "adaptive" },
-            output_config: { effort: input.effort },
+            output_config: { effort },
             ...(tools.length ? { tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema as Anthropic.Beta.BetaTool.InputSchema })) } : {}),
-            ...(serverFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
+            ...(betas.length ? { betas } : {}),
+            ...(serverFallback ? { fallbacks: "default" as const } : {}),
           },
           { signal: signal ?? input.signal },
         );

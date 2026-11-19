@@ -2,6 +2,7 @@ import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, typ
 import { type AgentDriver, type AgentModel, agentModelName, runAgent } from "./agents.ts";
 import { engramBriefing, engramProject } from "./engram.ts";
 import { changesOf, contentsOf, readOf, readsOf, testFilesOf, writesOf } from "./shell-paths.ts";
+import { STEP_EFFORT } from "./roster.ts";
 import { checksAfter, tellsAfter, type Trip, tripOf } from "./tripwires.ts";
 
 /*
@@ -620,6 +621,12 @@ export function readAudit(text: string): { verdict: Exclude<AuditVerdict, "unrea
 /** What whoever does the work is told of its audits as it begins (QuestOptions.audit). */
 const auditBriefing = (steps: string): string => ` An independent audit looks at your work every ${AUDIT_EVERY.steps} ${steps} or ${AUDIT_EVERY.minutes} minutes to keep it on its task: when it says what to do next, do that.`;
 
+/**
+ * Whether a command's result makes the next turn a hard one (STEP_EFFORT): it failed, and it was work, not only a look
+ * (a search that finds nothing, a file that isn't there, is no failure to think hard about).
+ */
+const failedWork = (command: string, result: ExecResult | null | undefined): boolean => !!result && result.exitCode !== 0 && readsOf(command) === null;
+
 /** What whoever does the work is told of an audit's steer (QuestOptions.audit). */
 const steered = (note: string): string => `An independent audit of the work so far says: ${note}\nTake that up from where you are.`;
 
@@ -786,14 +793,14 @@ function compact(messages: readonly ChatMessage[], excerpted: number, keepReads 
     if (k >= excerpted || kept.has(k)) return m;
     const command = cut[k];
     if (command && supersededAt(k)) {
-      return { role: m.role, content: `${m.content.split("\n", 1)[0]}\n(superseded: \`${line(command)}\` ran again later, and what it printed then is further on)` };
+      return { ...m, content: `${m.content.split("\n", 1)[0]}\n(superseded: \`${line(command)}\` ran again later, and what it printed then is further on)` };
     }
     const read = command ? readOf(command) : null;
     const by = read ? changedBy(k, read) : -1;
     if (read && by !== -1) {
-      return { role: m.role, content: `${m.content.split("\n", 1)[0]}\n(stale: \`${read}\` was changed later, by \`${line(cut[by]!)}\`; read it again for what it holds now)` };
+      return { ...m, content: `${m.content.split("\n", 1)[0]}\n(stale: \`${read}\` was changed later, by \`${line(cut[by]!)}\`; read it again for what it holds now)` };
     }
-    return { role: m.role, content: clip(m.content, 400, 200) };
+    return { ...m, content: clip(m.content, 400, 200) };
   });
 }
 
@@ -840,7 +847,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   const toldSkipped = new Set<string>();
   // Every message is redacted before it goes to a model: command output can contain anything.
   const ask = async (role: QuestRole, messages: ChatMessage[], turn?: { loop: true }) => {
-    const redacted = messages.map((m) => ({ role: m.role, content: redact(m.content) }));
+    const redacted = messages.map((m) => ({ role: m.role, content: redact(m.content), ...(m.effort ? { effort: m.effort } : {}) }));
     for (let attempt = 0; ; attempt++) {
       check();
       try {
@@ -1027,6 +1034,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     const reviewed = await ask("reviewer", [
       {
         role: "user",
+        effort: STEP_EFFORT.review,
         content: o.review
           ? o.review.prompt({ goal: o.goal, plan, steps: trail, summary, evidence: [evidence.trim(), gated].filter(Boolean).join("\n\n") })
           : reviewQuestion({ goal: o.goal, plan, steps: trail, summary, gated, evidence }),
@@ -1064,7 +1072,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     let found: { verdict: AuditVerdict; note: string };
     let model = "";
     try {
-      const reply = await ask("reviewer", [{ role: "user", content: auditQuestion({ goal: o.goal, plan, gates: gates.map((g) => g.command), steps: since.slice(-2 * AUDIT_EVERY.steps), evidence, last: audits.last, whole: { steps: whole, minutes: (clock() - began) / 60_000 } }) }]);
+      const reply = await ask("reviewer", [{ role: "user", effort: STEP_EFFORT.audit, content: auditQuestion({ goal: o.goal, plan, gates: gates.map((g) => g.command), steps: since.slice(-2 * AUDIT_EVERY.steps), evidence, last: audits.last, whole: { steps: whole, minutes: (clock() - began) / 60_000 } }) }]);
       model = reply.model;
       found = readAudit(reply.text) ?? { verdict: "unread", note: `Its answer couldn't be read; it began: ${clip(redact(reply.text.trim()), 200, 0)}` };
     } catch (error) {
@@ -1225,7 +1233,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       plan = o.plan.trim();
       emit({ type: "plan", text: plan, model: "fixed in advance" });
     } else {
-      const planned = await ask("planner", [{ role: "user", content: planPrompt(o) }]);
+      const planned = await ask("planner", [{ role: "user", content: planPrompt(o), effort: STEP_EFFORT.plan }]);
       plan = planned.text.trim();
       emit({ type: "plan", text: plan, model: planned.model });
       // Its proposals come after yours, and one that repeats yours isn't run twice.
@@ -1255,7 +1263,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
 
     if (o.agent) return await agentWork(o.agent);
 
-    const messages: ChatMessage[] = [{ role: "user", content: briefing(o, plan, gates, before, [...locked.keys()]) }];
+    const messages: ChatMessage[] = [{ role: "user", content: briefing(o, plan, gates, before, [...locked.keys()]), effort: STEP_EFFORT.start }];
     const trail: Step[] = [];
     /** How many of the oldest observations are sent as excerpts (it only grows, a batch at a time: compact). */
     let excerpted = 0;
@@ -1341,8 +1349,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         // A steer is said with what he is told next: his latest message, not sent yet.
         if (found.verdict === "steer") {
           const last = messages.at(-1);
-          if (last?.role === "user") last.content += `\n\n${steered(found.note)}`;
-          else messages.push({ role: "user", content: steered(found.note) });
+          if (last?.role === "user") Object.assign(last, { content: `${last.content}\n\n${steered(found.note)}`, effort: STEP_EFFORT.hard });
+          else messages.push({ role: "user", content: steered(found.note), effort: STEP_EFFORT.hard });
         }
       }
       steps += 1;
@@ -1362,7 +1370,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (malformedRun >= MALFORMED_RUN) {
           return finish({ status: "stopped", summary: `Stopped: ${malformedRun} replies in a row had no command to run. He was told each time: ${action.problem}\n\nThe last reply began:\n${said}` });
         }
-        messages.push({ role: "user", content: `${action.problem}${cut}${await afterStep()}` });
+        messages.push({ role: "user", content: `${action.problem}${cut}${await afterStep()}`, effort: STEP_EFFORT.routine });
         continue;
       }
       malformedRun = 0;
@@ -1418,6 +1426,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         const dropped = action.commands.length - batch.length;
         messages.push({
           role: "user",
+          effort: batch.some((command, i) => failedWork(command, results[i])) ? STEP_EFFORT.hard : STEP_EFFORT.routine,
           content:
             batch.map((command, i) => `[${i + 1}] $ ${command.split("\n")[0]}${command.includes("\n") ? " …" : ""}\n${seen[i]}${notes[i]!.note}`).join("\n\n") +
             checked +
@@ -1441,7 +1450,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           trail.push({ command: trailCommand(action.command), exitCode: -1, excerpt: said });
           const again = repeated(action.command, steps, NOT_RUN, `not run\n${said}`);
           if (again.stop) return looped(action.command, said);
-          messages.push({ role: "user", content: `${said}${again.note}${cut}${await afterStep()}` });
+          messages.push({ role: "user", content: `${said}${again.note}${cut}${await afterStep()}`, effort: STEP_EFFORT.routine });
           continue;
         }
         emit({ type: "command", step: steps, command: action.command });
@@ -1460,7 +1469,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (again.stop) return looped(action.command, seen);
         // Your checks after it, if it ran clean and one matches it.
         const checked = result.exitCode === 0 ? await runChecks(checksAfter(rules, action.command), steps, trail) : "";
-        messages.push({ role: "user", content: `${seen}${checked}${again.note}${cut}${await afterStep()}` });
+        messages.push({ role: "user", content: `${seen}${checked}${again.note}${cut}${await afterStep()}`, effort: failedWork(action.command, result) ? STEP_EFFORT.hard : STEP_EFFORT.routine });
         continue;
       }
 
@@ -1485,7 +1494,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         emit({ type: "escalated", to: worker, gate: again });
         stuck = `\n\n$ ${again.split("\n")[0]} has failed twice in a row: before you change anything, find out why it fails, rather than trying the same fix again.`;
       }
-      messages.push({ role: "user", content: `${sentBack(verdict, "verify, then reply DONE again.")}${stuck}${cut}` });
+      messages.push({ role: "user", content: `${sentBack(verdict, "verify, then reply DONE again.")}${stuck}${cut}`, effort: STEP_EFFORT.hard });
     }
     const ran = steps - malformed;
     const stopped = spentOut

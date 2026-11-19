@@ -25,7 +25,7 @@ import { ruleCommand } from "./rule-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
-import { ABOUT_YOU_TAG, chatStateWords, checkFacts, type MemoryView, type ModelCheck } from "@galahad/core";
+import { ABOUT_YOU_TAG, chatStateWords, checkFacts, type MemoryView, type ModelCheck, THINKING_EFFORTS } from "@galahad/core";
 import { ShipManifest } from "./ship.ts";
 import { BankService } from "./bank/service.ts";
 import type { BankStatusView, ConversationSummary, ConversationView, ProjectGitView, ProjectView, ProviderView, TeamChangesView } from "@galahad/core";
@@ -152,6 +152,9 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
   provider add <id> [--preset p] [--base-url url] [--kind openai|anthropic] [--secret name]
   provider list | provider models <id> | provider presets
   roster | roster set <role> <provider/model>... | roster rm <role> | roster check <provider/model>... [--only format,reads,places]
+  roster effort <role> <auto|low|medium|high|xhigh|max>
+                                  how hard its models think: auto (the default) by the step, routine turns less and hard
+                                  ones more; or one level you choose, whatever the step
   ask [--role planner] [--model provider/model] [--project id] [--chat id] [--temp] [--detach] <prompt>
                                   kept in your chat history (the app's too) unless --temp; --chat goes on with one.
                                   The turn runs on the node: Ctrl-C stops it; a terminal that goes away stops
@@ -1229,6 +1232,14 @@ Next:
         if (!rest[0] || rest.length < 2) fail("usage: galahad roster set <role> <provider/model>...");
         await admin.call("setRoster", { role: rest[0], models: rest.slice(1) });
       }
+      if (sub === "effort") {
+        // How hard a role's models think: by the step (auto, the default), or one level you choose.
+        const levels = ["auto", ...THINKING_EFFORTS];
+        if (rest.length !== 2 || !levels.includes(rest[1]!)) fail(`usage: galahad roster effort <role> <${levels.join("|")}>`);
+        await admin.call("setRosterEffort", { role: rest[0], effort: rest[1] });
+        console.log(rest[1] === "auto" ? `${rest[0]} thinks as each step needs: routine turns less, hard ones more.` : `${rest[0]} thinks at ${rest[1]}, whatever the step. galahad roster effort ${rest[0]} auto puts it back.`);
+        return;
+      }
       if (sub === "rm") {
         // A role you made goes (not while a knight works on it: the node says which); a built-in one goes back to its defaults.
         if (rest.length !== 1) fail("usage: galahad roster rm <role>");
@@ -1247,7 +1258,7 @@ Next:
         }
         return;
       }
-      const { roster, spent = [], checks = {} } = await admin.call<{ roster: Record<string, { models: string[]; configured: boolean; custom?: boolean }>; spent?: { provider: string; until: number }[]; checks?: Record<string, ModelCheck> }>("roster");
+      const { roster, spent = [], checks = {} } = await admin.call<{ roster: Record<string, { models: string[]; configured: boolean; custom?: boolean; effort?: string }>; spent?: { provider: string; until: number }[]; checks?: Record<string, ModelCheck> }>("roster");
       const spentUntilOf = (ref: string) => spent.find((w) => ref.startsWith(`${w.provider}/`));
       for (const [role, spec] of Object.entries(roster)) {
         // (A coding plan's model does his coding and the knights': he passes it over for anything else.)
@@ -1255,8 +1266,10 @@ Next:
           const window = spentUntilOf(ref);
           return [ref, onPlan(ref) ? dim("(coding only)") : "", window ? dim(`(spent until ${new Date(window.until).toISOString().slice(11, 16)} UTC)`) : ""].filter(Boolean).join(" ");
         };
-        console.log(`  ${role.padEnd(10)} ${spec.models.map(shown).join(" → ")}${spec.configured ? "" : dim("  (default)")}${spec.custom ? dim("  (a role you made)") : ""}`);
+        console.log(`  ${role.padEnd(10)} ${spec.models.map(shown).join(" → ")}${spec.configured ? "" : dim("  (default)")}${spec.custom ? dim("  (a role you made)") : ""}${spec.effort && spec.effort !== "auto" ? dim(`  (thinks at ${spec.effort})`) : ""}`);
       }
+      // (Each call thinks as its step needs, unless you pinned its role: galahad roster effort <role> <level|auto>.)
+      console.log(dim("  Each step thinks as it needs: routine turns less, hard ones more (galahad roster effort <role> <level|auto>)."));
       for (const window of spent) console.log(dim(`  ${window.provider}: its allowance is spent until ${new Date(window.until).toISOString().slice(11, 16)} UTC; its models are passed over until then, and the next on each role answers.`));
       const checked = Object.entries(checks);
       if (checked.length) {

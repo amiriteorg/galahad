@@ -22,6 +22,8 @@ const NAME_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const ROLE_NAME_RE = /^[a-z][a-z0-9-]{0,39}$/;
 const REF_RE = /^[^/\s]+\/\S+$/;
 const ROLE_ICON: Record<string, IconName> = { planner: "compass", engineer: "code", reviewer: "review", swift: "zap" };
+/** How hard a role's models think: by the step (the default: routine turns less, hard ones more), or one level. */
+const THINKS: [NonNullable<RoleSpec["effort"]>, string][] = [["auto", "As each step needs"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]];
 
 export const modelsView: View = (root, ctx, { scope }) => {
   const write = ctx.can("brain:write");
@@ -56,7 +58,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
       h(
         "div",
         { class: "grow" },
-        h("div", { class: "row", style: "gap:6px" }, h("span", { class: "strong" }, role), spec.custom ? badge("yours", "accent") : spec.configured ? null : badge("default", "neutral")),
+        h("div", { class: "row", style: "gap:6px" }, h("span", { class: "strong" }, role), spec.custom ? badge("yours", "accent") : spec.configured ? null : badge("default", "neutral"), spec.effort && spec.effort !== "auto" ? badge(`thinks ${THINKS.find(([level]) => level === spec.effort)?.[1].toLowerCase() ?? spec.effort}`, "neutral") : null),
         h("div", { class: "tiny subtle ellipsis" }, spec.description),
         h("div", { class: "row", style: "margin-top:4px;min-width:0" }, chain),
       ),
@@ -74,6 +76,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
     const name = existing ? null : h("input", { class: "input mono", type: "text", placeholder: "frontend", maxlength: 40, autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": "The role's name" });
     const list = h("div", { class: "reorder", role: "list", "aria-label": existing ? `Models for ${existing}` : "Models for the new role" });
     const input = h("input", { class: "input mono", type: "text", placeholder: "provider/model", list: knownModels.id, autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": existing ? `Add a model to ${existing}` : "Add a model to the new role" });
+    const thinks = h("select", { class: "select", "aria-label": "How hard its models think" }, ...THINKS.map(([level, label]) => h("option", { value: level, selected: (spec.effort ?? "auto") === level }, label)));
     const save = button(existing ? "Save" : "Make role", { variant: "primary", icon: "check" });
     const removeRole = existing && spec.custom ? button("Remove role", { variant: "danger", icon: "trash" }) : null;
 
@@ -132,7 +135,9 @@ export const modelsView: View = (root, ctx, { scope }) => {
           if (!models.length) return void toast("Give it a model", { tone: "warn", description: "A role with no model can't answer." });
         }
         try {
-          const result = await ctx.api.post<{ roster: Record<string, RoleSpec> }>("/api/roster", { role, models });
+          let result = await ctx.api.post<{ roster: Record<string, RoleSpec> }>("/api/roster", { role, models });
+          // How hard it thinks, when that changed: its own word to the node (an older node has none, and says so).
+          if (thinks.value !== (spec.effort ?? "auto")) result = await ctx.api.post<{ roster: Record<string, RoleSpec> }>("/api/roster/effort", { role, effort: thinks.value });
           roster = result.roster;
           sheet.close();
           renderRoster();
@@ -176,6 +181,7 @@ export const modelsView: View = (root, ctx, { scope }) => {
           h("div", { class: "grow" }, input),
           button("Add", { type: "submit", icon: "plus" }),
         ),
+        field("Thinks", thinks, { hint: "As each step needs: a routine step less, a hard one (a failure, work sent back) more. A level holds whatever the step." }),
       ],
       footer: [removeRole, button("Cancel", { onClick: () => sheet.close() }), save],
       // On a touch screen the keyboard waits until you tap the field.

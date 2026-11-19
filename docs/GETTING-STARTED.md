@@ -226,6 +226,7 @@ bun galahad provider models deepseek                # what the provider serves
 bun galahad roster set reviewer deepseek/<model-id> # a different family reviews the work
 bun galahad roster set frontend <provider/model>... # a role of your own, for the knights you give it to
 bun galahad roster rm frontend                      # removed (not while a knight works on it)
+bun galahad roster effort engineer medium           # one level whatever the step; auto (the default): as each step needs
 bun galahad ask "Good morning, Galahad. What do you know about my fleet?"
 ```
 

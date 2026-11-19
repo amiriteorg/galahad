@@ -840,6 +840,12 @@ export class MindStore {
         this.putLww(`roster:${body.role}`, event, body.models);
         return null;
       }
+      case "roster.effort": {
+        if (!isFullNode(signer)) return "only full nodes may change the roster";
+        const body = bodyOf(event, "roster.effort");
+        this.putLww(`effort:${body.role}`, event, body.effort);
+        return null;
+      }
       case "memory.added": {
         const body = bodyOf(event, "memory.added");
         const tags = body.tags ?? [];

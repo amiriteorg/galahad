@@ -2808,6 +2808,10 @@ export function createApp(ctx: AppContext) {
       ctx.store.emit(ctx.identity, "roster.set", { role: input.role, models: input.models });
       return { roster: roster(ctx.store) };
     },
+    setRosterEffort: (input) => {
+      ctx.store.emit(ctx.identity, "roster.effort", { role: input.role, effort: input.effort });
+      return { roster: roster(ctx.store) };
+    },
     chat: (input, p, req) => {
       const asked = input as ChatInput;
       // Your own chat, with his tools, is a turn the node owns: it runs to its end whoever is listening. A quest's

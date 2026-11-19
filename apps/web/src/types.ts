@@ -38,6 +38,8 @@ export interface RoleSpec {
   custom?: boolean;
   /** A knight may work on it: the planner, engineer and swift roles and yours (absent from an older node). */
   forKnights?: boolean;
+  /** How hard its models think: `auto`, by the step, or a level you pinned it to (absent from an older node). */
+  effort?: "auto" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 
 export type ActionClass = "read" | "create" | "modify" | "outward" | "delete" | "forbidden";

@@ -177,9 +177,11 @@ export function filesFor(refs: readonly AttachmentRef[], uploads: Pick<Uploads, 
  */
 export function withAttachments(messages: readonly ChatMessage[], uploads: Pick<Uploads, "read" | "touch">): ModelMessage[] {
   return messages.map((m): ModelMessage => {
-    if (!m.attachments?.length) return { role: m.role, content: m.content };
+    // (How hard its model thinks from it on, when it says: a quest's loop does, turn by turn.)
+    const effort = m.effort ? { effort: m.effort } : {};
+    if (!m.attachments?.length) return { role: m.role, content: m.content, ...effort };
     const { images, texts } = filesFor(m.attachments, uploads);
     const content = [m.content, ...texts].filter(Boolean).join("\n\n") || "(No words with it: only what is attached.)";
-    return { role: m.role, content, ...(images.length ? { images } : {}) };
+    return { role: m.role, content, ...effort, ...(images.length ? { images } : {}) };
   });
 }

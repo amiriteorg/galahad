@@ -7,7 +7,7 @@ import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./person
 import { windowsOf } from "./windows.ts";
 import { followsFormat, readModelCheck, readsScreens, type ModelCheck } from "@galahad/core";
 import { offeredModels, onPlan, planOf, resolveProvider, whyNoKey } from "./providers.ts";
-import { effortFor, parseRef, roleModels } from "./roster.ts";
+import { effortFor, parseRef, pinnedEffort, roleModels } from "./roster.ts";
 
 export interface BrainContext {
   store: MindStore;
@@ -240,6 +240,10 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
   const someoneFits = candidates.some((ref) => followsFormat(offFormat(ref)) !== false);
   // Your prices, read once for an answer that spends a budget of yours (countable).
   const prices = req.budgeted ? pricesOf(ctx.store) : null;
+  // How hard it thinks: the level you pinned its role to, whatever its messages say; else what they say, step by step
+  // (a quest's loop says each turn's: roster.ts STEP_EFFORT), and the role's own for one that says nothing.
+  const pinned = pinnedEffort(ctx.store, req.role ?? "planner");
+  const messages = pinned ? req.messages.map(({ effort: _, ...m }) => m) : req.messages;
   for (const ref of candidates) {
     const off = offFormat(ref);
     if (someoneFits && off?.format && followsFormat(off) === false) {
@@ -285,8 +289,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         ...(sees === null ? {} : { sees }),
         system,
         ...(req.context ? { context: req.context } : {}),
-        messages: req.messages,
-        effort: effortFor(req.role),
+        messages,
+        effort: pinned ?? effortFor(req.role),
         signal: req.signal,
         fetch: ctx.fetch,
       });

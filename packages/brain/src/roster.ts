@@ -1,4 +1,4 @@
-import { TeammateRole } from "@galahad/core";
+import { TeammateRole, type ThinkingEffort } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
 
 /*
@@ -8,7 +8,17 @@ import type { MindStore } from "@galahad/mind";
  * (handy for local runtimes whose installed models vary per node).
  */
 
-export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export type Effort = ThinkingEffort;
+
+/**
+ * How hard a model thinks at each step of the work, where you haven't pinned its role (your word, 19 November 2026:
+ * "never fixed, always adaptable, and smart/clever routing for optimized performance and low cost"). A loop's turn
+ * thinks most after a failure, after work sent back or an audit's steer (`hard`), and less after a command that ran
+ * clean (`routine`); its first turn, a plan and a review think as a careful person would; a look at running work, which
+ * only asks whether it is on its task, little. A role's `effort` below is for a call that names no step: a talk with
+ * you, a chore. On Claude each level is said inside the conversation, so its cached beginning stays (adapters.ts).
+ */
+export const STEP_EFFORT = { start: "high", routine: "medium", hard: "xhigh", plan: "high", review: "high", audit: "low" } as const satisfies Record<string, Effort>;
 
 export interface RoleSpec {
   description: string;
@@ -91,6 +101,8 @@ export interface RosterRole {
   models: string[];
   configured: boolean;
   description: string;
+  /** How hard its models think: `auto`, by the step (STEP_EFFORT), or the level you pinned it to. */
+  effort: Effort | "auto";
   /** A role you made (not built in, not a chore's): yours to remove. */
   custom: boolean;
   /** A knight may work on it: the planner, engineer and swift roles, and the roles you made. */
@@ -113,6 +125,7 @@ export function roster(store: MindStore): Record<string, RosterRole> {
             models: configured?.length ? configured : (ROLES[role]?.defaults ?? []),
             configured: !!configured?.length,
             description: ROLES[role]?.description ?? chore ?? "a role you made",
+            effort: pinnedEffort(store, role) ?? "auto",
             custom: !builtIn && !chore,
             forKnights: !chore && !NOT_FOR_KNIGHTS.has(role) && TeammateRole.safeParse(role).success,
           },
@@ -129,3 +142,9 @@ export function parseRef(ref: string): { provider: string; model: string } {
 }
 
 export const effortFor = (role: string | undefined): Effort => ROLES[role ?? "planner"]?.effort ?? "high";
+
+/** The level you pinned a role's models to think at (roster.effort), whatever the step; null: by the step (`auto`). */
+export function pinnedEffort(store: MindStore, role: string): Effort | null {
+  const pinned = store.lww<string>(`effort:${role}`)?.value;
+  return pinned && pinned !== "auto" ? (pinned as Effort) : null;
+}

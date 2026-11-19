@@ -109,3 +109,89 @@ describe("prompt caching", () => {
     expect(friday.system.at(-1)).toEqual({ type: "text", text: "Recalled: a flight on Friday." });
   });
 });
+
+/*
+ * How hard Claude thinks, step by step (your word, 19 November 2026: "never fixed, always adaptable"): a quest's loop
+ * says each turn's level on its message (roster.ts STEP_EFFORT). Changing the call's own level from one turn to the
+ * next would start the cache again, so on Anthropic's own API the call keeps the first level and each change is a
+ * system message of its own (beta mid-conversation-output-config-2026-07-01): what was sent before is sent again as it was.
+ */
+describe("how hard it thinks, step by step, with the cache kept", () => {
+  /** Each call's body and its beta header. */
+  function heard(replies: Reply[]) {
+    const calls: { body: any; betas: string }[] = [];
+    const fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ body: JSON.parse(String(init?.body)), betas: new Headers(init?.headers).get("anthropic-beta") ?? "" });
+      const next = replies.shift();
+      return next ? next() : new Response("no more responses", { status: 500 });
+    }) as typeof globalThis.fetch;
+    return { fetch, calls };
+  }
+  const turns = [
+    { role: "user" as const, content: "The briefing.", effort: "high" as const },
+    { role: "assistant" as const, content: "```sh\ncat a.ts\n```" },
+    { role: "user" as const, content: "exit 0 · 3 ms\nthe file", effort: "medium" as const },
+    { role: "assistant" as const, content: "```sh\nbun test\n```" },
+    { role: "user" as const, content: "exit 1 · 9 ms\n1 fail", effort: "xhigh" as const },
+  ];
+
+  test("each change of level is said where it happens, by a system message with no words; the call's own is the first, every time", async () => {
+    const model = heard([answer("Next."), answer("Next.")]);
+    const first = anthropicConversation({ provider: provider("https://api.anthropic.com"), model: "claude-opus-5-5", system: "Who he is.", messages: turns.slice(0, 3), effort: "xhigh", fetch: model.fetch });
+    await drain(first.turn([]));
+    const second = anthropicConversation({ provider: provider("https://api.anthropic.com"), model: "claude-opus-5-5", system: "Who he is.", messages: turns, effort: "xhigh", fetch: model.fetch });
+    await drain(second.turn([]));
+    const [a, b] = model.calls;
+    expect(a!.body.output_config).toEqual({ effort: "high" });
+    expect(b!.body.output_config).toEqual({ effort: "high" });
+    expect(b!.body.messages.map((m: any) => (m.role === "system" ? `system:${m.output_config.effort}` : m.role))).toEqual(["user", "assistant", "system:medium", "user", "assistant", "system:xhigh", "user"]);
+    expect(b!.body.messages[2]).toEqual({ role: "system", content: [], output_config: { effort: "medium" } });
+    expect(a!.betas).toContain("mid-conversation-output-config-2026-07-01");
+    // What the second call reads from the cache is what the first sent, byte for byte.
+    expect(unmarked(b!.body.messages.slice(0, a!.body.messages.length))).toEqual(unmarked(a!.body.messages));
+  });
+
+  test("a model that can't take a change inside a conversation, or an endpoint that isn't Anthropic's, thinks at the first level throughout", async () => {
+    for (const [baseUrl, model] of [["https://api.anthropic.com", "claude-opus-4-8"], ["https://anthropic.test", "claude-opus-5-5"]] as const) {
+      const heardIt = heard([answer("Next.")]);
+      const conversation = anthropicConversation({ provider: provider(baseUrl), model, system: "Who he is.", messages: turns, effort: "xhigh", fetch: heardIt.fetch });
+      await drain(conversation.turn([]));
+      const [call] = heardIt.calls;
+      expect(call!.body.output_config).toEqual({ effort: "high" });
+      expect(call!.body.messages.map((m: any) => m.role)).toEqual(["user", "assistant", "user", "assistant", "user"]);
+      expect(call!.betas).not.toContain("mid-conversation-output-config");
+    }
+  });
+
+  test("a call whose messages say no level thinks at the role's, as ever", async () => {
+    const model = heard([answer("Hi.")]);
+    const conversation = anthropicConversation({ provider: provider("https://api.anthropic.com"), model: "claude-opus-5-5", system: "Who he is.", messages: ask("Hi"), effort: "low", fetch: model.fetch });
+    await drain(conversation.turn([]));
+    expect(model.calls[0]!.body.output_config).toEqual({ effort: "low" });
+    expect(model.calls[0]!.betas).not.toContain("mid-conversation-output-config");
+  });
+
+  test("a role you pinned to a level thinks at it whatever its messages say: galahad roster effort <role> <level>", async () => {
+    const identity = newNodeIdentity();
+    const store = new MindStore(":memory:");
+    foundFleet(store, identity, { fleetName: "camelot", nodeName: "n" });
+    const vault = new Vault(store, identity);
+    vault.set("claude", "test-anthropic-key-FAKE-0000", { provider: "claude", origin: "https://api.anthropic.com" });
+    store.emit(identity, "provider.set", { id: "claude", kind: "anthropic", baseUrl: "https://api.anthropic.com", secret: "claude" });
+    store.emit(identity, "roster.set", { role: "engineer", models: ["claude/claude-opus-5-5"] });
+    const called = async () => {
+      const model = heard([answer("Next.")]);
+      for await (const _ of chat({ store, vault, fetch: model.fetch }, { role: "engineer", messages: turns }));
+      return model.calls[0]!;
+    };
+    const auto = await called();
+    expect(auto.body.messages.filter((m: any) => m.role === "system")).toHaveLength(2);
+    store.emit(identity, "roster.effort", { role: "engineer", effort: "medium" });
+    const pinned = await called();
+    expect(pinned.body.output_config).toEqual({ effort: "medium" });
+    expect(pinned.body.messages.filter((m: any) => m.role === "system")).toHaveLength(0);
+    // Back to auto, by the step again.
+    store.emit(identity, "roster.effort", { role: "engineer", effort: "auto" });
+    expect((await called()).body.messages.filter((m: any) => m.role === "system")).toHaveLength(2);
+  });
+});
