@@ -134,6 +134,8 @@ export const PHASING = {
     { state: "built", what: "A chat to work in", line: "Reply to a line, edit, ask again; code coloured and numbered; pictures to zoom; @ for the knights in a room." },
     { state: "built", what: "What he knows of you", line: "Facts he proposes and you keep, sent with every answer." },
     { state: "built", what: "Roles you make", line: "Choose the models each knight works on, a local one on whichever of your machines serves it; the reviewer stays independent." },
+    { state: "built", what: "Sensitive mode", line: "A knight or one task held to the models you choose and nothing else: its plan, its review, its conversations and its coding tool, never a fallback." },
+    { state: "built", what: "Any ACP agent", line: "A knight works in Gemini CLI, Goose, OpenCode or any agent that speaks ACP, set up your way in its own VM." },
     { state: "building", what: "Galahad writes first", line: "Ship it and give again from a task's card, \"tell me when\", what happened while you were away, and the next step of your backlog offered to an idle knight, for your yes; next, asks you repeat offered as a loop." },
     { state: "building", what: "Count the north star", line: "Each time you step in on a knight's task, counted per task done and verified, and per outcome; next, in the trials." },
     { state: "building", what: "A knight that keeps the books", line: "Bilag from your mail to Drive on their own, and drafts in Dinero; booking always asks." },
@@ -145,7 +147,7 @@ export const PHASING = {
     { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, run a check after one, or tell you it ran; next, before an answer." },
     { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
     { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; it gives a Mac its knights' VMs, behind its firewall, with one password, and lends Galahad the Mac itself in sessions you allow." },
-    { state: "next", what: "Checkpoint, rewind and fork", line: "A quest paused, moved, rewound to a step, or forked at a doubt." },
+    { state: "building", what: "Checkpoint, rewind and fork", line: "Give a knight's task again from any of its steps, its files as they stood then; next, its conversation kept with them." },
     { state: "next", what: "Keys a knight uses but never sees", line: "A placeholder in its script, the vault's key swapped in only at the key's own address." },
   ],
 } as const;
