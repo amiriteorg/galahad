@@ -92,10 +92,14 @@ describe("a driver and the notes store", () => {
   /** Everything a driver writes into a VM and runs there (the store changes only what is written: a command says nothing of it). */
   const made = (driver: (typeof AGENTS)[string], engram?: string) => JSON.stringify([driver.files(MODELS, engram), driver.command(MODELS[0]!, null), driver.command(MODELS[1]!, SESSION), driver.command(OWN_SIGN_IN, null), driver.check]);
   const sha256 = (text: string) => new Bun.CryptoHasher("sha256").update(text).digest("hex");
-  /** The SHA-256 of that for each driver as it was before the store existed (commit 6bbab45, 14 November 2026). */
+  /**
+   * The SHA-256 of that for each driver as it was before the store existed (commit 6bbab45, 14 November 2026). Hermes'
+   * was made again on 19 November 2026, when its bridge came to share Galahad's ACP client (acp.ts): its text, not its
+   * protocol or what it does (hermes.test.ts, and the real Hermes 0.21.1's check).
+   */
   const BEFORE: Record<string, string> = {
     opencode: "2a533082929650be330eb0ee7397582382a74884cb93250708e9b4688c884fe7",
-    hermes: "8485f1ad0e81c7c20518a15fd9cfcb4aa7d9ed5d155b75ca852ce67052938ccf",
+    hermes: "a4bedae3e60a63ea2cbe4270df535cc7b5d622ff8529e5ea92b1fbd974629fb0",
     claude: "c3ba99c9fc00e7bbc58d3f61b8ca366376feb8952821af6aafed7f54d4f22cc2",
     codex: "8b06f3b9553ca2e6e59d08785f03106dfd40a9e3b83d9e4f2adca7bcbbbcc696",
   };
@@ -143,7 +147,7 @@ describe("a driver and the notes store", () => {
   });
 
   test("no driver names a file a vendor's tool keeps its own configuration in: nothing of the store is written there", () => {
-    for (const file of ["agents.ts", "hermes.ts", "vendor-cli.ts", "engram.ts", "quest.ts", "agent-process.ts"]) {
+    for (const file of ["agents.ts", "acp.ts", "hermes.ts", "vendor-cli.ts", "engram.ts", "quest.ts", "agent-process.ts"]) {
       const source = readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
       expect([file, /\.claude\.json|config\.toml|\.codex\/|settings\.json|claude mcp add|plugin (install|add|marketplace)/.test(source)]).toEqual([file, false]);
     }
