@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { changesOf, readOf, readsOf, testFilesOf, writesOf } from "../src/shell-paths.ts";
+import { changesOf, contentsOf, readOf, readsOf, testFilesOf, writesOf } from "../src/shell-paths.ts";
 
 describe("which test files a gate names", () => {
   test("a file by a test's name, or a file in a tests folder, is one", () => {
@@ -85,8 +85,64 @@ describe("what a command may have changed, for what was read before it (keep-rea
     expect(changesOf("bun install --frozen-lockfile >/dev/null 2>&1; bun run typecheck")).toBe("anything");
     expect(changesOf("sed -i 's/a/b/' src/a.ts")).toEqual(["src/a.ts"]);
     expect(changesOf("cd /work/t && cat > packages/node/test/new.test.ts <<'EOF'\ntest(\"x\", () => {});\nEOF")).toEqual(["packages/node/test/new.test.ts"]);
-    expect(changesOf("python3 - <<'EOF'\nopen('src/a.ts','w').write('x')\nEOF")).toBe("anything");
+    expect(changesOf("python3 - <<'EOF'\nopen('src/a.ts','w').write('x')\nEOF")).toEqual(["src/a.ts"]);
     expect(changesOf("sed -i 's/a/b/' src/a.ts && bun x prettier --write src")).toBe("anything");
+  });
+
+  test("an inline python3 script changes only the files it names, when all it does is read and write them: the way a knight edits", () => {
+    // As the first real outcome's knight edited (19 November 2026).
+    const knight = `cd /work/tasks/task-exr0arcdv_4o && python3 - <<'PY'
+import re, pathlib
+
+def sub(path, old, new, count=1):
+    p = pathlib.Path(path)
+    s = p.read_text()
+    assert old in s, f"NOT FOUND in {path}: {old[:80]}"
+    p.write_text(s.replace(old, new, count))
+
+# 1. core team.ts: conflict marker on a fix
+sub("packages/core/src/team.ts",
+\"\"\"  /** The review it answers, by its id (absent: it fixes failing checks). */
+  review?: number;
+}\"\"\",
+\"\"\"  review?: number;
+}\"\"\")
+sub("packages/node/src/ci-watch.ts", 'import type { CiFailure } from "./ci-watch.ts";', 'x')
+PY`;
+    expect(changesOf(knight)).toEqual(["packages/core/src/team.ts", "packages/node/src/ci-watch.ts"]);
+    expect(changesOf(`python3 -c 'import pathlib; pathlib.Path("src/a.ts").write_text("x")'`)).toEqual(["src/a.ts"]);
+    // One that only reads changes nothing.
+    expect(changesOf(`python3 -c 'print(open("src/a.ts").read()[:400])'`)).toBe("nothing");
+  });
+
+  test("a python3 script that may run or find something by itself, or name a path it builds, may have changed anything", () => {
+    for (const command of [
+      "python3 - <<'PY'\nimport subprocess\nsubprocess.run(['bun', 'x', 'prettier', '--write', '.'])\nPY",
+      "python3 - <<'PY'\nimport glob\nfor f in glob.glob('src/*.ts'): open(f, 'a').write('')\nPY",
+      "python3 - <<'PY'\nimport os\nos.remove('src/a.ts')\nPY",
+      "python3 - <<'PY'\nopen(f'src/{name}.ts', 'w').write('x')\nPY",
+      "python3 - <<'PY'\nimport sys\nopen(sys.argv[1], 'w').write('x')\nPY",
+      // The shell fills in what an unquoted here-document's end lets it.
+      "python3 - <<PY\nopen('$FILE', 'w').write('x')\nPY",
+      // A script from a file is read by nobody here.
+      "python3 edit.py",
+      "python3 - <<'PY' > out.txt\nprint(1)\nPY",
+    ]) expect(changesOf(command), command).toBe("anything");
+  });
+});
+
+describe("which files' contents a command shows (keep-reads shows them whole)", () => {
+  test("cat, nl, head, tail, sed -n and awk, with cd, echo and printf between, and pipes through them", () => {
+    for (const [command, files] of [
+      ["cat -n packages/node/src/ci-back.ts", ["packages/node/src/ci-back.ts"]],
+      ["cd /work/t && sed -n '1,160p' a.ts && echo --- && awk 'NR<9' b.ts", ["a.ts", "b.ts"]],
+      ["cat a.ts | head -50", ["a.ts"]],
+      ["nl -ba src/x.ts | tail -n 40", ["src/x.ts"]],
+    ] as const) expect(contentsOf(command), command).toEqual([...files]);
+  });
+
+  test("a search, a listing, a log or anything that might change something shows no file to read whole", () => {
+    for (const command of ["grep -rn x packages", "cat a.ts | grep x", "git show HEAD:a.ts", "ls src", "find . -name '*.ts'", "cat a.ts > b.ts", "sed -i 's/a/b/' a.ts", "bun test"]) expect(contentsOf(command), command).toBeNull();
   });
 });
 

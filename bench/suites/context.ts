@@ -48,6 +48,72 @@ const rewrites = (turns: readonly ChatMessage[][]): number => {
 
 const page = (c: string, n: number): string => c.repeat(n);
 
+/**
+ * Code to understand before writing, as a knight's task has it: the five files the first real outcome's knights had to
+ * read (AGENTS.md, ci-watch.ts, ci-back.ts and their tests, at their sizes on 19 November 2026, some 56 characters a
+ * line), every line marked with its file and the file's version, so a stand-in can tell what it can see of them now.
+ */
+const CODE_CHARS = [3_321, 16_892, 10_341, 15_609, 14_476];
+const LINES = CODE_CHARS.map((chars) => Math.ceil(chars / 56));
+const codeLine = (k: number, version: number, n: number): string => `F${k}.${version}:${n} ${"c".repeat(46)}`;
+/** The lines a sed window holds that fits a lean quest's whole output (8,000 characters), as the knights read them. */
+const WINDOW = 140;
+/** The files it changes, one edit each, in turn: ci-watch.ts, ci-back.ts, then a test. */
+const EDITS = [1, 2, 3];
+
+/**
+ * A careful stand-in knight: before each of its three edits it must have every line of the code in its conversation at
+ * once, as the files are now, and until then reads what it can't see: a file whole first, then a window of what is
+ * missing from it. Each edit is an inline python3 script naming the file it changes. Then it runs the tests and is done.
+ * How many commands that takes, or that it never finished within eighty (the third real task ran 76), is what a quest's
+ * view of its work comes to.
+ */
+async function understand(keepReads: boolean): Promise<{ turns: ChatMessage[][]; commands: number; done: boolean }> {
+  const turns: ChatMessage[][] = [];
+  const version = CODE_CHARS.map(() => 0);
+  let edits = 0;
+  let tested = false;
+  const next = (messages: ChatMessage[]): string => {
+    if (tested) return "DONE\nChanged and tested.";
+    if (edits === EDITS.length) {
+      tested = true;
+      return "```sh\nbun test\n```";
+    }
+    const shown = messages.filter((m, i) => i > 0 && m.role === "user").map((m) => m.content).join("\n");
+    const missing = LINES.map((n, k) => Array.from({ length: n }, (_, i) => i).filter((i) => !shown.includes(`${codeLine(k, version[k]!, i).split(" ")[0]} `)));
+    const k = missing.findIndex((m) => m.length > 0);
+    if (k === -1) {
+      const file = EDITS[edits++]!;
+      return `\`\`\`sh\ncd /work && python3 - <<'PY'\nimport pathlib\np = pathlib.Path("src/f${file}.ts")\np.write_text(p.read_text().replace("old", "new"))\nPY\n\`\`\``;
+    }
+    const from = missing[k]![0]!;
+    return missing[k]!.length < LINES[k]! ? `\`\`\`sh\nsed -n '${from + 1},${from + WINDOW}p' src/f${k}.ts\n\`\`\`` : `\`\`\`sh\ncat src/f${k}.ts\n\`\`\``;
+  };
+  const lines = (k: number, from: number, to: number): string => Array.from({ length: Math.min(to, LINES[k]!) - from }, (_, i) => codeLine(k, version[k]!, from + i)).join("\n");
+  const ran = (stdout: string): ExecResult => ({ exitCode: 0, stdout, stderr: "", durationMs: 5, truncated: false });
+  const outcome = await runQuest(
+    { goal: "understand the code, then change it", environment: "a stand-in sandbox", maxSteps: 80, ...(keepReads ? { keepReads: true } : {}) },
+    {
+      ask: async (role: QuestRole, messages: ChatMessage[]) => {
+        if (role === "planner") return { text: "1. Read the code.\n2. Change it.\nDone when: the tests pass.", model: "stand-in" };
+        if (role === "reviewer") return { text: "PASS\nIt is.", model: "stand-in" };
+        turns.push(messages.map((m) => ({ ...m })));
+        return { text: next(messages), model: "stand-in" };
+      },
+      exec: async (command: string) => {
+        const file = Number(/src\/f(\d)\.ts/.exec(command)?.[1] ?? -1);
+        const window = /^sed -n '(\d+),(\d+)p' /.exec(command);
+        if (command.startsWith("cat ")) return ran(`${lines(file, 0, LINES[file]!)}\n`);
+        if (window) return ran(`${lines(file, Number(window[1]) - 1, Number(window[2]))}\n`);
+        if (command.includes("python3")) version[file]! += 1;
+        return ran(command === "bun test" ? `12 pass\n${page("p", 1_500)}\n` : "");
+      },
+    },
+  );
+  return { turns, commands: outcome.steps, done: outcome.status === "done" };
+}
+
+
 /** The tests run after each of thirteen edits, failing until the last. */
 const testsAfterEdits: Work = {
   commands: Array.from({ length: 26 }, (_, i) => (i % 2 === 0 ? "bun test" : `sed -i 's/a${i}/b${i}/' src/x.ts`)),
@@ -69,7 +135,7 @@ const longSurvey: Work = {
 export const suite: Suite = {
   name: "context",
   about: "what a quest sends its engineer over a whole quest, for three kinds of work done by a stand-in: characters, and beginnings a provider can't cache",
-  headline: ["context.quest.tests-after-edits", "context.quest.read-edit-test", "context.quest.survey", "context.quest.read-edit-test.last-turn", "context.quest.rewrites"],
+  headline: ["context.quest.tests-after-edits", "context.quest.read-edit-test", "context.quest.survey", "context.quest.read-edit-test.last-turn", "context.quest.rewrites", "context.knight.understand.commands", "context.knight.understand"],
   async run(ctx) {
     const kinds: [string, Work, string][] = [
       ["tests-after-edits", testsAfterEdits, "the tests run after each of 13 edits, failing until the last (26 commands)"],
@@ -84,5 +150,10 @@ export const suite: Suite = {
       rewritten += rewrites(turns);
     }
     ctx.quality("context.quest.rewrites", rewritten, "turns", "lower", { note: "turns, over the three quests, whose conversation doesn't begin with the turn before's (a batch cut is one)" });
+    // As a knight's task runs (keepReads): the code it must understand, read until it can see all of it, then changed.
+    const knight = await understand(true);
+    ctx.quality("context.knight.understand.commands", knight.commands, "commands", "lower", { note: "commands a careful stand-in knight ran to change three files of the first real outcome's code, each with all five files in view as they were then, and test it (eighty: it never finished)" });
+    ctx.quality("context.knight.understand.done", knight.done ? 1 : 0, "tasks", "higher", { note: "whether that stand-in finished within eighty commands: nought when its reads were cut before it could see what it needed" });
+    ctx.quality("context.knight.understand", knight.turns.reduce((sum, t) => sum + size(t), 0), "chars", "lower", { note: "every turn's conversation of the same task, summed: what its view of the code cost to send" });
   },
 };

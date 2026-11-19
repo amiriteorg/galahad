@@ -3,7 +3,7 @@ import { newNodeIdentity, type ExecResult, type Teammate, type TeamRoom, type Te
 import { taskStep, type AvatarExpression } from "@galahad/core/avatar";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import { AGENTS, OWN_SIGN_IN, type QuestEvent } from "@galahad/brain";
-import { harnessReadiness, progress, teamRuntime, type TeamRuntimeDeps } from "../src/team-runtime.ts";
+import { harnessReadiness, progress, TEAM_COMMAND_SECONDS, teamRuntime, type TeamRuntimeDeps } from "../src/team-runtime.ts";
 import type { TeamRunContext } from "../src/team.ts";
 
 const stores: MindStore[] = [];
@@ -988,18 +988,40 @@ test("a task has no count of commands: it works on past forty, audited every twe
   expect(JSON.stringify(f.bodies[1])).toContain("Your commands have no fixed number. An independent audit looks at your work every 20 commands or 15 minutes");
 });
 
-test("a knight that finishes its work and never says so is still judged: its audit stops work going nowhere, and what is there goes to the gates and the reviewer", async () => {
+test("a knight that finishes its work and goes on without saying so is told to by its audit, and never stopped by one: its work is judged when it says so", async () => {
   // Seen on ultra, 14 November 2026: gareth made its change to this repository, went on checking it, and ran out of
-  // commands. The work was right and nobody was asked: the task ended stopped and unverified. Nothing runs out now:
-  // the audit steers it, then stops it, and what is there is judged.
-  const f = fixture([say("1. Make the change."), ...echoes(0, 20), say("STEER\nThe change is made: reply DONE with the evidence."), ...echoes(20, 20), say("STEER\nIt is still checking the same thing."), say("PASS\nThe gate passes and the commands show the change.")]);
+  // commands. The work was right and nobody was asked: the task ended stopped and unverified. Nothing runs out now,
+  // and no audit ends the work (your word, 19 November 2026): the audit tells it to say so, and steers again if it must.
+  const f = fixture([say("1. Make the change."), ...echoes(0, 20), say("STEER\nThe change is made: reply DONE with the evidence."), ...echoes(20, 20), say("STEER\nIt is still checking the same thing."), say("DONE\nMade and checked: the gate passes."), say("PASS\nThe gate passes and the commands show the change.")]);
   const outcome = await f.runtime.executeTask(member, task, f.context);
   expect(outcome.verified).toBe(true);
   expect(outcome.record).toMatchObject({ ended: "done", commands: 40 });
-  expect(outcome.output).toContain("An independent audit stopped the work before he said he was done.");
-  // The steer was said with what he was told next; the last model asked was the reviewer, told nobody had claimed the work done.
+  // Each steer was said with what he was told next.
   expect(JSON.stringify(f.bodies[22])).toContain("An independent audit of the work so far says: The change is made: reply DONE with the evidence.");
-  expect(JSON.stringify(f.bodies.at(-1))).toContain("An independent audit stopped the work before he said he was done: this is the work as it stands.");
+  expect(JSON.stringify(f.bodies[43])).toContain("An independent audit of the work so far says: It is still checking the same thing.");
+  expect(outcome.output).not.toContain("An independent audit stopped the work");
+});
+
+test("a knight sees whole what it reads, and its commands have as long as one may run in its VM", async () => {
+  // Seen on ultra, 19 November 2026: shown 8,000 characters of each command, the first real outcome's knights read one
+  // file in 26, then 34 of their commands, in windows, and three tasks ended with nothing written; the repository's own
+  // tests, given 120 s, were cut off.
+  const file = Array.from({ length: 600 }, (_, i) => `export const line${i} = "${"x".repeat(40)}";`).join("\n");
+  const timeouts: number[] = [];
+  const f = fixture([say("1. Read it, then change it."), say("```sh\ncat src/big.ts\n```"), say("DONE\nRead and changed."), say("PASS\nFine.")], {
+    exec: async (_m, command, timeout) => {
+      if (plain(plain(command)).includes("cat src/big.ts")) timeouts.push(timeout);
+      return result(plain(plain(command)).includes("cat src/big.ts") ? { stdout: `${file}\n` } : {});
+    },
+  });
+  await f.runtime.executeTask(member, task, f.context);
+  // All 600 lines (some 33,000 characters) reached its engineer, none cut.
+  const shown = JSON.stringify(f.bodies[2]);
+  expect(shown).toContain("line0 =");
+  expect(shown).toContain("line300 =");
+  expect(shown).toContain("line599 =");
+  expect(shown).not.toContain("characters cut");
+  expect(timeouts).toEqual([TEAM_COMMAND_SECONDS]);
 });
 
 test("a knight whose VM has a desktop is told so, and how to operate it; one without is told nothing of one", async () => {

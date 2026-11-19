@@ -192,6 +192,81 @@ export function readsOf(command: string): string[] | null {
   return [...new Set(files)];
 }
 
+/** Programs whose output is a file's own contents, with the options readsOf allows them (`cat -n`, `sed -n '1,80p'`). */
+const CONTENTS = new Set(["cat", "nl", "head", "tail", "sed", "awk"]);
+
+/**
+ * The files whose contents a command shows, when that is all it does: a read (readsOf) by cat, nl, head, tail, sed -n
+ * or awk, with cd, echo or printf between (`cd x && cat -n a.ts && echo --- && sed -n '1,90p' b.ts`). Null for anything
+ * else: a search, a listing or a log shows what is there, not a file to be read whole.
+ */
+export function contentsOf(command: string): string[] | null {
+  const files = readsOf(command);
+  if (!files?.length) return null;
+  const names = segments(command).map((words) => words.find((w) => !w.operator)?.text ?? "");
+  return names.every((n) => CONTENTS.has(n) || n === "cd" || n === "echo" || n === "printf") ? files : null;
+}
+
+/** What a Python script may do besides read and write the files it names: run, move or remove things, or find files itself. */
+const PYTHON_REACHES = /\b(subprocess|os\.(system|popen|spawn\w*|exec\w*|remove|unlink|rename|renames|replace|makedirs|mkdir|rmdir|removedirs|chmod|chown|chdir|link|symlink|truncate|walk|listdir|scandir)|shutil|glob|fnmatch|rglob|iterdir|exec|eval|compile|__import__|importlib|runpy|ctypes|socket|urllib|requests|http)\b/;
+/** A Python script that writes: a file opened to write or append, or written whole. */
+const PYTHON_WRITES = /\.write_(text|bytes)\s*\(|\bopen\s*\([^)]*['"][rwxab+t]*[wxa+][rwxab+t]*['"]|\.write\s*\(/;
+
+/** A Python script's string literals, each as written between its quotes (escapes kept), triple-quoted ones included. */
+function pythonStrings(script: string): { text: string; formatted: boolean }[] {
+  const out: { text: string; formatted: boolean }[] = [];
+  for (let i = 0; i < script.length; i++) {
+    const c = script[i]!;
+    if (c === "#") {
+      const end = script.indexOf("\n", i);
+      i = end === -1 ? script.length : end;
+      continue;
+    }
+    if (c !== "'" && c !== '"') continue;
+    const formatted = /[fF][rRbB]?$|[rRbB][fF]$/.test(script.slice(Math.max(0, i - 2), i));
+    const quote = script.startsWith(c.repeat(3), i) ? c.repeat(3) : c;
+    let j = i + quote.length;
+    for (; j < script.length && !script.startsWith(quote, j); j++) if (script[j] === "\\") j++;
+    out.push({ text: script.slice(i + quote.length, j), formatted });
+    i = j + quote.length - 1;
+  }
+  return out;
+}
+
+/**
+ * What a Python script given inline (`python3 - <<'PY'`, `python3 -c '…'`, after a `cd`) may have changed: nothing when
+ * it writes nothing; else the paths its strings name, when it does nothing but read and write files (the way a knight
+ * edits code: `sub("packages/core/src/team.ts", old, new)`); anything when it may run or find something by itself, builds
+ * a path from a formatted string, or writes without naming a path. Null when the command is anything else.
+ */
+function pythonChanges(command: string): "nothing" | "anything" | string[] | null {
+  const all = segments(withoutHereDocs(command));
+  const runs = all.filter((words) => words.find((w) => !w.operator)?.text !== "cd");
+  if (runs.length !== 1 || runs[0]!.some((w) => w.operator && w.operator !== "<<")) return null;
+  // (Its words, but the here-document's end after `<<`.)
+  const words = runs[0]!.filter((w, i, all) => !w.operator && !(i > 0 && all[i - 1]!.operator));
+  if (!/^python3?$/.test(words[0]?.text ?? "")) return null;
+  let script: string | null = null;
+  if (words[1]?.text === "-c" && words.length === 3 && !words[2]!.dynamic) script = words[2]!.text;
+  else if (words.length <= 2 && (words[1]?.text ?? "-") === "-") {
+    // Its here-document, the only one, given whole: with its end quoted, the shell expands nothing in it.
+    const lines = command.split("\n");
+    const opens = lines.flatMap((line, i) => (/(?<!<)<<(?!<)/.test(line) ? [i] : []));
+    const here = opens.length === 1 ? /(?<!<)<<(?!<)-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(lines[opens[0]!]!) : null;
+    const end = here ? lines.findIndex((l, j) => j > opens[0]! && l.trim() === here[2]) : -1;
+    if (!here || end === -1) return "anything";
+    script = lines.slice(opens[0]! + 1, end).join("\n");
+    if (!here[1] && /[$`]/.test(script)) return "anything";
+  }
+  if (script === null) return null;
+  if (PYTHON_REACHES.test(script)) return "anything";
+  // (A path holds no quote, brace or semicolon: a line of code quoted to be replaced isn't one.)
+  const named = pythonStrings(script).filter((s) => !/[\n"'`;{}()<>=]/.test(s.text) && PATHLIKE.test(s.text));
+  if (named.some((s) => s.formatted)) return "anything";
+  if (!PYTHON_WRITES.test(script)) return "nothing";
+  return named.length ? [...new Set(named.map((s) => clean(s.text)))] : "anything";
+}
+
 /** A run of a project's tests or its type check: it changes no file of the work (a check, not an edit). */
 const CHECKS = /^(bun (test|x tsc|run (check|test|typecheck|lint)\b)|bunx tsc|npx (--no-install )?(tsc|vitest|jest)|tsc|npm (test|run (test|check|typecheck|lint)\b)|pytest|python3? -m pytest|go (test|vet)|cargo (test|check|clippy))(\s|$)/;
 /** Programs that change only the files their words name (writesOf reads which), with `cd` and the folders a write needs. */
@@ -208,6 +283,8 @@ export function changesOf(command: string): "nothing" | "anything" | string[] {
   if (!all.length) return "anything";
   const shown = all.map((words) => words.filter((w) => !w.operator).map((w) => w.text).join(" "));
   if (shown.every((s) => /^cd(\s|$)/.test(s) || CHECKS.test(s))) return "nothing";
+  const script = pythonChanges(command);
+  if (script !== null) return script;
   const writes = writesOf(command);
   const names = all.map((words) => words.find((w) => !w.operator)?.text ?? "");
   return writes.length && names.every((n) => EDITS.has(n)) ? writes : "anything";

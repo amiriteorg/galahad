@@ -4,9 +4,10 @@ import type { AgentDriver, AgentEvent } from "../src/agents.ts";
 import { AUDIT_EVERY, auditQuestion, type QuestEvent, type QuestOptions, type QuestRole, readAudit, runQuest } from "../src/quest.ts";
 
 /*
- * Work audited while it runs, in place of a limit (QuestOptions.audit): every AUDIT_EVERY, the reviewer's models, who
- * don't do the work, say whether it is still on its task and closer to done. A steer is said to whoever does the work;
- * a stop, or a second steer in a row, ends it as at a limit. Stand-ins play the models and the sandbox.
+ * Work audited while it runs, in place of any limit (QuestOptions.audit): every AUDIT_EVERY, the reviewer's models, who
+ * don't do the work, say whether it is still on its task. A steer is said to whoever does the work, and an audit never
+ * ends it (your word, 19 November 2026: "dont artificially limit my knights. Just have an inline auditor, that makes sure
+ * they stay on task"). Stand-ins play the models and the sandbox.
  */
 
 const sh = (command: string) => `Next.\n\`\`\`sh\n${command}\n\`\`\``;
@@ -94,23 +95,33 @@ describe("the engineer's own loop, audited", () => {
     expect(asked).not.toContain(`echo step ${AUDIT_EVERY.steps + 1}`);
   });
 
-  test("a steer is said to him with what he is told next; a steer after a steer stops the work, and what it left is judged", async () => {
-    const q = engineer({ engineer: commands(60), reviewer: ["STEER\nStop reinstalling; write the test.", "STEER\nStill reinstalling.", "PASS\nIt holds."] }, { audit: true, submitAtLimit: true });
+  test("a steer is said to him with what he is told next, and a steer after a steer is said too: no audit ends the work", async () => {
+    const q = engineer({ engineer: [...commands(2 * AUDIT_EVERY.steps + 5), "DONE\nThe parser is written and tested."], reviewer: ["STEER\nStop reinstalling; write the test.", "STEER\nStill reinstalling.", "PASS\nIt holds."] }, { audit: true, submitAtLimit: true });
     const outcome = await q.run;
-    expect(q.audits().map((a) => [a.step, a.verdict])).toEqual([[AUDIT_EVERY.steps, "steer"], [2 * AUDIT_EVERY.steps, "stop"]]);
+    expect(q.audits().map((a) => [a.step, a.verdict])).toEqual([[AUDIT_EVERY.steps, "steer"], [2 * AUDIT_EVERY.steps, "steer"]]);
     expect(q.told()[AUDIT_EVERY.steps]).toContain("An independent audit of the work so far says: Stop reinstalling; write the test.");
-    expect(q.audits()[1]!.note).toBe("It was steered at the last audit and is still not closer. Still reinstalling.");
+    expect(q.told()[2 * AUDIT_EVERY.steps]).toContain("An independent audit of the work so far says: Still reinstalling.");
     // The second audit is told what the first said, and sees only what was run since.
     expect(q.asked()[1]).toContain("At the last audit: STEER: Stop reinstalling; write the test.");
     expect(q.asked()[1]).not.toContain("$ echo step 20\n");
-    expect(outcome).toMatchObject({ status: "done", steps: 2 * AUDIT_EVERY.steps, summary: "An independent audit stopped the work before he said he was done. The work as it stood was put to the reviewer, who accepted it." });
+    // He worked on to the end he chose, and his work was judged as anyone's.
+    expect(outcome).toMatchObject({ status: "done", steps: 2 * AUDIT_EVERY.steps + 5, summary: "The parser is written and tested." });
   });
 
-  test("an on between two steers gives him another chance; a stop ends it at once, saying why", async () => {
-    const q = engineer({ engineer: commands(5 * AUDIT_EVERY.steps), reviewer: ["STEER\nWrite the test.", "ON\nBetter.", "STEER\nDrifting again.", "STOP\nThe package it needs can't be installed offline."] }, { audit: true });
+  test("an audit that answers STOP, as audits once could, is heard as a steer: its words are said to him and the work goes on", async () => {
+    const q = engineer({ engineer: [...commands(AUDIT_EVERY.steps + 3), "DONE\nWritten."], reviewer: ["STOP\nThe package it needs can't be installed offline.", "PASS\nIt holds."] }, { audit: true });
     const outcome = await q.run;
-    expect(q.audits().map((a) => a.verdict)).toEqual(["steer", "on", "steer", "stop"]);
-    expect(outcome).toMatchObject({ status: "stopped", summary: "Stopped by an independent audit: The package it needs can't be installed offline." });
+    expect(q.audits()).toMatchObject([{ step: AUDIT_EVERY.steps, verdict: "steer", note: "The package it needs can't be installed offline." }]);
+    expect(q.told()[AUDIT_EVERY.steps]).toContain("An independent audit of the work so far says: The package it needs can't be installed offline.");
+    expect(outcome.status).toBe("done");
+  });
+
+  test("it asks only whether the work is on its task, and what would bring it back: never whether to end it", () => {
+    const asked = auditQuestion({ goal: "g", plan: "p", gates: [], steps: [] });
+    expect(asked).toContain("the work goes on whatever you answer");
+    expect(asked).toContain("ON if it is working on its task");
+    expect(asked).toContain("STEER if it has drifted from its task");
+    expect(asked).not.toContain("STOP");
   });
 
   test("an answer that can't be read, or none at all, never stops the work: it is said, and the next audit asks again", async () => {
@@ -194,17 +205,13 @@ describe("a coding agent's run, audited", () => {
     expect(outcome.status).toBe("done");
   });
 
-  test("a stop ends it, and what it left goes to the gates and the reviewer (submitAtLimit)", async () => {
-    const q = agentAtWork(["STOP\nIt keeps rewriting the same file.", "PASS\nIt holds after all."], { submitAtLimit: true });
+  test("an answer of STOP is a steer: its run is ended, its own session told, and it works on to the end", async () => {
+    const q = agentAtWork(["STOP\nIt keeps rewriting the same file.", "ON\nIt is writing the test.", "ON\nThe parser takes shape.", "PASS\nIt holds."], { submitAtLimit: true });
     const outcome = await q.run;
+    expect(q.audits().map((a) => a.verdict)).toEqual(["steer", "on", "on"]);
     expect(q.stopped()).toBe(1);
-    expect(outcome).toMatchObject({ status: "done", summary: "An independent audit stopped the work before he said he was done. The work as it stood was put to the reviewer, who accepted it." });
-  });
-
-  test("without submitAtLimit a stop ends it, saying the audit's why", async () => {
-    const q = agentAtWork(["STOP\nIt keeps rewriting the same file."]);
-    const outcome = await q.run;
-    expect(outcome).toMatchObject({ status: "stopped", summary: "Stopped by an independent audit: It keeps rewriting the same file." });
+    expect(q.prompts[1]).toContain("An independent audit of the work so far says: It keeps rewriting the same file.");
+    expect(outcome.status).toBe("done");
   });
 });
 
@@ -212,7 +219,7 @@ describe("work with no count and no clock, audited instead", () => {
   test("the engineer is told his commands have no fixed number, and that an audit looks at his work", async () => {
     const q = engineer({ engineer: [...commands(2 * AUDIT_EVERY.steps + 5), "DONE\nWritten."], reviewer: ["ON\nOn its task.", "ON\nCloser.", "PASS\nIt holds."] }, { audit: true, maxSteps: Infinity });
     expect(await q.run).toMatchObject({ status: "done", steps: 2 * AUDIT_EVERY.steps + 5 });
-    expect(q.told()[0]).toContain(`Your commands have no fixed number. An independent audit looks at your work every ${AUDIT_EVERY.steps} commands or ${AUDIT_EVERY.minutes} minutes: it may tell you what to do next, and it stops work that isn't getting closer to done.`);
+    expect(q.told()[0]).toContain(`Your commands have no fixed number. An independent audit looks at your work every ${AUDIT_EVERY.steps} commands or ${AUDIT_EVERY.minutes} minutes to keep it on its task: when it says what to do next, do that.`);
   });
 
   test("an audit of a coding agent's run reads no evidence while it works (its commands could take the repository's lock from under it): its review still does", async () => {

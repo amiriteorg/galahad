@@ -500,9 +500,10 @@ describe("a long quest's conversation stays affordable, and stays the same", () 
     expect(runs.filter((m) => /characters cut/.test(m.content)).length).toBeGreaterThanOrEqual(1);
   });
 
-  test("keep-reads (a trial variant): the newest current file reads among those cut short stay whole, within a budget; the beginning still holds between batches", async () => {
+  test("keep-reads: of the outputs cut short, the newest current file reads stay whole, within a budget; the beginning still holds between batches", async () => {
     const n = 26;
-    const page = "r".repeat(3000);
+    // (Pages large enough that keep-reads, which cuts by size, cuts them too.)
+    const page = "r".repeat(12_000);
     // A task that has to understand code: each command reads another part of the code, none of it changed.
     const commands = Array.from({ length: n }, (_, i) => `sed -n '${i * 100 + 1},${i * 100 + 100}p' src/watch.ts`);
     const run = (keepReads: boolean) =>
@@ -514,27 +515,99 @@ describe("a long quest's conversation stays affordable, and stays the same", () 
     const whole = (messages: ChatMessage[]) => messages.filter((m, i) => i > 0 && m.role === "user" && m.content.includes(page)).length;
     const plain = await turnsOf(run(false));
     const kept = await turnsOf(run(true));
-    // Without it, a dozen at most are whole; with it, the reads cut short stay whole too, up to its budget.
-    expect(whole(plain.at(-1)!)).toBeLessThanOrEqual(12);
-    expect(whole(kept.at(-1)!)).toBeGreaterThan(whole(plain.at(-1)!));
-    expect(whole(kept.at(-1)!) * 3000).toBeLessThanOrEqual(48_000 + 12 * 3100);
+    // Without it, a dozen at most are whole, and each is cut to its head and tail; with it, the reads cut short stay
+    // whole too, up to its budget beside the newest.
+    expect(whole(plain.at(-1)!)).toBe(0);
+    expect(whole(kept.at(-1)!)).toBeGreaterThan(12);
+    expect(whole(kept.at(-1)!) * 12_000).toBeLessThanOrEqual(160_000 + 160_000);
     let rewritten = 0;
     for (let t = 1; t < kept.length; t++) if (JSON.stringify(kept[t]!.slice(0, kept[t - 1]!.length)) !== JSON.stringify(kept[t - 1])) rewritten += 1;
     expect(rewritten).toBeLessThanOrEqual(3);
   });
 
   test("keep-reads takes a knight's reads as they come (`cd … && awk … && sed -n …`), and a later script, which could change anything, ends them", async () => {
-    const page = "k".repeat(3000);
+    const page = "k".repeat(12_000);
     const n = 26;
     const read = (i: number) => `cd /work/tasks/t && awk 'NR>=${i * 50 + 1} && NR<=${i * 50 + 50}' packages/node/src/ci-watch.ts && echo === && sed -n '${i * 50 + 1},${i * 50 + 50}p' packages/node/src/ci-back.ts`;
-    const commands = Array.from({ length: n }, (_, i) => (i === 18 ? "python3 edit.py" : read(i)));
+    const commands = Array.from({ length: n }, (_, i) => (i === 10 ? "python3 edit.py" : read(i)));
     const h = harness({ engineer: [...commands.map((c) => sh(c)), "DONE\nRead and edited."], outputs: commands.map(() => ({ stdout: `${page}\n` })) }, { maxSteps: 30, keepReads: true });
     expect((await h.run).status).toBe("done");
     const last = h.seen.filter((s) => s.role === "engineer").at(-1)!.messages.filter((m, i) => i > 0 && m.role === "user" && /^exit -?\d+ · /.test(m.content));
-    // The reads after the script stay whole as ever (the newest) or kept; every read before it is an excerpt again.
-    const beforeScript = last.slice(0, 18);
-    expect(beforeScript.every((m) => !m.content.includes(page))).toBe(true);
-    expect(last.slice(19).filter((m) => m.content.includes(page)).length).toBeGreaterThan(0);
+    // By the end the script and the reads before it are among those cut short. The reads after it stay whole as ever
+    // (the newest) or kept; every read before it is an excerpt again.
+    expect(last.slice(0, 10).every((m) => !m.content.includes(page))).toBe(true);
+    expect(last.slice(11).every((m) => m.content.includes(page))).toBe(true);
+  });
+
+  test("keep-reads: a file's contents come whole up to some 100,000 characters, and any other output is cut only past 30,000; without it, past 8,000", async () => {
+    const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i} ${"x".repeat(50)}`).join("\n");
+    const file = lines(1_500); // some 89,000 characters: a large source file
+    const log = lines(1_000); // some 59,000: a long test run
+    const shown = async (keepReads: boolean) => {
+      const h = harness({ engineer: [sh("cat -n src/big.ts"), sh("bun test"), "DONE\nRead and ran."], outputs: [{ stdout: `${file}\n` }, { stdout: `${log}\n` }] }, { keepReads });
+      expect((await h.run).status).toBe("done");
+      return h.seen.filter((x) => x.role === "engineer").at(-1)!.messages.filter((m, i) => i > 0 && m.role === "user" && /^exit -?\d+ · /.test(m.content));
+    };
+    const [read, test] = await shown(true);
+    expect(read!.content).toContain("line 0 ");
+    expect(read!.content).toContain("line 750 ");
+    expect(read!.content).toContain("line 1499 ");
+    expect(read!.content).not.toContain("characters cut");
+    // The test run's end is there, where its summary and last error are; its middle is cut.
+    expect(test!.content).toContain("line 999 ");
+    expect(test!.content).toMatch(/… \[\d+ characters cut\] …/);
+    expect(test!.content.length).toBeLessThan(31_000);
+    const [lean] = await shown(false);
+    expect(lean!.content.length).toBeLessThan(8_500);
+  });
+
+  test("keep-reads: he is told that what he reads comes whole and stays in view, and how to edit so it does", async () => {
+    const briefing = async (keepReads: boolean) => {
+      const h = harness({ engineer: ["DONE\nNothing to do."] }, { keepReads });
+      await h.run;
+      return h.seen.find((x) => x.role === "engineer")!.messages[0]!.content;
+    };
+    const told = await briefing(true);
+    expect(told).toContain("What you show of files (cat, sed -n, head, tail, nl, awk) comes whole, up to 100,000 characters, and stays in view while nothing changes it: read a file once, whole, rather than in pieces.");
+    expect(told).toContain("or a python3 script that writes the files it names: what you read of the others stays in view.");
+    expect(told).toContain("start anything longer in the background and check on it");
+    // A quest without it is briefed as ever.
+    expect(await briefing(false)).toContain("long output is cut to its head and tail.\n");
+  });
+
+  test("keep-reads: the conversation is cut by its size, not by a count: small outputs stay whole however many; past 160,000 characters the oldest go together, and the beginning holds between batches", async () => {
+    const small = Array.from({ length: 40 }, (_, i) => `ls src/d${i}`);
+    const few = harness({ engineer: [...small.map((c) => sh(c)), "DONE\nListed."], outputs: small.map(() => ({ stdout: `${"s".repeat(1_500)}\n` })) }, { maxSteps: 50, keepReads: true });
+    expect((await few.run).status).toBe("done");
+    const fewLast = few.seen.filter((x) => x.role === "engineer").at(-1)!.messages;
+    // Forty outputs of 1,500 characters are 60,000 in all: none is cut, where a count would have cut 36 of them.
+    expect(fewLast.filter((m) => /characters cut/.test(m.content))).toHaveLength(0);
+
+    const big = Array.from({ length: 40 }, (_, i) => `bun test t${i}`);
+    const many = harness({ engineer: [...big.map((c) => sh(c)), "DONE\nRan them."], outputs: big.map(() => ({ stdout: `${"t".repeat(9_000)}\n` })) }, { maxSteps: 50, keepReads: true });
+    expect((await many.run).status).toBe("done");
+    const turns = many.seen.filter((x) => x.role === "engineer").map((x) => x.messages);
+    let rewritten = 0;
+    for (let t = 1; t < turns.length; t++) if (JSON.stringify(turns[t]!.slice(0, turns[t - 1]!.length)) !== JSON.stringify(turns[t - 1])) rewritten += 1;
+    expect(rewritten).toBeGreaterThan(0);
+    expect(rewritten).toBeLessThanOrEqual(4);
+    for (const messages of turns) {
+      const whole = messages.filter((m, i) => i > 0 && m.role === "user" && /^exit -?\d+ · /.test(m.content) && !/characters cut/.test(m.content));
+      expect(whole.reduce((sum, m) => sum + m.content.length, 0)).toBeLessThanOrEqual(160_000 + 10_000);
+    }
+  });
+
+  test("keep-reads: an inline python3 edit that names the files it writes makes only those stale: what was read of the others stays whole", async () => {
+    const page = (c: string) => c.repeat(12_000);
+    const edit = `cd /work/t && python3 - <<'PY'\nimport pathlib\np = pathlib.Path("src/a.ts")\np.write_text(p.read_text().replace("old", "new"))\nPY`;
+    // Two files read, then a dozen test runs to have them cut short, then an edit of one of them, then more runs.
+    const commands = ["cat src/a.ts", "cat src/b.ts", ...Array.from({ length: 12 }, (_, i) => `bun test t${i}`), edit, ...Array.from({ length: 8 }, (_, i) => `bun test u${i}`)];
+    const outputs = commands.map((c) => ({ stdout: `${c === "cat src/a.ts" ? page("a") : c === "cat src/b.ts" ? page("b") : c.startsWith("cd /work/t") ? "" : "t".repeat(12_000)}\n` }));
+    const h = harness({ engineer: [...commands.map((c) => sh(c)), "DONE\nEdited."], outputs }, { maxSteps: 40, keepReads: true });
+    expect((await h.run).status).toBe("done");
+    const last = h.seen.filter((x) => x.role === "engineer").at(-1)!.messages.filter((m, i) => i > 0 && m.role === "user" && /^exit -?\d+ · /.test(m.content));
+    expect(last[0]!.content).not.toContain(page("a"));
+    expect(last[1]!.content).toContain(page("b"));
   });
 
   test("a file read before a later command changed it, both in the part cut short, is a line saying so; one never changed stays an excerpt", async () => {

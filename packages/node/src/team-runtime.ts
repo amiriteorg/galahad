@@ -187,8 +187,11 @@ print(open(kept).read() if os.path.exists(kept) else subprocess.check_output(['g
 /*
  * A knight's task has no count of commands and no limit of time (your ruling, 17 November 2026): limits ended real work
  * (sixteen commands and fifteen minutes, then forty and forty-five, and a coding tool's twelve), so instead an
- * independent audit looks at it as it runs and stops work that isn't getting closer to done (QuestOptions.audit). Its
- * budget, when you gave it one, and the knight's daily allowance still hold, and so does each command's limit below.
+ * independent audit looks at it as it runs and keeps it on its task (QuestOptions.audit). Nor is it held short in what
+ * it sees, and its audit never ends it (your word, 19 November 2026: "dont artificially limit my knights. Just have an
+ * inline auditor, that makes sure they stay on task"): it reads files whole and keeps them in view (keepReads), and
+ * each command has as long as one may run in its VM. Its budget, when you gave it one, and the knight's daily allowance
+ * still hold.
  */
 /** The longest any one command of a knight's may run in its VM, which kills it there at that (`timeout --signal=KILL`). */
 export const TEAM_COMMAND_SECONDS = 900;
@@ -254,8 +257,8 @@ export function progress(event: QuestEvent): string {
     case "tripped": return `Tripwire · ${event.rule} ${event.does === "halt" ? "halted the task" : event.gate ? "refused a gate" : "refused a command"}: ${event.why}\n$ ${event.command}`;
     case "checked": return `Check · ${event.rule} ${event.exitCode === 0 ? "passed" : "failed"} · ${event.command}${event.exitCode === 0 ? "" : `\n${event.output}`}`;
     case "retry": return `Retry · the ${event.role}'s call failed (${event.error.split("\n")[0]}): asked again in ${Math.round(event.waitMs / 1000)} s`;
-    // An independent audit while the work runs (QuestOptions.audit): what it found, and what it told the knight or why it stopped it.
-    case "audit": return `Audit · ${{ on: "on its task, and closer to done", steer: "steered", stop: "stopped the work", unread: "no answer that could be read: the work goes on" }[event.verdict]}${event.note ? `\n${event.note}` : ""}`;
+    // An independent audit while the work runs (QuestOptions.audit): what it found, and what it told the knight (an audit stopped work before 19 November 2026).
+    case "audit": return `Audit · ${{ on: "on its task", steer: "steered", stop: "stopped the work", unread: "no answer that could be read: the work goes on" }[event.verdict]}${event.note ? `\n${event.note}` : ""}`;
     default: return event.type;
   }
 }
@@ -519,9 +522,10 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // What the review's evidence is made of (each command and its exit, the gates), for what the work may teach.
       const trail = questTrail();
       const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: 120, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
-        // (keepReads: the code a knight read stays in view while it is current. The first real outcome's knight, without it,
-        // read one file in 26 of 82 commands and three tasks ended with nothing written: quest.ts keepReads.)
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: TEAM_COMMAND_SECONDS, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
+        // (keepReads: a knight sees whole what it reads, and it stays in view while it is current. The first real outcome's
+        // knights, shown 8,000 characters of each, read one file in 26 then 34 commands, and three tasks ended with nothing
+        // written: quest.ts keepReads. Each command has TEAM_COMMAND_SECONDS: at 120 s, the repository's own tests were cut off.)
         // The work is done on the models of the role you gave this knight (workRole: never the reviewer's); its plan
         // and the independent review stay the planner's and the reviewer's, whoever did the work.
         ask: (role, messages, turn) => ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : context, (model, usage) => addUsage(spent, role, model, usage), turn?.loop, role === "engineer" ? teammate.models : undefined, task.budgetUsd !== undefined),
