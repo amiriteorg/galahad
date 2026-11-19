@@ -5,8 +5,8 @@ import { noticeFrom } from "../lib/notices.ts";
 import { callerName, defaultLabel, deleteName, rowsFromCall } from "../lib/orders.ts";
 import { hlcMs, relativeTime } from "../lib/time.ts";
 import type { ActionClass } from "../types.ts";
-import { badge, busy, button, callout, card, disclosure, empty, formActions, linkButton, listRow, note, pageBody, pageHead, rows, section, skeletonRows, type Tone } from "../ui/controls.ts";
-import { confirmAction } from "../ui/dialog.ts";
+import { badge, busy, button, callout, card, disclosure, empty, field, formActions, linkButton, listRow, note, pageBody, pageHead, rows, section, skeletonRows, type Tone } from "../ui/controls.ts";
+import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { toast } from "../ui/toast.ts";
@@ -127,6 +127,53 @@ function loopDraftCard(ctx: Ctx, draft: LoopDraftView): HTMLElement {
   );
 }
 
+/** The texts a request carries that you may put your own words in before your yes (a message's, a pull request's). */
+const editableTexts = (action: ActionView): [string, string][] => Object.entries(action.args).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+
+/**
+ * Your own words in a request before your yes: each text it carries, to change. Only what you changed goes; your
+ * version is what's sent, and the one it was asked as is declined, saying which it became.
+ */
+function openEdit(ctx: Ctx, action: ActionView, node: string): void {
+  const texts = editableTexts(action);
+  const fields = texts.map(([key, value]) => {
+    const area = h("textarea", { class: "textarea mono", rows: Math.min(12, Math.max(2, value.split("\n").length + 1)), maxlength: 8000, spellcheck: "true" }) as HTMLTextAreaElement;
+    area.value = value;
+    return { key, value, area };
+  });
+  const status = h("div");
+  const send = button("Approve and send as edited", { variant: "primary", type: "submit", icon: "check" });
+  const form = h(
+    "form",
+    {
+      class: "stack loose",
+      onsubmit: (event: Event) => {
+        event.preventDefault();
+        const edits = Object.fromEntries(fields.filter((f) => f.area.value !== f.value).map((f) => [f.key, f.area.value]));
+        if (!Object.keys(edits).length) {
+          replace(status, callout("quiet", "Nothing is changed yet. Change a text, or close this and approve it as it is."));
+          return;
+        }
+        void busy(send, async () => {
+          try {
+            const { action: sent } = await ctx.api.post<{ action: ActionView }>("/api/actions/decide", { id: action.id, approve: true, edits });
+            sheet.close();
+            toast("Approved as you edited it", { tone: "ok", description: `${node} sends your version once, now (${sent.id}).` });
+          } catch (error) {
+            replace(status, callout("danger", errorMessage(error), { title: "Couldn't approve it" }));
+          }
+          await ctx.live.refreshActions();
+        });
+      },
+    },
+    ...fields.map((f) => field(f.key, f.area)),
+    note(`Your version is what ${node} sends, once, to `, h("span", { class: "mono" }, action.target), `. The request as it was asked is declined, saying which it became.`),
+    status,
+    formActions(button("Cancel", { onClick: () => sheet.close() }), send),
+  );
+  const sheet = openSheet({ title: "Edit, then approve", description: `${action.connector}.${action.tool}, asked by ${callerName(action.by)}`, body: form, size: "wide", initialFocus: () => fields[0]?.area });
+}
+
 function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
   const info = CLASS_INFO[action.class as ActionClass];
   const destructive = action.class === "delete";
@@ -139,6 +186,9 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
   const decline = button("Decline", { variant: "danger", icon: "x" });
   // Approve, and answer calls like it the same way next time: a standing order, signed in the same step.
   const similar = button("Approve and allow similar…", { icon: "scroll" });
+  // Your own words in it before your yes (never a delete's: what it deletes is typed to approve it).
+  const edit = !destructive && editableTexts(action).length ? button("Edit…", { icon: "edit" }) : null;
+  edit?.addEventListener("click", () => openEdit(ctx, action, node));
 
   async function decide(yes: boolean, trigger: HTMLButtonElement): Promise<void> {
     await busy(trigger, async () => {
@@ -209,7 +259,7 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
         : "Outward actions (posting, sending, pushing, the physical world) ask you, unless a standing order of yours covers them.",
     ),
     admin
-      ? formActions(decline, similar, approve)
+      ? formActions(decline, similar, edit, approve)
       : callout("quiet", h("span", {}, "This device can't answer (no fleet:admin scope). Answer from one that can, or on a node: ", h("code", {}, `galahad action approve ${action.id}`))),
     outcome,
   );
@@ -287,6 +337,8 @@ function decidedRow(ctx: Ctx, action: ActionView): HTMLElement {
         : action.decidedVia
           ? h("span", {}, `answered from ${deviceName(ctx, action.decidedVia)}`)
           : null,
+      // What you said with it; for one you edited, which it was sent as.
+      action.note ? h("span", { class: "wrap-anywhere" }, action.note) : null,
     ],
     body: action.receipt ? h("details", { class: "process" }, h("summary", { "data-key": `receipt:${action.id}` }, icon("chevron-right", { size: 14, class: "chev" }), "Receipt"), h("pre", { class: "result process-body" }, action.receipt)) : null,
   });

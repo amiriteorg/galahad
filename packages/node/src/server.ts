@@ -3766,10 +3766,10 @@ export function createApp(ctx: AppContext) {
       // Only you decide: never another node, never an agent (arms can't hold fleet:admin anyway).
       if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you can answer an action request");
       return connectorErrors(() => {
-        const action = ctx.connectors.decide(input.id, input.approve, p.kind === "client" ? p.device : null, input.note);
-        // An approve card a knight's work raised, answered: stepping in on the task it is running (#28).
+        const action = ctx.connectors.decide(input.id, input.approve, p.kind === "client" ? p.device : null, input.note, input.edits);
+        // An approve card a knight's work raised, answered: stepping in on the task it is running (#28), once, edited or not.
         const knight = knightOfLabel(action.by);
-        if (knight) steppedIn({ teammate: knight }, "approval", `${input.approve ? "approved" : "declined"} ${action.connector}.${action.tool}`);
+        if (knight) steppedIn({ teammate: knight }, "approval", `${input.edits ? "edited and approved" : input.approve ? "approved" : "declined"} ${action.connector}.${action.tool}`);
         return { action };
       });
     },

@@ -268,6 +268,39 @@ describe("connectors", () => {
     const { entries } = (await admin<{ entries: { verdict: string; reason: string }[] }>("ledger")).body;
     expect(entries[0]).toMatchObject({ verdict: "approved", reason: "you asked for it" });
   });
+
+  test("you may put your own words in it before you approve: your version is sent once, and the one it was asked as is declined, saying which it became", async () => {
+    const asked = await arm<{ status: string; action: string }>("callConnector", { connector: "forge", tool: "post", args: { text: "Helo, wrold" }, why: "announce the release" });
+    expect(asked.body.status).toBe("asked");
+    const before = posts().length;
+    // An edit goes with a yes, and only to text it already has.
+    expect((await admin("decideAction", { id: asked.body.action, approve: false, edits: { text: "x" } })).status).toBe(400);
+    expect((await admin("decideAction", { id: asked.body.action, approve: true, edits: { title: "new" } })).status).toBe(400);
+    // A key typed into it is refused, as in any call, and nothing is decided. (A fake one, put together here so the
+    // repository holds no token-shaped text for secret scanners to stop at.)
+    const typedKey = ["ghp", "0123456789abcdefghijABCDEFGHIJ0123456789"].join("_");
+    expect((await admin("decideAction", { id: asked.body.action, approve: true, edits: { text: typedKey } })).status).toBe(422);
+    expect((await admin<{ actions: ActionView[] }>("actions")).body.actions.find((a) => a.id === asked.body.action)!.state).toBe("waiting");
+    // The agent can't edit its own request into a yes.
+    expect((await arm("decideAction", { id: asked.body.action, approve: true, edits: { text: "mine" } })).status).toBe(403);
+
+    const decided = await admin<{ action: ActionView }>("decideAction", { id: asked.body.action, approve: true, edits: { text: "Hello, world" } });
+    expect(decided.status).toBe(200);
+    const yours = decided.body.action;
+    expect(yours.id).not.toBe(asked.body.action);
+    expect(yours).toMatchObject({ connector: "forge", tool: "post", args: { text: "Hello, world" }, class: "outward", by: "arm:test-arm" });
+    expect(yours.why).toBe(`announce the release (edited by you from ${asked.body.action})`);
+    await daemon.connectors.drain();
+    await until(async () => (await admin<{ actions: ActionView[] }>("actions")).body.actions.find((a) => a.id === yours.id && a.state === "done"));
+    expect(posts()).toHaveLength(before + 1);
+    expect(JSON.parse(posts().at(-1)!.body)).toEqual({ text: "Hello, world" });
+    const original = (await admin<{ actions: ActionView[] }>("actions")).body.actions.find((a) => a.id === asked.body.action)!;
+    expect(original).toMatchObject({ state: "denied", note: `you edited it: sent as ${yours.id}` });
+    // Neither is answered again, and nothing more is sent.
+    expect((await admin("decideAction", { id: asked.body.action, approve: true })).status).toBe(409);
+    await daemon.connectors.drain();
+    expect(posts()).toHaveLength(before + 1);
+  });
 });
 
 describe("standing orders", () => {

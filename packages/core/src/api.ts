@@ -1100,7 +1100,22 @@ export const routes = {
     method: "POST",
     path: "/api/actions/decide",
     scope: "fleet:admin",
-    input: z.strictObject({ id: ActionId, approve: z.boolean(), note: z.string().max(500).optional() }),
+    input: z
+      .strictObject({
+        id: ActionId,
+        approve: z.boolean(),
+        note: z.string().max(500).optional(),
+        /**
+         * Your own words in it, with a yes: text it already has (a message's, a pull request's), replaced, its other
+         * arguments as they were. Your version is filed anew under the same asker and approved in the same step, and
+         * the one it was asked as is declined, saying which it became (connectors.ts amend).
+         */
+        edits: z
+          .record(z.string().min(1).max(64), z.string().max(8000))
+          .refine((edits) => Object.keys(edits).length >= 1 && Object.keys(edits).length <= 16, "edit one to sixteen of its texts")
+          .optional(),
+      })
+      .refine((answer) => !answer.edits || answer.approve, "an edit goes with a yes: decline it as it is, or edit it and approve"),
   },
   investigations: { method: "GET", path: "/api/investigations", scope: "mind:read", input: null },
   /** Record a pre-registration before anything runs (it never changes afterwards). */
@@ -1763,6 +1778,8 @@ export interface ActionView {
   /** The standing order that answered it, when one did. */
   order: { id: string; label: string } | null;
   receipt: string | null;
+  /** What you said with your answer; for one you edited, which it was sent as. */
+  note: string | null;
 }
 
 export interface InvestigationView {

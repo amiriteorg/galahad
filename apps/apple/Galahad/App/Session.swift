@@ -157,10 +157,11 @@ import Observation
         usage = try await client.post("/api/usage/budget", Budget(usd: usd, per: per), as: UsageMeter.self)
     }
 
-    /// Your answer to an approval: nothing leaves until you approve it.
-    func decide(_ action: ActionView, approve: Bool) async throws {
-        struct Decision: Encodable { let id: String; let approve: Bool }
-        _ = try await client.post("/api/actions/decide", Decision(id: action.id, approve: approve), as: JSONValue.self)
+    /// Your answer to an approval: nothing leaves until you approve it. `edits`, with a yes: your own words in its texts
+    /// (only those you changed); your version is what's sent, and the one asked is declined, saying which it became.
+    func decide(_ action: ActionView, approve: Bool, edits: [String: String]? = nil) async throws {
+        struct Decision: Encodable { let id: String; let approve: Bool; let edits: [String: String]? }
+        _ = try await client.post("/api/actions/decide", Decision(id: action.id, approve: approve, edits: edits), as: JSONValue.self)
         await refresh()
     }
 

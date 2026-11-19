@@ -225,9 +225,19 @@ struct ApprovalSheet: View {
     @State private var typed = ""
     @State private var busy = false
     @State private var problem: String?
+    /// Your own words in its texts, before your yes: what you've typed, by argument.
+    @State private var editing = false
+    @State private var drafts: [String: String] = [:]
 
     private var destructive: Bool { action.kind == "delete" }
     private var node: String { session.nodeName(of: action.node) }
+    /// The texts it carries, which you may change before your yes (never a delete's: what it deletes is typed to approve it).
+    private var texts: [String: String] {
+        guard !destructive else { return [:] }
+        return action.args.compactMapValues { if case .string(let text) = $0 { text } else { nil } }
+    }
+    /// Only what you changed goes.
+    private var edits: [String: String] { drafts.filter { texts[$0.key] != nil && texts[$0.key] != $0.value } }
 
     var body: some View {
         NavigationStack {
@@ -244,13 +254,23 @@ struct ApprovalSheet: View {
                     if let why = action.why, !why.isEmpty { Text(why) }
                 }
                 if !action.args.isEmpty {
-                    Section("What it sends") {
+                    Section {
                         ForEach(action.args.keys.sorted(), id: \.self) { key in
                             VStack(alignment: .leading, spacing: Space.s1) {
                                 Text(key).font(.caption.monospaced()).foregroundStyle(.secondary)
-                                Text(action.args[key]?.text ?? "").font(.body.monospaced()).textSelection(.enabled)
+                                if editing, let text = texts[key] {
+                                    TextField(key, text: Binding(get: { drafts[key] ?? text }, set: { drafts[key] = $0 }), axis: .vertical)
+                                        .font(.body.monospaced())
+                                        .lineLimit(2...12)
+                                } else {
+                                    Text(drafts[key] ?? action.args[key]?.text ?? "").font(.body.monospaced()).textSelection(.enabled)
+                                }
                             }
                         }
+                    } header: {
+                        Text("What it sends")
+                    } footer: {
+                        if !edits.isEmpty { Text("Your version is what \(node) sends. The request as it was asked is declined, saying which it became.") }
                     }
                 }
                 if let work = Approval.work(action.args) {
@@ -277,6 +297,9 @@ struct ApprovalSheet: View {
             .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                if session.can("fleet:admin") && !texts.isEmpty {
+                    ToolbarItem(placement: .primaryAction) { Button(editing ? "Done" : "Edit") { editing.toggle() } }
+                }
             }
             .safeAreaInset(edge: .bottom) {
                 if session.can("fleet:admin") {
@@ -299,13 +322,13 @@ struct ApprovalSheet: View {
                     .padding(Metrics.margin)
                 }
             }
-            .alert(destructive ? "Approve this delete?" : "Approve and send?", isPresented: $confirming) {
+            .alert(destructive ? "Approve this delete?" : edits.isEmpty ? "Approve and send?" : "Approve and send as edited?", isPresented: $confirming) {
                 if destructive {
                     TextField(Approval.deleteName(connector: action.connector, tool: action.tool, target: action.target, args: action.args), text: $typed)
                         .capitals(.never)
                         .autocorrectionDisabled()
                 }
-                Button(destructive ? "Approve delete" : "Approve and send", role: destructive ? .destructive : nil) {
+                Button(destructive ? "Approve delete" : edits.isEmpty ? "Approve and send" : "Approve and send as edited", role: destructive ? .destructive : nil) {
                     Task { await decide(true) }
                 }
                 .disabled(destructive && typed != Approval.deleteName(connector: action.connector, tool: action.tool, target: action.target, args: action.args))
@@ -313,7 +336,7 @@ struct ApprovalSheet: View {
             } message: {
                 Text(destructive
                     ? "\(node) deletes \(action.target) once, as soon as you approve. It can't be brought back. Type its name to approve."
-                    : "\(node) sends it to \(action.target) once, as soon as you approve. It can't be called back, and if it fails it isn't retried.")
+                    : "\(node) sends \(edits.isEmpty ? "it" : "your version") to \(action.target) once, as soon as you approve. It can't be called back, and if it fails it isn't retried.")
             }
         }
         .sheetSize(width: 560, height: 600)
@@ -323,7 +346,7 @@ struct ApprovalSheet: View {
         busy = true
         defer { busy = false }
         do {
-            try await session.decide(action, approve: approve)
+            try await session.decide(action, approve: approve, edits: approve && !edits.isEmpty ? edits : nil)
             dismiss()
         } catch {
             problem = error.localizedDescription

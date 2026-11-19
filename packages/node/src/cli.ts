@@ -327,7 +327,9 @@ Connectors (manifests, not code: keys stay in the vault; outward and delete ask 
   connector app <id> --client-id <id>             a connector that signs in (Gmail, Outlook): the app you registered
   connector signin <id> [--redirect <url>]        sign in as you (Google returns to <your app>/oauth/callback) · connector signout <id>
   secret set <name> --connector <id>                    a connector's key, pinned to its origin
-  action ls [--all] | action approve <id> [--note …] | action deny <id>
+  action ls [--all] | action approve <id> [--note …] [--edit key=text …] | action deny <id>
+                                  --edit: your own words in its text before your yes (that version is sent; the one
+                                  asked is declined, saying which it became)
 
 Standing orders (your answer in advance: one tool, narrow arguments, an expiry)
   order ls [--all] | order revoke <id>
@@ -585,6 +587,7 @@ async function main(): Promise<void> {
       quest: { type: "string" },
       call: { type: "string" },
       arg: { type: "string", multiple: true },
+      edit: { type: "string", multiple: true },
       why: { type: "string" },
       note: { type: "string" },
       manifest: { type: "string" },

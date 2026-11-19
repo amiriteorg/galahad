@@ -601,9 +601,18 @@ export async function connectorCommand(api: Api, sub: string | undefined, rest: 
 
 export async function actionCommand(api: Api, sub: string | undefined, rest: string[], flags: Flags): Promise<void> {
   if (sub === "approve" || sub === "deny") {
-    if (!rest[0]) throw new Error(`usage: galahad action ${sub} <id> [--note text]`);
-    const { action } = await api.call<{ action: ActionView }>("decideAction", { id: rest[0], approve: sub === "approve", ...(str(flags, "note") ? { note: str(flags, "note") } : {}) });
-    console.log(sub === "approve" ? `Approved: ${action.target}. The node that asked sends it once.` : "Declined. Nothing was sent.");
+    if (!rest[0]) throw new Error(`usage: galahad action ${sub} <id> [--note text]${sub === "approve" ? " [--edit key=text …]" : ""}`);
+    // Your own words in its text, before your yes: --edit text="Hello, world" (each a text it already has).
+    const edits: Record<string, string> = {};
+    for (const pair of list(flags, "edit")) {
+      const at = pair.indexOf("=");
+      if (at < 1) throw new Error(`--edit takes key=text, not "${pair}"`);
+      edits[pair.slice(0, at)] = pair.slice(at + 1);
+    }
+    const edited = Object.keys(edits).length > 0;
+    if (edited && sub !== "approve") throw new Error("an edit goes with a yes: galahad action approve <id> --edit key=text");
+    const { action } = await api.call<{ action: ActionView }>("decideAction", { id: rest[0], approve: sub === "approve", ...(str(flags, "note") ? { note: str(flags, "note") } : {}), ...(edited ? { edits } : {}) });
+    console.log(sub === "approve" ? `Approved${edited ? ` as you edited it (sent as ${action.id})` : ""}: ${action.target}. The node that asked sends it once.` : "Declined. Nothing was sent.");
     return;
   }
   const { actions } = await api.call<{ actions: ActionView[] }>("actions");

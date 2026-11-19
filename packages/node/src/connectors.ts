@@ -350,7 +350,7 @@ export class ConnectorService {
           why?: string;
           expires: number;
         };
-        const decision = this.o.store.lww<{ verdict: "approved" | "denied"; via?: string; order?: string }>(`action-decision:${body.id}`);
+        const decision = this.o.store.lww<{ verdict: "approved" | "denied"; via?: string; order?: string; note?: string }>(`action-decision:${body.id}`);
         const orderId = decision?.value?.order;
         const order = orderId ? this.o.store.lww<StoredOrder>(`order:${orderId}`)?.value : null;
         const done = this.o.store.lww<{ ok: boolean; receipt: string }>(`action-done:${body.id}`)?.value ?? null;
@@ -378,18 +378,23 @@ export class ConnectorService {
           decidedVia: decision?.value?.via ?? decision?.device ?? null,
           order: orderId ? { id: orderId, label: order?.label ?? orderId } : null,
           receipt: done?.receipt ?? null,
+          note: decision?.value?.note ?? null,
         };
       })
       .sort((a, b) => (a.requestedAt < b.requestedAt ? 1 : -1))
       .slice(0, limit);
   }
 
-  /** Your answer to an action request. `via` is the device you answered from. */
-  decide(id: string, approve: boolean, via: string | null, note?: string): ActionView {
+  /** Your answer to an action request. `via` is the device you answered from; `edits`, your own words in it, with a yes (amend). */
+  decide(id: string, approve: boolean, via: string | null, note?: string, edits?: Record<string, string>): ActionView {
     const action = this.actions(10_000).find((a) => a.id === id);
     if (!action) throw new ConnectorCallError(404, "no such action");
     if (action.state === "expired") throw new ConnectorCallError(409, "that request expired unanswered (no answer means no)");
     if (action.state !== "waiting") throw new ConnectorCallError(409, `already ${action.state}`);
+    if (edits) {
+      if (!approve) throw new ConnectorCallError(400, "an edit goes with a yes: decline it as it is, or edit it and approve");
+      return this.amend(action, edits, via, note);
+    }
     this.o.store.emit(
       this.o.identity,
       "action.decided",
@@ -405,6 +410,54 @@ export class ConnectorService {
       detail: `action ${id}`,
     });
     if (approve) void this.drain();
+    return this.actions(10_000).find((a) => a.id === id)!;
+  }
+
+  /**
+   * Your yes to your own version of a request: text it already has replaced by yours, checked as any call's arguments
+   * are (the tool's own terms, no key in them, what the oath allows). Yours is filed anew under the same asker and
+   * approved in the same step; the one it was asked as is declined, saying which it became. All in kinds every
+   * replica knows, and only for a request this node filed, so the node that sends yours is the one that would have
+   * sent the first (one filed elsewhere is edited there).
+   */
+  private amend(action: ActionView, edits: Record<string, string>, via: string | null, note?: string): ActionView {
+    if (action.node !== this.o.identity.id) throw new ConnectorCallError(409, "another node asked for this: edit it from there, or decline it and ask again");
+    for (const key of Object.keys(edits)) {
+      if (typeof action.args[key] !== "string") throw new ConnectorCallError(400, `only text it already has can be edited, and ${key} isn't`);
+    }
+    const manifest = this.manifest(action.connector);
+    const parsed = ConnectorArgs.safeParse({ ...action.args, ...edits });
+    if (!parsed.success) throw new ConnectorCallError(400, parsed.error.issues[0]?.message ?? "those arguments can't be sent");
+    const args = parsed.data;
+    const ids = publicIds(manifest);
+    if (argStrings(args).some((text) => findSecrets(text, ids ? { isPublic: ids } : {}).length)) {
+      throw new ConnectorCallError(422, "an argument looks like a credential; connectors take keys from the vault, never from arguments");
+    }
+    let request: ConnectorRequest;
+    try {
+      request = buildCall(manifest, action.tool, args);
+    } catch (error) {
+      throw new ConnectorCallError(400, (error as Error).message);
+    }
+    const resource = `connector.${manifest.id}`;
+    const allowed = decide({ class: request.class, resource, target: request.target });
+    if (allowed.verdict === "deny") throw new ConnectorCallError(403, allowed.reason);
+    const id = `a_${randomId(16)}`;
+    const said = ` (edited by you from ${action.id})`;
+    const why = `${action.why ? action.why.slice(0, 500 - said.length) : ""}${said}`.trim();
+    const yours = { trust: "owner" as const, ...(via ? { via } : {}) };
+    this.o.store.emit(this.o.identity, "action.requested", { id, connector: action.connector, tool: action.tool, args, class: request.class, target: request.target, by: action.by, why, expires: this.now() + ACTION_TTL_MS });
+    this.o.store.emit(this.o.identity, "action.decided", { id: action.id, verdict: "denied", note: `you edited it: sent as ${id}` }, yours);
+    this.o.store.emit(this.o.identity, "action.decided", { id, verdict: "approved", ...(note ? { note: redact(note).slice(0, 500) } : {}) }, yours);
+    this.o.ledger({
+      class: request.class as LedgerEntryInput["class"],
+      resource,
+      target: request.target,
+      verdict: "approved",
+      reason: "you approved it as you edited it",
+      detail: `action ${id}, edited from ${action.id}`,
+    });
+    void this.drain();
     return this.actions(10_000).find((a) => a.id === id)!;
   }
 
