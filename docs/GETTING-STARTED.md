@@ -196,6 +196,8 @@ bun galahad key add                       # auto-detects sk-ant- (Anthropic), sk
                                        # and sk-nano- (NanoGPT)
 bun galahad key add --provider deepseek
 bun galahad key add --provider abliteration
+bun galahad key add --provider heabsy     # Heabsy; and nearai, NEAR AI Cloud (for knights in sensitive mode: ROUNDTABLE.md)
+bun galahad key add --provider nearai
 bun galahad key add --provider moonshot
 bun galahad key add --provider verda      # Verda's inference API (a container of your own: --base-url its address)
 bun galahad key add --provider cloudflare-ai --base-url https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/compat

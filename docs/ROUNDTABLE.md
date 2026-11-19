@@ -243,7 +243,7 @@ Work it gives another knight is held to its models too, whoever does it, and a k
 
 What it shares on purpose is read where it goes: a message in a room with other knights, on their models; a task's result in an outcome of Galahad's, on his. Galahad answers on his own models when you call him into its conversation with `@galahad`.
 
-Heabsy and NEAR AI Cloud are among the providers' starting points (`galahad provider add heabsy`, `galahad provider add nearai`; the key with `galahad key add`). NEAR AI's catalogue includes abliterated models, such as `nearai/Qwen/Qwen3.8-27B-abliterated` and `nearai/deepseek-ai/DeepSeek-V4.1-Flash-1017-abliterated`.
+Heabsy and NEAR AI Cloud are among the providers' starting points: `galahad key add --provider heabsy` (or `nearai`) sets one up with its key, typed in a hidden prompt. NEAR AI's catalogue includes abliterated models, such as `nearai/Qwen/Qwen3.8-27B-abliterated` and `nearai/deepseek-ai/DeepSeek-V4.1-Flash-1017-abliterated`.
 
 Its engineering harness is a separate choice:
 

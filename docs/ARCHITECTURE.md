@@ -235,6 +235,8 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 | `anthropic` | anthropic | `https://api.anthropic.com` |
 | `deepseek` | openai | `https://api.deepseek.com` |
 | `abliteration` | openai | `https://api.abliteration.ai/v1` |
+| `heabsy` | openai | `https://api.heabsy.com/v1` (Heabsy: low-refusal models) |
+| `nearai` | openai | `https://cloud-api.near.ai/v1` (NEAR AI Cloud: open models, abliterated ones among them, and other vendors' too; for work on them alone, [sensitive mode](ROUNDTABLE.md#sensitive-mode) holds it to the models you name) |
 | `orcarouter` | openai | `https://api.orcarouter.ai/v1` |
 | `openrouter` | openai | `https://openrouter.ai/api/v1` |
 | `moonshot` | openai | `https://api.moonshot.ai/v1` |
