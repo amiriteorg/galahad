@@ -9367,7 +9367,8 @@
           "takeover": 1,
           "stop": 1,
           "resume": 12,
-          "message": 0
+          "message": 0,
+          "rewritten": 1
         }
       },
       {
@@ -9726,7 +9727,7 @@
         "given": null,
         "kept": null,
         "proposed": null,
-        "stepped": "You stepped in: its desktop taken over, a stop, 12 resumes and given again two times",
+        "stepped": "You stepped in: its desktop taken over, a stop, 12 resumes, given again two times and rewritten",
         "shipped": null,
         "again": "Do it well.\n\nLast time (task-old000000000), it ended without verified work: It gave up."
       },

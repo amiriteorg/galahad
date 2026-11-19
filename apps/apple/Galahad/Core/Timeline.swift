@@ -186,7 +186,7 @@ enum TaskCard {
 
     /// How you stepped in on it, the north star's count (nil: you never did): core's interventionWords.
     static func stepped(_ task: TeamTask) -> String? {
-        let kinds = ["approval", "message", "takeover", "stop", "resume", "again"]
+        let kinds = ["approval", "message", "takeover", "stop", "resume", "again", "rewritten"]
         let number = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
         func count(_ n: Int) -> String { n < number.count ? number[n] : String(n) }
         let parts: [String] = kinds.compactMap { kind in
@@ -197,6 +197,7 @@ enum TaskCard {
             case "takeover": return "its desktop taken over"
             case "stop": return n == 1 ? "a stop" : "\(count(n)) stops"
             case "resume": return n == 1 ? "a resume" : "\(count(n)) resumes"
+            case "rewritten": return n == 1 ? "rewritten" : "rewritten \(count(n)) times"
             default: return n == 1 ? "given again" : "given again \(count(n)) times"
             }
         }

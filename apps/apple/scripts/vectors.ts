@@ -742,7 +742,7 @@ const adaTasks = [
   task("sync", "ada", "done", { verified: true, createdAt: at(90), output: "Sync now resumes from the last acknowledged event.\n\nReview: PASS", changes: { artifact: `art_${"b".repeat(22)}`, files: 2, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" }, interventions: { message: 2, approval: 1 } }),
   task("run", "ada", "running", { createdAt: at(30), progress: "Running · bun test packages/link\nmore" }),
   task("same", "ada", "queued", { createdAt: at(30), givenBy: "owner" }),
-  task("old", "ada", "failed", { createdAt: at(200), error: "gave-up", output: "Review: FAIL", interventions: { again: 2, takeover: 1, stop: 1, resume: 12, message: 0 } }),
+  task("old", "ada", "failed", { createdAt: at(200), error: "gave-up", output: "Review: FAIL", interventions: { again: 2, takeover: 1, stop: 1, resume: 12, message: 0, rewritten: 1 } }),
   task("cut", "ada", "interrupted", { createdAt: at(60) }),
   task("halt", "ada", "stopped", { createdAt: at(40), error: "stopped", givenBy: "galahad" }),
   task("half", "ada", "done", { createdAt: at(20), verified: false, output: "x".repeat(1200) }),
