@@ -1,5 +1,5 @@
 import type { ActionView, PairingView } from "@galahad/core";
-import { type Api, setNetworkHandler } from "./api.ts";
+import { type Api, nodeReachable, setNetworkHandler } from "./api.ts";
 import type { Ctx, NavigateOptions, Route, View } from "./context.ts";
 import type { BrowserIdentity } from "./identity.ts";
 import { startLive } from "./live.ts";
@@ -26,6 +26,7 @@ import { conversationFromHash } from "@galahad/core/notify-payload";
 import { readOpenMessage } from "./lib/push.ts";
 import { badgeMessage, type Badging, showBadge } from "./lib/badge.ts";
 import { readsFor } from "./lib/prefetch.ts";
+import { reachability } from "./lib/reach.ts";
 import { syncPush } from "./views/notifications.ts";
 import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
@@ -111,7 +112,19 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       });
     },
   });
-  setNetworkHandler((ok) => live.online.set(ok));
+  // One failed request is doubted, and the node asked once more, before the banner says it can't be reached (lib/reach.ts).
+  setNetworkHandler(
+    reachability({
+      set: (ok) => live.online.set(ok),
+      says: () => live.online.value,
+      browserOffline: () => !navigator.onLine,
+      probe: () => nodeReachable(),
+      after: (ms, run) => {
+        const timer = setTimeout(run, ms);
+        return () => clearTimeout(timer);
+      },
+    }),
+  );
 
   const ctx: Ctx = {
     ...base,
