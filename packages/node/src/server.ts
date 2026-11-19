@@ -257,8 +257,11 @@ export interface AppContext {
   connectorRequests: ConnectorRequests;
   /** Bilag copied from your mail to Google Drive (bilag.ts): what was copied, and copying what came before the loop's wakes. */
   bilag?: BilagService;
-  /** A bilag from Drive into Dinero, to the payment it documents (books.ts). */
-  books?: (input: BooksAttach) => Promise<BooksAttached>;
+  /** A bilag from Drive into Dinero, to the payment it documents, or into its archive alone (books.ts). */
+  books?: {
+    attach(input: BooksAttach): Promise<BooksAttached>;
+    upload(input: { organizationId: number; file: string }): Promise<{ name: string; bytes: number; sha256: string; fileGuid: string }>;
+  };
   /** The heartbeat's checks, run here and now (no writes). */
   heartbeatCheck: () => Promise<FindingView[]>;
   /** The doctor: one look at this node's whole installation (doctor.ts). It changes nothing. */
@@ -1325,6 +1328,17 @@ export function createApp(ctx: AppContext) {
       throw error;
     }
   };
+  /** The books' routes: yours alone; a connector's refusal as it came, anything else said as Dinero's or Drive's (502). */
+  async function booksErrors<T>(p: Principal, work: (books: NonNullable<AppContext["books"]>) => Promise<T>): Promise<T> {
+    ownerOnly(p);
+    if (!ctx.books) throw new HttpError(503, "this node keeps no books");
+    try {
+      return await connectorErrors(() => work(ctx.books!));
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(502, redact(String((error as Error).message ?? error)).slice(0, 500));
+    }
+  }
   /** Who reaches a connector: you (a device of yours), or an agent: a coding agent's arm, or another node. */
   const connectorCaller = (p: Principal): Caller =>
     p.kind === "admin" || p.kind === "client"
@@ -3592,16 +3606,8 @@ export function createApp(ctx: AppContext) {
       if (!ctx.bilag) throw new HttpError(503, "this node copies no bilag");
       return connectorErrors(() => ctx.bilag!.names());
     },
-    booksAttach: async (input, p) => {
-      ownerOnly(p);
-      if (!ctx.books) throw new HttpError(503, "this node keeps no books");
-      try {
-        return await connectorErrors(() => ctx.books!(input));
-      } catch (error) {
-        if (error instanceof HttpError) throw error;
-        throw new HttpError(502, redact(String((error as Error).message ?? error)).slice(0, 500));
-      }
-    },
+    booksAttach: (input, p) => booksErrors(p, (books) => books.attach(input)),
+    booksUpload: (input, p) => booksErrors(p, (books) => books.upload(input)),
     loopHook: (input) => {
       const loop = loopRecords(ctx.store).find((l) => l.name === input.name);
       if (!loop) throw new HttpError(404, `no loop "${input.name}"`);

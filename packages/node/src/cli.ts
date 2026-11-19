@@ -72,6 +72,7 @@ of its own; "roundtable", "squires" and "team" are the same command)
   bilag names                      copies of forwarded mail renamed for who first sent them (a bilag you forwarded yourself)
   books attach --org <id> --card <voucher card> --file <Drive file id> | --dinero-file <id> --why "…"
                                     a bilag from Drive into Dinero as it is; attaching it to the payment's card asks you
+  books upload --org <id> --file <Drive file id>   a bilag into Dinero's archive alone: its fileGuid, for a draft
   roundtable files <knight> [/work/path]  a folder of its workspace (its VM's /work; galahad: his computer's)
   roundtable read <knight> </work/path>  one file of it (anything like a key redacted)
   roundtable changes <knight> [--task <id>] [--files]  what its latest task (or that one) changed: files, then the diff
@@ -1993,7 +1994,14 @@ Evidence: galahad artifact ${i!.artifact}`));
     }
     case "books": {
       // A bilag from your Drive into Dinero, to the payment it documents (books.ts); attaching it asks you.
-      const usage = 'usage: galahad books attach --org <Dinero organization id> --card <voucher card id> --file <Drive file id> | --dinero-file <id in Dinero\'s archive> --why "…"';
+      const usage = 'usage: galahad books attach --org <Dinero organization id> --card <voucher card id> --file <Drive file id> | --dinero-file <id in Dinero\'s archive> --why "…"\n       galahad books upload --org <Dinero organization id> --file <Drive file id>';
+      if (sub === "upload") {
+        const org = Number(str("org"));
+        if (!Number.isInteger(org) || org <= 0 || !str("file")) fail(usage);
+        const up = await new Admin(home).call<{ name: string; bytes: number; sha256: string; fileGuid: string }>("booksUpload", { organizationId: org, file: str("file") });
+        console.log(`${bold(up.name)} is in Dinero's archive (${up.bytes} bytes, SHA-256 ${up.sha256.slice(0, 12)}…): fileGuid ${up.fileGuid}`);
+        return;
+      }
       if (sub !== "attach") fail(usage);
       const org = Number(str("org"));
       if (!Number.isInteger(org) || org <= 0 || !str("card") || !str("file") === !str("dinero-file") || !str("why")) fail(usage);

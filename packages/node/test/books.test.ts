@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import type { ArgValue } from "@galahad/core";
 import type { ConnectorResult, Transferred } from "@galahad/brain";
-import { attachBilag, fileGuidOf } from "../src/books.ts";
+import { attachBilag, fileGuidOf, uploadBilag } from "../src/books.ts";
 import type { Transfer } from "../src/bilag.ts";
 
 /*
@@ -50,6 +50,14 @@ describe("a bilag into Dinero", () => {
     expect(up).toMatchObject({ connector: "dinero", tool: "upload_file", args: { organizationId: 517264, fileName: "2026-11-12 Topaz Labs Team – TS-13398360.pdf", contentType: "application/pdf", expectedByteLength: pdf.length, sha256 } });
     expect(Buffer.from(String(up!.args.base64Content), "base64").equals(Buffer.from(pdf))).toBe(true);
     expect(r.asked).toEqual([{ connector: "dinero", tool: "attach_file_to_voucher_card", args: { organizationId: 517264, voucherGuid: CARD, fileGuid: GUID }, why: "Topaz Labs' invoice TS-13398360, $69.00 on 12 Nov: the 467.81 kr paid on 13 Nov" }]);
+  });
+
+  test("a bilag into Dinero's archive alone, for a voucher drafted with it: its fileGuid, and nothing asked", async () => {
+    const r = rig();
+    const up = await uploadBilag(r.deps, { organizationId: 517264, file: "1OkWvpScarizjR3P3b0h_GUhYHoubXY2D" });
+    expect(up).toEqual({ name: "2026-11-12 Topaz Labs Team – TS-13398360.pdf", bytes: pdf.length, sha256: createHash("sha256").update(pdf).digest("hex"), fileGuid: GUID });
+    expect(Buffer.from(String(r.handed[0]!.args.base64Content), "base64").equals(Buffer.from(pdf))).toBe(true);
+    expect(r.asked).toEqual([]);
   });
 
   test("a file already in Dinero's archive is attached as it is: nothing is read from Drive or uploaded again", async () => {

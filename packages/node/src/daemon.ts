@@ -11,7 +11,7 @@ import { gmailNatives, outlookNatives } from "./mail.ts";
 import { PairingHost, SyncEngine } from "@galahad/link";
 import { adoptChains, MindStore, Vault } from "@galahad/mind";
 import { type DockerRunner, type LedgerEntryInput, type MacFirewallState, microVMsAvailable, NETWORKS, SANDBOX_GATEWAY_PORT, type SpawnTerminal, startContainerService, vmResolvConf, WorkspaceHelper } from "@galahad/sandbox";
-import type { HostLoad } from "@galahad/core";
+import type { ArgValue, HostLoad } from "@galahad/core";
 import { calibrate, spawnBench } from "./compute/calibrate.ts";
 import { GovernedSandboxHost } from "./compute/governed-host.ts";
 import { Governor } from "./compute/governor.ts";
@@ -42,7 +42,7 @@ import { LoopDrafts } from "./loop-drafts.ts";
 import { ConnectorRequests } from "./connector-requests.ts";
 import { giveBack, reviewBack, wantsReviews } from "./ci-back.ts";
 import { BilagService } from "./bilag.ts";
-import { attachBilag } from "./books.ts";
+import { attachBilag, type BooksAttach, uploadBilag } from "./books.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { WakeWatcher } from "./wakes.ts";
 import { TelegramGateway } from "./telegram.ts";
@@ -606,15 +606,14 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     // Bilag from your mail to Google Drive, copied by the node itself (bilag.ts), read in this node's time zone.
     bilag: new BilagService({ transfer: (connector, step) => connectors.transfer(connector, step), local, tz: () => Intl.DateTimeFormat().resolvedOptions().timeZone }),
     // A bilag into Dinero by the node's own hands; attaching it to a payment's card is Galahad's to ask you.
-    books: (input) =>
-      attachBilag(
-        {
-          transfer: (connector, step) => connectors.transfer(connector, step),
-          handFile: (connector, tool, args, why) => connectors.handFile(connector, tool, args, why),
-          ask: (call) => connectors.call(call, { kind: "agent", by: GALAHAD_ARM }),
-        },
-        input,
-      ),
+    books: (() => {
+      const deps = {
+        transfer: (connector: string, step: Parameters<typeof connectors.transfer>[1]) => connectors.transfer(connector, step),
+        handFile: (connector: string, tool: string, args: Record<string, ArgValue>, why: string) => connectors.handFile(connector, tool, args, why),
+        ask: (call: { connector: string; tool: string; args: Record<string, ArgValue>; why: string }) => connectors.call(call, { kind: "agent", by: GALAHAD_ARM }),
+      };
+      return { attach: (input: BooksAttach) => attachBilag(deps, input), upload: (input: { organizationId: number; file: string }) => uploadBilag(deps, input) };
+    })(),
     heartbeatCheck: () => lookAround(taskDeps),
     bank,
     chats,

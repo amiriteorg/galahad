@@ -51,7 +51,7 @@ Dinero's tools come with long guidance of their own (which VAT account a sale go
 
 ### A bilag to the payment it documents
 
-A payment booked from the bank without its bilag stands open on a card in Dinero (`list_voucher_file_cards`). `galahad books attach --org <id> --card <card> --file <Drive file id> --why "…"` puts that bilag into Dinero's archive as it is: the node reads its bytes from Drive and hands them to Dinero's `upload_file` with their length and SHA-256, which Dinero checks, so no model ever types a file out (`books.ts`). Attaching it to the card is then filed for your approval, with why that bilag is that payment's: the invoice, its amount and its date, against the payment's.
+A payment booked from the bank without its bilag stands open on a card in Dinero (`list_voucher_file_cards`). `galahad books attach --org <id> --card <card> --file <Drive file id> --why "…"` puts that bilag into Dinero's archive as it is: the node reads its bytes from Drive and hands them to Dinero's `upload_file` with their length and SHA-256, which Dinero checks, so no model ever types a file out (`books.ts`). Attaching it to the card is then filed for your approval, with why that bilag is that payment's: the invoice, its amount and its date, against the payment's. A payment the bank shows that has no voucher yet needs one drafted with its bilag instead: `galahad books upload --org <id> --file <Drive file id>` puts the bilag into Dinero's archive the same way and gives the fileGuid the draft takes.
 
 Dinero's own advice stands: check the work. Its server can't catch a model's mistakes, and booking is permanent. Take Galahad's access away in Dinero under **Konto → Brugerprofil → Gå til Visma Connect → Autoriserede applikationer**.
 

@@ -85,8 +85,17 @@ function json(got: { ok: boolean; status: number; bytes: Uint8Array }, what: str
 export async function attachBilag(deps: BooksDeps, input: BooksAttach): Promise<BooksAttached> {
   if (!input.file === !input.dineroFile) throw new Error("give the bilag's Drive file, or a file already in Dinero's archive: one of them");
   if (input.dineroFile) return { name: null, bytes: null, sha256: null, ...(await askAttach(deps, input, input.dineroFile)) };
-  const id = encodeURIComponent(input.file!);
-  const meta = json(await deps.transfer("gdrive", { method: "GET", path: `/drive/v3/files/${id}?fields=name,mimeType,size&supportsAllDrives=true`, class: "read", why: "the bilag to attach in Dinero", max: 1 << 20 }), "the bilag");
+  const up = await uploadBilag(deps, { organizationId: input.organizationId, file: input.file! });
+  return { name: up.name, bytes: up.bytes, sha256: up.sha256, ...(await askAttach(deps, input, up.fileGuid)) };
+}
+
+/**
+ * A bilag from Drive into Dinero's archive alone, its bytes as they are: for a purchase voucher drafted with it (a
+ * payment the bank shows that has no voucher yet), which takes the fileGuid this gives.
+ */
+export async function uploadBilag(deps: Pick<BooksDeps, "transfer" | "handFile">, input: { organizationId: number; file: string }): Promise<{ name: string; bytes: number; sha256: string; fileGuid: string }> {
+  const id = encodeURIComponent(input.file);
+  const meta = json(await deps.transfer("gdrive", { method: "GET", path: `/drive/v3/files/${id}?fields=name,mimeType,size&supportsAllDrives=true`, class: "read", why: "a bilag for Dinero", max: 1 << 20 }), "the bilag");
   if (typeof meta?.name !== "string") throw new Error("gdrive gave no file by that id");
   const got = await deps.transfer("gdrive", { method: "GET", path: `/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, class: "read", why: `the bytes of ${meta.name}, for Dinero`, max: BOOKS_MAX_BYTES });
   if (!got.ok) throw new Error(`gdrive answered ${got.status} for the bytes of ${meta.name}`);
@@ -101,7 +110,7 @@ export async function attachBilag(deps: BooksDeps, input: BooksAttach): Promise<
   if (!up.ok) throw new Error(`Dinero didn't take ${meta.name}: ${up.body.slice(0, 300)}`);
   const fileGuid = fileGuidOf(up.body);
   if (!fileGuid) throw new Error(`Dinero took ${meta.name} but named no fileGuid for it: ${up.body.slice(0, 200)}`);
-  return { name: meta.name, bytes: bytes.length, sha256, ...(await askAttach(deps, input, fileGuid)) };
+  return { name: meta.name, bytes: bytes.length, sha256, fileGuid };
 }
 
 /** Attaching a file in Dinero's archive to a payment's card: Galahad's call, which asks you where its class says so. */

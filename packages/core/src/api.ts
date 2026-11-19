@@ -195,6 +195,12 @@ export const BooksAttachInput = z
   .refine((input) => !input.file !== !input.dineroFile, "give the bilag's Drive file, or a file already in Dinero's archive: one of them");
 export type BooksAttachInput = z.infer<typeof BooksAttachInput>;
 
+/** A bilag from your Drive into Dinero's archive alone, for a voucher drafted with it (docs/BOOKS.md). */
+export const BooksUploadInput = z.strictObject({
+  organizationId: z.number().int().positive(),
+  file: z.string().regex(/^[A-Za-z0-9_-]{10,100}$/),
+});
+
 /** What wakes a loop on GitHub: a workflow run that failed, a push to the repository, a new issue or a new pull request. */
 export const GITHUB_WAKE_EVENTS = ["ci.failed", "pushed", "issue.opened", "pr.opened"] as const;
 const GITHUB_WAKE_WORDS: Record<(typeof GITHUB_WAKE_EVENTS)[number], string> = { "ci.failed": "a failed CI run", pushed: "a push", "issue.opened": "a new issue", "pr.opened": "a new pull request" };
@@ -948,6 +954,8 @@ export const routes = {
   bilagNames: { method: "POST", path: "/api/bilag/names", scope: "fleet:admin", input: z.strictObject({}) },
   /** A bilag into Dinero's archive as it is, its attaching to a payment's card filed for your approval (books.ts). Yours alone. */
   booksAttach: { method: "POST", path: "/api/books/attach", scope: "fleet:admin", input: BooksAttachInput },
+  /** A bilag into Dinero's archive as it is, and the fileGuid a voucher drafted with it takes (books.ts). Yours alone. */
+  booksUpload: { method: "POST", path: "/api/books/upload", scope: "fleet:admin", input: BooksUploadInput },
   loopDrafts: { method: "GET", path: "/api/loops/drafts", scope: "mind:read", input: null },
   /** Telegram (PLAN #19): whether a bot of yours talks to Galahad through this node, and which account it answers. */
   telegram: { method: "GET", path: "/api/telegram", scope: "mind:read", input: null },
