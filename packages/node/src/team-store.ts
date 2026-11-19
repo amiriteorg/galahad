@@ -444,7 +444,7 @@ export class TeamStore {
   /** Owner posts start a bounded chain, and so do Galahad's own from your conversation (`galahad`), within his
    * allowance for the day. Brokered posts keep their originating chain across rooms, and so does his answer in a room
    * (`reply`): that was asked for, so it is no part of his allowance. `asker`: the device you wrote on. */
-  post(raw: TeamPostInput, by: { teammate?: string; chainId?: string; output?: boolean; galahad?: boolean; reply?: boolean; asker?: Exclude<TeamAsker, { kind: "knight" }> } = {}): TeamMessage {
+  post(raw: TeamPostInput, by: { teammate?: string; chainId?: string; output?: boolean; galahad?: boolean; reply?: boolean; quiet?: boolean; asker?: Exclude<TeamAsker, { kind: "knight" }> } = {}): TeamMessage {
     const input = teamInput(TeamPostInput, raw);
     if (!by.output) teamText(input.text);
     // Files are yours alone to bring: a knight's or Galahad's words carry none.
@@ -471,7 +471,7 @@ export class TeamStore {
       const forGalahad = !by.galahad && (mentioned(input.text, GALAHAD_SEAT).length > 0 || (unnamed && !named.length));
       // Those it names with @ (by handle or name) hear it. One that names nobody here reaches everyone, unless it was his
       // to answer, or is his answer: that was for whoever asked.
-      const recipients = (named.length || forGalahad || by.reply ? named : room.members).filter((member) => member !== by.teammate);
+      const recipients = by.quiet ? [] : (named.length || forGalahad || by.reply ? named : room.members).filter((member) => member !== by.teammate);
       if (this.pending() + recipients.length > TEAM_LIMITS.pending) throw new TeamError(429, "The team queue is full. Let some work finish first.");
       // His own words never fill it: half is always left for yours, however much of his waits in held rooms.
       if (by.galahad && this.pending() + recipients.length > TEAM_LIMITS.pending / 2) throw new TeamError(429, "Half the team queue is waiting work already. Let some of it finish before writing to them again.");
@@ -559,8 +559,9 @@ export class TeamStore {
   /** His words in a room for you, waking no knight: what he tells you of an outcome he owns (outcomes.ts). */
   note(room: string, text: string): TeamMessage {
     teamText(text);
-    // A reply in a conversation of its own: it names nobody, so it reaches nobody.
-    return this.db.transaction(() => this.post({ room, text }, { galahad: true, reply: true, chainId: this.chain(this.requireRoom(room)) }))();
+    // A reply in a conversation of its own, for you: it reaches nobody, even a knight it names (an outcome's note that
+    // said "I've given @gareth the task" woke Gareth for a reply, which held his next task behind it).
+    return this.db.transaction(() => this.post({ room, text }, { galahad: true, reply: true, quiet: true, chainId: this.chain(this.requireRoom(room)) }))();
   }
   messages(room: string, limit: number = TEAM_LIMITS.history): TeamMessage[] {
     this.requireRoom(room);

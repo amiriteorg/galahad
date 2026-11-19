@@ -23,7 +23,7 @@ afterEach(async () => {
   }
 });
 
-function world(steps: Step[] = [], record?: (title: string) => { verified: boolean; record?: TeamTaskRecord }, hold?: Promise<void>) {
+function world(steps: Step[] = [], record?: (title: string) => { verified: boolean; record?: TeamTaskRecord; output?: string; error?: string }, hold?: Promise<void>) {
   let now = Date.UTC(2026, 10, 18, 6, 0);
   const identity = newNodeIdentity();
   const mind = new MindStore(":memory:");
@@ -37,7 +37,7 @@ function world(steps: Step[] = [], record?: (title: string) => { verified: boole
       // (A held task runs until it's let go, or stopped.)
       if (hold) await Promise.race([hold, new Promise((_, no) => context.signal.addEventListener("abort", () => no(new Error("stopped"))))]);
       const result = record?.(task.title) ?? { verified: true };
-      return { verified: result.verified, output: result.verified ? `Done: ${task.title}` : "", ...(result.record ? { record: result.record } : {}) };
+      return { verified: result.verified, output: result.output ?? (result.verified ? `Done: ${task.title}` : ""), ...(result.error ? { error: result.error } : {}), ...(result.record ? { record: result.record } : {}) };
     },
     onTaskEnded: (task) => {
       if (task.outcome) runner.nudge();
@@ -216,6 +216,22 @@ describe("an outcome he owns", () => {
     expect(w.prompts[1]).toContain("Do the login screen before anything else.");
     expect(w.prompts[1]).toContain("Your liege just wrote here");
     expect(w.store.outcome(made.id)!.notes).toBe("Login first, then the feed.");
+  });
+
+  test("his words in its room wake no knight, even when they name one: a note to you is no message to them", async () => {
+    const w = world([{ calls: [{ name: "tell_liege", input: { kind: "note", text: "I've given @ada the first task, and @lin waits." } }] }]);
+    w.runner.create({ title: "Android app", goal: "Port it.", knights: ["ada", "lin"], budgetUsd: 10 });
+    await until(() => w.results.length === 1);
+    expect(w.store.deliveries().length).toBe(0);
+  });
+
+  test("a task that ended unverified reaches the next look with its account: why it stopped, and what its review said", async () => {
+    const account = "Stopped by an independent audit: it was steered and is still not closer.\n\nReview: What is missing or wrong, from the evidence: the required tests do not exist.";
+    const w = world([{ calls: [give("ada", "First try", 2)] }, { text: "Seen." }], () => ({ verified: false, error: "stopped", output: account }));
+    w.runner.create({ title: "Android app", goal: "Port it.", knights: ["ada"], budgetUsd: 10 });
+    await until(() => w.prompts.length === 2);
+    expect(w.prompts[1]).toContain("stopped: Stopped by an independent audit: it was steered and is still not closer.");
+    expect(w.prompts[1]).toContain("the required tests do not exist.");
   });
 
   test("a question waits in your Inbox; a report is posted, kept, and told", async () => {

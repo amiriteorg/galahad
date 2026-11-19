@@ -296,7 +296,7 @@ export class OutcomeRunner {
       .filter((t) => t.outcome === outcome.id)
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 30)
-      .map((t) => `- ${t.id} · @${t.assignee} · ${t.status}${t.status === "done" ? (t.verified ? " and verified" : "") : ""}${t.budgetUsd ? ` · budget ${usdLabel(t.budgetUsd)}` : ""} · "${t.title}"${t.error ? ` · ${clip(t.error, 200)}` : t.output ? ` · ${clip(t.output, 300)}` : ""}`);
+      .map((t) => `- ${t.id} · @${t.assignee} · ${t.status}${t.status === "done" ? (t.verified ? " and verified" : "") : ""}${t.budgetUsd ? ` · budget ${usdLabel(t.budgetUsd)}` : ""} · "${t.title}"${account(t)}`);
     const yours = this.unread(outcome)
       .slice(-10)
       .map((m) => `- ${clip(m.text, 1500)}`);
@@ -452,6 +452,19 @@ export class OutcomeRunner {
     this.o.mind.emit(this.o.identity, "notice.raised", { key: `outcome:${outcome.id}:${what}`, severity, title: clip(title, 160), body: clip(body, 600), source: `outcome:${outcome.id}`, at: this.now() });
   }
 }
+
+/**
+ * What a look is told of how one of its tasks went: a verified one's account in a line; one that ended any other way,
+ * why (its error is often a word, "stopped") and its account, where its audit's word and its review's reasons are,
+ * at more length, so the task is given again knowing why (the first real outcome's look saw only "stopped").
+ */
+const account = (t: TeamTask): string => {
+  if (t.status === "done" && t.verified) return t.output ? ` · ${clip(t.output, 300)}` : "";
+  const why = [t.error, t.output].filter((part, i, all): part is string => Boolean(part) && all.indexOf(part) === i).join(": ");
+  return why ? ` · ${clip(why, ENDED_ACCOUNT)}` : "";
+};
+/** How much of an unverified task's account a look is shown. */
+const ENDED_ACCOUNT = 1500;
 
 const round = (usd: number): number => Math.round(usd * 10_000) / 10_000;
 const clip = (text: string, n: number): string => {
