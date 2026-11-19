@@ -206,15 +206,22 @@ test("real API: you looked at a knight's page or a room, on any device: the team
   expect((await request("seeTeam", { knight: "ada" }, token)).status).toBe(403);
 });
 
-test("real API: a task given again is your stepping in, counted on the new one (#28), and the team says the north star", async () => {
+test("real API: a task given again unchanged stays given again; with a changed goal it is rewritten, never both; the team says the north star (#28)", async () => {
   await api("saveTeammate", { id: "gil", name: "GIL", role: "engineer" });
   const room = (await api<{ room: { id: string } }>("directTeammate", { id: "gil" })).room.id;
   const first = (await api<{ task: TeamTask }>("createTeamTask", { room, assignee: "gil", title: "Fix the importer", goal: "Fix it", gates: ["true"] })).task;
   expect(first.interventions).toBeUndefined();
-  const again = (await api<{ task: TeamTask }>("createTeamTask", { room, assignee: "gil", title: "Fix the importer", goal: "Fix it, and test the empty file", gates: ["true"], again: first.id })).task;
+  // Unchanged goal and gates: a task given again, not a rewrite.
+  const again = (await api<{ task: TeamTask }>("createTeamTask", { room, assignee: "gil", title: "Fix the importer", goal: "Fix it", gates: ["true"], again: first.id })).task;
   expect(again.interventions).toEqual({ again: 1 });
-  const trail = await api<{ entries: { text: string }[] }>("teamTrail", { task: again.id });
-  expect(trail.entries.map((e) => e.text)).toContain("You stepped in: given again after “Fix the importer”");
+  const againTrail = await api<{ entries: { text: string }[] }>("teamTrail", { task: again.id });
+  expect(againTrail.entries.map((e) => e.text)).toContain("You stepped in: given again after “Fix the importer”");
+  // A changed goal: rewritten, said so on its trail, and never also given again.
+  const rewritten = (await api<{ task: TeamTask }>("createTeamTask", { room, assignee: "gil", title: "Fix the importer", goal: "Fix it, and test the empty file", gates: ["true"], again: first.id })).task;
+  expect(rewritten.interventions).toEqual({ rewritten: 1 });
+  const rewrittenTrail = await api<{ entries: { text: string }[] }>("teamTrail", { task: rewritten.id });
+  expect(rewrittenTrail.entries.map((e) => e.text)).toContain("You stepped in: rewrote “Fix the importer”");
+  expect(rewrittenTrail.entries.map((e) => e.text)).not.toContain("You stepped in: given again");
   // A task that isn't there can't be given again, and nothing is made.
   const before = (await api<TeamSnapshot>("team")).tasks.length;
   expect((await request("createTeamTask", { room, assignee: "gil", title: "Nothing", goal: "Nothing", again: "task-000000000000" })).status).toBe(404);

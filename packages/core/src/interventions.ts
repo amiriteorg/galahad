@@ -6,10 +6,11 @@
 
 /**
  * How you step in on a knight's task: an approve card its work raised and you answered, a message of yours in its room
- * while it worked, its desktop taken over, the task paused or stopped, resumed, or given again. The audit's steers are
+ * while it worked, its desktop taken over, the task paused or stopped, resumed, given again, or rewritten (given
+ * again with a different goal or gates). The audit's steers are
  * not yours, and giving it the first time is the ask itself.
  */
-export const INTERVENTIONS = ["approval", "message", "takeover", "stop", "resume", "again"] as const;
+export const INTERVENTIONS = ["approval", "message", "takeover", "stop", "resume", "again", "rewritten"] as const;
 export type InterventionKind = (typeof INTERVENTIONS)[number];
 
 /** Interventions per completed task, over the tasks that ended since a moment. */
@@ -51,6 +52,7 @@ const WORDS: Record<InterventionKind, (n: number) => string> = {
   stop: (n) => (n === 1 ? "a stop" : `${count(n)} stops`),
   resume: (n) => (n === 1 ? "a resume" : `${count(n)} resumes`),
   again: (n) => (n === 1 ? "given again" : `given again ${count(n)} times`),
+  rewritten: (n) => (n === 1 ? "rewritten" : `rewritten ${count(n)} times`),
 };
 const count = (n: number) => NUMBER[n] ?? String(n);
 

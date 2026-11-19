@@ -2406,8 +2406,11 @@ export function createApp(ctx: AppContext) {
       const before = again ? team.task(again) : null;
       if (again && !before) throw new HttpError(404, "No such team task to give again.");
       const created = team.createTask(task);
-      // Given again after it failed or fell short: stepping in, counted on the new one (#28).
-      if (before) steppedIn({ task: created.id }, "again", `given again after “${before.title}”`);
+      // Given again after it failed or fell short: stepping in, counted on the new one (#28). Giving it with a
+      // goal or gates that differ from the task it replaces is a rewrite of it, its own kind, never both.
+      const sameGoal = task.goal === before?.goal;
+      const sameGates = (task.gates ?? []).join("\n") === (before?.gates ?? []).join("\n");
+      if (before) steppedIn({ task: created.id }, sameGoal && sameGates ? "again" : "rewritten", sameGoal && sameGates ? `given again after “${before.title}”` : `rewrote “${before.title}”`);
       return { task: team.task(created.id) ?? created };
     },
     giveTeamTask: (input, p, req) => { ownerOnly(p); return giveTask(input, TEAM_OWNER, req.signal); },

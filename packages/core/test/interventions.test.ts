@@ -33,4 +33,14 @@ describe("the north star (#28)", () => {
     expect(interventionWords({ again: 1, stop: 3, takeover: 1, resume: 1 })).toBe("its desktop taken over, three stops, a resume and given again");
     expect(interventionWords({ again: 2, message: 12 })).toBe("12 messages and given again two times");
   });
+
+  test("a task rewritten is its own kind: said in words, and counted once beside given again", () => {
+    expect(interventionWords({ rewritten: 1 })).toBe("rewritten");
+    expect(interventionWords({ again: 1, rewritten: 1 })).toBe("given again and rewritten");
+    const star = northStar([
+      task("done", { again: 1, rewritten: 1 }),
+      task("failed", { rewritten: 2 }),
+    ], 0);
+    expect(star).toMatchObject({ completed: 1, interventions: 4, byKind: { again: 1, rewritten: 3 } });
+  });
 });
