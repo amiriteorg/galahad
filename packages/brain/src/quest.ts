@@ -1,7 +1,7 @@
 import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, type NamedCheck, type NamedRule, redact, type RuleDoes } from "@galahad/core";
 import { type AgentDriver, type AgentModel, agentModelName, runAgent } from "./agents.ts";
 import { engramBriefing, engramProject } from "./engram.ts";
-import { readOf, testFilesOf, writesOf } from "./shell-paths.ts";
+import { changesOf, readOf, readsOf, testFilesOf, writesOf } from "./shell-paths.ts";
 import { checksAfter, tellsAfter, type Trip, tripOf } from "./tripwires.ts";
 
 /*
@@ -728,12 +728,20 @@ function compact(messages: readonly ChatMessage[], excerpted: number, keepReads 
   const changedBy = (k: number, read: string): number => cut.findIndex((later, j) => j > k && later !== null && exits[j] === 0 && writesOf(later).includes(read));
   // keepReads: the newest current reads among those cut stay whole, within READS_KEPT (judged among the cut alone, so
   // the beginning still changes only between batches).
+  // A read is a command that only shows files (`cd … && awk … a.ts && sed -n … b.ts`, shell-paths readsOf); one is
+  // current while nothing after it, cut or not, may have changed what it showed (changesOf: a later script, which could
+  // have changed anything, makes every read before it stale). Judged against what came after it whole, a read kept
+  // whole is never out of date; the cost is that the beginning changes once more when such a command follows.
   const kept = new Set<number>();
   if (keepReads) {
+    const shown = cut.map((c) => (c ? readsOf(c) : null));
+    const changes = commands.map((c) => (c ? changesOf(c) : "anything"));
     let room = READS_KEPT;
     for (let k = cut.length - 1; k >= 0; k--) {
-      const read = cut[k] ? readOf(cut[k]!) : null;
-      if (!read || exits[k] !== 0 || supersededAt(k) || changedBy(k, read) !== -1 || sizes[k]! > room) continue;
+      const files = shown[k];
+      if (!files?.length || exits[k] !== 0 || supersededAt(k) || sizes[k]! > room) continue;
+      const changed = changes.slice(k + 1).some((c) => c === "anything" || (c !== "nothing" && c.some((w) => files.some((f) => w === f || w.startsWith(`${f}/`)))));
+      if (changed) continue;
       kept.add(k);
       room -= sizes[k]!;
     }

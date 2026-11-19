@@ -398,6 +398,21 @@ test("a coding tool on a task with a budget is offered only the models it can co
   expect(commands.some((c) => c.includes("setsid"))).toBe(false);
 });
 
+test("a knight's task keeps the code it read in view: its current reads stay whole when the conversation is cut short", async () => {
+  // The first real outcome's knight read the same file in 26 of 82 commands once its reads were cut to excerpts.
+  const page = "c".repeat(3000);
+  const reads = Array.from({ length: 26 }, (_, i) => say(`\`\`\`sh\ncd /work && sed -n '${i * 40 + 1},${i * 40 + 40}p' src/watch.ts\n\`\`\``));
+  const f = fixture([say("1. Read it, then change it."), ...reads, say("DONE\nRead."), say("PASS\nFine.")], {
+    exec: async (_m, command) => (command.includes("sed -n") ? result({ stdout: `${page}\n` }) : result()),
+  });
+  await f.runtime.executeTask(member, task, f.context);
+  // The engineer's turns: those with its commands' results (exit … ·) among their messages.
+  const engineer = f.bodies.filter((body) => body.messages.some((m: any) => m.role === "user" && /^exit -?\d+ · /.test(String(m.content))));
+  const last = engineer.at(-1)!.messages.filter((m: any) => m.role === "user" && /^exit -?\d+ · /.test(String(m.content)) && String(m.content).includes(page));
+  // A dozen at most would be whole without it.
+  expect(last.length).toBeGreaterThan(12);
+});
+
 test("a VM on another node: its node is asked what the tool spent, and that is counted the same", async () => {
   const tool = { prompt_tokens: 0, completion_tokens: 0 };
   const toolSpent = async () => {

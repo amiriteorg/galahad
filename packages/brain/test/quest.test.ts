@@ -523,6 +523,20 @@ describe("a long quest's conversation stays affordable, and stays the same", () 
     expect(rewritten).toBeLessThanOrEqual(3);
   });
 
+  test("keep-reads takes a knight's reads as they come (`cd … && awk … && sed -n …`), and a later script, which could change anything, ends them", async () => {
+    const page = "k".repeat(3000);
+    const n = 26;
+    const read = (i: number) => `cd /work/tasks/t && awk 'NR>=${i * 50 + 1} && NR<=${i * 50 + 50}' packages/node/src/ci-watch.ts && echo === && sed -n '${i * 50 + 1},${i * 50 + 50}p' packages/node/src/ci-back.ts`;
+    const commands = Array.from({ length: n }, (_, i) => (i === 18 ? "python3 edit.py" : read(i)));
+    const h = harness({ engineer: [...commands.map((c) => sh(c)), "DONE\nRead and edited."], outputs: commands.map(() => ({ stdout: `${page}\n` })) }, { maxSteps: 30, keepReads: true });
+    expect((await h.run).status).toBe("done");
+    const last = h.seen.filter((s) => s.role === "engineer").at(-1)!.messages.filter((m, i) => i > 0 && m.role === "user" && /^exit -?\d+ · /.test(m.content));
+    // The reads after the script stay whole as ever (the newest) or kept; every read before it is an excerpt again.
+    const beforeScript = last.slice(0, 18);
+    expect(beforeScript.every((m) => !m.content.includes(page))).toBe(true);
+    expect(last.slice(19).filter((m) => m.content.includes(page)).length).toBeGreaterThan(0);
+  });
+
   test("a file read before a later command changed it, both in the part cut short, is a line saying so; one never changed stays an excerpt", async () => {
     const n = 26;
     const page = "z".repeat(3000);

@@ -138,6 +138,81 @@ export function readOf(command: string): string | null {
   return clean(files[0]!.text);
 }
 
+/** Programs that only show what is there (with the options readsOf checks): a command made of these changes nothing. */
+const SHOWS = new Set(["cat", "nl", "head", "tail", "sed", "awk", "grep", "egrep", "fgrep", "rg", "ls", "wc", "echo", "printf", "cd", "pwd", "true", "git", "find", "sort", "uniq", "cut", "column", "diff", "file", "stat"]);
+/** What git may be asked and still only show. */
+const GIT_SHOWS = new Set(["show", "log", "diff", "status", "blame", "grep", "ls-files", "rev-parse"]);
+/** Its first operand is a program or a pattern, not a file. */
+const SCRIPTED = new Set(["sed", "awk", "grep", "egrep", "fgrep", "rg"]);
+/** A word that reads as a path (it has a directory, or an extension). */
+const PATHLIKE = /\/|\.[A-Za-z0-9]{1,8}$/;
+
+/**
+ * The files a command shows, when all it does is show: every simple command one of SHOWS, with no redirect that writes
+ * (but to /dev/null), no here-document and nothing dynamic (`cd x && awk 'NR>=1 && NR<=40' a.ts && echo --- && sed -n
+ * '1,9p' b.ts` shows a.ts and b.ts). Null when it might change anything or can't be read for certain; an empty list when
+ * it shows no file (`ls`, `pwd`). Folders count as what they show (`grep -rn x packages/node/src`).
+ */
+export function readsOf(command: string): string[] | null {
+  if (command.includes("<<")) return null;
+  const all = segments(command);
+  if (!all.length) return null;
+  const files: string[] = [];
+  for (const words of all) {
+    for (let i = 0; i < words.length; i++) {
+      const op = words[i]!.operator;
+      if (!op) continue;
+      // A copy of one stream onto another (`2>&1`) changes nothing; a write does, but to /dev/null; a read is a read.
+      if (/^\d?>&$/.test(op) || op === "<") continue;
+      if (/^(\d|&)?>>?$/.test(op) && words[i + 1]?.text === "/dev/null") continue;
+      return null;
+    }
+    const plain = words.filter((w, i) => !w.operator && !(i > 0 && words[i - 1]!.operator));
+    const [name, ...args] = plain;
+    if (!name || name.dynamic || !SHOWS.has(name.text) || args.some((w) => w.dynamic)) return null;
+    const flags = args.filter((w) => w.text.startsWith("-")).map((w) => w.text);
+    let operands = args.filter((w) => !w.text.startsWith("-")).map((w) => w.text);
+    if (name.text === "sed" && (!flags.includes("-n") || flags.some((f) => /^(-i|--in-place)/.test(f)) || !/^(\d+|\$)(,(\d+|\$))?p(;(\d+|\$)(,(\d+|\$))?p)*$/.test(operands[0] ?? ""))) return null;
+    // An awk program that writes a file, pipes to a command or runs one is no showing.
+    if (name.text === "awk" && /system\s*\(|getline|\|\s*"|>\s*"|>>/.test(operands[0] ?? "")) return null;
+    if (name.text === "git") {
+      if (!GIT_SHOWS.has(operands[0] ?? "")) return null;
+      // `git show REV:path`, `git diff -- path`: only what follows `--` is a file of the working tree.
+      const dashes = args.findIndex((w) => w.text === "--");
+      operands = dashes === -1 ? [] : args.slice(dashes + 1).map((w) => w.text);
+    }
+    if (name.text === "find" && flags.some((f) => /^-(delete|exec|execdir|ok|okdir|fprint|fprintf|fls)$/.test(f))) return null;
+    if (name.text === "sort" && flags.some((f) => /^(-o|--output)/.test(f))) return null;
+    if (name.text === "uniq" && operands.length > 1) return null;
+    if (name.text === "head" || name.text === "tail") operands = operands.filter((o, i) => !/^\d+$/.test(o) || !/^-[nc]$/.test(args[args.findIndex((w) => w.text === o) - 1]?.text ?? ""));
+    if (name.text === "echo" || name.text === "printf" || name.text === "cd") continue;
+    if (SCRIPTED.has(name.text)) operands = operands.slice(1);
+    for (const o of operands) if (PATHLIKE.test(o)) files.push(clean(o));
+  }
+  return [...new Set(files)];
+}
+
+/** A run of a project's tests or its type check: it changes no file of the work (a check, not an edit). */
+const CHECKS = /^(bun (test|x tsc|run (check|test|typecheck|lint)\b)|bunx tsc|npx (--no-install )?(tsc|vitest|jest)|tsc|npm (test|run (test|check|typecheck|lint)\b)|pytest|python3? -m pytest|go (test|vet)|cargo (test|check|clippy))(\s|$)/;
+/** Programs that change only the files their words name (writesOf reads which), with `cd` and the folders a write needs. */
+const EDITS = new Set(["cd", "sed", "cat", "echo", "printf", "tee", "cp", "mv", "rm", "git", "mkdir", "touch"]);
+
+/**
+ * What a command may have changed, for what was read before it: nothing (it only shows, or it runs the project's checks),
+ * the files it names (an edit: `sed -i`, a redirect, `mv`), or anything (a script, an install: what it touches can't be
+ * read from its words).
+ */
+export function changesOf(command: string): "nothing" | "anything" | string[] {
+  if (readsOf(command) !== null) return "nothing";
+  const all = segments(withoutHereDocs(command));
+  if (!all.length) return "anything";
+  const shown = all.map((words) => words.filter((w) => !w.operator).map((w) => w.text).join(" "));
+  if (shown.every((s) => /^cd(\s|$)/.test(s) || CHECKS.test(s))) return "nothing";
+  const writes = writesOf(command);
+  const names = all.map((words) => words.find((w) => !w.operator)?.text ?? "");
+  return writes.length && names.every((n) => EDITS.has(n)) ? writes : "anything";
+}
+
 /** A test's file: named as one (`x.test.ts`, `a_spec.rb`, `test_x.py`), or a file in a tests folder. Never a folder. */
 const TEST_FILE = /[._-](test|spec)s?\.[A-Za-z0-9]+$|(^|\/)test_[^/]+\.[A-Za-z0-9]+$|(^|\/)(tests?|specs?|__tests__)\/(.+\/)?[^/]+\.[A-Za-z0-9]+$/;
 

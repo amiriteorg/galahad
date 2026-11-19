@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readOf, testFilesOf, writesOf } from "../src/shell-paths.ts";
+import { changesOf, readOf, readsOf, testFilesOf, writesOf } from "../src/shell-paths.ts";
 
 describe("which test files a gate names", () => {
   test("a file by a test's name, or a file in a tests folder, is one", () => {
@@ -45,6 +45,48 @@ describe("which file a command shows", () => {
       "grep -n foo src/x.ts",
       "cat <<'EOF'\nhello\nEOF",
     ]) expect(readOf(command)).toBeNull();
+  });
+});
+
+describe("which files a command only shows (keep-reads)", () => {
+  test("a command made only of showings is a read, with the files it shows: the ways a knight reads code", () => {
+    for (const [command, files] of [
+      ["cat src/a.ts", ["src/a.ts"]],
+      ["cd /work/tasks/t && awk 'NR>=75 && NR<=122 {printf \"%d\\t%s\\n\", NR, $0}' packages/node/test/ci-watch.test.ts && echo \"=====CI-BACK=====\" && sed -n '1,72p' packages/node/src/ci-back.ts", ["packages/node/test/ci-watch.test.ts", "packages/node/src/ci-back.ts"]],
+      ["grep -rn \"CI_FIXES\" packages/node/src packages/core/src | head -40", ["packages/node/src", "packages/core/src"]],
+      ["sed -n '215,250p' packages/node/src/ci-watch.ts; echo; sed -n '725,742p' packages/node/src/daemon.ts", ["packages/node/src/ci-watch.ts", "packages/node/src/daemon.ts"]],
+      ["git show HEAD:src/a.ts && git diff -- src/b.ts", ["src/b.ts"]],
+      ["ls -la && pwd && wc -l src/a.ts 2>/dev/null", ["src/a.ts"]],
+    ] as const) expect(readsOf(command), command).toEqual([...files]);
+  });
+
+  test("anything that might change something, or that can't be read for certain, is no read", () => {
+    for (const command of [
+      "sed -i 's/a/b/' src/a.ts",
+      "cat src/a.ts > src/b.ts",
+      "cat > src/new.ts <<'EOF'\nexport const x = 1;\nEOF",
+      "awk '{print > \"out.txt\"}' src/a.ts",
+      "awk 'BEGIN { system(\"rm -rf x\") }'",
+      "bun test packages/node/test/ci-back.test.ts",
+      "python3 edit.py",
+      "find . -name '*.tmp' -delete",
+      "git checkout -- src/a.ts",
+      "cat $FILE",
+      "sort -o out.txt in.txt",
+      "uniq in.txt out.txt",
+    ]) expect(readsOf(command), command).toBeNull();
+  });
+});
+
+describe("what a command may have changed, for what was read before it (keep-reads)", () => {
+  test("a showing or a run of the project's checks changes nothing; an edit, the files it names; anything else, anything", () => {
+    expect(changesOf("cd /work/t && sed -n '1,40p' src/a.ts")).toBe("nothing");
+    expect(changesOf("cd /work/t && bun test packages/node/test/ci-back.test.ts")).toBe("nothing");
+    expect(changesOf("bun install --frozen-lockfile >/dev/null 2>&1; bun run typecheck")).toBe("anything");
+    expect(changesOf("sed -i 's/a/b/' src/a.ts")).toEqual(["src/a.ts"]);
+    expect(changesOf("cd /work/t && cat > packages/node/test/new.test.ts <<'EOF'\ntest(\"x\", () => {});\nEOF")).toEqual(["packages/node/test/new.test.ts"]);
+    expect(changesOf("python3 - <<'EOF'\nopen('src/a.ts','w').write('x')\nEOF")).toBe("anything");
+    expect(changesOf("sed -i 's/a/b/' src/a.ts && bun x prettier --write src")).toBe("anything");
   });
 });
 
