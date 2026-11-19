@@ -212,6 +212,7 @@ A knight that has none may be given its first repository at any time, with or wi
 
 - **A temporary directory that can run files.** A sandbox's `/tmp` is mounted `noexec`, so a test that writes a script to the temporary directory and runs it fails there. Every task (with a repository or without) is given `$TMPDIR` on its workspace instead, cleared when the task ends.
 - **It starts from the repository as it is now.** As the task starts, the VM fetches through the same read-only gateway and the task gets a detached worktree of its own from the default branch as fetched. The commit it started from is kept for the task. If the fetch does not come through, the task starts from the clone as it was and its result says so.
+- **Its commits carry its own name.** As each task starts, the knight's repository is set to commit as the knight (its name, at `<id>@roundtable.invalid`, an address that can't be anyone's). With none set, the first real task's knight copied its owner's name and address from the repository's history (19 November 2026).
 - **Its reviewer is shown the work itself:** the diff of everything since that commit, new files and anything the knight committed included, beside what was run and what the gates printed.
 - **What it changed is kept to read and to ship.** When the task ends, verified or not, a patch (`changes.patch`) and a shipment of every changed file since the start are kept as an artifact on the VM's host. The task's result names it, `galahad roundtable` shows it on the task's line, and the task's card links to it:
 

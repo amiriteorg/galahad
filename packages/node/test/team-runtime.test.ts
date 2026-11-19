@@ -877,6 +877,9 @@ test("a knight's task in a repository starts from the repository as it is now, i
   expect(start).toEndWith(` '/work/tasks/${task.id}' '/work/.agent/base/${task.id}'`);
   for (const part of ["'fetch'", "GALAHAD_REPO_URL", "/work/.galahad-gateway.json", "'worktree','add','--detach'", "origin/HEAD"]) expect(start).toContain(part);
   expect(start).not.toMatch(/gw_[A-Za-z0-9]/);
+  // Its commits carry its own name, at an address that can't be anyone's: with none, the first real task's knight copied
+  // the repository's owner's from its history (19 November 2026).
+  expect(t.commands[1]).toBe("git -C /work/repo config user.name 'Ada' && git -C /work/repo config user.email 'ada@roundtable.invalid'");
 });
 
 test("its reviewer is shown the work itself: everything since the start, new files and what the knight committed included", async () => {

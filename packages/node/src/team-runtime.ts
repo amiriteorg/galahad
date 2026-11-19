@@ -468,6 +468,10 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // In a repository: the commit the work starts from, and whether the repository could be fetched for it.
       const [base = "", fetched = ""] = teammate.repository ? ready.stdout.trim().split(/\s+/) : [];
       if (teammate.repository && !/^[0-9a-f]{40}$/.test(base)) throw new Error("Workspace not ready: the task's starting commit could not be read");
+      // Its commits carry its own name, never yours: with none set, the first real task's knight copied the repository's
+      // owner's from its history. An address under .invalid, which can't belong to anyone. (Set at each task: a knight's
+      // VM is its own, and one set by hand there goes back to the knight's.)
+      if (teammate.repository) await deps.exec(teammate, `git -C /work/repo config user.name ${quote(teammate.name)} && git -C /work/repo config user.email ${quote(`${teammate.id}@roundtable.invalid`)}`, 30, ctx.signal);
       // The VM's notes store (Engram), when the node's switch is on: kept under the knight's repository, or with none
       // its own handle, so every task of its finds them. Whether this VM has the pinned binary is asked as the task
       // starts: one that doesn't does the task without the store, and the task says which it was, never nothing.
