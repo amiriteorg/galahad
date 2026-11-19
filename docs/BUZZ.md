@@ -6,7 +6,7 @@
 |---|---|---|
 | **You** | Mention him or DM him; read his answers where you asked | |
 | **Galahad there** | Answer you, in the thread or DM you asked in; draft a loop for your Inbox (only you add it) | Read what you told him about yourself, his memories, the archive or his skills; use connectors, the bank, sandboxes, his computer or the knights. His credential there may only chat |
-| **Anyone else in the community** | Read his answers to you | Make him answer: the harness passes on your messages alone |
+| **Anyone else in the community** | Read his answers to you | Make him answer: the harness passes on only yours, and your other Buzz agents' (keys you attested; Buzz calls them siblings) |
 
 **A community is read by others, so nothing of yours goes there.** The credential Buzz runs him with (`galahad acp install buzz`) may only chat. An answer to a caller that may not read your mind carries none of it: not your facts, not his memories, not the archive. The node decides that by the caller's scopes, whatever the caller asks for. Should you want more there, `galahad arms grant buzz mind:read` gives it, and everything he recalls can then end up in a channel others read.
 
@@ -24,7 +24,7 @@ Buzz runs an agent with its own harness, `buzz-acp`. The harness signs in to the
    - If he couldn't answer, a line saying so is posted, and why goes to the harness's log.
 4. The node never holds the community's key. The model never runs `buzz` either: the posting is this process's, and it posts only his answer, only where the turn was asked.
 
-**Where to answer is read, never guessed.** Each turn begins with a `<context>` section that Buzz writes: the channel and the message to reply to. Buzz keeps each field on a line of its own, and indents a description's lines so they can't pose as fields. A turn with no `<context>` is answered nowhere, and so is one with two (someone's message carrying one of its own); stderr says why.
+**Where to answer is read, never guessed.** Each turn has a context section that Buzz writes: the channel and the message to reply to. Buzz's harness today writes it as `<context>` to `</context>`; Buzz 0.5's as `[Context]` to the first blank line. Buzz keeps each field on a line of its own, and indents a description's lines so they can't pose as fields. A turn with no context section is answered nowhere, and so is one with two (someone's message carrying one of its own); stderr says why.
 
 ## Set it up
 
@@ -67,7 +67,13 @@ You need:
   - Reading where to answer from turns shaped exactly as Buzz's harness writes them (its `queue.rs`), including a message posing as a `<context>`.
   - The post: the arguments, the words on stdin, the key from the environment, a failure in a line with no key in it.
   - End to end: `galahad acp install buzz`, then `galahad acp --buzz` started as the harness starts it, answering through a real node. The answer was posted by a stand-in for Buzz's CLI, and he was offered no tool past the chat.
-- **Not yet:** a run against a real community with Buzz's own harness. That needs a community, an agent identity and your attestation of it, which only you can make.
+- **Against a real Buzz relay**, run locally (`ghcr.io/block/buzz:main` at `b68c4ed`, 19 November 2026), with Buzz 0.5.18's own `buzz-acp` and `buzz` CLI, and a stand-in model on a scratch node:
+  - The relay admitted the agent on its owner's attestation.
+  - A mention in a channel was answered in the thread it began, and a follow-up in that thread was answered there too.
+  - Each reply was an event signed by the agent's own key, replying to the message, naming the owner and carrying the attestation.
+  - His request held nothing of a fact the node kept about its owner, and he was offered only `decide` and `loop_draft`.
+  - That run found Buzz 0.5's `[Context]` framing, which the adapter now reads too.
+- **Not yet:** a community of yours, and a real model answering there. That needs the community's URL, the agent's identity and your attestation of it, which only you can make.
 
 **Known limits:**
 - The answer goes as one message, cut at Buzz's 64 KiB with a line saying so.
