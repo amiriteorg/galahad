@@ -260,6 +260,7 @@ struct TaskCardView: View {
             }
             if let proposed = TaskCard.proposed(task, proposer: proposer) { Text(proposed).font(.caption).foregroundStyle(.secondary) }
             if let given = TaskCard.given(task) { Text(given).font(.caption).foregroundStyle(.secondary) }
+            if let sensitive = TaskCard.sensitive(task) { Text(sensitive).font(.caption).foregroundStyle(.secondary) }
             if let stepped = TaskCard.stepped(task) { Text(stepped).font(.caption).foregroundStyle(.secondary) }
             if task.status == "proposed" {
                 Text(task.goal).font(.callout).lineLimit(6).fixedSize(horizontal: false, vertical: true)
@@ -504,7 +505,7 @@ private struct KnightAbout: View {
                             Portrait(drawing: look, size: 96, expression: row?.expression ?? "idle", id: knight.id, temper: AvatarLook.temperament(id: knight.id, profile: knight.avatar))
                             VStack(alignment: .leading, spacing: Space.s1) {
                                 Text(knight.name).font(.title2.bold())
-                                Text(knight.models?.isEmpty == false ? Knights.worksOn(role: knight.role.capitalized, models: knight.models) : knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)
+                                Text(knight.models?.isEmpty == false ? Knights.worksOn(role: knight.role.capitalized, models: knight.models, sensitive: knight.sensitive == true) : knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)
                                 if let row { Text(row.line).font(.subheadline).foregroundStyle(row.needs ? Color.needs : .primary) }
                             }
                         }

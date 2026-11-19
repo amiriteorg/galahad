@@ -169,6 +169,12 @@ enum TaskCard {
         return (shipped.pr.map { "Pull request #\($0)" } ?? "Its pull request", shipped.url)
     }
 
+    /// Sensitive mode for this task alone: the models every call of its work is held to (nil: not in it).
+    static func sensitive(_ task: TeamTask) -> String? {
+        guard let models = task.models, !models.isEmpty else { return nil }
+        return "Sensitive mode: on \(models.joined(separator: ", ")) alone"
+    }
+
     /// Who gave it to the Roundtable rather than to a knight by name (nil: it was given by name).
     static func given(_ task: TeamTask) -> String? {
         switch task.givenBy {

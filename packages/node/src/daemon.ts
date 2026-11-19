@@ -412,7 +412,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       memoriesAdapter(store),
       investigationsAdapter(store),
       trialsAdapter(store),
-      artifactsAdapter(artifacts),
+      // A knight's work in sensitive mode stays out of it: its summaries and its passages' vectors are other models' (heldModels).
+      artifactsAdapter(artifacts, (a) => !team.store.sensitiveWork(a)),
       chatsAdapter(chats, { has: (s, id) => archiveStore.has(s, id), sourceIds: (s, prefix) => archiveStore.sourceIds(s, prefix) }),
       // His skills (skills.ts): each version, once it's his to use.
       skillsAdapter(store),

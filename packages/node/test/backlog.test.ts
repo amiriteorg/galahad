@@ -31,10 +31,10 @@ function world(answers: string[] = [], options: { read?: Partial<ExecResult>; bu
   store.saveTeammate({ id: "ada", name: "Ada", repository: "https://github.com/you/project" });
   store.saveTeammate({ id: "lin", name: "Lin" });
   const service = new TeamService({ store, respond: async () => "", executeTask: async (_k, task) => ({ verified: true, output: `Done: ${task.title}` }) });
-  const asked: { content: string; effort?: string; role?: string; coding?: boolean }[] = [];
+  const asked: { content: string; effort?: string; role?: string; coding?: boolean; models?: string[] }[] = [];
   const read: string[] = [];
-  const fake = (async function* (_ctx: unknown, req: { messages: { content: string; effort?: string }[]; role?: string; coding?: boolean }) {
-    asked.push({ ...req.messages[0]!, role: req.role, coding: req.coding });
+  const fake = (async function* (_ctx: unknown, req: { messages: { content: string; effort?: string }[]; role?: string; coding?: boolean; models?: string[] }) {
+    asked.push({ ...req.messages[0]!, role: req.role, coding: req.coding, ...(req.models ? { models: req.models } : {}) });
     yield { type: "text", text: answers.shift() ?? '{"none": "nothing fits"}' } as ChatStreamEvent;
     yield { type: "done", ref: "stand-in/m" } as ChatStreamEvent;
   }) as unknown as typeof Chat;
@@ -80,6 +80,17 @@ describe("work for idle knights, from your backlog", () => {
     expect(toldItem({ key: `backlog:${task!.id}`, severity: "info", source: "backlog", dismissed: false })).toMatchObject({ kind: "told", title: "Galahad: work for a knight" });
     // Approved by you, it waits its turn like any task; Galahad's giving allowance is not spent by a proposal.
     expect(w.store.approve(task!.id).status).toBe("queued");
+  });
+
+  test("a knight in sensitive mode has its repository read on its own models, never the planner's", async () => {
+    const w = world([PROPOSAL]);
+    w.store.saveTeammate({ id: "ada", name: "Ada", models: ["nearai/Qwen/Qwen3.8-27B-abliterated"], sensitive: true });
+    expect(await w.runner.tick()).not.toBeNull();
+    expect(w.asked[0]).toMatchObject({ models: ["nearai/Qwen/Qwen3.8-27B-abliterated"] });
+    // And one not in it, on the planner's, as ever.
+    const plain = world([PROPOSAL]);
+    expect(await plain.runner.tick()).not.toBeNull();
+    expect(plain.asked[0]!.models).toBeUndefined();
   });
 
   test("it is told the gates its verified tasks passed in its VM, so the gates it proposes run there", async () => {

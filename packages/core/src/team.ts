@@ -48,6 +48,28 @@ export const TeammateRole = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
  */
 export const TeammateModels = z.array(z.string().trim().min(3).max(256).regex(/^[A-Za-z0-9._-]+\/[^\s*]+$/, "provider/model, as the roster names it")).max(8);
 
+/**
+ * Sensitive mode: the models a knight's work is held to, when it is on (a knight in sensitive mode, held to its own;
+ * a task that names its own). Every call of that work goes to them and to no other model, not a role's, not a
+ * fallback: its plan, its work, its audits and its review; a conversation's turns and the story it is told; Galahad's
+ * look at its backlog; the work it gives another knight, and the knights it makes; its coding tool's, through a lease
+ * of its VM good for them alone. It saves nothing to the memory every knight shares, no skill is learned from its
+ * work, and the archive keeps none of what it kept (SENSITIVE_WORK). When none of them answers, the work fails: it never goes elsewhere. A task of a knight in sensitive mode may
+ * be held to some of its models, never to others. Null: not on, and its calls go where they always have.
+ */
+/** How kept work of a task in sensitive mode ends its label: the archive keeps none of it (its summaries and vectors are other models'). */
+export const SENSITIVE_WORK = " · sensitive mode";
+
+export function heldModels(knight: Pick<Teammate, "name" | "models" | "sensitive">, task?: { models?: readonly string[] }): readonly string[] | null {
+  // (The store never keeps a knight so; one that was would do nothing, never something elsewhere.)
+  if (knight.sensitive && !knight.models?.length) throw new Error(`${knight.name} is in sensitive mode with no models of its own: it does no work until you choose some`);
+  const own = knight.sensitive ? knight.models! : null;
+  const named = task?.models?.length ? task.models : null;
+  const outside = own && named ? named.filter((ref) => !own.includes(ref)) : [];
+  if (outside.length) throw new Error(`${knight.name} is in sensitive mode, held to its own models (${own!.join(", ")}): a task held to ${outside.join(", ")} is never its`);
+  return named ?? own;
+}
+
 export const TeammateInput = z.strictObject({
   id: TeammateId,
   name: z.string().trim().min(1).max(80),
@@ -55,6 +77,8 @@ export const TeammateInput = z.strictObject({
   role: TeammateRole.optional(),
   /** Omitted: kept as they were; null or none: its role's again. */
   models: TeammateModels.nullable().optional(),
+  /** Sensitive mode: every call of its work held to its own models (`models`), none elsewhere (heldModels). Omitted: kept as it was. */
+  sensitive: z.boolean().optional(),
   harness: TeamHarness.optional(),
   enabled: z.boolean().optional(),
   dailyTurns: z.number().int().min(0).max(1000).optional(),
@@ -127,6 +151,8 @@ export const TeamTaskInput = z.strictObject({
   again: TeamTaskId.optional(),
   /** The outcome it is a step of (PLAN #43): its spend counts against that outcome's budget. */
   outcome: TeamOutcomeId.optional(),
+  /** Sensitive mode for this task alone: the models every call of its work is held to, none elsewhere (heldModels); absent: its knight's. Yours to name: no knight or Galahad does. */
+  models: TeammateModels.min(1).optional(),
 });
 export type TeamTaskInput = z.infer<typeof TeamTaskInput>;
 
@@ -255,9 +281,12 @@ export interface Teammate {
   role: string;
   /**
    * The models its own work runs on, in order, in place of its role's (absent: its role's): its conversations, its
-   * tasks' work and its harness. A task's plan and its independent review stay the planner's and the reviewer's.
+   * tasks' work and its harness. A task's plan and its independent review stay the planner's and the reviewer's,
+   * unless it is in sensitive mode.
    */
   models?: string[];
+  /** Sensitive mode: every call of its work goes to its own models, and none elsewhere (heldModels). Absent: off. */
+  sensitive?: boolean;
   harness: TeamHarness;
   enabled: boolean;
   dailyTurns: number;
@@ -385,6 +414,8 @@ export interface TeamTask {
   interventions?: Partial<Record<InterventionKind, number>>;
   /** The outcome it is a step of (PLAN #43); absent: none. */
   outcome?: string;
+  /** Sensitive mode for this task alone: the models it is held to (heldModels); absent: its knight's, as its knight's mode says. */
+  models?: string[];
   /** The pull request whose failing checks it fixes (PLAN #29); absent: none. */
   fix?: TeamTaskFix;
   /** Its pull request, once you shipped its work from an app (PLAN #37; absent: not shipped that way). */

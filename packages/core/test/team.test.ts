@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TeammateInput, TeamEngramInput, TeamRecruitInput, TeamRemoveInput, TeamRoomInput, TeamControlInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamWorkspaceQuest, teamArmLabel, AvatarProfileSchema } from "../src/team.ts";
+import { TeammateInput, TeamEngramInput, TeamRecruitInput, TeamRemoveInput, TeamRoomInput, TeamControlInput, TeamPostInput, TeamSayInput, TeamTaskInput, TeamWorkspaceQuest, teamArmLabel, AvatarProfileSchema, heldModels } from "../src/team.ts";
 import { routes } from "../src/api.ts";
 import { defaultAvatar } from "../src/avatar.ts";
 
@@ -117,5 +117,27 @@ describe("team contracts", () => {
     for (const invalid of [{}, { on: "yes" }, { on: 1 }, { on: true, version: "4.0.0" }, { on: true, project: "x" }, { on: true, dataDir: "/work" }, { on: true, tools: "agent" }]) {
       expect([invalid, TeamEngramInput.safeParse(invalid).success]).toEqual([invalid, false]);
     }
+  });
+});
+
+describe("sensitive mode", () => {
+  test("what a knight's work is held to: its own models when it is in sensitive mode, a task's when you named them; never others for a knight in it", () => {
+    const ada = { name: "Ada", models: ["nearai/Qwen/Qwen3.8-27B-abliterated", "heabsy/heabsy/cyberheabsy"] };
+    expect(heldModels(ada)).toBeNull();
+    expect(heldModels({ ...ada, sensitive: true })).toEqual(ada.models);
+    expect(heldModels(ada, { models: ["local/qwen"] })).toEqual(["local/qwen"]);
+    expect(heldModels({ ...ada, sensitive: true }, { models: ["heabsy/heabsy/cyberheabsy"] })).toEqual(["heabsy/heabsy/cyberheabsy"]);
+    expect(() => heldModels({ ...ada, sensitive: true }, { models: ["local/qwen"] })).toThrow("a task held to local/qwen is never its");
+    // In sensitive mode with no models of its own (the store keeps none so), it does nothing rather than something elsewhere.
+    expect(() => heldModels({ name: "Ada", sensitive: true })).toThrow("it does no work until you choose some");
+  });
+
+  test("a task's models are yours to name, one at least, as the roster names them; the lease asks the same of its own", () => {
+    const task = { room: "dm-ada", assignee: "ada", title: "Work", goal: "Work it out." };
+    expect(TeamTaskInput.parse({ ...task, models: ["nearai/Qwen/Qwen3.8-27B-abliterated"] }).models).toEqual(["nearai/Qwen/Qwen3.8-27B-abliterated"]);
+    expect(TeamTaskInput.safeParse({ ...task, models: [] }).success).toBe(false);
+    expect(TeamTaskInput.safeParse({ ...task, models: ["nearai/*"] }).success).toBe(false);
+    expect(TeammateInput.parse({ id: "ada", name: "Ada", sensitive: true }).sensitive).toBe(true);
+    expect(routes.prepareTeamWorkspace.input.safeParse({ id: "0123456789", quest: "arm.team.abcdef0123.ada", models: ["nearai/Qwen/Qwen3.8-27B-abliterated"] }).success).toBe(true);
   });
 });

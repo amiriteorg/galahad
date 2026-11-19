@@ -26,6 +26,8 @@ struct KnightEditor: View {
     /// Its own models, in the order they are tried; the toggles offered, in an order kept while you edit (nil: none offered).
     @State private var own: [String]
     @State private var offered: [Knights.ModelChoice]?
+    /// Sensitive mode: these models alone, for every call of its work (core's heldModels).
+    @State private var sensitive: Bool
     @State private var working = false
     @State private var problem: String?
 
@@ -42,6 +44,7 @@ struct KnightEditor: View {
         _harness = State(initialValue: existing?.harness ?? "native")
         _role = State(initialValue: existing?.role ?? "engineer")
         _own = State(initialValue: existing?.models ?? [])
+        _sensitive = State(initialValue: existing?.sensitive ?? false)
         _dailyTurns = State(initialValue: existing?.dailyTurns ?? 40)
         _enabled = State(initialValue: existing?.enabled ?? true)
         _leads = State(initialValue: existing.map { session.primary == $0.id } ?? false)
@@ -56,6 +59,7 @@ struct KnightEditor: View {
         if trimmedName.isEmpty { return "Give it a name." }
         if !Knights.isHandle(handle) { return "A handle is a lowercase letter, then at most 31 lowercase letters, digits or hyphens." }
         if existing == nil, taken.contains(handle) { return "The handle \(handle) is taken. Choose another." }
+        if sensitive, own.isEmpty { return "Sensitive mode holds a knight to models of its own: choose them first." }
         return nil
     }
 
@@ -169,10 +173,11 @@ struct KnightEditor: View {
                                 }
                             }
                         }
+                        Toggle("Sensitive mode: only these models, for everything it does", isOn: $sensitive)
                     } header: {
                         Text("Models")
                     } footer: {
-                        Text("\(Knights.modelsLine(own: own, role: role, spec: roles?[role])). A local model runs on the node that serves it, for a knight on Galahad's own harness: a vendor's coding tool can't use one.")
+                        Text("\(Knights.modelsLine(own: own, role: role, spec: roles?[role], sensitive: sensitive)). A local model runs on the node that serves it, for a knight on Galahad's own harness: a vendor's coding tool can't use one.")
                     }
                 }
 
@@ -226,6 +231,8 @@ struct KnightEditor: View {
         // Its own models, to a node that knows them: none is its role's again.
         input.models = own.isEmpty ? nil : own
         input.sendModels = offered != nil || !(existing?.models ?? []).isEmpty
+        // (Sent when it is on, or was: to a node that doesn't know it, nothing is said of it.)
+        if sensitive || existing?.sensitive == true { input.sensitive = sensitive }
         let knight: Teammate
         do {
             knight = try await session.save(knight: input)

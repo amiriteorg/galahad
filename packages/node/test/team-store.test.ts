@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { avatarExpression, defaultAvatar } from "@galahad/core/avatar";
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
+import { SENSITIVE_WORK } from "@galahad/core";
 import { TeamStore, TeamError } from "../src/team-store.ts";
 
 const stores: TeamStore[] = [];
@@ -920,5 +921,47 @@ describe("your files at the Roundtable", () => {
     old.close();
     const store = make(path); setup(store);
     expect(store.post({ room: "workshop", text: "Now with a file", attachments: [log] }).attachments).toEqual([log]);
+  });
+});
+
+describe("sensitive mode", () => {
+  test("a knight is put in it with models of its own, and isn't let go of it by having them taken away", () => {
+    const store = make(); setup(store);
+    expect(() => store.saveTeammate({ id: "ada", name: "Ada", sensitive: true })).toThrow("Sensitive mode holds a knight to models of its own: choose them first.");
+    expect(store.saveTeammate({ id: "ada", name: "Ada", models: ["nearai/Qwen/Qwen3.8-27B-abliterated"], sensitive: true })).toMatchObject({ models: ["nearai/Qwen/Qwen3.8-27B-abliterated"], sensitive: true });
+    // Saved again with something else about it, it stays in sensitive mode.
+    expect(store.saveTeammate({ id: "ada", name: "Ada Lovelace" })).toMatchObject({ sensitive: true });
+    expect(() => store.saveTeammate({ id: "ada", name: "Ada", models: null })).toThrow("Ada Lovelace is in sensitive mode, held to its own models: choose others, or turn sensitive mode off first.");
+    // Turned off, then its models may go: it works on its role's again, as any knight.
+    const off = store.saveTeammate({ id: "ada", name: "Ada", sensitive: false, models: null });
+    expect(off.sensitive).toBeUndefined();
+    expect(off.models).toBeUndefined();
+  });
+
+  test("the work a knight in sensitive mode gives is held to its models, whoever does it; one in it is given none held to others; a knight it makes is in it too", () => {
+    const store = make(); setup(store);
+    store.saveTeammate({ id: "ada", name: "Ada", models: ["nearai/Qwen/Qwen3.8-27B-abliterated", "heabsy/heabsy/cyberheabsy"], sensitive: true });
+    const message = store.post({ room: "workshop", text: "@ada: plan it" });
+    const given = store.createTask({ room: "workshop", assignee: "lin", title: "Work", goal: "Work it out." }, { teammate: "ada", chainId: message.chainId });
+    expect(given.models).toEqual(["nearai/Qwen/Qwen3.8-27B-abliterated", "heabsy/heabsy/cyberheabsy"]);
+    // Yours, for it: held to some of its models, or to none of your naming; never to another.
+    expect(store.createTask({ room: "workshop", assignee: "ada", title: "One", goal: "Work it out.", models: ["heabsy/heabsy/cyberheabsy"] }).models).toEqual(["heabsy/heabsy/cyberheabsy"]);
+    expect(store.createTask({ room: "workshop", assignee: "ada", title: "Two", goal: "Work it out." }).models).toBeUndefined();
+    expect(() => store.createTask({ room: "workshop", assignee: "ada", title: "Three", goal: "Work it out.", models: ["anthropic/claude-opus-5-5"] })).toThrow("Ada is in sensitive mode, held to its own models (nearai/Qwen/Qwen3.8-27B-abliterated, heabsy/heabsy/cyberheabsy): a task held to anthropic/claude-opus-5-5 is never its");
+    // A task you hold to a model, for a knight not in sensitive mode: kept with it.
+    expect(store.task(store.createTask({ room: "workshop", assignee: "lin", title: "Four", goal: "Work it out.", models: ["nearai/Qwen/Qwen3.8-27B-abliterated"] }).id)!.models).toEqual(["nearai/Qwen/Qwen3.8-27B-abliterated"]);
+    const made = store.recruit({ id: "scout", name: "Scout", instructions: "Read what the others find." }, "ada", "workshop");
+    expect(made).toMatchObject({ models: ["nearai/Qwen/Qwen3.8-27B-abliterated", "heabsy/heabsy/cyberheabsy"], sensitive: true });
+    expect(store.recruit({ id: "herald", name: "Herald", instructions: "Say what is new." }, "galahad").sensitive).toBeUndefined();
+  });
+
+  test("its kept work is known for what it is: by its label, its knight's VM while the knight is in sensitive mode, or its task", () => {
+    const store = make(); setup(store);
+    expect(store.sensitiveWork({ id: "art_a", label: `Work · ada · verified${SENSITIVE_WORK}` })).toBe(true);
+    expect(store.sensitiveWork({ id: "art_b", label: "Work · ada · verified", sandbox: "0123456789" })).toBe(false);
+    store.saveTeammate({ id: "ada", name: "Ada", models: ["nearai/Qwen/Qwen3.8-27B-abliterated"], sensitive: true });
+    store.setWorkspace("ada", { node: "host", id: "0123456789" });
+    expect(store.sensitiveWork({ id: "art_b", label: "Work · ada · verified", sandbox: "0123456789" })).toBe(true);
+    expect(store.sensitiveWork({ id: "art_c", label: "Work · lin · verified", sandbox: "9876543210" })).toBe(false);
   });
 });

@@ -74,6 +74,9 @@ export const steppedLine = (task: Pick<TeamTask, "interventions">): string | nul
 };
 
 /** What a task kept of its changes: how many files, and the artifact that holds them (null: nothing kept). */
+/** Sensitive mode for this task alone, in a line: the models every call of its work is held to (null: not in it). */
+export const sensitiveLine = (task: Pick<TeamTask, "models">): string | null => (task.models?.length ? `Sensitive mode: on ${task.models.join(", ")} alone` : null);
+
 export const keptChanges = (task: Pick<TeamTask, "changes">): { text: string; artifact: string } | null =>
   task.changes ? { text: `${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed`, artifact: task.changes.artifact } : null;
 

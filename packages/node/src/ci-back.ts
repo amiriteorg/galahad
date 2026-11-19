@@ -73,6 +73,8 @@ function give(deps: CiBackDeps, pull: ShippedPull, work: TeamTask, budgetUsd: nu
         ...(work.gates.length ? { gates: work.gates } : {}),
         ...(budgetUsd ? { budgetUsd: Math.round(budgetUsd * 100) / 100 } : {}),
         ...(work.outcome ? { outcome: work.outcome } : {}),
+        // (A fix of work in sensitive mode is in it too, on the same models.)
+        ...(work.models?.length ? { models: work.models } : {}),
       },
       TEAM_GALAHAD,
       { connector: pull.connector, owner: pull.owner, repo: pull.repo, branch: pull.branch, pr: pull.pr, ...fix },

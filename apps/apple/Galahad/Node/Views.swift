@@ -43,6 +43,8 @@ struct Teammate: Decodable, Sendable, Identifiable {
     let role: String
     /// Its own models, in place of its role's, in order (absent: its role's).
     var models: [String]? = nil
+    /// Sensitive mode: every call of its work on its own models alone, never a fallback (core's heldModels).
+    var sensitive: Bool? = nil
     let harness: String
     let enabled: Bool
     let dailyTurns: Int
@@ -121,6 +123,8 @@ struct TeamTask: Decodable, Sendable {
     var proposedBy: String? = nil
     /// Each time you stepped in on it, by how (approval · message · takeover · stop · resume · again).
     var interventions: [String: Int]? = nil
+    /// Sensitive mode for this task alone: the models every call of its work is held to (nil: its knight's).
+    var models: [String]? = nil
     /// The pull request whose failing checks or review it fixes: its fix goes onto that branch, never a new pull request.
     struct Fix: Decodable, Sendable { let branch: String }
     var fix: Fix? = nil

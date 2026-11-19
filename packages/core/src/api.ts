@@ -17,7 +17,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectBranchInput, ProjectCommitInput, ProjectGitInput, ProjectId, ProjectInput } from "./chats.ts";
-import { TeammateInput, TeamArrangeInput, TeamBacklogInput, TeamChangesInput, TeamCiInput, TeamEngramInput, TeamShipInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamOutcomeControlInput, TeamOutcomeInput, TeamWorkspaceQuest } from "./team.ts";
+import { TeammateInput, TeamArrangeInput, TeamBacklogInput, TeamChangesInput, TeamCiInput, TeamEngramInput, TeamShipInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamOutcomeControlInput, TeamOutcomeInput, TeamWorkspaceQuest, TeammateModels } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
@@ -532,6 +532,8 @@ export const routes = {
       repository: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/?$/).optional(),
       /** What the task's lease covers: the providers with a key now (absent: what the VM was made with). */
       providers: z.array(z.string().min(1).max(64)).max(16).optional(),
+      /** Work in sensitive mode (heldModels): the lease is good for these models alone (absent: any of its providers'). */
+      models: TeammateModels.min(1).optional(),
     }),
   },
   /** A knight's lease kept while its task runs (its controller asks every ten minutes): `{ renewed }`. A lapsed one isn't brought back. */

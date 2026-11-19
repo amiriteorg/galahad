@@ -3,7 +3,7 @@ import { taskRecordFacts } from "@galahad/core/team-record";
 import type { Price } from "@galahad/core/spend";
 import { type Api, isAbort } from "../api.ts";
 import type { Ctx } from "../context.ts";
-import { givenLine, keptChanges, proposedLine, shippedLine, steppedLine, type TaskAction, taskActions, taskBadge, taskEnd } from "../lib/task-card.ts";
+import { givenLine, keptChanges, proposedLine, sensitiveLine, shippedLine, steppedLine, type TaskAction, taskActions, taskBadge, taskEnd } from "../lib/task-card.ts";
 import { relativeTime } from "../lib/time.ts";
 import { emptyTrail, takeTrail, type Trail, trailNext, type TrailPage, trailTail } from "../lib/trail.ts";
 import { badge, button, callout, dot } from "../ui/controls.ts";
@@ -156,7 +156,7 @@ export function taskCard(ctx: Ctx, task: TeamTask, o: CardOptions): HTMLElement 
   const end = taskEnd(task);
   const kept = keptChanges(task);
   const shipped = shippedLine(task);
-  const meta = [proposedLine(task, o.proposer), givenLine(task), task.room !== o.room ? `in ${o.roomName(task.room)}` : null, o.assignee].filter(Boolean).join(" · ");
+  const meta = [proposedLine(task, o.proposer), givenLine(task), sensitiveLine(task), task.room !== o.room ? `in ${o.roomName(task.room)}` : null, o.assignee].filter(Boolean).join(" · ");
   const stepped = steppedLine(task);
   const waiting = task.status === "queued" ? o.dependencies.filter((dependency) => !dependency.satisfied) : [];
   return h(

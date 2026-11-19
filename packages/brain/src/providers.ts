@@ -63,6 +63,8 @@ export const PRESETS: ProviderPreset[] = [
   { id: "anthropic", kind: "anthropic", baseUrl: "https://api.anthropic.com", keyPrefixes: ["sk-ant-"] },
   { id: "deepseek", kind: "openai", baseUrl: "https://api.deepseek.com" },
   { id: "abliteration", kind: "openai", baseUrl: "https://api.abliteration.ai/v1" },
+  { id: "heabsy", kind: "openai", baseUrl: "https://api.heabsy.com/v1", note: "Heabsy's OpenAI-compatible API (FEYA, s.r.o., Slovakia): low-refusal models; GET /v1/models lists the ones your key may use. For work that should run on nothing else, hold the knight or the task to them: sensitive mode." },
+  { id: "nearai", kind: "openai", baseUrl: "https://cloud-api.near.ai/v1", note: "NEAR AI Cloud's OpenAI-compatible API: open models run privately, abliterated ones among them (Qwen/Qwen3.8-27B-abliterated, deepseek-ai/DeepSeek-V4.1-Flash-1017-abliterated). It serves other vendors' models too, so sensitive mode holds a knight to the models you name, never to the provider." },
   { id: "orcarouter", kind: "openai", baseUrl: "https://api.orcarouter.ai/v1", keyPrefixes: ["sk-orca-"] },
   { id: "openrouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", keyPrefixes: ["sk-or-"] },
   { id: "moonshot", kind: "openai", baseUrl: "https://api.moonshot.ai/v1" },

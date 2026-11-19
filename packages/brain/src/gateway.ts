@@ -20,6 +20,8 @@ import { gatewaySession, keyHeaders, planOf, resolveProvider } from "./providers
 export interface TokenScope {
   label: string;
   providers?: string[];
+  /** The models it is good for alone, as `provider/model`, whatever its providers serve (a lease for work in sensitive mode). */
+  models?: string[];
   ttlMinutes: number;
   maxRequests: number;
 }
@@ -28,6 +30,7 @@ export interface TokenInfo {
   hash: string;
   label: string;
   providers: string[] | null;
+  models: string[] | null;
   expiresAt: number;
   maxRequests: number;
   used: number;
@@ -40,7 +43,9 @@ export class GatewayTokens {
   ) {
     db.exec(`CREATE TABLE IF NOT EXISTS gw_tokens (
       hash TEXT PRIMARY KEY, label TEXT NOT NULL, providers TEXT, expires_at INTEGER NOT NULL,
-      max_requests INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`);
+      max_requests INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, models TEXT)`);
+    // (A token from before a lease could be held to models has none: good for any model of its providers, as it was.)
+    if (!db.query<{ name: string }, []>("PRAGMA table_info(gw_tokens)").all().some((column) => column.name === "models")) db.exec("ALTER TABLE gw_tokens ADD COLUMN models TEXT");
   }
 
   mint(scope: TokenScope): { token: string; info: TokenInfo } {
@@ -48,8 +53,8 @@ export class GatewayTokens {
     const hash = sha256B64u(token);
     const expiresAt = this.now() + scope.ttlMinutes * 60_000;
     this.db
-      .query("INSERT INTO gw_tokens (hash, label, providers, expires_at, max_requests, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(hash, scope.label, scope.providers ? JSON.stringify(scope.providers) : null, expiresAt, scope.maxRequests, this.now());
+      .query("INSERT INTO gw_tokens (hash, label, providers, models, expires_at, max_requests, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(hash, scope.label, scope.providers ? JSON.stringify(scope.providers) : null, scope.models?.length ? JSON.stringify(scope.models) : null, expiresAt, scope.maxRequests, this.now());
     return { token, info: this.info(hash)! };
   }
 
@@ -93,6 +98,12 @@ export class GatewayTokens {
     return this.info(sha256B64u(token))?.label ?? null;
   }
 
+  /** The models a token is good for alone (a lease for work in sensitive mode); null: any of its providers'. */
+  modelsOf(token: string): string[] | null {
+    if (!/^gw_[A-Za-z0-9_-]{43}$/.test(token)) return null;
+    return this.info(sha256B64u(token))?.models ?? null;
+  }
+
   private info(hash: string): TokenInfo | null {
     const row = this.db.query<TokenRow, [string]>("SELECT * FROM gw_tokens WHERE hash = ?").get(hash);
     return row ? toInfo(row) : null;
@@ -103,6 +114,7 @@ interface TokenRow {
   hash: string;
   label: string;
   providers: string | null;
+  models: string | null;
   expires_at: number;
   max_requests: number;
   used: number;
@@ -112,6 +124,7 @@ const toInfo = (row: TokenRow): TokenInfo => ({
   hash: row.hash,
   label: row.label,
   providers: row.providers ? (JSON.parse(row.providers) as string[]) : null,
+  models: row.models ? (JSON.parse(row.models) as string[]) : null,
   expiresAt: row.expires_at,
   maxRequests: row.max_requests,
   used: row.used,
@@ -183,6 +196,10 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
   for (const [name, value] of Object.entries(keyHeaders(provider))) headers.set(name, value);
   const target = `${provider.baseUrl.replace(/\/$/, "")}/${rest}${url.search}`;
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
+  // A lease for work in sensitive mode is good for its models alone: any other, on this provider or another, is refused
+  // before a byte of the call leaves (a provider that serves others' models too, as NEAR AI's does, serves only those).
+  const held = ctx.tokens.modelsOf(token);
+  if (held && body && !held.includes(`${providerId}/${modelOf(body)}`)) return json(403, `this lease is for work in sensitive mode, on ${held.join(", ")} alone`);
   const upstream = await (ctx.fetch ?? fetch)(target, {
     method: request.method,
     headers,

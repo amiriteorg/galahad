@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, type TeamTrailEntry, TeamWorkspace,
   type Teammate, type TeamRoom, type TeamMessage, type TeamTask, type TeamDelivery, type TeamSnapshot, type TeamRoomView, type TeamWorkStatus, type TeamOverview,
-  TeamOutcomeInput, type TeamOutcomeStatus, type TeamTaskFix, type TeamTaskShipped,
+  TeamOutcomeInput, type TeamOutcomeStatus, type TeamTaskFix, type TeamTaskShipped, heldModels, SENSITIVE_WORK,
 } from "../../core/src/team.ts";
 import { type InterventionKind, type NorthStar, northStar } from "../../core/src/interventions.ts";
 
@@ -289,7 +289,10 @@ export class TeamStore {
     // (Saved as they were, with something else about the worker, they stay whose they were: the app sends them every time.)
     // (Its own models: omitted, kept; null or none, its role's again.)
     const models = input.models === undefined ? previous?.models : input.models?.length ? input.models : undefined;
-    return this.putTeammate({ id: input.id, name: input.name, instructions: input.instructions ?? previous?.instructions ?? "", role: input.role ?? previous?.role ?? "engineer", ...(models ? { models } : {}), harness: input.harness ?? previous?.harness ?? "native", enabled: input.enabled ?? previous?.enabled ?? true, dailyTurns: input.dailyTurns ?? previous?.dailyTurns ?? DAILY_TURNS, repository: input.repository === undefined ? previous?.repository ?? null : input.repository, turnsToday: this.turns(input.id), workspaceNode: previous?.workspaceNode ?? null, workspace: previous?.workspace ?? null, memory: previous?.memory ?? "", avatar: input.avatar === undefined ? previous?.avatar ?? defaultAvatar(input.id) : input.avatar ?? defaultAvatar(input.id), createdBy: previous?.createdBy ?? TEAM_OWNER, instructionsBy: input.instructions === undefined || input.instructions === previous?.instructions ? previous?.instructionsBy ?? TEAM_OWNER : TEAM_OWNER, createdAt: previous?.createdAt ?? at, updatedAt: at });
+    // Sensitive mode holds it to models of its own: never on without them, and never let go of by taking them away.
+    const sensitive = input.sensitive ?? previous?.sensitive ?? false;
+    if (sensitive && !models?.length) throw new TeamError(400, previous?.sensitive && input.sensitive === undefined ? `${previous.name} is in sensitive mode, held to its own models: choose others, or turn sensitive mode off first.` : "Sensitive mode holds a knight to models of its own: choose them first.");
+    return this.putTeammate({ id: input.id, name: input.name, instructions: input.instructions ?? previous?.instructions ?? "", role: input.role ?? previous?.role ?? "engineer", ...(models ? { models } : {}), ...(sensitive ? { sensitive: true } : {}), harness: input.harness ?? previous?.harness ?? "native", enabled: input.enabled ?? previous?.enabled ?? true, dailyTurns: input.dailyTurns ?? previous?.dailyTurns ?? DAILY_TURNS, repository: input.repository === undefined ? previous?.repository ?? null : input.repository, turnsToday: this.turns(input.id), workspaceNode: previous?.workspaceNode ?? null, workspace: previous?.workspace ?? null, memory: previous?.memory ?? "", avatar: input.avatar === undefined ? previous?.avatar ?? defaultAvatar(input.id) : input.avatar ?? defaultAvatar(input.id), createdBy: previous?.createdBy ?? TEAM_OWNER, instructionsBy: input.instructions === undefined || input.instructions === previous?.instructions ? previous?.instructionsBy ?? TEAM_OWNER : TEAM_OWNER, createdAt: previous?.createdAt ?? at, updatedAt: at });
   }
   /** How many more workers Galahad may make for himself: on this node in all, and in the day now ending. */
   private spare(all: Teammate[] = this.teammates()): TeamOverview["spare"] {
@@ -321,7 +324,9 @@ export class TeamStore {
       // A worker brings one only into a room of its own.
       if (joined && by !== TEAM_GALAHAD) this.roomMember(joined, by);
       const at = this.now();
-      const made = this.putTeammate({ id: input.id, name: input.name, instructions: input.instructions, role: input.role ?? "engineer", harness: "native", enabled: true, dailyTurns: DAILY_TURNS, repository: null, turnsToday: 0, workspaceNode: null, workspace: null, memory: "", avatar: defaultAvatar(input.id), createdBy: by, instructionsBy: by, createdAt: at, updatedAt: at });
+      // One a knight in sensitive mode makes is in it too, on the same models: what it starts never runs elsewhere.
+      const held = by === TEAM_GALAHAD ? null : heldModels(this.requireTeammate(by));
+      const made = this.putTeammate({ id: input.id, name: input.name, instructions: input.instructions, role: input.role ?? "engineer", ...(held ? { models: [...held], sensitive: true } : {}), harness: "native", enabled: true, dailyTurns: DAILY_TURNS, repository: null, turnsToday: 0, workspaceNode: null, workspace: null, memory: "", avatar: defaultAvatar(input.id), createdBy: by, instructionsBy: by, createdAt: at, updatedAt: at });
       if (joined && !joined.direct) this.putRoom({ ...joined, members: [...joined.members, made.id], updatedAt: at });
       return made;
     })();
@@ -604,11 +609,19 @@ export class TeamStore {
       if (by.givenBy === TEAM_GALAHAD && !input.outcome && !by.propose && this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_jobs WHERE kind = 'task' AND json_extract(data, '$.givenBy') = ? AND json_extract(data, '$.outcome') IS NULL AND created_at > ?").get(TEAM_GALAHAD, this.now() - 86_400_000)!.n >= TEAM_LIMITS.givesPerDay) {
         throw new TeamError(429, `Galahad has given the Roundtable ${TEAM_LIMITS.givesPerDay} tasks in the last day, which is his allowance. The owner can give more at the Roundtable.`);
       }
+      // Sensitive mode (heldModels): the models you named for it; work a knight in sensitive mode gives is held to its
+      // models, whoever does it; and one in it is given none held to others.
+      const models = input.models ?? (by.teammate ? heldModels(this.requireTeammate(by.teammate)) ?? undefined : undefined);
+      try {
+        heldModels(this.requireTeammate(input.assignee), { models });
+      } catch (error) {
+        throw new TeamError(400, (error as Error).message);
+      }
       const chain = by.chainId ?? this.chain(room);
       // A knight's task is proposed to you: it is written down where it was asked for, and waits for your approval. So
       // is the work Galahad offers an idle knight from your backlog (backlog.ts): a proposal isn't a give.
       const proposed = by.teammate ? { proposedBy: by.teammate } : by.propose ? { proposedBy: by.givenBy ?? TEAM_GALAHAD } : {};
-      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...(input.outcome ? { outcome: input.outcome } : {}), ...(by.fix ? { fix: by.fix } : {}), ...proposed }, by.teammate || by.propose ? "proposed" : "queued");
+      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...(input.outcome ? { outcome: input.outcome } : {}), ...(models ? { models: [...models] } : {}), ...(by.fix ? { fix: by.fix } : {}), ...proposed }, by.teammate || by.propose ? "proposed" : "queued");
       return this.task(key)!;
     })();
   }
@@ -618,6 +631,12 @@ export class TeamStore {
     if (row?.kind !== "task") return;
     // (When it ended stays as it was: shipping it is not more of its work.)
     this.db.query("UPDATE team_jobs SET data=? WHERE id=?").run(JSON.stringify({ ...JSON.parse(row.data), shipped }), key);
+  }
+  /** Whether kept work is of work in sensitive mode (heldModels): as its label says, its knight's mode, or its task's. */
+  sensitiveWork(artifact: { id: string; label: string; sandbox?: string | null }): boolean {
+    if (artifact.label.endsWith(SENSITIVE_WORK)) return true;
+    if (artifact.sandbox && this.teammates().some((t) => t.sensitive && t.workspace?.id === artifact.sandbox)) return true;
+    return Boolean(this.taskOfWork(artifact.id)?.models?.length);
   }
   /** The task whose kept work this is (an artifact's id), if it was this node's knights'. */
   taskOfWork(artifact: string): TeamTask | null {
@@ -634,7 +653,7 @@ export class TeamStore {
   private jobRow(id: string): JobRow | null { return this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE id = ?").get(id); }
   job(id: string): TeamJob | null { const row = this.jobRow(id); return row ? jobOf(row) : null; }
   private taskOf(row: JobRow): TeamTask {
-    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "changes" | "givenBy" | "proposedBy" | "interventions" | "outcome" | "fix" | "shipped">;
+    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "changes" | "givenBy" | "proposedBy" | "interventions" | "outcome" | "models" | "fix" | "shipped">;
     return { ...data, id: row.id, room: row.room, assignee: row.teammate, chainId: row.chain_id, status: row.status, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   task(id: string): TeamTask | null { const row = this.jobRow(id); return row?.kind === "task" ? this.taskOf(row) : null; }

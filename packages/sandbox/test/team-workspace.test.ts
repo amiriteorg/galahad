@@ -150,6 +150,13 @@ describe("persistent teammate workspaces", () => {
     expect(f.minted.at(-1)!.providers).toEqual(["openai"]);
   });
 
+  test("work in sensitive mode is leased its models alone, and the ledger says so", async () => {
+    const f = teammateHost({ status: "running" });
+    await f.host.prepareTeam(ID, QUEST, undefined, ["nearai"], ["nearai/Qwen/Qwen3.8-27B-abliterated"]);
+    expect(f.minted).toEqual([{ label: `sandbox:${ID}`, providers: ["nearai"], models: ["nearai/Qwen/Qwen3.8-27B-abliterated"], ttlMinutes: 30, maxRequests: 500 }]);
+    expect(f.ledger.at(-1)!.detail).toBe("existing VM resumed; model access capped at 30 minutes and 500 requests, in sensitive mode: nearai/Qwen/Qwen3.8-27B-abliterated alone");
+  });
+
   test("renewal revokes the persisted prior lease and then each superseded lease", async () => {
     const f = teammateHost({ status: "running" });
     await f.host.prepareTeam(ID, QUEST);

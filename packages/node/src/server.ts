@@ -7,6 +7,7 @@ import {
   type KnightFacts,
   TEAM_OWNER,
   type TeamGiveInput,
+  heldModels,
   type Json,
   CLIENT_DEFAULT_SCOPES,
   SELF_ACTION_KINDS,
@@ -1943,17 +1944,18 @@ export function createApp(ctx: AppContext) {
   }
   /** The providers with a key now: what a knight's task lease covers when the task starts, and a VM made (again) with. */
   const keyedProviders = (): string[] => providerViews(ctx.store, ctx.vault).filter((v) => v.hasKey).map((v) => v.id).slice(0, 16);
-  async function prepareTeam(member: Teammate, signal: AbortSignal) {
+  async function prepareTeam(member: Teammate, signal: AbortSignal, models?: readonly string[]) {
     const workspace = await provisionTeam(member.id, {}, signal);
-    // Its lease covers the providers with a key now: one you added since the VM was made reaches it, unmade.
-    const providers = keyedProviders();
+    // Its lease covers the providers with a key now: one you added since the VM was made reaches it, unmade. Work in
+    // sensitive mode (heldModels) is leased its models alone: their providers, and on them no other model.
+    const providers = keyedProviders().filter((id) => !models || models.some((ref) => ref.startsWith(`${id}/`)));
     leased.set(member.id, providers);
     member = teamMember(member.id);
     // A controller crash can leave the old harness running. Stop that exact process
     // before replacing its lease or allowing any new writer into this VM.
     if (workspace.status === "running") await stopTeamWorker(member);
     if (signal.aborted) throw new HttpError(409, "knight stopped");
-    await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(member.id)), ...(member.repository ? { repository: member.repository } : {}), providers });
+    await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(member.id)), ...(member.repository ? { repository: member.repository } : {}), providers, ...(models ? { models: [...models] } : {}) });
     if (member.repository) {
       // No key in command text or git config. The leased token is read inside the VM; the remote is reset to its public URL.
       const script = `import json,os,subprocess,sys\nd=json.load(open('/work/.galahad-gateway.json'))\np='/work/repo'\nif os.path.exists(p):\n sys.exit(0 if os.path.isdir(p+'/.git') else 1)\nr=subprocess.run(['git','-c','http.extraHeader=Authorization: Bearer '+d['GALAHAD_TOKEN'],'clone','--quiet',d['GALAHAD_REPO_URL'],p],capture_output=True)\nif r.returncode: print('Repository clone failed through the read-only gateway'); sys.exit(r.returncode)\nsubprocess.run(['git','-C',p,'remote','set-url','origin',sys.argv[1]],check=True)`;
@@ -2198,6 +2200,8 @@ export function createApp(ctx: AppContext) {
       tools: (member, signal) => {
         const p = teammatePrincipal(member.id);
         const allowed = new Set(["recall", "remember", "skills", "skill_read", "connectors", "connector_tool", "connector_call", "connector_request", "archive_search", "archive_read", "fleet", "compute", "ledger", "notices"]);
+        // A knight in sensitive mode saves nothing to the memory every knight shares: their models would read it.
+        if (heldModels(teamMember(member.id))) allowed.delete("remember");
         return chatTools(toolsFor(p.scopes).filter((t) => allowed.has(t.name)), inProcess(p, signal), explain);
       },
     });
@@ -2627,7 +2631,7 @@ export function createApp(ctx: AppContext) {
         if (!installedConnector(ctx.store, connector)) throw new HttpError(424, "add the GitHub connector before using a repository workspace");
         git = { connector, ...repo };
       }
-      return longRunning(onNode(p, input.on, routes.prepareTeamWorkspace.path, input, () => ctx.sandbox!.prepareTeam(input.id, input.quest, git, input.providers), { sandbox: input.id }));
+      return longRunning(onNode(p, input.on, routes.prepareTeamWorkspace.path, input, () => ctx.sandbox!.prepareTeam(input.id, input.quest, git, input.providers, input.models), { sandbox: input.id }));
     },
     renewTeamWorkspace: (input, p) => {
       if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only the team controller keeps a knight's lease");

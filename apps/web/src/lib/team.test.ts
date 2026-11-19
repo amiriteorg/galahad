@@ -42,11 +42,13 @@ describe("a knight's own models", () => {
     expect(knightWorksOn({ role: "engineer" })).toBe("engineer");
     expect(knightWorksOn({ role: "engineer", models: ["ollama/mimo-v2.6:9b"] })).toBe("engineer · on mimo-v2.6:9b");
     expect(knightWorksOn({ role: "planner", models: ["orcarouter/anthropic/claude-opus-5.5", "ollama/qwen3.8:27b"] })).toBe("planner · on anthropic/claude-opus-5.5 +1");
+    expect(knightWorksOn({ role: "engineer", models: ["nearai/Qwen/Qwen3.8-27B-abliterated"], sensitive: true })).toBe("engineer · on Qwen/Qwen3.8-27B-abliterated · sensitive mode");
   });
 
   test("what it works on, in a line: its own, or its role's when none are chosen", () => {
     expect(knightModelsLine(["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"], "engineer", { models: ["a/e"] })).toBe("Its work runs on ollama/mimo-v2.6:9b (then 1 more, in the order you turned them on), in place of its role's; its plan and the independent review stay the planner's and the reviewer's");
     expect(knightModelsLine([], "engineer", { models: ["a/e"] })).toBe("None chosen: it works on its role's models. Its work runs on a/e; its plan and the independent review stay the planner's and the reviewer's");
+    expect(knightModelsLine(["nearai/Qwen/Qwen3.8-27B-abliterated", "heabsy/heabsy/cyberheabsy"], "engineer", { models: ["a/e"] }, true)).toBe("Sensitive mode: every call of its work (its plan, its review, its conversations, its coding tool) runs on nearai/Qwen/Qwen3.8-27B-abliterated (then 1 more, in the order you turned them on) and nothing else, never a fallback");
   });
 });
 

@@ -77,8 +77,11 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
   role.addEventListener("change", () => { roleHint.textContent = knightRoleLine(role.value, known[role.value]); });
   // Models of its own, in place of its role's: toggled on in the order they are to be tried, a local one where it runs.
   let own = [...(existing?.models ?? [])];
-  const modelsHint = h("span", {}, knightModelsLine(own, existing?.role ?? "engineer", known[existing?.role ?? "engineer"]));
-  const sayModels = () => { modelsHint.textContent = knightModelsLine(own, role.value, known[role.value]); };
+  // Sensitive mode: these models alone, for every call of its work (core's heldModels).
+  const sensitive = h("input", { type: "checkbox", checked: existing?.sensitive ?? false });
+  const modelsHint = h("span", {}, knightModelsLine(own, existing?.role ?? "engineer", known[existing?.role ?? "engineer"], existing?.sensitive ?? false));
+  const sayModels = () => { modelsHint.textContent = knightModelsLine(own, role.value, known[role.value], sensitive.checked); };
+  sensitive.addEventListener("change", sayModels);
   role.addEventListener("change", sayModels);
   const modelList = h("div", { class: "scope-list" }, ...knightModelChoices(offered, own).map((choice) => {
     const box = h("input", { type: "checkbox", checked: own.includes(choice.ref) });
@@ -104,12 +107,13 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
     field("Job and instructions", instructions, { hint: "No keys or passwords. Those belong in the vault." }),
     field("Repository (optional)", repository, { hint: "An HTTPS GitHub repository. Tasks get their own worktrees in the VM." }),
     h("div", { class: "team-form-grid" }, field("Coding harness", harness, { hint: "Selecting a harness doesn't install it or sign it in: that is yours to do, in the knight's VM. Workspace checks show what's ready." }), field("Model role", role, { hint: roleHint })),
-    offered.length || own.length ? h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Models"), modelList, h("p", { class: "tiny subtle" }, modelsHint, ". A local model runs on the node that serves it, for a knight on Galahad's own harness: a vendor's coding tool can't use one.")) : null,
+    offered.length || own.length ? h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Models"), modelList, h("label", { class: "row" }, sensitive, h("span", {}, "Sensitive mode: only these models, for everything it does")), h("p", { class: "tiny subtle" }, modelsHint, ". A local model runs on the node that serves it, for a knight on Galahad's own harness: a vendor's coding tool can't use one.")) : null,
     field("Daily turn and job budget", dailyTurns, { hint: "Maximum reply turns and jobs per day, not a money limit. Zero holds new work." }),
     h("label", { class: "row" }, enabled, h("span", {}, "Enabled")),
   ], existing ? "Save knight" : "Create knight", async () => {
     if (findSecrets(instructions.value).length) throw new Error("Instructions contain something that looks like a secret. Keep it in the vault.");
-    await ctx.api.post("/api/team/teammates", { id: id.value, name: name.value.trim(), avatar: appearance.value(), instructions: instructions.value, repository: repository.value.trim() || null, harness: harness.value, role: role.value, models: own.length ? own : null, enabled: enabled.checked, dailyTurns: Number(dailyTurns.value) });
+    if (sensitive.checked && !own.length) throw new Error("Sensitive mode holds a knight to models of its own: choose them first.");
+    await ctx.api.post("/api/team/teammates", { id: id.value, name: name.value.trim(), avatar: appearance.value(), instructions: instructions.value, repository: repository.value.trim() || null, harness: harness.value, role: role.value, models: own.length ? own : null, sensitive: sensitive.checked, enabled: enabled.checked, dailyTurns: Number(dailyTurns.value) });
     toast(existing ? "Knight saved" : "Knight created");
   });
 }
@@ -210,18 +214,35 @@ export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTaskInput): void {
     return h("label", { class: "row" }, box, h("span", {}, task.title), badge(task.status, WORK_TONE[task.status]));
   }));
   const knight = room.direct && members.length === 1 ? members[0]!.name : null;
+  // Sensitive mode for this task alone: on its knight's own models, or (given again) the ones it was held to. A knight in
+  // sensitive mode holds every task of its so already.
+  const held = h("input", { type: "checkbox", checked: Boolean(copy?.models?.length) });
+  const heldWords = h("span", {});
+  const heldRow = h("label", { class: "row" }, held, heldWords);
+  const heldModelsOf = (): readonly string[] | null => copy?.models?.length ? copy.models : (members.find((person) => person.id === assignee.value)?.models ?? []).length ? members.find((person) => person.id === assignee.value)!.models! : null;
+  const sayHeld = () => {
+    const person = members.find((each) => each.id === assignee.value);
+    const models = heldModelsOf();
+    held.disabled = Boolean(person?.sensitive) || !models;
+    if (person?.sensitive) held.checked = false;
+    heldWords.textContent = person?.sensitive ? `${person.name} is in sensitive mode: this task is too, on its own models.` : models ? `Sensitive mode for this task: on ${models.join(", ")} alone, for every call of its work.` : `Sensitive mode for this task needs models of ${person?.name ?? "its knight"}'s own: choose them in its settings.`;
+  };
+  assignee.addEventListener("change", sayHeld);
+  sayHeld();
   editor(ctx, copy ? "Give this task again" : knight ? `Give ${knight} a task` : "Give a task", "Its goal, and the commands that prove it is done. A knight works in its own workspace; the commands and an independent reviewer decide whether the work is verified.", [
     field("Title", title), members.length > 1 ? field("Assigned to", assignee) : null, field("Goal", goal),
     candidates.length ? h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Wait for these tasks"), choices) : null,
     field("Done when these pass", gates, { hint: "One shell command a line, up to 16. They run in the knight's workspace." }),
     field("Budget in US dollars (optional)", budget, { hint: "US dollars at your prices: what its model calls may spend. It is told what it has spent, and stops with what it has when it is spent." }),
+    heldRow,
   ], "Give task", async () => {
     if (findSecrets(goal.value).length) throw new Error("The goal contains something that looks like a secret.");
     const checks = gatesFrom(gates.value);
     if ("error" in checks) throw new Error(checks.error);
     const money = budgetFrom(budget.value);
     if ("error" in money) throw new Error(money.error);
-    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks.gates, ...(money.usd ? { budgetUsd: money.usd } : {}), ...(copy?.again ? { again: copy.again } : {}) });
+    const models = held.checked && !held.disabled ? heldModelsOf() : null;
+    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks.gates, ...(money.usd ? { budgetUsd: money.usd } : {}), ...(models ? { models: [...models] } : {}), ...(copy?.again ? { again: copy.again } : {}) });
   });
 }
 

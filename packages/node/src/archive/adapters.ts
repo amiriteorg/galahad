@@ -207,12 +207,13 @@ const FACTS_BYTES = 64 * 2 ** 20;
  * build models) becomes a `model` entry of its own, part of the artifact. Galahad's own
  * quests and investigations are `agent`; an outside agent's sandbox work is `untrusted`.
  */
-export function artifactsAdapter(artifacts: Pick<ArtifactStore, "list" | "filesOf" | "locate" | "read">): ArchiveAdapter {
+export function artifactsAdapter(artifacts: Pick<ArtifactStore, "list" | "filesOf" | "locate" | "read">, kept: (artifact: { id: string; label: string; sandbox?: string | null }) => boolean = () => true): ArchiveAdapter {
   return {
     name: "artifacts",
     sweepEveryMs: DAY,
     async pull(cursor, limit) {
-      const here = artifacts.list().filter((a) => a.here);
+      // (`kept`: what the archive may hold. A knight's work in sensitive mode it never does: daemon.ts.)
+      const here = artifacts.list().filter((a) => a.here && kept(a));
       const { batch, more } = after(
         here.map((a) => ({ key: `${pad(a.savedAt)}:${a.id}`, item: a })),
         cursor,

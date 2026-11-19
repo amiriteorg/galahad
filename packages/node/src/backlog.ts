@@ -1,4 +1,4 @@
-import { type ExecResult, type NodeIdentity, redact, TEAM_GALAHAD, type Teammate, type TeamTask } from "@galahad/core";
+import { type ExecResult, heldModels, type NodeIdentity, redact, TEAM_GALAHAD, type Teammate, type TeamTask } from "@galahad/core";
 import { chat, STEP_EFFORT } from "@galahad/brain";
 import type { MindStore } from "@galahad/mind";
 import { z } from "zod";
@@ -187,7 +187,9 @@ export class BacklogRunner {
     const passed = [...new Set(mine.filter((t) => t.status === "done" && t.verified).flatMap((t) => t.gates))].slice(0, 4);
     const asked = backlogQuestion({ knight, read: [plan ? read.stdout.trim() : "", open ? `=== its open issues\n${open}` : ""].filter(Boolean).join("\n"), recent: mine.slice(0, BACKLOG.recent), declined, passed });
     let text = "";
-    for await (const event of this.chat(this.o.brain(), { role: "planner", messages: [{ role: "user", content: asked, effort: STEP_EFFORT.plan }], coding: true, signal: this.halt.signal })) {
+    // A knight in sensitive mode has its repository read on its own models, as every call of its work is (heldModels).
+    const held = heldModels(knight);
+    for await (const event of this.chat(this.o.brain(), { role: "planner", ...(held ? { models: [...held] } : {}), messages: [{ role: "user", content: asked, effort: STEP_EFFORT.plan }], coding: true, signal: this.halt.signal })) {
       if (event.type === "text") text += event.text;
       else if (event.type === "error") throw new Error(event.error);
     }

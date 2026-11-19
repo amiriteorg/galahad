@@ -38,6 +38,9 @@ const ROWS: Row[] = [
   { id: "anthropic", docs: "https://platform.claude.com/docs/en/api/overview", model: "claude-opus-5-5", chat: "https://api.anthropic.com/v1/messages", auth: bearer, models: { asks: "https://api.anthropic.com/v1/models?limit=100", auth: (key) => ({ "x-api-key": key, "anthropic-version": "2023-06-01" }) } },
   { id: "deepseek", docs: "https://api-docs.deepseek.com/", model: "deepseek-v4-pro", chat: "https://api.deepseek.com/chat/completions", auth: bearer, models: { asks: "https://api.deepseek.com/models" } },
   { id: "abliteration", docs: "https://docs.abliteration.ai/api/openai-compatibility", model: "abliterated-model", chat: "https://api.abliteration.ai/v1/chat/completions", auth: bearer, models: { asks: "https://api.abliteration.ai/v1/models" } },
+  // (Read 19 November 2026.)
+  { id: "heabsy", docs: "https://api.heabsy.com/docs", model: "qwen3-coder", chat: "https://api.heabsy.com/v1/chat/completions", auth: bearer, models: { asks: "https://api.heabsy.com/v1/models" } },
+  { id: "nearai", docs: "https://docs.near.ai/cloud/quickstart.md", model: "Qwen/Qwen3.8-27B-abliterated", chat: "https://cloud-api.near.ai/v1/chat/completions", auth: bearer, models: { asks: "https://cloud-api.near.ai/v1/models" } },
   { id: "orcarouter", docs: "https://docs.orcarouter.ai/api-reference/chat/create-a-chat-completion", model: "orcarouter/auto", chat: "https://api.orcarouter.ai/v1/chat/completions", auth: bearer, models: { asks: "https://api.orcarouter.ai/v1/models" } },
   { id: "openrouter", docs: "https://openrouter.ai/docs/api/reference/overview", model: "openai/gpt-5.2", chat: "https://openrouter.ai/api/v1/chat/completions", auth: bearer, models: { asks: "https://openrouter.ai/api/v1/models" } },
   { id: "moonshot", docs: "https://platform.kimi.ai/docs/api/chat", model: "kimi-k3.1-pro", chat: "https://api.moonshot.ai/v1/chat/completions", auth: bearer, models: { asks: "https://api.moonshot.ai/v1/models" } },

@@ -46,10 +46,10 @@ struct KnightsTests {
             #expect(Knights.toggle(item.own, item.ref, on: item.on) == item.after, "\(item.ref) \(item.on)")
         }
         for item in vectors.knightForms.modelLines {
-            #expect(Knights.modelsLine(own: item.own, role: item.role, spec: item.spec) == item.line, "\(item.own)")
+            #expect(Knights.modelsLine(own: item.own, role: item.role, spec: item.spec, sensitive: item.sensitive ?? false) == item.line, "\(item.own)")
         }
         for item in vectors.knightForms.worksOn {
-            #expect(Knights.worksOn(role: item.role, models: item.models) == item.words, "\(item.models ?? [])")
+            #expect(Knights.worksOn(role: item.role, models: item.models, sensitive: item.sensitive ?? false) == item.words, "\(item.models ?? [])")
         }
     }
 
@@ -64,6 +64,11 @@ struct KnightsTests {
         input.models = ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"]
         let chosen = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any]
         #expect(chosen?["models"] as? [String] == ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"])
+        // Sensitive mode is said only when it is set: left alone, nothing of it is sent.
+        #expect(chosen?["sensitive"] == nil)
+        input.sensitive = true
+        let held = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any]
+        #expect(held?["sensitive"] as? Bool == true)
     }
 
     @Test func aTasksBudgetIsReadAsThePWAReadsIt() {

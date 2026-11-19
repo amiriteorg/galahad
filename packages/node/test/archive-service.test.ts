@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { archiveId, newNodeIdentity, type NodeIdentity, registrationDigest, type Preregistration, TRIAL_ARCHIVE_KIND } from "@galahad/core";
+import { archiveId, newNodeIdentity, type NodeIdentity, registrationDigest, type Preregistration, SENSITIVE_WORK, TRIAL_ARCHIVE_KIND } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import { artifactsAdapter, chatsAdapter, investigationsAdapter, memoriesAdapter, trialsAdapter } from "../src/archive/adapters.ts";
 import { LocalDiskBackend, sha256Hex } from "../src/archive/blobs.ts";
@@ -154,6 +154,15 @@ const REG: Preregistration = {
 };
 
 describe("sources: each by its cursor, idempotent, catching up after downtime", () => {
+  test("kept work the archive may not hold never arrives: a knight's in sensitive mode (its summaries and vectors would be other models')", async () => {
+    const w = world();
+    const plain = await keepArtifact(w, { "notes.md": "The plain work." }, { label: "Plain · ada · verified" });
+    const held = await keepArtifact(w, { "notes.md": "The sensitive work." }, { label: `Held · ada · verified${SENSITIVE_WORK}` });
+    const pulled = await artifactsAdapter(w.artifacts, (a) => !a.label.endsWith(SENSITIVE_WORK)).pull(null, 40);
+    expect(pulled.entries.map((e) => e.sourceId)).toEqual([plain.id]);
+    expect(held.id).not.toBe(plain.id);
+  });
+
   test("memories, investigations, trials, artifacts (with models) and chats all arrive, once", async () => {
     const w = world();
     w.mind.remember(w.identity, "The owner prefers SI units in every report.", { tags: ["preference"], prov: { trust: "owner" } });

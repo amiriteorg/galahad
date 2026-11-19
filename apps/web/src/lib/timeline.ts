@@ -29,9 +29,9 @@ export function timelineTasks(room: Pick<TeamRoom, "id" | "direct" | "members">,
 }
 
 /** The same task, given again as a new one: what was asked, of whom and where, and which it gives again (your stepping in,
- * counted on the new one), with what came of it last time (againGoal). */
-export const giveAgain = (task: Pick<TeamTask, "id" | "room" | "assignee" | "title" | "goal" | "gates" | "dependsOn" | "status" | "verified" | "error" | "output">): TeamTaskInput =>
-  ({ room: task.room, assignee: task.assignee, title: task.title.trim(), goal: againGoal(task), gates: [...task.gates], dependsOn: [...task.dependsOn], again: task.id });
+ * counted on the new one), with what came of it last time (againGoal). One in sensitive mode is again, on the same models. */
+export const giveAgain = (task: Pick<TeamTask, "id" | "room" | "assignee" | "title" | "goal" | "gates" | "dependsOn" | "status" | "verified" | "error" | "output" | "models">): TeamTaskInput =>
+  ({ room: task.room, assignee: task.assignee, title: task.title.trim(), goal: againGoal(task), gates: [...task.gates], dependsOn: [...task.dependsOn], ...(task.models?.length ? { models: [...task.models] } : {}), again: task.id });
 
 /** Where a try's lesson begins in a goal: replaced by the next try's, never piled up. */
 const LAST_TIME = "\n\nLast time (";

@@ -70,20 +70,23 @@ export function toggleKnightModel(own: readonly string[], ref: string, on: boole
 }
 
 /** What a knight works on, in a word or two: its role, and its own first model when it has some ("engineer · on mimo-v2.6:9b +1"). */
-export function knightWorksOn(person: Pick<Teammate, "role" | "models">): string {
+export function knightWorksOn(person: Pick<Teammate, "role" | "models" | "sensitive">): string {
   const own = person.models ?? [];
   if (!own.length) return person.role;
-  return `${person.role} · on ${own[0]!.slice(own[0]!.indexOf("/") + 1)}${own.length > 1 ? ` +${own.length - 1}` : ""}`;
+  return `${person.role} · on ${own[0]!.slice(own[0]!.indexOf("/") + 1)}${own.length > 1 ? ` +${own.length - 1}` : ""}${person.sensitive ? " · sensitive mode" : ""}`;
 }
 
 /** One toggle's words: the model, and where it runs when a node of yours serves it. */
 export const knightModelLabel = (choice: KnightModelChoice): string => (choice.on.length ? `${choice.ref} · on ${choice.on.join(", ")}` : choice.ref);
 
 /** What a knight with models of its own works on, in a line; none: its role's, as `knightRoleLine` says. */
-export function knightModelsLine(own: readonly string[], role: string, spec: KnightRoleSpec | undefined): string {
+export function knightModelsLine(own: readonly string[], role: string, spec: KnightRoleSpec | undefined, sensitive = false): string {
   const first = own[0];
   if (!first) return `None chosen: it works on its role's models. ${knightRoleLine(role, spec)}`;
-  return `Its work runs on ${first}${own.length > 1 ? ` (then ${own.length - 1} more, in the order you turned them on)` : ""}, in place of its role's; its plan and the independent review stay the planner's and the reviewer's`;
+  const more = own.length > 1 ? ` (then ${own.length - 1} more, in the order you turned them on)` : "";
+  // Sensitive mode (core's heldModels): every call of its work on them, and none elsewhere.
+  if (sensitive) return `Sensitive mode: every call of its work (its plan, its review, its conversations, its coding tool) runs on ${first}${more} and nothing else, never a fallback`;
+  return `Its work runs on ${first}${more}, in place of its role's; its plan and the independent review stay the planner's and the reviewer's`;
 }
 
 /**

@@ -433,6 +433,46 @@ test("a knight's own models: what it works on and what you may choose; set in or
   expect(lines).toEqual(["ada works on ollama/mimo-v2.6:9b, deepseek/deepseek-v4-pro, in that order.", "rev works on its role's models (engineer)."]);
 });
 
+test("sensitive mode at a terminal: whether a knight is in it, on and off, and a task in it alone, on the models named or its knight's own", async () => {
+  const lines: string[] = [];
+  const calls: { name: RouteName; input: any }[] = [];
+  const knights = [member("ada", { models: ["nearai/Qwen/Qwen3.8-27B-abliterated"] }), member("lin")];
+  const api = {
+    async call<T>(name: RouteName, input?: any): Promise<T> {
+      if (name === "team") return { teammates: knights, rooms: [], tasks: [], deliveries: [] } as T;
+      calls.push({ name, input });
+      if (name === "createTeamTask") return { task: { id: "task-abcdefghijkl" } } as T;
+      const was = knights.find((t) => t.id === input.id)!;
+      return { teammate: { ...was, ...(input.models ? { models: input.models } : {}), ...(input.sensitive ? { sensitive: true } : { sensitive: undefined }) } } as T;
+    },
+  };
+  await teamCommand(api, "sensitive", ["ada"], {}, (line) => lines.push(line));
+  await teamCommand(api, "sensitive", ["ada", "on"], {}, (line) => lines.push(line));
+  await teamCommand(api, "sensitive", ["lin", "on", "heabsy/heabsy/cyberheabsy"], {}, (line) => lines.push(line));
+  await teamCommand(api, "sensitive", ["ada", "off"], {}, (line) => lines.push(line));
+  expect(lines).toEqual([
+    "ada works on nearai/Qwen/Qwen3.8-27B-abliterated, in that order.",
+    "To hold it to models of its own and nothing else: galahad roundtable sensitive ada on",
+    "ada is in sensitive mode: every call of its work (its plan, its review, its conversations, its coding tool) goes to nearai/Qwen/Qwen3.8-27B-abliterated, in that order, and to nothing else.",
+    "lin is in sensitive mode: every call of its work (its plan, its review, its conversations, its coding tool) goes to heabsy/heabsy/cyberheabsy, in that order, and to nothing else.",
+    "ada works on nearai/Qwen/Qwen3.8-27B-abliterated, in that order.",
+  ]);
+  expect(calls.map((c) => c.input)).toEqual([
+    { id: "ada", name: "Ada", sensitive: true },
+    { id: "lin", name: "Lin", sensitive: true, models: ["heabsy/heabsy/cyberheabsy"] },
+    { id: "ada", name: "Ada", sensitive: false },
+  ]);
+  await expect(teamCommand(api, "sensitive", ["ada", "maybe"], {}, () => {})).rejects.toThrow("usage: galahad roundtable sensitive <knight>");
+  // A task in sensitive mode alone: on the models named, or with none named its knight's own; a knight with none is told what to do.
+  lines.length = 0;
+  calls.length = 0;
+  await teamCommand(api, "task", ["dm-ada", "ada", "Read", "the", "leak"], { sensitive: true, models: "nearai/Qwen/Qwen3.8-27B-abliterated" }, (line) => lines.push(line));
+  await teamCommand(api, "task", ["dm-ada", "ada", "Again"], { sensitive: true }, (line) => lines.push(line));
+  expect(calls.map((c) => c.input.models)).toEqual([["nearai/Qwen/Qwen3.8-27B-abliterated"], ["nearai/Qwen/Qwen3.8-27B-abliterated"]]);
+  expect(lines[0]).toBe("task-abcdefghijkl queued; completion requires its gates and independent review. In sensitive mode: every call of its work on nearai/Qwen/Qwen3.8-27B-abliterated alone.");
+  await expect(teamCommand(api, "task", ["dm-lin", "lin", "Work"], { sensitive: true }, () => {})).rejects.toThrow("lin has no models of its own to hold the task to");
+});
+
 test("the listing says how you stepped in on each task, and the north star over the last thirty days (#28)", async () => {
   const lines: string[] = [];
   const task = (id: string, over: object) => ({ id, room: "forge", assignee: "ada", title: `Task ${id}`, goal: "g", dependsOn: [], gates: [], status: "done", verified: true, progress: "", output: "", error: null, chainId: "c", createdAt: 1, updatedAt: 2, ...over });

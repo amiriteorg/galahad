@@ -3366,6 +3366,33 @@
         "own": [],
         "role": "made-up",
         "line": "None chosen: it works on its role's models. made-up isn't on your roster: the engineer's models do its work"
+      },
+      {
+        "own": [
+          "nearai/Qwen/Qwen3.8-27B-abliterated",
+          "heabsy/heabsy/cyberheabsy"
+        ],
+        "role": "engineer",
+        "spec": {
+          "models": [
+            "a/e"
+          ],
+          "forKnights": true
+        },
+        "sensitive": true,
+        "line": "Sensitive mode: every call of its work (its plan, its review, its conversations, its coding tool) runs on nearai/Qwen/Qwen3.8-27B-abliterated (then 1 more, in the order you turned them on) and nothing else, never a fallback"
+      },
+      {
+        "own": [],
+        "role": "engineer",
+        "spec": {
+          "models": [
+            "a/e"
+          ],
+          "forKnights": true
+        },
+        "sensitive": true,
+        "line": "None chosen: it works on its role's models. Its work runs on a/e; its plan and the independent review stay the planner's and the reviewer's"
       }
     ],
     "worksOn": [
@@ -3392,6 +3419,14 @@
         "role": "swift",
         "models": [],
         "words": "swift"
+      },
+      {
+        "role": "engineer",
+        "models": [
+          "nearai/Qwen/Qwen3.8-27B-abliterated"
+        ],
+        "sensitive": true,
+        "words": "engineer · on Qwen/Qwen3.8-27B-abliterated · sensitive mode"
       }
     ],
     "profiles": [
@@ -3857,6 +3892,18 @@
         "baseUrl": "https://api.abliteration.ai/v1"
       },
       {
+        "id": "heabsy",
+        "kind": "openai",
+        "baseUrl": "https://api.heabsy.com/v1",
+        "note": "Heabsy's OpenAI-compatible API (FEYA, s.r.o., Slovakia): low-refusal models; GET /v1/models lists the ones your key may use. For work that should run on nothing else, hold the knight or the task to them: sensitive mode."
+      },
+      {
+        "id": "nearai",
+        "kind": "openai",
+        "baseUrl": "https://cloud-api.near.ai/v1",
+        "note": "NEAR AI Cloud's OpenAI-compatible API: open models run privately, abliterated ones among them (Qwen/Qwen3.8-27B-abliterated, deepseek-ai/DeepSeek-V4.1-Flash-1017-abliterated). It serves other vendors' models too, so sensitive mode holds a knight to the models you name, never to the provider."
+      },
+      {
         "id": "orcarouter",
         "kind": "openai",
         "baseUrl": "https://api.orcarouter.ai/v1",
@@ -4310,6 +4357,14 @@
       },
       {
         "id": "abliteration",
+        "line": null
+      },
+      {
+        "id": "heabsy",
+        "line": null
+      },
+      {
+        "id": "nearai",
         "line": null
       },
       {
@@ -9583,6 +9638,26 @@
           "pr": 12,
           "head": "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2"
         }
+      },
+      {
+        "id": "task-held00000000",
+        "room": "dm-ada",
+        "assignee": "ada",
+        "title": "The held task",
+        "goal": "Do it well.",
+        "dependsOn": [],
+        "gates": [],
+        "status": "queued",
+        "verified": false,
+        "progress": "",
+        "output": "",
+        "error": null,
+        "chainId": "chain-held",
+        "createdAt": 1763199700000,
+        "updatedAt": 1763198200000,
+        "models": [
+          "nearai/Qwen/Qwen3.8-27B-abliterated"
+        ]
       }
     ],
     "knight": [
@@ -9604,7 +9679,8 @@
       "msg-5",
       "task:task-asked0000000",
       "task:task-declined0000",
-      "msg-6"
+      "msg-6",
+      "task:task-held00000000"
     ],
     "room": [
       "task:task-old000000000",
@@ -9626,7 +9702,8 @@
       "msg-5",
       "task:task-asked0000000",
       "task:task-declined0000",
-      "msg-6"
+      "msg-6",
+      "task:task-held00000000"
     ],
     "sinceAt": 1763194000000,
     "since": [
@@ -9645,7 +9722,8 @@
       "msg-5",
       "task:task-asked0000000",
       "task:task-declined0000",
-      "msg-6"
+      "msg-6",
+      "task:task-held00000000"
     ],
     "speakers": [
       "You",
@@ -9670,6 +9748,7 @@
           "ship"
         ],
         "given": null,
+        "sensitive": null,
         "kept": "2 files changed",
         "proposed": null,
         "stepped": "You stepped in: an approval and two messages",
@@ -9687,6 +9766,7 @@
           "stop"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": null,
         "stepped": null,
@@ -9704,6 +9784,7 @@
           "stop"
         ],
         "given": "Given to the Roundtable by you",
+        "sensitive": null,
         "kept": null,
         "proposed": null,
         "stepped": null,
@@ -9725,6 +9806,7 @@
           "again"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": null,
         "stepped": "You stepped in: its desktop taken over, a stop, 12 resumes, given again two times and rewritten",
@@ -9746,6 +9828,7 @@
           "again"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": null,
         "stepped": null,
@@ -9767,6 +9850,7 @@
           "again"
         ],
         "given": "Given to the Roundtable by Galahad",
+        "sensitive": null,
         "kept": null,
         "proposed": null,
         "stepped": null,
@@ -9787,6 +9871,7 @@
           "again"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": null,
         "stepped": null,
@@ -9804,6 +9889,7 @@
           "stop"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": null,
         "stepped": null,
@@ -9821,6 +9907,7 @@
           "stop"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": null,
         "stepped": null,
@@ -9839,6 +9926,7 @@
           "decline"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": "Ada proposes this: it starts when you approve it",
         "stepped": null,
@@ -9856,6 +9944,7 @@
           "stop"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": "Proposed by bea",
         "stepped": null,
@@ -9877,6 +9966,7 @@
           "again"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": "Proposed by Ada",
         "stepped": null,
@@ -9895,6 +9985,7 @@
         },
         "actions": [],
         "given": null,
+        "sensitive": null,
         "kept": "1 file changed",
         "proposed": null,
         "stepped": null,
@@ -9916,6 +10007,7 @@
           "again"
         ],
         "given": null,
+        "sensitive": null,
         "kept": null,
         "proposed": null,
         "stepped": null,
@@ -9934,7 +10026,26 @@
         },
         "actions": [],
         "given": null,
+        "sensitive": null,
         "kept": "1 file changed",
+        "proposed": null,
+        "stepped": null,
+        "shipped": null,
+        "again": "Do it well."
+      },
+      {
+        "id": "task-held00000000",
+        "badge": {
+          "text": "Queued",
+          "tone": "neutral"
+        },
+        "end": null,
+        "actions": [
+          "stop"
+        ],
+        "given": null,
+        "sensitive": "Sensitive mode: on nearai/Qwen/Qwen3.8-27B-abliterated alone",
+        "kept": null,
         "proposed": null,
         "stepped": null,
         "shipped": null,

@@ -68,7 +68,8 @@ export interface LedgerEntryInput {
 }
 
 export interface TokenMinter {
-  mint(scope: { label: string; providers?: string[]; ttlMinutes: number; maxRequests: number }): {
+  /** `models`: a lease good for these alone, whatever its providers serve (work in sensitive mode). */
+  mint(scope: { label: string; providers?: string[]; models?: string[]; ttlMinutes: number; maxRequests: number }): {
     token: string;
     info: { hash: string };
   };
@@ -775,9 +776,9 @@ export class SandboxHost {
   /**
    * A knight's VM, ready for a task: started if it isn't, and given a fresh lease. `providers`: what the lease covers,
    * the providers with a key now (the controller says), so a key added since the VM was made reaches it; absent, what
-   * the VM was made with.
+   * the VM was made with. `models`: work in sensitive mode, whose lease is good for those models alone.
    */
-  async prepareTeam(id: string, quest: string, git?: { connector: string; owner: string; repo: string }, providers?: readonly string[]): Promise<SandboxView> {
+  async prepareTeam(id: string, quest: string, git?: { connector: string; owner: string; repo: string }, providers?: readonly string[], models?: readonly string[]): Promise<SandboxView> {
     const sandbox = await this.get(id);
     if (!sandbox) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
     if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
@@ -801,7 +802,7 @@ export class SandboxHost {
     if (previous) this.opts.tokens.revoke(previous);
     const covered = providers ? [...providers] : sandbox.providers;
     const scopes = [...covered, ...(git ? [`git:${git.connector}:${git.owner}:${git.repo}`] : [])];
-    const minted = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: scopes, ttlMinutes: TEAM_LEASE_MINUTES, maxRequests: 500 });
+    const minted = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: scopes, ...(models?.length ? { models: [...models] } : {}), ttlMinutes: TEAM_LEASE_MINUTES, maxRequests: 500 });
     this.tokenStore.put(id, minted.info.hash);
     const env = gatewayEnv(minted.token, covered);
     if (git) env.GALAHAD_REPO_URL = repositoryUrl(env.GALAHAD_GATEWAY!, git);
@@ -809,7 +810,7 @@ export class SandboxHost {
       this.opts.tokens.revoke(minted.info.hash);
       throw new SandboxError("could not prepare the teammate's model access", 424);
     }
-    this.opts.ledger({ class: "modify", resource: "sandbox.team-ready", target: sandbox.name, verdict: "allow", quest, detail: `existing VM resumed; model access capped at ${TEAM_LEASE_MINUTES} minutes and 500 requests` });
+    this.opts.ledger({ class: "modify", resource: "sandbox.team-ready", target: sandbox.name, verdict: "allow", quest, detail: `existing VM resumed; model access capped at ${TEAM_LEASE_MINUTES} minutes and 500 requests${models?.length ? `, in sensitive mode: ${models.join(", ")} alone` : ""}` });
     return { ...sandbox, status: "running" };
   }
 

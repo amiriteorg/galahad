@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamTask } from "@galahad/core/team";
-import { givenLine, keptChanges, proposedLine, steppedLine, taskActions, taskBadge, taskEnd } from "./task-card.ts";
+import { givenLine, keptChanges, proposedLine, sensitiveLine, steppedLine, taskActions, taskBadge, taskEnd } from "./task-card.ts";
 
 const task = (status: TeamTask["status"], more: Partial<TeamTask> = {}): TeamTask => ({ id: "task-abcdefghijkl", room: "dm-ada", assignee: "ada", title: "Fix the importer", goal: "Fix it", dependsOn: [], gates: ["bun test"], status, verified: status === "done", progress: "", output: "", error: null, chainId: "c", createdAt: 1, updatedAt: 2, ...more });
 /** A task's output as the runner writes it: the knight's summary, then the review and where it worked. */
@@ -73,6 +73,9 @@ describe("who gave a task to the Roundtable, and what it kept", () => {
   test("a task given to the Roundtable says by whom; one given to a knight by name says nothing", () => {
     expect(givenLine(task("queued", { givenBy: "owner" }))).toBe("Given to the Roundtable by you");
     expect(givenLine(task("queued", { givenBy: "galahad" }))).toBe("Given to the Roundtable by Galahad");
+    // Sensitive mode for a task alone says which models every call of its work is held to.
+    expect(sensitiveLine(task("queued", { models: ["nearai/Qwen/Qwen3.8-27B-abliterated"] }))).toBe("Sensitive mode: on nearai/Qwen/Qwen3.8-27B-abliterated alone");
+    expect(sensitiveLine(task("queued"))).toBeNull();
     expect(givenLine(task("queued"))).toBeNull();
     expect(givenLine(task("queued", { givenBy: "someone-else" }))).toBeNull();
   });

@@ -263,6 +263,54 @@ test("a knight on models of its own works on them, at its tasks and in its rooms
   expect(g.bodies[0].model).toBe("mimo");
 });
 
+test("sensitive mode: every call of a knight's task is on its own models alone, its plan's and its review's too, the review on another of them than did the work; its VM's lease is for them", async () => {
+  const held: Teammate = { ...member, models: ["local/mimo", "local/qwen"], sensitive: true };
+  const leases: (readonly string[] | undefined)[] = [];
+  const f = fixture([say("1. Make the change and test it."), say("```sh\necho built\n```"), say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")], { teammate: () => held, prepare: async (_m, _signal, models) => void leases.push(models) });
+  expect((await f.runtime.executeTask(held, task, f.context)).verified).toBe(true);
+  // The planner's, the engineer's two turns, the reviewer's: none on the roster's local/fake.
+  expect(f.bodies.map((body) => body.model)).toEqual(["mimo", "mimo", "mimo", "qwen"]);
+  expect(leases).toEqual([["local/mimo", "local/qwen"]]);
+  // A task you held to a model of its own, its knight not in sensitive mode: on that model alone, review and all.
+  const g = fixture([say("1. Make the change and test it."), say("```sh\necho built\n```"), say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")]);
+  expect((await g.runtime.executeTask(member, { ...task, models: ["local/qwen"] }, g.context)).verified).toBe(true);
+  expect(g.bodies.map((body) => body.model)).toEqual(["qwen", "qwen", "qwen", "qwen"]);
+});
+
+test("sensitive mode: when none of its models answers, the work waits and asks them again, never another model; a task held to models its knight isn't is never begun", async () => {
+  const held: Teammate = { ...member, models: ["missing/only"], sensitive: true };
+  const stop = new AbortController();
+  const told: string[] = [];
+  const f = fixture([say("1. A plan no model of its should have made.")], { teammate: () => held });
+  const context: TeamRunContext = { ...f.context, signal: stop.signal, emit: (line) => { told.push(line); if (line.startsWith("Retry ·")) setTimeout(() => stop.abort(), 0); } };
+  await f.runtime.executeTask(held, task, context).catch(() => {});
+  expect(f.bodies).toEqual([]);
+  expect(told.find((line) => line.startsWith("Retry ·"))).toContain("missing/only");
+  // Held to local/fake, which its knight in sensitive mode is not: refused before its VM is even readied.
+  const g = fixture([], { teammate: () => ({ ...member, models: ["local/mimo"], sensitive: true }) });
+  await expect(g.runtime.executeTask({ ...member, models: ["local/mimo"], sensitive: true }, { ...task, models: ["local/fake"] }, g.context)).rejects.toThrow("a task held to local/fake is never its");
+  expect(g.prepared).toEqual([]);
+  expect(g.bodies).toEqual([]);
+});
+
+test("sensitive mode in a conversation: its turns and the story its room is told are on its own models, it is told it is in sensitive mode, and the work it gives names no models of its own choosing", async () => {
+  const held: Teammate = { ...member, models: ["local/mimo"], sensitive: true };
+  let kept: { text: string; through: string } | null = null;
+  const f = fixture([say("Ada drafts the notes."), say("Understood.")], {
+    teammate: () => held,
+    story: () => kept,
+    keepStory: (_where: string, text: string, through: string) => { kept = { text, through }; },
+  });
+  const long = Array.from({ length: 40 }, (_, i) => said(i + 1, i % 2 ? "ada" : "owner", `Message ${i + 1} ${"x".repeat(1000)}`));
+  await f.runtime.respond(held, room, long, f.context);
+  // The story first (never on the swift role's or the roster's), then the reply.
+  expect(f.bodies.map((body) => body.model)).toEqual(["mimo", "mimo"]);
+  expect(f.bodies[1].messages[0].content).toContain("You are in sensitive mode");
+  const delegate = f.bodies[1].tools.find((tool: any) => tool.function.name === "delegate_task");
+  expect(delegate.function.parameters.properties.models).toBeUndefined();
+  expect(delegate.function.parameters.properties.goal).toBeDefined();
+});
+
 test("every turn of a task is sent the same beginning: the knight's notes are fenced once for the task, not anew on each call", async () => {
   const f = fixture([say("1. Make the change and test it."), say("```sh\necho one\n```"), say("```sh\necho two\n```"), say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")]);
   expect((await f.runtime.executeTask(member, task, f.context)).verified).toBe(true);
@@ -626,6 +674,9 @@ test("what a harness would run on: its own sign-in first, then the roster's mode
   const ok = (told: object) => ({ exitCode: 0, stdout: status({ installed: true, ...told }) });
   // Signed in: the sign-in goes first, and the roster's models are its fallbacks.
   expect(harnessReadiness(claude, ok({ signedIn: true, method: "claude.ai" }), [opus])).toEqual({ ready: true, models: [OWN_SIGN_IN, opus], on: "its own sign-in in this VM (claude.ai), then anthropic/claude-opus-5-5 through the gateway" });
+  // Work in sensitive mode never runs on the tool's own sign-in: on its models through the gateway, or not at all.
+  expect(harnessReadiness(claude, ok({ signedIn: true, method: "claude.ai" }), [opus], [], "engineer", true)).toEqual({ ready: true, models: [opus], on: "anthropic/claude-opus-5-5 through the gateway" });
+  expect(harnessReadiness(claude, ok({ signedIn: true, method: "claude.ai" }), [], [], "engineer", true)).toEqual({ ready: false, models: [], reason: "This work is in sensitive mode, and none of its models speaks Claude Code's API (Anthropic's): give it one that does, or Galahad's own harness" });
   expect(harnessReadiness(claude, ok({ signedIn: true, method: "claude.ai" }), [])).toEqual({ ready: true, models: [OWN_SIGN_IN], on: "its own sign-in in this VM (claude.ai)" });
   // Not signed in: a keyed model that speaks its API, through the gateway.
   expect(harnessReadiness(claude, ok({ signedIn: false }), [opus])).toEqual({ ready: true, models: [opus], on: "anthropic/claude-opus-5-5 through the gateway" });

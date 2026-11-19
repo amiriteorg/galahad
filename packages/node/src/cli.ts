@@ -53,10 +53,16 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     a knight's own models, in place of its role's: its conversations, its tasks' work
                                     and its harness run on them, in order (a local model on whichever node serves it);
                                     with none named, what it works on and what you may choose; --role gives it back
+  roundtable sensitive <id> [on [provider/model…] | off]
+                                    sensitive mode: every call of its work (its plan, its review, its conversations,
+                                    its coding tool) on its own models and nothing else, never a fallback; with no
+                                    on/off, whether it is
   roundtable dm <id> [message]       open/read a direct chat, or send a message
   roundtable room <name> <member…>   create a shared room (--limit bounds its coordination chain)
   roundtable chat <room> [message]   read a room, or send a message; work continues on the node
   roundtable task <room> <assignee> <goal> [--after task-id,task-id] [--gate command] [--budget-usd 0.5]
+                                    [--sensitive] [--models provider/model,…]: sensitive mode for this task alone,
+                                    on the models named, or with none named its knight's own
   roundtable give "<goal>" [--gate command]... [--title text] [--desktop] [--repo url] [--budget-usd 0.5]
                                     a task for the Roundtable: the knight best suited to it takes it (free, its work
                                     verified before, its job about this, a desktop or the repository it needs) and
@@ -539,6 +545,9 @@ async function main(): Promise<void> {
       label: { type: "string" },
       role: { type: "string" },
       model: { type: "string" },
+      // (Sensitive mode for a task alone: its knight's own models, or those named with --models.)
+      sensitive: { type: "boolean" },
+      models: { type: "string" },
       tag: { type: "string", multiple: true },
       reason: { type: "string" },
       providers: { type: "string" },

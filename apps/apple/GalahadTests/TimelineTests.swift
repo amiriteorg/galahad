@@ -31,6 +31,7 @@ struct TimelineTests {
             #expect((end == nil) == (card.end == nil), "\(task.id)")
             #expect(TaskCard.actions(task).map(\.rawValue) == card.actions, "\(task.id)")
             #expect(TaskCard.given(task) == card.given, "\(task.id)")
+            #expect(TaskCard.sensitive(task) == card.sensitive, "\(task.id)")
             #expect(TaskCard.kept(task) == card.kept, "\(task.id)")
             #expect(TaskCard.proposed(task, proposer: task.proposedBy == "ada" ? "Ada" : nil) == card.proposed, "\(task.id)")
             #expect(TaskCard.stepped(task) == card.stepped, "\(task.id)")

@@ -19,12 +19,14 @@ struct KnightInput: Encodable, Sendable, Equatable {
     /// a node too old to know them would refuse the field.
     var models: [String]? = nil
     var sendModels = false
+    /// Sensitive mode (core's heldModels); nil: left as it is, and not sent (a node too old to know it would refuse it).
+    var sensitive: Bool? = nil
     var enabled: Bool
     var dailyTurns: Int
     /// The drawing it wears (`AvatarLook.profile`).
     var avatar: AvatarProfile
 
-    enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, models, enabled, dailyTurns, avatar }
+    enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, models, sensitive, enabled, dailyTurns, avatar }
 
     func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -35,6 +37,7 @@ struct KnightInput: Encodable, Sendable, Equatable {
         try c.encode(harness, forKey: .harness)
         try c.encode(role, forKey: .role)
         if sendModels { try c.encode(models, forKey: .models) }
+        try c.encodeIfPresent(sensitive, forKey: .sensitive)
         try c.encode(enabled, forKey: .enabled)
         try c.encode(dailyTurns, forKey: .dailyTurns)
         try c.encode(avatar, forKey: .avatar)
@@ -138,18 +141,20 @@ enum Knights {
     }
 
     /// What a knight with models of its own works on, in a line; none: its role's (`knightModelsLine`).
-    static func modelsLine(own: [String], role: String, spec: RoleInfo?) -> String {
+    static func modelsLine(own: [String], role: String, spec: RoleInfo?, sensitive: Bool = false) -> String {
         guard let first = own.first else { return "None chosen: it works on its role's models. \(roleLine(role: role, spec: spec))" }
         let more = own.count > 1 ? " (then \(own.count - 1) more, in the order you turned them on)" : ""
+        // Sensitive mode (core's heldModels): every call of its work on them, and none elsewhere.
+        if sensitive { return "Sensitive mode: every call of its work (its plan, its review, its conversations, its coding tool) runs on \(first)\(more) and nothing else, never a fallback" }
         return "Its work runs on \(first)\(more), in place of its role's; its plan and the independent review stay the planner's and the reviewer's"
     }
 
     /// What a knight works on, in a word or two: its role, and its own first model when it has some (`knightWorksOn`).
-    static func worksOn(role: String, models: [String]?) -> String {
+    static func worksOn(role: String, models: [String]?, sensitive: Bool = false) -> String {
         guard let first = models?.first else { return role }
         let name = first.firstIndex(of: "/").map { String(first[first.index(after: $0)...]) } ?? first
         let more = (models?.count ?? 0) > 1 ? " +\((models?.count ?? 0) - 1)" : ""
-        return "\(role) · on \(name)\(more)"
+        return "\(role) · on \(name)\(more)\(sensitive ? " · sensitive mode" : "")"
     }
 
     /// A new knight's handle, from its name: lowercase letters, digits and hyphens, never a reserved one or one taken

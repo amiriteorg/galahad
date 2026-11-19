@@ -26,7 +26,7 @@ import { connectorState } from "../../web/src/lib/connector-state.ts";
 import { noticeFrom } from "../../web/src/lib/notices.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
 import { againGoal, timeline, timelineTasks } from "../../web/src/lib/timeline.ts";
-import { givenLine, keptChanges, proposedLine, shippedLine, steppedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
+import { givenLine, keptChanges, proposedLine, sensitiveLine, shippedLine, steppedLine, taskActions, taskBadge, taskEnd } from "../../web/src/lib/task-card.ts";
 import { knightModelChoices, knightModelsLine, knightRoleLine, knightRoles, knightWorksOn, removalPlan, teamSpeaker, teammateId, toggleKnightModel } from "../../web/src/lib/team.ts";
 import { budgetFrom } from "../../web/src/lib/give.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, keptDiffers, shownAgain, turnOf } from "../../web/src/lib/turns.ts";
@@ -410,9 +410,13 @@ const knightForms = {
     { own: ["ollama/mimo-v2.6:9b"], role: "frontend", spec: knightRoster.frontend },
     { own: [] as string[], role: "engineer", spec: knightRoster.engineer },
     { own: [] as string[], role: "made-up" },
-  ].map((c) => ({ ...c, line: knightModelsLine(c.own, c.role, c.spec) })),
+    // Sensitive mode: every call of its work on them alone.
+    { own: ["nearai/Qwen/Qwen3.8-27B-abliterated", "heabsy/heabsy/cyberheabsy"], role: "engineer", spec: knightRoster.engineer, sensitive: true },
+    { own: [] as string[], role: "engineer", spec: knightRoster.engineer, sensitive: true },
+  ].map((c) => ({ ...c, line: knightModelsLine(c.own, c.role, c.spec, "sensitive" in c ? c.sensitive : false) })),
   worksOn: [
     { role: "engineer" }, { role: "engineer", models: ["ollama/mimo-v2.6:9b"] }, { role: "planner", models: ["orcarouter/anthropic/claude-opus-5.5", "ollama/qwen3.8:27b"] }, { role: "swift", models: [] as string[] },
+    { role: "engineer", models: ["nearai/Qwen/Qwen3.8-27B-abliterated"], sensitive: true },
   ].map((c) => ({ ...c, words: knightWorksOn(c) })),
   profiles: core.AVATAR_LOOKS.flatMap((look) => core.AVATAR_TEMPERAMENTS.map((temperament) => ({ look: look.id, temperament, profile: core.lookProfile(look.id, temperament) }))),
   temperaments: [
@@ -756,6 +760,8 @@ const adaTasks = [
   // Given again with what came of it: why, what it said, what the review said (a goal that held an earlier try's lesson loses it).
   task("revised", "ada", "failed", { createdAt: at(100), error: "unverified", goal: "Parse SI units.\n\nLast time (task-older000000), it ended without verified work: It gave up.", output: "I made kilo work.\n\nReview: REVISE\nMega still parses as milli: src/units.ts:14.\nWorkspace: /work/tasks/task-revised00000" }),
   task("fixing", "ada", "done", { verified: true, createdAt: at(110), output: "Checks pass.\n\nReview: PASS", changes: { artifact: `art_${"d".repeat(22)}`, files: 1, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" }, fix: { connector: "github", owner: "amiriteorg", repo: "galahad", branch: "galahad/units", pr: 12, head: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" } }),
+  // In sensitive mode alone: every call of its work on the models it is held to.
+  task("held", "ada", "queued", { createdAt: at(5), models: ["nearai/Qwen/Qwen3.8-27B-abliterated"] }),
 ];
 const adaRoom = { id: "dm-ada", direct: true, members: ["ada"] };
 const sharedRoom = { id: "dm-ada", direct: false, members: ["ada", "bea"] };
@@ -767,7 +773,7 @@ const timelines = {
   sinceAt: at(100),
   since: timeline(adaMessages, timelineTasks(adaRoom, adaTasks), { since: at(100) }).map((item) => item.key),
   speakers: adaMessages.map((message) => teamSpeaker(message, snapshot.teammates)),
-  cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), kept: keptChanges(t)?.text ?? null, proposed: proposedLine(t, t.proposedBy === "ada" ? "Ada" : null), stepped: steppedLine(t), shipped: shippedLine(t)?.text ?? null, again: againGoal(t) })),
+  cards: adaTasks.map((t) => ({ id: t.id, badge: taskBadge(t), end: taskEnd(t), actions: taskActions(t), given: givenLine(t), sensitive: sensitiveLine(t), kept: keptChanges(t)?.text ?? null, proposed: proposedLine(t, t.proposedBy === "ada" ? "Ada" : null), stepped: steppedLine(t), shipped: shippedLine(t)?.text ?? null, again: againGoal(t) })),
 };
 
 // ---- where a notice came from, in words (the PWA's lib/notices.ts) ----------------------------------------------------

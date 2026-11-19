@@ -37,7 +37,13 @@ export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): 
 /** What a task changed in its repository and where that is kept (`galahad ship <artifact>` opens a pull request from it). Empty when it kept nothing. */
 export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
-const usage = "galahad roundtable [add <id> | avatar <id> | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | ci [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad roundtable [add <id> | avatar <id> | models <id> [provider/model…] | sensitive <id> [on|off] [provider/model…] | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> [--sensitive] [--models provider/model,…] | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | ci [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
+
+/** What a knight works on, in a sentence: its own models or its role's, and whether it is in sensitive mode. */
+const knightModels = (m: Teammate): string =>
+  m.sensitive && m.models?.length
+    ? `${m.id} is in sensitive mode: every call of its work (its plan, its review, its conversations, its coding tool) goes to ${m.models.join(", ")}, in that order, and to nothing else.`
+    : m.models?.length ? `${m.id} works on ${m.models.join(", ")}, in that order.` : `${m.id} works on its role's models (${m.role}).`;
 
 /** A size as a person says one. */
 const bytesWord = (bytes: number) => (bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`);
@@ -50,7 +56,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     const state = await api.call<TeamSnapshot>("team");
     // (One Galahad made for himself says so: in your conversation with him, or by the worker that asked for it.)
     const maker = (m: Teammate) => (!m.createdBy || m.createdBy === "owner" ? "" : ` · made by ${m.createdBy === "galahad" ? "Galahad" : m.createdBy}`);
-    for (const m of state.teammates) print(`${m.id} · ${plainLine(m.name)}${state.primary === m.id ? " · leads the Roundtable" : ""} · ${m.harness} · ${m.enabled ? "enabled" : "paused"} · ${m.turnsToday}/${m.dailyTurns} turns today · ${m.workspace ? `VM ${m.workspace.id} on ${m.workspace.node}` : "VM not provisioned"}${maker(m)}`);
+    for (const m of state.teammates) print(`${m.id} · ${plainLine(m.name)}${state.primary === m.id ? " · leads the Roundtable" : ""}${m.sensitive ? " · sensitive mode" : ""} · ${m.harness} · ${m.enabled ? "enabled" : "paused"} · ${m.turnsToday}/${m.dailyTurns} turns today · ${m.workspace ? `VM ${m.workspace.id} on ${m.workspace.node}` : "VM not provisioned"}${maker(m)}`);
     // (One you removed is named still: its handle stays taken.)
     for (const m of state.removed ?? []) print(`${m.id} · ${plainLine(m.name)} · removed${m.conversations?.length ? ` · its conversations, kept to read: ${m.conversations.map((room) => `galahad roundtable chat ${room}`).join(", ")}` : ""}`);
     for (const r of state.rooms) print(`${r.id} · ${plainLine(r.name)} · ${r.members.join(", ")}${r.paused ? " · paused" : ""}`);
@@ -74,7 +80,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     if (!id) throw new Error("usage: galahad roundtable models <knight> [provider/model…] [--role]");
     const knight = (await api.call<TeamSnapshot>("team")).teammates.find((m) => m.id === id);
     if (!knight) throw new Error(`no knight ${id}`);
-    const says = (m: Teammate) => (m.models?.length ? `${m.id} works on ${m.models.join(", ")}, in that order.` : `${m.id} works on its role's models (${m.role}).`);
+    const says = knightModels;
     const refs = args.slice(1).flatMap((arg) => arg.split(",")).map((ref) => ref.trim()).filter(Boolean);
     if (refs.length || flags.role === true) {
       const saved = await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: knight.name, models: flags.role === true ? null : refs });
@@ -84,6 +90,24 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     print(says(knight));
     print("To choose, in order: galahad roundtable models <knight> provider/model…; --role gives it its role's again. You may choose:");
     for (const m of models) print(`  ${m.ref}${m.on.length ? ` · on ${m.on.join(", ")}` : ""}`);
+    return;
+  }
+  if (sub === "sensitive") {
+    // Sensitive mode: every call of its work on its own models alone (heldModels). On with models names them its own.
+    const id = args[0];
+    const turn = args[1];
+    if (!id || (turn !== undefined && turn !== "on" && turn !== "off")) throw new Error("usage: galahad roundtable sensitive <knight> [on [provider/model…] | off]");
+    const knight = (await api.call<TeamSnapshot>("team")).teammates.find((m) => m.id === id);
+    if (!knight) throw new Error(`no knight ${id}`);
+    if (turn === undefined) {
+      print(knightModels(knight));
+      if (!knight.sensitive) print(`To hold it to models of its own and nothing else: galahad roundtable sensitive ${id} on${knight.models?.length ? "" : " provider/model…"}`);
+      return;
+    }
+    const refs = args.slice(2).flatMap((arg) => arg.split(",")).map((ref) => ref.trim()).filter(Boolean);
+    if (turn === "off" && refs.length) throw new Error("Turning sensitive mode off names no models: galahad roundtable models chooses them.");
+    const saved = await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: knight.name, sensitive: turn === "on", ...(refs.length ? { models: refs } : {}) });
+    print(knightModels(saved.teammate));
     return;
   }
   if (sub === "order") {
@@ -142,8 +166,16 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
   if (sub === "task") {
     const goal = args.slice(2).join(" ");
     const gates = typeof flags.gate === "string" ? [flags.gate] : Array.isArray(flags.gate) ? flags.gate : [];
-    const { task } = await api.call<{ task: { id: string } }>("createTeamTask", { room: args[0], assignee: args[1], title: string("title") ?? goal.slice(0, 200), goal, gates, ...(string("after") ? { dependsOn: string("after")!.split(",") } : {}), ...budget() });
-    print(`${task.id} queued; completion requires its gates and independent review.`); return;
+    // Sensitive mode for this task alone: on the models named (--models), or with none named its knight's own.
+    let models = string("models")?.split(",").map((ref) => ref.trim()).filter(Boolean);
+    if (flags.sensitive === true && !models?.length) {
+      const knight = (await api.call<TeamSnapshot>("team")).teammates.find((m) => m.id === args[1]);
+      if (!knight?.models?.length) throw new Error(`${args[1]} has no models of its own to hold the task to: name them (--models provider/model,…), or choose its own with galahad roundtable models ${args[1]}`);
+      models = [...knight.models];
+    }
+    if (!models?.length) models = undefined;
+    const { task } = await api.call<{ task: { id: string } }>("createTeamTask", { room: args[0], assignee: args[1], title: string("title") ?? goal.slice(0, 200), goal, gates, ...(string("after") ? { dependsOn: string("after")!.split(",") } : {}), ...budget(), ...(models ? { models } : {}) });
+    print(`${task.id} queued; completion requires its gates and independent review.${models ? ` In sensitive mode: every call of its work on ${models.join(", ")} alone.` : ""}`); return;
   }
   if (sub === "give") {
     // To the Roundtable, not to a knight by name: the one best suited takes it, and says why.
