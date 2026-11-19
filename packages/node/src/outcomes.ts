@@ -57,6 +57,11 @@ export class OutcomeRunner {
   /** The look under way, per outcome; and those asked for again while one was (it looks again once it ends). */
   private readonly looking = new Map<string, Promise<string>>();
   private readonly again = new Set<string>();
+  /**
+   * Aborted when the runner stops: a look under way is cut off, not waited for. A model's answer can take minutes, and
+   * a node whose stop waited for one was killed by its service manager (19 November 2026, a deploy's restart).
+   */
+  private readonly halt = new AbortController();
 
   constructor(private readonly o: OutcomeOptions) {
     this.now = o.now ?? Date.now;
@@ -70,6 +75,7 @@ export class OutcomeRunner {
   async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.halt.abort();
     await this.settled();
   }
 
@@ -160,8 +166,9 @@ export class OutcomeRunner {
     return this.o.store.outcome(room) !== null;
   }
 
-  /** One look at each outcome that needs one. */
+  /** One look at each outcome that needs one (none once the runner has stopped). */
   async tick(): Promise<void> {
+    if (this.halt.signal.aborted) return;
     for (const outcome of this.o.store.outcomes()) {
       if (outcome.status !== "active") continue;
       if (this.looking.has(outcome.id)) {
@@ -245,14 +252,17 @@ export class OutcomeRunner {
         const messages = [{ role: "user" as const, content: this.prompt(outcome, before, why, answering) }];
         // A look plans its knights' tasks, which are coding work, as a quest's planner's answer is (a coding plan may give
         // it); and it spends the outcome's budget, so only a model whose spend that can count gives it (brain countable).
-        for await (const event of this.chat(counted, { role: "planner", messages, tools: this.tools(id), coding: true, budgeted: true, ...(signal ? { signal } : {}) })) {
+        for await (const event of this.chat(counted, { role: "planner", messages, tools: this.tools(id), coding: true, budgeted: true, signal: signal ? AbortSignal.any([signal, this.halt.signal]) : this.halt.signal })) {
           if (event.type === "text") text += event.text;
           else if (event.type === "error") throw new Error(event.error);
         }
       } finally {
         const latest = this.o.store.outcome(id)!;
         const cost = costOf(lines, this.o.prices()).usd;
-        this.o.store.putOutcome({ ...latest, lastLookAt: started, leadUsd: round(latest.leadUsd + cost), seen: { tasks: [...new Set([...latest.seen.tasks, ...seenTasks])].slice(-500), message: seenMessage } });
+        // What it spent is counted however it ended. A look the runner's stop cut off didn't take in what it was shown,
+        // so it isn't kept as a look: the node, started again, looks again at what this one was looking at.
+        const cut = this.halt.signal.aborted;
+        this.o.store.putOutcome({ ...latest, leadUsd: round(latest.leadUsd + cost), ...(cut ? {} : { lastLookAt: started, seen: { tasks: [...new Set([...latest.seen.tasks, ...seenTasks])].slice(-500), message: seenMessage } }) });
       }
       return redact(text.trim());
     })().finally(() => {

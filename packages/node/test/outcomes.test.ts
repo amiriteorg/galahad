@@ -13,7 +13,7 @@ import { TeamService } from "../src/team.ts";
  * outcome's own tools.
  */
 
-type Step = { calls?: { name: string; input: unknown }[]; text?: string; tokens?: { input: number; output: number } };
+type Step = { calls?: { name: string; input: unknown }[]; text?: string; tokens?: { input: number; output: number }; hang?: boolean };
 const fixtures: { store: TeamStore; service: TeamService; runner: OutcomeRunner }[] = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) {
@@ -46,22 +46,25 @@ function world(steps: Step[] = [], record?: (title: string) => { verified: boole
   const prompts: string[] = [];
   const results: string[] = [];
   const asked: { role?: string; coding?: boolean; budgeted?: boolean }[] = [];
-  const fake = (async function* (ctx: { spent?: (call: unknown) => void }, req: { messages: { content: string }[]; tools: ChatTools; role?: string; coding?: boolean; budgeted?: boolean }) {
+  const fake = (async function* (ctx: { spent?: (call: unknown) => void }, req: { messages: { content: string }[]; tools: ChatTools; role?: string; coding?: boolean; budgeted?: boolean; signal?: AbortSignal }) {
     prompts.push(req.messages[0]!.content);
     asked.push({ role: req.role, coding: req.coding, budgeted: req.budgeted });
     const step = steps.shift() ?? {};
     if (step.tokens) ctx.spent?.({ role: "planner", ref: "stand-in/m", usage: step.tokens });
+    // (A model whose answer takes as long as it takes: until the call is cut off.)
+    if (step.hang) await new Promise((_, no) => req.signal?.addEventListener("abort", () => no(new Error("the call was cut off")), { once: true }));
     for (const [i, call] of (step.calls ?? []).entries()) results.push((await req.tools.run({ id: `c${i}`, name: call.name, input: call.input })).content);
     if (step.text) yield { type: "text", text: step.text } as ChatStreamEvent;
     yield { type: "done", ref: "stand-in/m" } as ChatStreamEvent;
   }) as unknown as typeof Chat;
   // $10 a million in, $30 out: a look of 10,000 in and 2,000 out costs $0.16.
   const prices: Prices = { "stand-in/m": { input: 10, output: 30 } };
-  const runner = new OutcomeRunner({ store, service: () => service, mind, identity, brain: () => ({ store: mind, vault: undefined as never }), prices: () => prices, log: () => {}, now: () => now, chat: fake });
+  const make = () => new OutcomeRunner({ store, service: () => service, mind, identity, brain: () => ({ store: mind, vault: undefined as never }), prices: () => prices, log: () => {}, now: () => now, chat: fake });
+  const runner = make();
   fixtures.push({ store, service, runner });
   service.start();
   const outcomeNotices = () => mind.lwwPrefix<{ severity: string; title: string; source: string }>("notice:outcome:").map((e) => e.value!);
-  return { store, service, runner, mind, prompts, results, asked, outcomeNotices, clock: { set: (t: number) => void (now = t), get: () => now } };
+  return { store, service, runner, make, mind, prompts, results, asked, outcomeNotices, clock: { set: (t: number) => void (now = t), get: () => now } };
 }
 
 const give = (knight: string, title: string, budgetUsd: number, extra: object = {}) => ({ name: "start_task", input: { knight, title, goal: `${title}, and show it`, budgetUsd, gates: ["bun test"], ...extra } });
@@ -138,6 +141,26 @@ describe("an outcome he owns", () => {
     expect(prompt.match(/Gates that passed in its VM before/g)).toHaveLength(1);
     expect(prompt).toContain("name only commands its VM has");
     await w.runner.stop();
+  });
+
+  test("stopping cuts a look off rather than waiting for its answer: what it spent is counted, and the next start looks again", async () => {
+    const w = world([{ tokens: { input: 10_000, output: 2_000 }, hang: true }, { text: "Planned." }]);
+    const made = w.runner.create({ title: "Android app", goal: "Port the iPhone app to Android.", knights: ["ada"], budgetUsd: 5 });
+    await until(() => w.prompts.length === 1);
+    const began = performance.now();
+    await w.runner.stop();
+    // (A node's stop waits for this: one that waited for the model's answer was killed by its service manager.)
+    expect(performance.now() - began).toBeLessThan(1000);
+    const kept = w.store.outcome(made.id)!;
+    expect(kept.leadUsd).toBeCloseTo(0.16, 5);
+    // That it looked isn't kept: the node, started again, looks again.
+    expect(kept.lastLookAt).toBeNull();
+    const again = w.make();
+    fixtures.push({ store: w.store, service: w.service, runner: again });
+    await again.tick();
+    await until(() => w.prompts.length === 2);
+    await again.settled();
+    expect(w.store.outcome(made.id)!.lastLookAt).not.toBeNull();
   });
 
   test(`at most ${OUTCOME_LIMITS.inFlight} of its tasks wait or run at once`, async () => {
