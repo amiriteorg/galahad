@@ -222,6 +222,24 @@ describe("quests", () => {
     expect(parseAction("```sh\ntest 1 -lt 2 && echo \"a > b\"\n```")).toMatchObject({ kind: "command", command: 'test 1 -lt 2 && echo "a > b"' });
   });
 
+  test("a here-document's lines are the command's, fences and all: a note written in Markdown with a code block in it is one command", () => {
+    // Seen on ultra, 19 November 2026: the outcome's last task had written its failing tests and was keeping their
+    // failures in NOTES.md, a Markdown note with a code block in it. Each ``` inside the here-document was read as the
+    // fence's end, the reply as two command blocks, three times running, and the task ended with nothing more run.
+    const note = "cd /work/t && cat > NOTES.md <<'EOF'\n# Red run\n\nCommand:\n\n```\nbun test packages/node/test/ci-watch.test.ts\n```\n\nAll three fail for the intended reason.\nEOF\ncat NOTES.md";
+    expect(parseAction(`Now the notes.\n\n\`\`\`sh\n${note}\n\`\`\``)).toEqual({ kind: "command", command: note, thought: "Now the notes." });
+    // So is one whose end word isn't quoted, or is indented with <<-; a here-string (<<<) opens none.
+    for (const open of ["<<EOF", "<<-EOF", '<<"EOF"']) {
+      const command = `cat > a.md ${open}\n\`\`\`js\nx()\n\`\`\`\nEOF`;
+      expect(parseAction(`\`\`\`sh\n${command}\n\`\`\``)).toMatchObject({ kind: "command", command });
+    }
+    expect(parseAction("```sh\ngrep -c x <<< \"a\"\n```\n```sh\nls\n```").kind).toBe("invalid");
+    // A here-document whose end never comes is read as before: to the first fence after it.
+    expect(parseAction("```sh\ncat > a <<EOF\nhello\n```")).toMatchObject({ kind: "command", command: "cat > a <<EOF\nhello" });
+    // And two blocks outside any here-document are still two.
+    expect(parseAction("```sh\ncat > a <<EOF\nx\nEOF\n```\n```sh\nls\n```").kind).toBe("invalid");
+  });
+
   test("a command dressed as a tool call, or a fence closed with a tag of the model's own, is still a command", () => {
     // Seen on ultra, 17 November 2026, each three times in a row, and the trial stopped with nothing run: deepseek-v4-pro
     // put its command in a tag's attribute, and closed a fence with a tag in place of its ```.

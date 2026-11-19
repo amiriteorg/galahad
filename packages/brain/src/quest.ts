@@ -290,7 +290,51 @@ export type Action =
 
 // (A fence wrapped in stray angle brackets, `<```sh>` … `` ```> ``, is read as the fence it plainly is: a model
 // sent that three times running on 14 November 2026, and a task ended with nothing run.)
-const FENCE = /<?```[ \t]*(?:sh|bash|shell|zsh)?[ \t]*>?[ \t]*\r?\n([\s\S]*?)```>?/g;
+/** Where a here-document starts in a command's line (`<<'EOF'`, `<<EOF`, `<<-EOF`, `<<"EOF"`; a here-string's `<<<` is none). */
+const HERE_DOC = /(?<!<)<<(?!<)-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/;
+
+/**
+ * A reply's fenced commands, each from its opening fence to the first ``` after it that isn't a line of a here-document
+ * the command opened, and what the reply says besides them. A note written in Markdown carries code blocks of its own:
+ * the command runs to the here-document's end word, and its fences are its text (on 19 November 2026 each one was read
+ * as the command's end, three replies running, and a task that had written its tests ended there). A here-document
+ * whose end never comes is read as before: to the first ``` after the fence opened.
+ */
+function fences(reply: string): { blocks: string[]; thought: string } {
+  const blocks: string[] = [];
+  const said: string[] = [];
+  const open = new RegExp(OPEN.source, "g");
+  let at = 0;
+  for (let found = open.exec(reply); found; found = open.exec(reply)) {
+    const body = found.index + found[0].length;
+    let close = -1;
+    let end: string | null = null;
+    for (let line = body; line <= reply.length; ) {
+      const next = reply.indexOf("\n", line);
+      const text = reply.slice(line, next === -1 ? reply.length : next);
+      if (end !== null) {
+        if (text.replace(/\r$/, "").trim() === end) end = null;
+      } else if (text.includes("```")) {
+        close = line + text.indexOf("```");
+        break;
+      } else {
+        end = HERE_DOC.exec(text)?.[2] ?? null;
+      }
+      if (next === -1) break;
+      line = next + 1;
+    }
+    // (A here-document never ended: the fence closes where it always did.)
+    if (close === -1) close = reply.indexOf("```", body);
+    if (close === -1) break;
+    said.push(reply.slice(at, found.index));
+    const block = reply.slice(body, close).trim();
+    if (block) blocks.push(block);
+    at = close + 3 + (reply[close + 3] === ">" ? 1 : 0);
+    open.lastIndex = at;
+  }
+  said.push(reply.slice(at));
+  return { blocks, thought: said.join("").trim() };
+}
 // (A command dressed as a tool call, `<sh command="…"></sh>` or `<sh>…</sh>`, is read as the command it plainly is, and so
 // is a fence closed with a tag of the model's own in place of its ``` (`</TURD>`): a model sent each three times running
 // on 17 November 2026, and a trial ended with nothing run. A fence the output limit cut off is not: no part of a command
@@ -338,8 +382,8 @@ export function parseAction(reply: string, parallel = 1): Action {
   const rest = reply.trim().slice(firstLine.length).trim();
   if (/^DONE\b/i.test(firstLine)) return { kind: "done", summary: rest || firstLine.replace(/^DONE\W*/i, "") || "(no summary)" };
   if (/^GIVE UP\b/i.test(firstLine)) return { kind: "give-up", reason: rest || firstLine.replace(/^GIVE UP\W*/i, "") || "(no reason given)" };
-  const fenced = [...reply.matchAll(FENCE)].map((m) => m[1]!.trim()).filter(Boolean);
-  const { commands: blocks, thought } = fenced.length ? { commands: fenced, thought: reply.replace(FENCE, "").trim() } : taggedCommands(reply);
+  const fenced = fences(reply);
+  const { commands: blocks, thought } = fenced.blocks.length ? { commands: fenced.blocks, thought: fenced.thought } : taggedCommands(reply);
   if (!blocks.length) {
     const closed = fenceClosedByATag(reply);
     if (closed) return { kind: "command", ...closed };
