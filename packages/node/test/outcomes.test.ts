@@ -119,6 +119,27 @@ describe("an outcome he owns", () => {
     await w.runner.stop();
   });
 
+  test("a look is told each knight's repository and the gates that passed in its VM before: it names commands that VM has", async () => {
+    const w = world([{ text: "Planned." }]);
+    w.store.saveTeammate({ id: "ada", name: "Ada", repository: "https://github.com/acme/app" });
+    // Ada's verified work elsewhere: its gates ran in her VM. Lin's that wasn't verified shows nothing of what Lin's runs.
+    const workshop = w.store.saveRoom({ name: "Workshop", members: ["ada", "lin"] });
+    w.service.createTask({ room: workshop.id, assignee: "ada", title: "Older", goal: "Older work", gates: ["bun test packages/core"] }, "owner");
+    await until(() => w.store.tasks(workshop.id).every((t) => t.status === "done"));
+    w.clock.set(w.clock.get() + 60_000);
+    w.service.createTask({ room: workshop.id, assignee: "ada", title: "Newer", goal: "Newer work", gates: ["bun install --frozen-lockfile && bun test packages/node/test/ci-back.test.ts"] }, "owner");
+    await until(() => w.store.tasks(workshop.id).filter((t) => t.status === "done").length === 2);
+    w.runner.create({ title: "Android app", goal: "Port the iPhone app to Android.", knights: ["ada", "lin"], budgetUsd: 5 });
+    await until(() => w.prompts.length === 1);
+    const prompt = w.prompts[0]!;
+    expect(prompt).toContain("Its VM's repository: https://github.com/acme/app");
+    expect(prompt).toContain("Gates that passed in its VM before: `bun install --frozen-lockfile && bun test packages/node/test/ci-back.test.ts`; `bun test packages/core`");
+    // One line of what Lin's VM runs, and none for a VM nothing has passed in.
+    expect(prompt.match(/Gates that passed in its VM before/g)).toHaveLength(1);
+    expect(prompt).toContain("name only commands its VM has");
+    await w.runner.stop();
+  });
+
   test(`at most ${OUTCOME_LIMITS.inFlight} of its tasks wait or run at once`, async () => {
     const w = world([{ calls: Array.from({ length: OUTCOME_LIMITS.inFlight + 1 }, (_, i) => give(i % 2 ? "ada" : "lin", `Step ${i}`, 0.5)) }], undefined, new Promise(() => {}));
     const made = w.runner.create({ title: "Many", goal: "Many steps.", knights: ["ada", "lin"], budgetUsd: 100 });

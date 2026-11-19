@@ -21,6 +21,8 @@ import type { TeamService } from "./team.ts";
 export const OUTCOME_LIMITS = { inFlight: 6, perDay: 30, taskUsd: 25, notes: 8000, idleLookMs: 6 * 3600_000 } as const;
 /** Below this, with nothing of it running, it has spent what it may. */
 const SPENT_BELOW_USD = 0.25;
+/** At most this many of a knight's passed gates are shown to a look, as what its VM runs gates with. */
+const PASSED_GATES = 4;
 const ENDED = new Set<TeamTask["status"]>(["done", "failed", "stopped", "interrupted"]);
 
 export type BrainContext = Parameters<typeof chat>[0];
@@ -265,11 +267,19 @@ export class OutcomeRunner {
   private prompt(outcome: StoredOutcome, view: TeamOutcome, why: string, answering: boolean): string {
     const team = this.o.service().snapshot();
     const busy = new Map(this.o.service().activeWork().map((w) => [w.teammate, w]));
+    // What each knight's VM is known to run gates with: those its verified tasks passed there, newest first (evidence,
+    // where a gate written blind named a command its VM doesn't have, and no work could ever pass it).
+    const all = this.o.store.tasks();
     const knights = outcome.knights.map((id) => {
       const k = team.teammates.find((t) => t.id === id);
       const running = this.o.store.tasks(outcome.room).find((t) => t.assignee === id && t.status === "running");
       const state = busy.has(id) ? (running ? `working on "${running.title}"` : "busy elsewhere") : "free";
-      return `- @${id}${k ? ` (${k.name}, ${k.role}): ${(k.instructions || "").split("\n")[0]!.slice(0, 160)}` : " (no longer at the Roundtable)"}; now ${state}`;
+      const passed = [...new Set(all.filter((t) => t.assignee === id && t.status === "done" && t.verified).sort((a, b) => b.updatedAt - a.updatedAt).flatMap((t) => t.gates))].slice(0, PASSED_GATES);
+      return [
+        `- @${id}${k ? ` (${k.name}, ${k.role}): ${(k.instructions || "").split("\n")[0]!.slice(0, 160)}` : " (no longer at the Roundtable)"}; now ${state}`,
+        ...(k?.repository ? [`  Its VM's repository: ${k.repository} (a task's workspace is its checkout, from the default branch)`] : []),
+        ...(passed.length ? [`  Gates that passed in its VM before: ${passed.map((g) => `\`${clip(g, 200)}\``).join("; ")}`] : []),
+      ].join("\n");
     });
     const tasks = this.o.store
       .tasks(outcome.room)
@@ -305,6 +315,7 @@ export class OutcomeRunner {
       "",
       "How you work it:",
       `- Give a free knight a task with a goal it can finish and check in one sitting: name a gate command that passes only when it's done, and a budget from what's left (most tasks $0.50 to $3, at most ${usdLabel(OUTCOME_LIMITS.taskUsd)}). At most ${OUTCOME_LIMITS.inFlight} of its tasks wait or run at once.`,
+      "- A gate runs in that knight's VM, in the task's workspace: name only commands its VM has (the gates that passed there before show what it runs with). One it can't run can never pass, whatever the work.",
       "- A task's own account of its work is checked by its gates and an independent reviewer: build on verified results; read why a failed one failed before you give it again, differently.",
       "- Ask your liege (tell_liege, kind question) when a choice is theirs: an approach, access or a key you lack, anything outward. Shipping is theirs, on a card.",
       "- Keep your plan short and current (keep_notes): what's done, what's next, what's in the way.",
