@@ -634,6 +634,8 @@ async function workIn(
           coding: true,
           // A turn of the work itself (the engineer's, or the planner's once a gate has failed twice): held to its format.
           ...(turn?.loop ? { loop: true } : {}),
+          // A budget of yours is spent only on models it can count: one you've priced, or one on the node's own machine.
+          ...(options.budgetUsd !== undefined ? { budgeted: true } : {}),
           // A role held to one model asks exactly that one (no fallback: what's measured is that model).
           ...(options.pins?.[role] ? { model: options.pins[role] } : {}),
           // The archive's relevant entries go with the plan (the start), not with every step.
@@ -821,7 +823,7 @@ export async function runNodeQuest(
           ask: async (messages) => {
             let text = "";
             let model = "";
-            for await (const event of node.stream("chat", { role: "reviewer", messages, tools: false, coding: true, ...(options.pins?.reviewer ? { model: options.pins.reviewer } : {}), ...(options.memories === false ? { memories: false } : {}) })) {
+            for await (const event of node.stream("chat", { role: "reviewer", messages, tools: false, coding: true, ...(options.budgetUsd !== undefined ? { budgeted: true } : {}), ...(options.pins?.reviewer ? { model: options.pins.reviewer } : {}), ...(options.memories === false ? { memories: false } : {}) })) {
               if (event.type === "text") text += event.text;
               else if (event.type === "model") model = event.ref;
               else if (event.type === "usage") spent({ role: "reviewer", model: event.ref, usage: event.usage });

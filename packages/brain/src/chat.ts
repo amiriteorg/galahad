@@ -1,4 +1,4 @@
-import { canonical, type ChatMessage, type ChatStreamEvent, type Json, redact, type Usage } from "@galahad/core";
+import { canonical, type ChatMessage, type ChatStreamEvent, type Json, priceFor, type Prices, pricesOf, redact, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { anthropicConversation, type ModelMessage, openAIConversation, RefusalError, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
 import { rotated } from "./effort.ts";
@@ -39,6 +39,11 @@ export interface ChatRequest {
    * models may give it (providers.ts); any other answer of his passes them over.
    */
   coding?: boolean;
+  /**
+   * This answer spends a budget of yours (a task's, an outcome's): only a model whose spend it can count may give it
+   * (countable). Any other is passed over, saying why: counted as nothing, it would spend past the budget unseen.
+   */
+  budgeted?: boolean;
   /**
    * A turn of a quest's work loop (a command a reply), whichever role's models answer it: the engineer's, or the
    * planner's once a gate has failed twice in a row. Held to the loop's format checks as the engineer's turns are.
@@ -150,6 +155,16 @@ export const MAX_REFUSAL_RETRIES = 2;
 /** What a model was seen to do when it was last checked (core/model-checks.ts); null: never checked. */
 export const checkOf = (store: MindStore, ref: string): ModelCheck | null => readModelCheck(store.lww(`modelcheck:${ref}`)?.value);
 
+/**
+ * Whether a budget can count what this model spends: you've set a price for it (or for its provider), or it runs on
+ * this machine, where it costs nothing. A budget counts any other as nothing, so work with one passes it over.
+ */
+export function countable(store: MindStore, vault: Vault, ref: string, prices: Prices = pricesOf(store)): boolean {
+  if (priceFor(prices, ref)) return true;
+  const slash = ref.indexOf("/");
+  return slash > 0 && resolveProvider(store, vault, ref.slice(0, slash))?.local === true;
+}
+
 /** Expand `<provider>/*` wildcards into the first model that provider serves on this node. */
 async function expand(ctx: BrainContext, refs: string[]): Promise<string[]> {
   const out: string[] = [];
@@ -223,6 +238,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
   const loopTurn = !!req.coding && (req.loop || (req.role ?? "planner") === "engineer") && !tools && !req.model;
   const offFormat = (ref: string) => (loopTurn ? checkOf(ctx.store, ref) : null);
   const someoneFits = candidates.some((ref) => followsFormat(offFormat(ref)) !== false);
+  // Your prices, read once for an answer that spends a budget of yours (countable).
+  const prices = req.budgeted ? pricesOf(ctx.store) : null;
   for (const ref of candidates) {
     const off = offFormat(ref);
     if (someoneFits && off?.format && followsFormat(off) === false) {
@@ -253,6 +270,10 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
     }
     if (!provider.apiKey && !provider.local) {
       yield passOver(ref, whyNoKey(parsed.provider, req.coding ? "coding" : "own"));
+      continue;
+    }
+    if (prices && !provider.local && !priceFor(prices, ref)) {
+      yield passOver(ref, `you've set no price for it, so a budget can't count what it spends: work with a budget passes it over (galahad price set ${ref} <$ per million in> <$ per million out>)`);
       continue;
     }
     // Whether it reads pictures, where a check has said: then that, not the rule of thumb (adapters.ts seesImages).

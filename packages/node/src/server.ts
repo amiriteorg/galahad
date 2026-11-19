@@ -107,6 +107,7 @@ import {
   mcpLibraryEntry,
   searchLibrary,
   type ConnectorLibraryView,
+  pricesOf,
 } from "@galahad/core";
 import type { McpIndex } from "./mcp-index.ts";
 import {
@@ -151,6 +152,7 @@ import {
   type Trip,
   tellsAfter,
   tripOf,
+  countable,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, enrollDevice, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
@@ -167,7 +169,7 @@ import { filesFor, UploadError, type Uploads, withAttachments } from "./uploads.
 import { CHANGES_SCRIPT, changesView, fileView, filesView, KEPT_FROM_VIEW, LIST_SCRIPT, LookError, READ_SCRIPT } from "./workspace-look.ts";
 import { actionDone, BRANCH_SCRIPT, CLONE_SCRIPT, CLONE_TIMEOUT, COMMIT_SCRIPT, GIT_SCRIPT, GIT_TIMEOUT, gitView } from "./project-git.ts";
 import { GatewaySpend } from "./gateway-spend.ts";
-import { pricesOf, type UsageStore } from "./usage.ts";
+import { type UsageStore } from "./usage.ts";
 import type { QuestBoard } from "./quests.ts";
 import { ArtifactError, type ArtifactStore, contentTypeOf } from "./artifacts.ts";
 import { fenceMemories } from "./archive/retrieval.ts";
@@ -2141,6 +2143,7 @@ export function createApp(ctx: AppContext) {
         return (await inProcess(teamOwner, new AbortController().signal).call<{ artifact: { id: string } }>("saveArtifact", { on: bound.node, sandbox: bound.id, path, label: label.slice(0, 200) })).artifact.id;
       },
       prices: () => pricesOf(ctx.store),
+      countable: (ref) => countable(ctx.store, ctx.vault, ref),
       // His skills for a knight's task, as for a quest of his: chosen once from its goal, under the task's own ref.
       skills: (_member, task) => {
         try {

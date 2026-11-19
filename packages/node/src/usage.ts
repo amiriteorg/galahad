@@ -1,6 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { costOf, mergeSpend, type Price, PriceSchema, spendTotal, type Usage, type UsageBudgetInput, type UsageLine, type UsageMeter, type UsageRow } from "@galahad/core";
-import type { MindStore } from "@galahad/mind";
+import { costOf, mergeSpend, type Price, spendTotal, type Usage, type UsageBudgetInput, type UsageLine, type UsageMeter, type UsageRow } from "@galahad/core";
 
 /*
  * This node's own count of its model calls: for each day, who asked, the role and the
@@ -105,13 +104,3 @@ export class UsageStore {
   }
 }
 
-/** Your prices as the mind holds them: the latest for each model, read leniently (one a newer node wrote in a shape this one can't read is left out). */
-export function pricesOf(store: Pick<MindStore, "lwwPrefix">): Record<string, Price> {
-  const prices: Record<string, Price> = {};
-  for (const entry of store.lwwPrefix<unknown>("price:")) {
-    if (entry.value === null || entry.value === undefined) continue;
-    const price = PriceSchema.safeParse(entry.value);
-    if (price.success) prices[entry.key.slice("price:".length)] = price.data;
-  }
-  return prices;
-}

@@ -44,7 +44,7 @@ function fixture(script: object[], overrides: Partial<TeamRuntimeDeps> = {}, usa
   };
   const context: TeamRunContext = { signal: new AbortController().signal, chainId: task.chainId, send: () => { throw new Error("unexpected send"); }, remember: () => { throw new Error("unexpected local note"); }, delegate: () => { throw new Error("unexpected task"); }, recruit: () => { throw new Error("unexpected knight"); }, emit: () => {} };
   const setRoster = (role: string, models: string[]) => void store.emit(identity, "roster.set", { role, models });
-  return { runtime: teamRuntime(deps), context, bodies, commands, prepared, held: () => held, setRoster };
+  return { runtime: teamRuntime(deps), context, bodies, commands, prepared, held: () => held, setRoster, store, vault, identity };
 }
 
 test("workspace tool calls keep the assigned VM and share one bounded preparation per response", async () => {
@@ -351,6 +351,51 @@ test("a task's budget counts its coding tool's own calls through the gateway too
   expect(trail).toContain("Budget · spent ($0.70 of $0.50): the work stops");
   expect(asked.every((a) => a.teammate === member.id && a.since >= started - 1000 && a.since <= Date.now())).toBe(true);
   expect(outcome.record!.spent.find((line) => line.role === "tool")).toMatchObject({ model: "plan/coder", calls: 2, input: 200_000 });
+});
+
+/** A provider with a key of its own and no price of yours (the fixture's `local` runs on this machine, and needs none). */
+function withPaid(f: ReturnType<typeof fixture>) {
+  f.vault.set("paid", "sk-FAKE-paid-key-for-tests-0000", { provider: "paid", origin: "https://paid.example.test" });
+  f.store.emit(f.identity, "provider.set", { id: "paid", kind: "openai", baseUrl: "https://paid.example.test/v1", secret: "paid" });
+  for (const role of ["planner", "engineer", "reviewer"]) f.setRoster(role, ["paid/m", "local/fake"]);
+  return f;
+}
+
+test("a task given a budget is never run on a model you've set no price for: the role's next one does the work, and the trail says why", async () => {
+  const script = () => [say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")];
+  const f = withPaid(fixture(script(), { prices: () => ({}) }));
+  const trail: string[] = [];
+  const outcome = await f.runtime.executeTask(member, { ...task, budgetUsd: 2 }, { ...f.context, emit: (line) => trail.push(String(line)) });
+  expect(outcome.verified).toBe(true);
+  expect(f.bodies.map((body) => body.model)).toEqual(["fake", "fake", "fake", "fake"]);
+  expect(trail.some((line) => line.includes("paid/m") && line.includes("no price"))).toBe(true);
+  // With no budget, the same roster's first model does it, as ever.
+  const g = withPaid(fixture(script(), { prices: () => ({}) }));
+  await g.runtime.executeTask(member, task, g.context);
+  expect(g.bodies[0].model).toBe("m");
+});
+
+test("a coding tool on a task with a budget is offered only the models it can count; with none, the task says to price one, and nothing starts", async () => {
+  const commands: string[] = [];
+  const knight = { ...member, harness: "opencode" as const };
+  const roster = [{ provider: "paid", model: "m" }, { provider: "plan", model: "coder" }];
+  const counted = (ref: string) => ref === "plan/coder";
+  const f = fixture([], {
+    teammate: () => knight, models: () => roster, countable: counted,
+    exec: async (_m, command) => { commands.push(command); return result({ stdout: "0" }); },
+  });
+  // It starts on the one it can count (the run itself isn't played here: its launch says which model).
+  await f.runtime.executeTask(knight, { ...task, budgetUsd: 2 }, f.context).catch(() => {});
+  const launch = commands.find((c) => c.includes("setsid")) ?? "";
+  expect(launch).toContain("coder");
+  expect(launch).not.toContain("paid");
+  const none = fixture([], {
+    teammate: () => knight, models: () => roster, countable: () => false,
+    exec: async (_m, command) => { commands.push(command); return result({ stdout: "0" }); },
+  });
+  commands.length = 0;
+  await expect(none.runtime.executeTask(knight, { ...task, budgetUsd: 2 }, none.context)).rejects.toThrow("OpenCode has no model its budget can count: you've set no price for paid/m, plan/coder");
+  expect(commands.some((c) => c.includes("setsid"))).toBe(false);
 });
 
 test("a VM on another node: its node is asked what the tool spent, and that is counted the same", async () => {

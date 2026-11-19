@@ -45,6 +45,17 @@ const Dollars = z.number().min(0).max(100_000);
 /** US dollars per million tokens. Read leniently from the log (`price.set`). */
 export const PriceSchema = z.object({ input: Dollars, output: Dollars, cached: Dollars.optional() }) satisfies z.ZodType<Price>;
 
+/** Your prices as the mind holds them: the latest for each model, read leniently (one a newer node wrote in a shape this one can't read is left out). */
+export function pricesOf(store: { lwwPrefix<T>(prefix: string): readonly { key: string; value: T | null }[] }): Record<string, Price> {
+  const prices: Record<string, Price> = {};
+  for (const entry of store.lwwPrefix<unknown>("price:")) {
+    if (entry.value === null || entry.value === undefined) continue;
+    const price = PriceSchema.safeParse(entry.value);
+    if (price.success) prices[entry.key.slice("price:".length)] = price.data;
+  }
+  return prices;
+}
+
 /** A row of this node's own count of its model calls: a day, who asked, the role, the model. */
 export interface UsageRow extends UsageLine {
   /** UTC day, YYYY-MM-DD. */

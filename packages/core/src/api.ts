@@ -677,6 +677,11 @@ export const routes = {
        */
       coding: z.boolean().optional(),
       /**
+       * This call spends a budget of yours (a quest given --budget-usd): only a model whose spend it can count answers
+       * it, one you've priced or one on the node's own machine. Any other is passed over, saying why.
+       */
+      budgeted: z.boolean().optional(),
+      /**
        * This call is a turn of a quest's work loop (a command a reply), whichever role answers it: the engineer's,
        * or the planner's once a gate has failed twice in a row. A model checked as not following the loop's
        * format is passed over for it, as for the engineer's own turns.

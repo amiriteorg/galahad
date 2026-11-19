@@ -241,7 +241,9 @@ export class OutcomeRunner {
       let text = "";
       try {
         const messages = [{ role: "user" as const, content: this.prompt(outcome, before, why, answering) }];
-        for await (const event of this.chat(counted, { role: "planner", messages, tools: this.tools(id), ...(signal ? { signal } : {}) })) {
+        // A look plans its knights' tasks, which are coding work, as a quest's planner's answer is (a coding plan may give
+        // it); and it spends the outcome's budget, so only a model whose spend that can count gives it (brain countable).
+        for await (const event of this.chat(counted, { role: "planner", messages, tools: this.tools(id), coding: true, budgeted: true, ...(signal ? { signal } : {}) })) {
           if (event.type === "text") text += event.text;
           else if (event.type === "error") throw new Error(event.error);
         }
@@ -289,7 +291,7 @@ export class OutcomeRunner {
       "Its knights (give tasks to these only):",
       ...knights,
       "",
-      `Budget ${usdLabel(view.budgetUsd)}: spent ${usdLabel(view.spentUsd)}, held by tasks still to run ${usdLabel(view.committedUsd)}, left ${usdLabel(Math.max(0, left))}. (Spend is counted at your liege's prices; a model with no price counts nothing.)`,
+      `Budget ${usdLabel(view.budgetUsd)}: spent ${usdLabel(view.spentUsd)}, held by tasks still to run ${usdLabel(view.committedUsd)}, left ${usdLabel(Math.max(0, left))}. (Spend is counted at your liege's prices; its work runs only on models it can count.)`,
       "",
       `Its tasks (${view.tasks.total} so far, newest first):`,
       ...(tasks.length ? tasks : ["(none yet)"]),

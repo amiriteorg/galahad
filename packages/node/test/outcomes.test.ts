@@ -45,8 +45,10 @@ function world(steps: Step[] = [], record?: (title: string) => { verified: boole
   });
   const prompts: string[] = [];
   const results: string[] = [];
-  const fake = (async function* (ctx: { spent?: (call: unknown) => void }, req: { messages: { content: string }[]; tools: ChatTools }) {
+  const asked: { role?: string; coding?: boolean; budgeted?: boolean }[] = [];
+  const fake = (async function* (ctx: { spent?: (call: unknown) => void }, req: { messages: { content: string }[]; tools: ChatTools; role?: string; coding?: boolean; budgeted?: boolean }) {
     prompts.push(req.messages[0]!.content);
+    asked.push({ role: req.role, coding: req.coding, budgeted: req.budgeted });
     const step = steps.shift() ?? {};
     if (step.tokens) ctx.spent?.({ role: "planner", ref: "stand-in/m", usage: step.tokens });
     for (const [i, call] of (step.calls ?? []).entries()) results.push((await req.tools.run({ id: `c${i}`, name: call.name, input: call.input })).content);
@@ -59,7 +61,7 @@ function world(steps: Step[] = [], record?: (title: string) => { verified: boole
   fixtures.push({ store, service, runner });
   service.start();
   const outcomeNotices = () => mind.lwwPrefix<{ severity: string; title: string; source: string }>("notice:outcome:").map((e) => e.value!);
-  return { store, service, runner, mind, prompts, results, outcomeNotices, clock: { set: (t: number) => void (now = t), get: () => now } };
+  return { store, service, runner, mind, prompts, results, asked, outcomeNotices, clock: { set: (t: number) => void (now = t), get: () => now } };
 }
 
 const give = (knight: string, title: string, budgetUsd: number, extra: object = {}) => ({ name: "start_task", input: { knight, title, goal: `${title}, and show it`, budgetUsd, gates: ["bun test"], ...extra } });
@@ -105,6 +107,16 @@ describe("an outcome he owns", () => {
     expect(w.runner.view(w.store.outcome(made.id)!).committedUsd).toBe(5);
     expect(w.prompts[0]).toContain("Done when: not said yet");
     expect(w.prompts[0]).toContain("@ada");
+  });
+
+  test("a look plans coding work and spends its budget: a coding plan may give it, and only a model the budget can count", async () => {
+    const w = world([{ text: "Planned." }]);
+    w.runner.create({ title: "Android app", goal: "Port the iPhone app to Android.", knights: ["ada"], budgetUsd: 5 });
+    await until(() => w.asked.length === 1);
+    expect(w.asked[0]).toEqual({ role: "planner", coding: true, budgeted: true });
+    // What it's told of money says so.
+    expect(w.prompts[0]).toContain("its work runs only on models it can count");
+    await w.runner.stop();
   });
 
   test(`at most ${OUTCOME_LIMITS.inFlight} of its tasks wait or run at once`, async () => {
