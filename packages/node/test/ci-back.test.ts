@@ -193,6 +193,73 @@ describe("a review asks for changes on a knight's work", () => {
   });
 });
 
+describe("a pull request of a knight's work conflicts with its base", () => {
+  // What ci-watch hands on when GitHub says a pull request conflicts (mergeable false, "dirty"): its base commit.
+  const conflict = (n = 1): CiFailure => ({ head: head(n), failing: [], lines: [], conflict: head(n) });
+  const merge = (n: number) => ({ title: "Merge the base and resolve the conflicts on amiriteorg/shipyard#12", fix: expect.objectContaining({ conflict: head(n) }) });
+
+  test("(c) it goes back only where the work was a knight's", () => {
+    const w = world();
+    w.store.setCiBack(true);
+    expect(giveBack(w.deps, pull, conflict(1))).toBeNull();
+    expect(w.fixes()).toEqual([]);
+    w.shipped();
+    giveBack(w.deps, pull, conflict(2));
+    expect(w.fixes()).toEqual([expect.objectContaining(merge(2))]);
+  });
+
+  test("(b) the knight gets a fix on the pull request's branch to merge the base branch in and resolve the conflicts, with the work's own gates", () => {
+    const w = world();
+    const work = w.shipped();
+    w.store.setCiBack(true);
+    const said = giveBack(w.deps, pull, conflict());
+    const [fix] = w.fixes();
+    expect(said).toBe(`Given back to @kay as task ${fix!.id}: once its fix is verified, pushing it waits for your approval.`);
+    expect(fix).toMatchObject({
+      room: work.room,
+      assignee: "kay",
+      status: "queued",
+      title: "Merge the base and resolve the conflicts on amiriteorg/shipyard#12",
+      gates: ["bun test"],
+      budgetUsd: 4,
+      givenBy: TEAM_GALAHAD,
+      fix: { connector: "github", owner: "amiriteorg", repo: "shipyard", branch: "galahad/units", pr: 12, head: head(1), conflict: head(1) },
+    });
+    expect(fix!.goal).toContain(`"Parse SI units" (amiriteorg/shipyard#12, branch galahad/units)`);
+    expect(fix!.goal).toContain("Merge the base branch into galahad/units and resolve the conflicts");
+    expect(w.store.trail(work.id).entries.map((e) => e.text)).toContain(`CI · its pull request conflicts with its base: given back to @kay as task ${fix!.id}`);
+  });
+
+  test("(a, d) once for each base commit, counted with failure fixes toward CI_FIXES for that pull request; then it's yours", () => {
+    const w = world();
+    w.shipped();
+    w.store.setCiBack(true);
+    const first = giveBack(w.deps, pull, conflict(1));
+    expect(giveBack(w.deps, pull, conflict(1))).toBe(first);
+    expect(w.fixes().map((f) => f.fix?.conflict)).toEqual([head(1)]);
+    giveBack(w.deps, pull, failure(2));
+    giveBack(w.deps, pull, conflict(3));
+    expect(w.fixes().map((f) => f.fix?.conflict)).toEqual([head(1), undefined, head(3)]);
+    expect(giveBack(w.deps, pull, conflict(4))).toBe(`${CI_FIXES} fixes went back to @kay and its pull request still conflicts: it's yours now.`);
+    expect(w.fixes()).toHaveLength(3);
+  });
+
+  test("(e) outside an outcome it stays yours while roundtable ci is off; in an outcome it goes back on its own within its budget", () => {
+    const w = world();
+    w.shipped();
+    expect(giveBack(w.deps, pull, conflict())).toBe("@kay did this work. To give failing checks back to the knight whose work it was: galahad roundtable ci on");
+    expect(w.fixes()).toEqual([]);
+    const inOutcome = world();
+    const outcome = inOutcome.runner.create({ title: "Units", goal: "Parse SI units everywhere.", knights: ["kay"], budgetUsd: 10 });
+    inOutcome.shipped(outcome.room, { outcome: outcome.id });
+    giveBack(inOutcome.deps, pull, conflict(1));
+    const [fix] = inOutcome.fixes();
+    expect(fix).toMatchObject({ room: outcome.room, outcome: outcome.id, budgetUsd: 4, ...merge(1) });
+    inOutcome.runner.control({ id: outcome.id, action: "pause" });
+    expect(giveBack(inOutcome.deps, pull, conflict(2))).toBe("Not given back to @kay: its outcome is paused.");
+  });
+});
+
 describe("a fix that ended verified", () => {
   function fixTask(over: Partial<TeamTask> = {}): TeamTask {
     return {
@@ -242,6 +309,14 @@ describe("a fix that ended verified", () => {
         why: expect.stringContaining("one commit on top of galahad/units, where the fix began"),
       },
     ]);
+    expect(o.notes).toEqual(["Push · onto galahad/units: it waits for your approval (Inbox)"]);
+  });
+
+  test("a conflict fix that ends verified is offered as a push onto its branch through ship.update alone", async () => {
+    const o = offer({ status: "asked" });
+    await offerFix(o.deps, fixTask({ title: "Merge the base and resolve the conflicts on amiriteorg/shipyard#12", fix: { connector: "github-amiriteorg", owner: "amiriteorg", repo: "shipyard", branch: "galahad/units", pr: 12, head: head(2), conflict: head(2) } }));
+    expect(o.calls).toHaveLength(1);
+    expect(o.calls[0]).toMatchObject({ connector: "github-amiriteorg", tool: "ship.update", args: { branch: "galahad/units", artifact: FIX_ART }, why: expect.stringContaining("merged the base branch in and resolved the conflicts") });
     expect(o.notes).toEqual(["Push · onto galahad/units: it waits for your approval (Inbox)"]);
   });
 

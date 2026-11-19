@@ -415,6 +415,8 @@ export interface TeamTaskFix {
   head: string;
   /** The review it answers, by its id (absent: it fixes failing checks). */
   review?: number;
+  /** The base commit its pull request conflicted with: it merges the base branch in and resolves the conflicts. */
+  conflict?: string;
 }
 
 /** A path in a knight's workspace (its VM's /work): absolute, under /work, with no `.` or `..` in it. */

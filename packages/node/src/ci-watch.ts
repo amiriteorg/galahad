@@ -78,6 +78,8 @@ export interface CiFailure {
   head: string;
   failing: string[];
   lines: string[];
+  /** Not its checks but a conflict with its base (GitHub: mergeable false, state "dirty"): the base commit, which is its head too. */
+  conflict?: string;
 }
 
 /** A review that asked for changes, as data: its id, who, the commit it was on, its words and what it said on the code. */
@@ -125,7 +127,7 @@ export interface CiWatchOptions {
   /** The pull requests to follow (shippedPulls over the outbox). */
   shipped: () => ShippedPull[];
   /** One GitHub read through the connector the pull request was shipped by (<connector>.<tool>), as the node's own. */
-  call: (tool: "checks" | "check.annotations" | "pull.reviews" | "pull.comments", args: Record<string, string | number>, connector: string) => Promise<{ ok: boolean; status: number; body: string }>;
+  call: (tool: "checks" | "check.annotations" | "pull" | "pull.reviews" | "pull.comments", args: Record<string, string | number>, connector: string) => Promise<{ ok: boolean; status: number; body: string }>;
   /** A review that asks for changes on a knight's work (ci-back.ts): whether a pull request's are worth reading, and each one read. */
   reviews?: { wanted: (pull: ShippedPull) => boolean; asked: (pull: ShippedPull, review: CiReview) => void };
   /** Whether its failure goes back to the knight whose work it was: what the notice says of that (ci-back.ts), or nothing. */
@@ -142,12 +144,16 @@ export class CiWatch {
   private readonly reviewsRead = new Map<string, number>();
   /** The connectors that can't read reviews yet, said once. */
   private readonly noReviews = new Set<string>();
+  /** The connectors that can't read a pull request yet, said once (apart from reviews: one doesn't stop the other). */
+  private readonly noConflicts = new Set<string>();
 
   constructor(private readonly o: CiWatchOptions) {
     this.now = o.now ?? Date.now;
     o.local.exec("CREATE TABLE IF NOT EXISTS ci_watch (action TEXT PRIMARY KEY, state TEXT NOT NULL, at INTEGER NOT NULL)");
     // Each review handed on once, whatever came of it.
     o.local.exec("CREATE TABLE IF NOT EXISTS ci_reviews (review INTEGER PRIMARY KEY, at INTEGER NOT NULL)");
+    // Each pull request's conflict handed on once for each base commit it conflicts with (a pull request is owner/repo/branch#number).
+    o.local.exec("CREATE TABLE IF NOT EXISTS ci_conflicts (pull TEXT NOT NULL, base TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (pull, base))");
   }
 
   start(everyMs = CI_WATCH_EVERY_MS): void {
@@ -177,6 +183,39 @@ export class CiWatch {
       if (now - pull.at < CI_WATCH_FOR_MS) await this.followChecks(pull, now);
       const read = this.reviewsRead.get(pull.action);
       if (pull.pr && now - pull.at < CI_REVIEWS_FOR_MS && (read === undefined || now - read >= CI_REVIEWS_EVERY_MS)) await this.followReviews(pull, now);
+      if (pull.pr && now - pull.at < CI_REVIEWS_FOR_MS) await this.followConflicts(pull, now);
+    }
+  }
+
+  /**
+   * Whether a pull request conflicts with its base (github.pull: mergeable false, mergeable_state "dirty"). Each base
+   * commit it conflicts with is handed on once for that pull request, and said in your Inbox with what became of it.
+   */
+  private async followConflicts(pull: ShippedPull, now: number): Promise<void> {
+    if (!this.o.back || this.noConflicts.has(pull.connector)) return;
+    try {
+      const read = await this.o.call("pull", { owner: pull.owner, repo: pull.repo, number: pull.pr! }, pull.connector);
+      if (!read.ok) return;
+      const p = JSON.parse(read.body) as { mergeable?: unknown; mergeable_state?: unknown; base?: { sha?: unknown } };
+      const base = p.base?.sha;
+      if (p.mergeable !== false || p.mergeable_state !== "dirty" || typeof base !== "string" || !/^[0-9a-f]{40}$/.test(base)) return;
+      const key = `${pull.owner.toLowerCase()}/${pull.repo.toLowerCase()}/${pull.branch}#${pull.pr}`;
+      if (this.o.local.query("SELECT 1 FROM ci_conflicts WHERE pull = ? AND base = ?").get(key, base)) return;
+      this.o.local.query("INSERT OR IGNORE INTO ci_conflicts (pull, base, at) VALUES (?, ?, ?)").run(key, base, now);
+      let back: string | null = null;
+      try {
+        back = this.o.back(pull, { head: base, failing: [], lines: [], conflict: base });
+      } catch (error) {
+        this.o.log(`ci: ${pull.owner}/${pull.repo} ${pull.branch}: not given back (${(error as Error).message})`);
+      }
+      const body = [`It conflicts with its base branch (at ${base.slice(0, 12)}): merge the base in and resolve the conflicts.`, ...(back ? [back] : [])].join("\n").slice(0, 600);
+      this.o.store.emit(this.o.identity, "notice.raised", { key: `ci-conflict:${pull.action}`, severity: "warn", title: `Conflicts on ${pull.owner}/${pull.repo}#${pull.pr}`, body, source: "ci", at: this.now() });
+    } catch (error) {
+      const message = (error as Error).message;
+      if (/has no tool "pull"/.test(message)) {
+        this.noConflicts.add(pull.connector);
+        this.o.log(`ci: ${pull.connector} can't read a pull request yet; add it again to have conflicts followed (galahad connector add github)`);
+      } else this.o.log(`ci: ${pull.owner}/${pull.repo} ${pull.branch}: conflicts: ${message}`);
     }
   }
 

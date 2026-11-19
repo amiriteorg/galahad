@@ -79,7 +79,7 @@ describe("following the checks", () => {
     let now = 10 * 60_000;
     let checks: unknown = { total_count: 0, check_runs: [] };
     const annotations: Record<number, unknown> = {};
-    const github: { reviews: unknown[]; comments: unknown[]; refuse?: string } = { reviews: [], comments: [] };
+    const github: { reviews: unknown[]; comments: unknown[]; pull: unknown; refuse?: string } = { reviews: [], comments: [], pull: {} };
     const calls: string[] = [];
     const through = new Set<string>();
     const logs: string[] = [];
@@ -92,7 +92,7 @@ describe("following the checks", () => {
         calls.push(`${tool} ${JSON.stringify(args)}`);
         through.add(connector);
         if (github.refuse === tool) throw new Error(`${connector} has no tool "${tool}" (it has: me, repo)`);
-        const body = tool === "checks" ? checks : tool === "pull.reviews" ? github.reviews : tool === "pull.comments" ? github.comments : (annotations[args.check_run_id as number] ?? []);
+        const body = tool === "checks" ? checks : tool === "pull.reviews" ? github.reviews : tool === "pull.comments" ? github.comments : tool === "pull" ? github.pull : (annotations[args.check_run_id as number] ?? []);
         return { ok: true, status: 200, body: JSON.stringify(body) };
       },
       ...(back ? { back } : {}),
@@ -261,5 +261,56 @@ describe("following the checks", () => {
     await h.watch.tick();
     expect(h.calls).toHaveLength(1);
     expect(h.notices()).toEqual([]);
+  });
+
+  test("a pull request that conflicts with its base is noticed once per base commit, each pull request of its own", async () => {
+    const asked: { action: string; base: string }[] = [];
+    const other: ShippedPull = { ...pull, action: "a_ship2", branch: "galahad/other", artifact: "art_y", pr: 13 };
+    const h = harness([pull, other], (shippedPull, failure) => {
+      asked.push({ action: shippedPull.action, base: failure.conflict! });
+      return "Given back to @kay.";
+    });
+    const baseA = "d".repeat(40);
+    h.github.pull = { mergeable: false, mergeable_state: "dirty", base: { sha: baseA } };
+    await h.watch.tick();
+    expect(asked).toEqual([
+      { action: "a_ship1", base: baseA },
+      { action: "a_ship2", base: baseA },
+    ]);
+    // The same base seen again: nothing new.
+    await h.watch.tick();
+    expect(asked).toHaveLength(2);
+    // The base moved on and still conflicts: noticed again, once.
+    h.github.pull = { mergeable: false, mergeable_state: "dirty", base: { sha: "e".repeat(40) } };
+    await h.watch.tick();
+    expect(asked).toEqual([
+      { action: "a_ship1", base: baseA },
+      { action: "a_ship2", base: baseA },
+      { action: "a_ship1", base: "e".repeat(40) },
+      { action: "a_ship2", base: "e".repeat(40) },
+    ]);
+  });
+
+  test("a connector that can't read a pull request is said once, and its conflict reading doesn't stop reviews", async () => {
+    const conflicts: string[] = [];
+    const reviewsAsked: number[] = [];
+    const h = harness([pull], (_shippedPull, failure) => {
+      conflicts.push(failure.conflict!);
+      return "Given back to @kay.";
+    }, { wanted: () => true, asked: (_shippedPull, review) => reviewsAsked.push(review.id) });
+    h.github.refuse = "pull";
+    h.github.pull = { mergeable: false, mergeable_state: "dirty", base: { sha: "d".repeat(40) } };
+    h.github.reviews = [review(7, "CHANGES_REQUESTED", "OWNER", pull.at + 60_000)];
+    await h.watch.tick();
+    expect(conflicts).toEqual([]);
+    // Reviews were still read on the same look: a connector that can't read a pull request isn't marked against reviews.
+    expect(h.calls.filter((c) => c.startsWith("pull.reviews"))).toEqual([`pull.reviews {"owner":"amiriteorg","repo":"galahad","number":12,"per_page":100}`]);
+    expect(reviewsAsked).toEqual([7]);
+    expect(h.calls.filter((c) => c.startsWith("pull "))).toEqual([`pull {"owner":"amiriteorg","repo":"galahad","number":12}`]);
+    expect(h.logs.filter((line) => line.includes("can't read"))).toEqual(["ci: github can't read a pull request yet; add it again to have conflicts followed (galahad connector add github)"]);
+    // A later look doesn't try the pull read again.
+    h.at(10 * 60_000 + 15 * 60_000);
+    await h.watch.tick();
+    expect(h.calls.filter((c) => c.startsWith("pull "))).toHaveLength(1);
   });
 });
