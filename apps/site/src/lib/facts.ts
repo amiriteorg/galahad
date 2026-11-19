@@ -88,10 +88,10 @@ export const TRIALS_HARD = {
  * OpenMausBot's from their main branches, on `date`, to the thousand. */
 export const SIZE = {
   date: "15 November 2026",
-  oursDate: "18 November 2026",
-  commit: "7f3eb2b",
+  oursDate: "19 November 2026",
+  commit: "da8e262",
   rows: [
-    { name: "Galahad", lines: 106_902, exact: true, of: "TypeScript (90,222) and Swift (16,680)", ours: true },
+    { name: "Galahad", lines: 114_736, exact: true, of: "TypeScript (96,825) and Swift (17,911)", ours: true },
     { name: "Rakazo", lines: 467_000, exact: false, of: "TypeScript", ours: false },
     { name: "OpenMausBot", lines: 571_000, exact: false, of: "TypeScript and JavaScript", ours: false },
     { name: "Hermes Agent", lines: 1_192_697, exact: true, of: "Python (720,605) and TypeScript (472,092), version 0.21", ours: false },
