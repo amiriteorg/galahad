@@ -303,6 +303,19 @@ describe("connectors", () => {
   });
 });
 
+describe("while you were away (PLAN #37)", () => {
+  test("the node says what happened since a time, and what waits for you now, to you alone", async () => {
+    const since = Date.now() - 60_000;
+    const away = await admin<{ since: number; lines: { text: string; tone: string }[] }>("away", { since });
+    expect(away.status).toBe(200);
+    expect(away.body.since).toBe(since);
+    expect(Array.isArray(away.body.lines)).toBe(true);
+    for (const line of away.body.lines) expect(["ok", "warn", "danger", "neutral"]).toContain(line.tone);
+    // An agent never reads what you were told while you were away.
+    expect((await arm("away", { since })).status).toBe(403);
+  });
+});
+
 describe("standing orders", () => {
   test("only you sign them, and they must be narrow", async () => {
     expect((await arm("setOrder", { connector: "forge", tool: "post", args: {}, label: "anything" })).status).toBe(403);

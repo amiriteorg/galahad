@@ -139,6 +139,17 @@ struct TeamDelivery: Decodable, Sendable {
     let updatedAt: Double
 }
 
+/// `POST /api/away` (PLAN #37): what happened since this device last showed you, a line each in its state's colour.
+struct AwayView: Decodable, Sendable, Equatable {
+    struct Line: Decodable, Sendable, Hashable {
+        let text: String
+        /// ok · warn · danger · neutral
+        let tone: String
+    }
+    let since: Double
+    let lines: [Line]
+}
+
 /// `GET /api/actions`: what his oath made him ask about. Only a waiting one is yours to answer.
 struct ActionView: Decodable, Sendable, Identifiable, Equatable {
     let id: String

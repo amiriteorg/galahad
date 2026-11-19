@@ -108,6 +108,7 @@ import {
   searchLibrary,
   type ConnectorLibraryView,
   pricesOf,
+  type AwayView,
 } from "@galahad/core";
 import type { McpIndex } from "./mcp-index.ts";
 import {
@@ -170,6 +171,7 @@ import { CHANGES_SCRIPT, changesView, fileView, filesView, KEPT_FROM_VIEW, LIST_
 import { actionDone, BRANCH_SCRIPT, CLONE_SCRIPT, CLONE_TIMEOUT, COMMIT_SCRIPT, GIT_SCRIPT, GIT_TIMEOUT, gitView } from "./project-git.ts";
 import { GatewaySpend } from "./gateway-spend.ts";
 import { type UsageStore } from "./usage.ts";
+import { awayLines } from "./away.ts";
 import type { QuestBoard } from "./quests.ts";
 import { ArtifactError, type ArtifactStore, contentTypeOf } from "./artifacts.ts";
 import { fenceMemories } from "./archive/retrieval.ts";
@@ -3762,6 +3764,22 @@ export function createApp(ctx: AppContext) {
       ),
     connectorTool: (input, p) => connectorErrors(() => ctx.connectors.describe(input, connectorCaller(p))),
     actions: (): { actions: ActionView[] } => ({ actions: ctx.connectors.actions() }),
+    away: (input, p): AwayView => {
+      // Yours alone: its count of what waits for you reaches past what an agent may read (devices asking to join, say).
+      if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you are told what happened while you were away");
+      const store = ctx.team?.store;
+      const knights = new Map((store?.teammates() ?? []).map((t) => [t.id, t.name]));
+      // What waits for your answer now, as `galahad status` counts it (notices are said by what they are, not counted).
+      const waiting =
+        ctx.connectors.actions().filter((a) => a.state === "waiting").length +
+        ctx.vault.requests().length +
+        ctx.pairing.pending().length +
+        ctx.store.memoriesTagged(ABOUT_YOU_TAG, 200, false).length +
+        ctx.loopDrafts.list().length +
+        openConnectorRequests().length +
+        screenSessionViews().filter((v) => v.state === "waiting").length;
+      return { since: input.since, lines: awayLines({ since: input.since, tasks: store?.tasks() ?? [], name: (id) => knights.get(id) ?? id, notices: noticeViews(), runs: ctx.store.loopRuns(undefined, 200).map(runView), waiting }) };
+    },
     decideAction: (input, p) => {
       // Only you decide: never another node, never an agent (arms can't hold fleet:admin anyway).
       if (p.kind !== "admin" && p.kind !== "client") throw new HttpError(403, "only you can answer an action request");

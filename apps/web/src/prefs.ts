@@ -1,9 +1,10 @@
 /*
  * UI preferences, the only thing this app keeps in localStorage: theme, motion,
  * sidebar state, the last chat role, what Enter does while Galahad is working,
- * which kept chat you had open (its id only), and how the Roundtable is laid out on
+ * which kept chat you had open (its id only), how the Roundtable is laid out on
  * this device (a board or a list, the sidebar's sections folded, a knight's side
- * panel shown). Never secrets, never a word of a chat, never anything else from the
+ * panel shown), and when it last showed you what happened while you were away (a
+ * time). Never secrets, never a word of a chat, never anything else from the
  * server. boot.ts reads the same keys before paint.
  */
 
@@ -20,6 +21,7 @@ const KEYS = {
   roundtable: "galahad:roundtable-view",
   folded: "galahad:roster-folded",
   panel: "galahad:knight-panel",
+  away: "galahad:away-seen",
 } as const;
 
 type PrefKey = keyof typeof KEYS;
@@ -112,6 +114,13 @@ export const openChatId = (): string | null => {
   return id && /^cv_[A-Za-z0-9_-]{22}$/.test(id) ? id : null;
 };
 export const rememberOpenChat = (id: string | null): void => write("chat", id);
+
+/** Since when "while you were away" tells this device what happened: when it last did, else the last day. */
+export const awaySince = (now = Date.now()): number => {
+  const at = Number(read("away"));
+  return Number.isFinite(at) && at > 0 && at <= now ? at : now - 24 * 3600_000;
+};
+export const markAwaySeen = (at = Date.now()): void => write("away", String(at));
 
 /** How the Roundtable's own page shows the knights on this device: as a board of cards (the default) or as a list. */
 export type RoundtableView = "board" | "list";

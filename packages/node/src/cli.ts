@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type TelegramView, type TrialView } from "@galahad/core";
+import { type ArtifactView, type AwayView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type TelegramView, type TrialView } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -125,6 +125,8 @@ Set up
   revoke <device> [--reason text]
   grant <device> <scope…>                                   give a paired phone/browser more permissions (e.g. sandbox)
   status                                                   fleet, peers, capabilities
+  away [--since 6h]                                        while you were away: tasks that ended, his outcomes' questions,
+                                                           loops that failed, what waits on you (default: the last day)
 
 Mind
   remember <text> [--tag t]      recall [query]
@@ -909,6 +911,19 @@ Next:
       const scopes = [...new Set([...target.scopes, ...rest])];
       await admin.call("setDeviceScopes", { device: target.id, scopes });
       console.log(`${target.name} may now: ${scopes.join(", ")}`);
+      return;
+    }
+
+    case "away": {
+      // While you were away (PLAN #37): --since 6h, 30m or 2d (the last day when not said).
+      const raw = str("since") ?? "1d";
+      const match = /^(\d+)\s*(m|h|d)$/.exec(raw);
+      if (!match) fail("usage: galahad away [--since 30m | 6h | 2d]");
+      const since = Date.now() - Number(match![1]) * { m: 60_000, h: 3_600_000, d: 86_400_000 }[match![2] as "m" | "h" | "d"];
+      const { lines } = await new Admin(home).call<AwayView>("away", { since });
+      if (!lines.length) console.log(dim(`Nothing happened since ${new Date(since).toLocaleString()}.`));
+      const mark = { ok: "✓", danger: "✗", warn: "!", neutral: "·" } as const;
+      for (const line of lines) console.log(`  ${mark[line.tone]} ${line.tone === "neutral" ? line.text : bold(line.text)}`);
       return;
     }
 

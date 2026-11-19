@@ -157,6 +157,22 @@ import Observation
         usage = try await client.post("/api/usage/budget", Budget(usd: usd, per: per), as: UsageMeter.self)
     }
 
+    /// While you were away (PLAN #37): what happened since this device last showed you (from the node, no model asked), or
+    /// nil when it couldn't be asked. Nothing happened, and the next time counts from now.
+    func away() async -> AwayView? {
+        struct Ask: Encodable { let since: Int }
+        let now = Date().timeIntervalSince1970 * 1000
+        let seen = UserDefaults.standard.double(forKey: Self.awaySeen)
+        let since = seen > 0 && seen <= now ? seen : now - 24 * 3600 * 1000
+        guard let found = try? await client.post("/api/away", Ask(since: Int(since)), as: AwayView.self) else { return nil }
+        if found.lines.isEmpty { markAwaySeen() }
+        return found
+    }
+
+    /// What happened while you were away is read: the next time counts from now.
+    func markAwaySeen() { UserDefaults.standard.set(Date().timeIntervalSince1970 * 1000, forKey: Self.awaySeen) }
+    private static let awaySeen = "galahad.awaySeen"
+
     /// Your answer to an approval: nothing leaves until you approve it. `edits`, with a yes: your own words in its texts
     /// (only those you changed); your version is what's sent, and the one asked is declined, saying which it became.
     func decide(_ action: ActionView, approve: Bool, edits: [String: String]? = nil) async throws {

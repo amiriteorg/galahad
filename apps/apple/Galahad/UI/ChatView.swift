@@ -16,6 +16,8 @@ struct ChatView: View {
     /// A thread of a project in the Build window, which titles it and has its tools (nil: Galahad's chat).
     @Environment(\.buildThread) private var build
     @Environment(\.composerWanted) private var composerWanted
+    /// While you were away (PLAN #37), for Galahad's own chat: asked once as it opens.
+    @State private var away: AwayView?
 
     init(session: Session, chat: ChatModel? = nil) {
         self.session = session
@@ -32,6 +34,13 @@ struct ChatView: View {
             VStack(alignment: .leading, spacing: Metrics.margin) {
                 if chat.thread.isEmpty {
                     if chat.loading { ProgressView().frame(maxWidth: .infinity).padding(.top, Space.s10) } else { welcome }
+                    // Under the welcome, so its coming moves nothing above it.
+                    if let away, !away.lines.isEmpty {
+                        AwayCard(away: away) {
+                            session.markAwaySeen()
+                            self.away = nil
+                        }
+                    }
                 }
                 if let problem = chat.problem {
                     Label("This chat couldn't be read: \(problem)", systemImage: "exclamationmark.triangle.fill")
@@ -126,7 +135,10 @@ struct ChatView: View {
                 composing = true
             }
         }
-        .task { await chat.openLatest(with: session.client) }
+        .task {
+            await chat.openLatest(with: session.client)
+            if build == nil && shown == nil { away = await session.away() }
+        }
         // Shown, what he answered in it is read (and stops being new everywhere); gone from the screen, nothing more is.
         .onAppear {
             if chat.read == nil { chat.read = { [weak session] id in session?.noteRead(id) } }
@@ -145,6 +157,46 @@ struct ChatView: View {
     private var welcome: some View {
         TimelineWelcome(title: "Ask Galahad", words: "He answers with his tools at hand, within what this device may do. What you say here is kept on your node.") {
             Portrait(drawing: "galahad", size: Metrics.welcomeFace, expression: chat.answering ? "thinking" : "idle", id: "galahad")
+        }
+    }
+}
+
+/// While you were away (PLAN #37): what happened since this device last showed you, each line led by its state's
+/// colour (the PWA's too), and a press to say it's read.
+struct AwayCard: View {
+    let away: AwayView
+    let read: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("While you were away").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(Date(timeIntervalSince1970: away.since / 1000), style: .relative).font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(away.lines, id: \.self) { line in
+                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                    Circle().fill(Self.tint(line.tone)).frame(width: 8, height: 8)
+                    Text(line.text).font(.subheadline)
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Got it", action: read).font(.subheadline)
+            }
+        }
+        .padding(Space.s3)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: Metrics.cardRadius))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("While you were away")
+    }
+
+    private static func tint(_ tone: String) -> Color {
+        switch tone {
+        case "ok": .done
+        case "warn": .needs
+        case "danger": .failed
+        default: .secondary
         }
     }
 }

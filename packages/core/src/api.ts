@@ -1096,6 +1096,11 @@ export const routes = {
     input: z.strictObject({ connector: ConnectorId, tool: ToolName }),
   },
   actions: { method: "GET", path: "/api/actions", scope: "mind:read", input: null },
+  /**
+   * While you were away (PLAN #37): what happened since `since` (ms), in a few lines from what the node holds, no model
+   * asked: knights' tasks that ended, his outcomes' reports and questions, loops that failed, and what waits for you now.
+   */
+  away: { method: "POST", path: "/api/away", scope: "mind:read", input: z.strictObject({ since: z.number().int().min(0) }) },
   decideAction: {
     method: "POST",
     path: "/api/actions/decide",
@@ -1780,6 +1785,17 @@ export interface ActionView {
   receipt: string | null;
   /** What you said with your answer; for one you edited, which it was sent as. */
   note: string | null;
+}
+
+/** A line of "while you were away" (PLAN #37): what happened, in its state's colour (done green, failed red, waits amber). */
+export interface AwayLine {
+  text: string;
+  tone: "ok" | "warn" | "danger" | "neutral";
+}
+
+export interface AwayView {
+  since: number;
+  lines: AwayLine[];
 }
 
 export interface InvestigationView {

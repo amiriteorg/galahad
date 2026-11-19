@@ -1,4 +1,4 @@
-import type { AttachmentRef, ChatMessage, ChatStreamEvent, ConversationSummary, ConversationView, ProjectView, QuestView, UnreadChat } from "@galahad/core";
+import type { AttachmentRef, AwayView, ChatMessage, ChatStreamEvent, ConversationSummary, ConversationView, ProjectView, QuestView, UnreadChat } from "@galahad/core";
 import { findSecrets } from "@galahad/core/secret-scan";
 import type { QueuedMessage, QueueHold, TurnView } from "@galahad/core/turns";
 import { type Api, ApiError, isAbort } from "../api.ts";
@@ -11,7 +11,7 @@ import { galahadNeeds } from "../lib/roster.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
 import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keysAskedIn, shownAgain, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
-import { chatEnter, lastRole, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
+import { awaySince, chatEnter, lastRole, markAwaySeen, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
 import { badge, button, callout, copyText, dot, empty, skeletonRows, spinner } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
@@ -849,6 +849,44 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     );
   }
 
+  /**
+   * While you were away (PLAN #37): what happened since this device last showed you, from the node (no model), under
+   * the welcome, where its arrival moves nothing above it. Asked once as the chat opens; "Got it" and it's read.
+   */
+  let away: AwayView | null = null;
+  const awayBox = h("div", { class: "away-host" });
+  function showAway(): void {
+    if (!away?.lines.length) return replace(awayBox);
+    const got = button("Got it", { size: "sm", variant: "ghost", icon: "check" });
+    got.addEventListener("click", () => {
+      markAwaySeen();
+      away = null;
+      replace(awayBox);
+    });
+    replace(
+      awayBox,
+      h(
+        "section",
+        { class: "card away", "aria-label": "While you were away" },
+        h("div", { class: "row between" }, h("h3", { class: "small strong" }, "While you were away"), h("span", { class: "tiny subtle" }, relativeTime(away.since))),
+        h("ul", { class: "plain-list small" }, ...away.lines.map((line) => h("li", { class: "row tight" }, dot(line.tone === "neutral" ? null : line.tone), h("span", {}, line.text)))),
+        h("div", { class: "row end" }, got),
+      ),
+    );
+  }
+  if (!temporary && canChat) {
+    const since = awaySince();
+    void ctx.api
+      .post<AwayView>("/api/away", { since })
+      .then((found) => {
+        away = found;
+        // Nothing happened: nothing to say, and the next visit counts from now.
+        if (!found.lines.length) markAwaySeen();
+        showAway();
+      })
+      .catch(() => {});
+  }
+
   function emptyState(): HTMLElement {
     const suggestions: [string, string][] = [
       ["Catch me up", "What has my fleet been doing today, and does anything need me?"],
@@ -886,6 +924,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
           )
         : null,
       recentChats(),
+      awayBox,
     );
   }
 
