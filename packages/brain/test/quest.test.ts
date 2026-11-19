@@ -12,7 +12,7 @@ interface Script {
   outputs?: Partial<ExecResult>[];
 }
 
-function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number; submitAtLimit?: boolean } = {}) {
+function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number; submitAtLimit?: boolean; keepReads?: boolean } = {}) {
   const queues: Record<QuestRole, string[]> = {
     planner: [...(script.planner ?? ["1. Do it.\nDone when: it is done."])],
     engineer: [...script.engineer],
@@ -24,7 +24,7 @@ function harness(script: Script, options: { maxSteps?: number; maxRevisions?: nu
   const events: QuestEvent[] = [];
   const controller = new AbortController();
   const run = runQuest(
-    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions, ...(options.submitAtLimit ? { submitAtLimit: true } : {}) },
+    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions, ...(options.submitAtLimit ? { submitAtLimit: true } : {}), ...(options.keepReads ? { keepReads: true } : {}) },
     {
       ask: async (role, messages) => {
         seen.push({ role, messages });
@@ -498,6 +498,29 @@ describe("a long quest's conversation stays affordable, and stays the same", () 
     const runs = last.filter((m) => m.content.startsWith("exit 1"));
     expect(runs.at(-1)!.content).toContain(page);
     expect(runs.filter((m) => /characters cut/.test(m.content)).length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("keep-reads (a trial variant): the newest current file reads among those cut short stay whole, within a budget; the beginning still holds between batches", async () => {
+    const n = 26;
+    const page = "r".repeat(3000);
+    // A task that has to understand code: each command reads another part of the code, none of it changed.
+    const commands = Array.from({ length: n }, (_, i) => `sed -n '${i * 100 + 1},${i * 100 + 100}p' src/watch.ts`);
+    const run = (keepReads: boolean) =>
+      harness({ engineer: [...commands.map((c) => sh(c)), "DONE\nRead it all."], outputs: commands.map(() => ({ stdout: `${page}\n` })) }, { maxSteps: 30, keepReads });
+    const turnsOf = async (h: ReturnType<typeof run>) => {
+      expect((await h.run).status).toBe("done");
+      return h.seen.filter((s) => s.role === "engineer").map((s) => s.messages);
+    };
+    const whole = (messages: ChatMessage[]) => messages.filter((m, i) => i > 0 && m.role === "user" && m.content.includes(page)).length;
+    const plain = await turnsOf(run(false));
+    const kept = await turnsOf(run(true));
+    // Without it, a dozen at most are whole; with it, the reads cut short stay whole too, up to its budget.
+    expect(whole(plain.at(-1)!)).toBeLessThanOrEqual(12);
+    expect(whole(kept.at(-1)!)).toBeGreaterThan(whole(plain.at(-1)!));
+    expect(whole(kept.at(-1)!) * 3000).toBeLessThanOrEqual(48_000 + 12 * 3100);
+    let rewritten = 0;
+    for (let t = 1; t < kept.length; t++) if (JSON.stringify(kept[t]!.slice(0, kept[t - 1]!.length)) !== JSON.stringify(kept[t - 1])) rewritten += 1;
+    expect(rewritten).toBeLessThanOrEqual(3);
   });
 
   test("a file read before a later command changed it, both in the part cut short, is a line saying so; one never changed stays an excerpt", async () => {

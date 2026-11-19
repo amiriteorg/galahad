@@ -168,7 +168,7 @@ describe("a run's settings, and variants of the harness", () => {
     expect(describeVariant(VARIANTS["no-gates"]!)).toBe("gates off");
     expect(describeVariant(VARIANTS.baseline!)).toBe("as the baseline");
     const mine = parseVariant("mine:gates=off,skills=on,effort=2,planner-gates=on,revisions=1,archive=no");
-    expect(mine).toEqual({ name: "mine", options: { gates: false, plannerGates: true, effort: 2, skills: true, archive: false, revisions: 1, engram: false, diff: false, escalate: false, remind: false } });
+    expect(mine).toEqual({ name: "mine", options: { gates: false, plannerGates: true, effort: 2, skills: true, archive: false, revisions: 1, engram: false, diff: false, escalate: false, remind: false, keepReads: false } });
     expect(describeVariant(mine.options)).toBe("gates off, the planner's own gates, effort 2, skills offered, no archive context, 1 revision");
     expect(() => parseVariant("warp")).toThrow(/no variant "warp"/);
     expect(() => parseVariant("mine:warp=on")).toThrow(/no harness switch "warp"/);
@@ -213,14 +213,23 @@ describe("a run's settings, and variants of the harness", () => {
     for (const [name, options] of Object.entries(VARIANTS)) expect([name, options.remind]).toEqual([name, name === "remind"]);
     expect(parseVariant("mine:remind=on,escalate=on").options).toEqual({ ...VARIANTS.baseline!, remind: true, escalate: true });
     expect(() => parseVariant("mine:remind=often")).toThrow(/remind is on or off/);
-    expect(() => parseVariant("mine:warp=on")).toThrow(/there is: gates, planner-gates, effort, skills, archive, revisions, engram, diff, escalate, remind/);
+    expect(() => parseVariant("mine:warp=on")).toThrow(/there is: gates, planner-gates, effort, skills, archive, revisions, engram, diff, escalate, remind, keep-reads/);
+  });
+
+  test("keeping current file reads whole is a switch of its own: off in the baseline, on in the variant named for it", () => {
+    expect(VARIANTS.baseline!.keepReads).toBe(false);
+    expect(parseVariant("keep-reads")).toEqual({ name: "keep-reads", options: { ...VARIANTS.baseline!, keepReads: true } });
+    expect(describeVariant(VARIANTS["keep-reads"]!)).toBe("current file reads kept whole");
+    for (const [name, options] of Object.entries(VARIANTS)) expect([name, options.keepReads]).toEqual([name, name === "keep-reads"]);
+    expect(parseVariant("mine:keep-reads=on,remind=on").options).toEqual({ ...VARIANTS.baseline!, keepReads: true, remind: true });
+    expect(() => parseVariant("mine:keep-reads=all")).toThrow(/keep-reads is on or off/);
   });
 
   test("a run recorded before a switch existed still reads, with that switch off: nothing recorded is refused or changed by a new one", () => {
     // A run's settings as the log holds them from before 14 November 2026: six switches, no notes store.
     const old = { effort: 1, parallel: 2, variant: { name: "no-gates", options: { gates: false, plannerGates: false, effort: 1 as const, skills: false, archive: true, revisions: 2 } }, seed: 9, group: "g-old1" };
     const read = TrialRunSettings.parse(old);
-    expect(read.variant).toEqual({ name: "no-gates", options: { ...old.variant.options, engram: false, diff: false, escalate: false, remind: false } });
+    expect(read.variant).toEqual({ name: "no-gates", options: { ...old.variant.options, engram: false, diff: false, escalate: false, remind: false, keepReads: false } });
     expect(read.variant!.options).toEqual(VARIANTS["no-gates"]!);
     expect(describeVariant(read.variant!.options)).toBe("gates off");
     // An older terminal's request to start a run names six switches too: taken, with the store off.

@@ -134,6 +134,8 @@ export interface DoOptions {
   escalate?: boolean;
   /** The quest's constraints said again every ten commands (quest.ts `remind`): off unless a trial's variant says so. */
   remind?: boolean;
+  /** Current file reads among the outputs cut short stay whole, within a budget (a trial variant: brain quest.ts keepReads). */
+  keepReads?: boolean;
   /** This quest is a trial: its id is of a trial's kind (t-…), so the archive never offers what it kept to a model. */
   trial?: boolean;
   /**
@@ -620,6 +622,7 @@ async function workIn(
       ...(store ? { engram: store } : {}),
       ...((options.escalate ?? !options.pins?.engineer) ? { escalate: true } : {}),
       ...(options.remind ? { remind: true } : {}),
+      ...(options.keepReads ? { keepReads: true } : {}),
       ...(options.budgetUsd !== undefined && run.spentUsd ? { budgetUsd: options.budgetUsd } : {}),
     },
     {

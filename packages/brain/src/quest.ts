@@ -130,6 +130,14 @@ export interface QuestOptions {
    */
   remind?: boolean;
   /**
+   * Of the observations cut short to keep the conversation affordable (compact), the newest plain file reads that are
+   * still current (neither read again nor changed since) stay whole, up to READS_KEPT characters. Cut short, a file's
+   * code is gone from the conversation, and a model that needs it reads it again: the first real outcome's knight read
+   * one file in 26 of its 82 commands. Default off: a trial variant (`keep-reads`) measures it before anything turns
+   * it on, since it costs input on every turn.
+   */
+  keepReads?: boolean;
+  /**
    * Audited while it runs, in place of a limit (a knight's task): every AUDIT_EVERY, the reviewer's models, who don't do
    * the work, are asked whether it is still on its task and closer to finishing it than at the last audit. A steer is
    * said to whoever does the work (a coding agent's run is ended and its own session told); a stop, or a second steer
@@ -678,6 +686,8 @@ const cutNote = (length: number): string =>
  */
 const COMPACT_AT = 12;
 const KEEP_WHOLE = 4;
+/** With keepReads: at most this many characters of current file reads among those cut short stay whole. */
+const READS_KEPT = 48_000;
 
 const isObservation = (m: ChatMessage, i: number): boolean => i > 0 && m.role === "user" && /^(exit -?\d+ · |\[1\] \$ )/.test(m.content);
 
@@ -694,10 +704,11 @@ function excerptedNow(messages: readonly ChatMessage[], excerpted: number): numb
  * read, and a write that exited 0), which say what changed it. (Judged among the excerpted alone, so the beginning
  * still changes only between batches.)
  */
-function compact(messages: readonly ChatMessage[], excerpted: number): ChatMessage[] {
+function compact(messages: readonly ChatMessage[], excerpted: number, keepReads = false): ChatMessage[] {
   // The command each observation answers: the reply before it (one of several at once, or none, is never superseded).
   const commands: (string | null)[] = [];
   const exits: (number | null)[] = [];
+  const sizes: number[] = [];
   let asked: string | null = null;
   messages.forEach((m, i) => {
     if (m.role === "assistant") {
@@ -707,21 +718,37 @@ function compact(messages: readonly ChatMessage[], excerpted: number): ChatMessa
       const ran = /^exit (-?\d+) · /.exec(m.content);
       commands.push(ran ? asked : null);
       exits.push(ran ? Number(ran[1]) : null);
+      sizes.push(m.content.length);
     }
   });
   const cut = commands.slice(0, excerpted);
   const line = (command: string): string => command.split("\n", 1)[0]!.slice(0, 80);
+  const supersededAt = (k: number): boolean => cut[k] !== null && cut.indexOf(cut[k]!, k + 1) !== -1;
+  /** The later command among those cut that changed what the read at k showed, or -1. */
+  const changedBy = (k: number, read: string): number => cut.findIndex((later, j) => j > k && later !== null && exits[j] === 0 && writesOf(later).includes(read));
+  // keepReads: the newest current reads among those cut stay whole, within READS_KEPT (judged among the cut alone, so
+  // the beginning still changes only between batches).
+  const kept = new Set<number>();
+  if (keepReads) {
+    let room = READS_KEPT;
+    for (let k = cut.length - 1; k >= 0; k--) {
+      const read = cut[k] ? readOf(cut[k]!) : null;
+      if (!read || exits[k] !== 0 || supersededAt(k) || changedBy(k, read) !== -1 || sizes[k]! > room) continue;
+      kept.add(k);
+      room -= sizes[k]!;
+    }
+  }
   let seen = 0;
   return messages.map((m, i) => {
     if (!isObservation(m, i)) return m;
     const k = seen++;
-    if (k >= excerpted) return m;
+    if (k >= excerpted || kept.has(k)) return m;
     const command = cut[k];
-    if (command && cut.indexOf(command, k + 1) !== -1) {
+    if (command && supersededAt(k)) {
       return { role: m.role, content: `${m.content.split("\n", 1)[0]}\n(superseded: \`${line(command)}\` ran again later, and what it printed then is further on)` };
     }
     const read = command ? readOf(command) : null;
-    const by = read ? cut.findIndex((later, j) => j > k && later !== null && exits[j] === 0 && writesOf(later).includes(read)) : -1;
+    const by = read ? changedBy(k, read) : -1;
     if (read && by !== -1) {
       return { role: m.role, content: `${m.content.split("\n", 1)[0]}\n(stale: \`${read}\` was changed later, by \`${line(cut[by]!)}\`; read it again for what it holds now)` };
     }
@@ -747,6 +774,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     submitAtLimit: Boolean(options.submitAtLimit),
     escalate: Boolean(options.escalate),
     remind: Boolean(options.remind),
+    keepReads: Boolean(options.keepReads),
     audit: Boolean(options.audit),
     ...(options.plan !== undefined ? { plan: options.plan } : {}),
     ...(options.review ? { review: options.review } : {}),
@@ -1290,7 +1318,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
       steps += 1;
       excerpted = excerptedNow(messages, excerpted);
-      const reply = await ask(worker, compact(messages, excerpted), { loop: true });
+      const reply = await ask(worker, compact(messages, excerpted, o.keepReads), { loop: true });
       const kept = keptReply(reply.text);
       messages.push({ role: "assistant", content: kept.content });
       // (Appended to whatever he is told next: a command's result still begins as one.)
