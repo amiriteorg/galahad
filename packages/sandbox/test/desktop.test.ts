@@ -41,6 +41,7 @@ function machine(options: { running?: boolean; env?: Record<string, string> } = 
 }
 
 describe("the desktop command", () => {
+  // (Each of these runs the real desktop script, which waits for what it starts: 30 s, not bun's 5, for a busy machine. On 19 November 2026 two ran past 5 s under a load of 10 on 12 cores.)
   test("start brings up the display, the window manager and the browser, once: a second start finds them running", () => {
     const m = machine();
     expect(m.ask("start")).toMatchObject({ code: 0, out: "The desktop is up: 1280x800, display :1." });
@@ -52,7 +53,7 @@ describe("the desktop command", () => {
     for (const flag of [`[--user-data-dir=${m.home}/.config/chromium]`, "[--no-sandbox]", "[--hide-crash-restore-bubble]", "[--remote-debugging-port=9222]", "[--remote-debugging-address=127.0.0.1]", "[--window-size=1280,800]"]) expect(started[2]).toContain(flag);
     expect(m.ask("start").code).toBe(0);
     expect(m.traced().filter((line) => /^(Xvfb|openbox|chromium)( |$)/.test(line))).toHaveLength(3);
-  });
+  }, 30_000);
 
   test("every other command starts the desktop if it isn't up, then does one thing with the pointer, the keyboard or the browser", () => {
     const m = machine();
@@ -74,7 +75,7 @@ describe("the desktop command", () => {
     expect(last("text")).toBe("python3 [-] [text]");
     expect(up.traced().filter((line) => line.startsWith("chromium"))).toEqual([]);
     expect(up.traced().some((line) => line.startsWith("Xvfb "))).toBe(false);
-  });
+  }, 30_000);
 
   test("a screenshot is a file it names, and the page in front can be read as text", () => {
     const m = machine({ running: true });
@@ -85,7 +86,7 @@ describe("the desktop command", () => {
     const named = join(m.run, "mine.png");
     expect(m.ask("shot", named)).toMatchObject({ code: 0, out: named });
     expect(m.ask("text")).toMatchObject({ code: 0, out: "Example Domain\nhttps://example.com/\nThis domain is for use in documentation examples." });
-  });
+  }, 30_000);
 
   test("what isn't a place on the screen, a key, or an address is refused before anything is touched", () => {
     const m = machine({ running: true });
@@ -101,7 +102,7 @@ describe("the desktop command", () => {
     expect(refused("dance")).toContain("desktop start");
     // With nothing asked, it says what it can do.
     expect(m.ask("help").out).toContain("desktop click <x> <y>");
-  });
+  }, 30_000);
 });
 
 describe("looking at the screen", () => {
@@ -114,7 +115,7 @@ describe("looking at the screen", () => {
     expect(asked[1]).toMatch(/^python3 \[-\] \[look\] \[.*\/look-\d+\.jpg\] \[Where is the Sign in button\?\]$/);
     // Nothing of the token is ever an argument (the script reads it from its environment).
     expect(m.traced().join("\n")).not.toContain("gw_test-only");
-  });
+  }, 30_000);
 
   test("with no model that can see named for this VM, or no question, look says so and touches nothing", () => {
     const blind = machine({ running: true });
@@ -125,7 +126,7 @@ describe("looking at the screen", () => {
     const m = machine({ running: true, env: { GALAHAD_EYES: "opencode-go/gpt-6-luna", GALAHAD_GATEWAY: "http://gateway.test/gw", GALAHAD_TOKEN: "gw_test-only" } });
     expect(m.ask("look").code).toBe(2);
     expect(m.ask("help").out).toContain('desktop look "<question>"');
-  });
+  }, 30_000);
 });
 
 describe("the desktop image", () => {

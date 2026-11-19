@@ -375,6 +375,7 @@ describe("repairing a hole is paged", () => {
     expect(full.eventsSince(holed.frontier(), 20, holed.deviceDigests()).repair).toBeUndefined();
   });
 
+  // (A fleet of eight devices and 2,400 events, walked: 0.7 s alone, past 5 s once under a load of 17 on 12 cores (19 November 2026): 30 s.)
   test("a walk goes on in the next pull, and a device is walked once per pull", () => {
     const fleet = busyFleet(8, 300);
     const full = replicaOf(fleet);
@@ -400,7 +401,7 @@ describe("repairing a hole is paged", () => {
     }
     expect(state.walking()).toEqual([]);
     expect(holed.digest()).toBe(full.digest());
-  });
+  }, 30_000);
 
   test("a peer's `repair` is a claim: only devices we hold some of are walked, at most MAX_WALKS a pull", () => {
     const a = newNodeIdentity();

@@ -217,6 +217,7 @@ describe.skipIf(!unixSockets)("the installed helper's retention rules", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  // (It runs the installed helper's shell, which starts processes: 30 s, not bun's 5, for a busy machine; on 19 November 2026 it ran past 5 s under load.)
   test("a workspace grows where it is mounted, or unmounted after a check, and never shrinks or grows another's disk", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-helper-"));
     const root = join(dir, "workspaces");
@@ -268,5 +269,5 @@ describe.skipIf(!unixSockets)("the installed helper's retention rules", () => {
       symlinkSync(other, img);
       expect(ask(`grow ${id} 3`, { mounted: true })).toEqual({ said: "error existing workspace is missing", calls: [] });
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 });
