@@ -113,6 +113,12 @@ export interface DoctorFacts {
   };
   /** Push notifications on this node (absent: a node from before them). */
   notify?: { devices: number; failing: { device: string; error: string }[]; keyProblem: string | null };
+  /**
+   * The knights whose own setup can stop their work here (absent: a node with no Roundtable): one in sensitive mode,
+   * each of its models and why this node can't use it (null: it can); each key of yours it was given, and why it can't
+   * go anywhere now (null: it can).
+   */
+  knights?: { id: string; name: string; sensitive: { ref: string; problem: string | null }[] | null; keys: { secret: string; problem: string | null }[] }[];
 }
 
 /** A finding for the heartbeat, in words that don't change while the problem stands. */
@@ -520,6 +526,20 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     const recent = f.service.warnings.filter((w) => f.now - w.at <= WARNINGS_RECENT_MS);
     if (recent.length) add("service", "service.log", "needs-you", `${plural(recent.length, "line")} of trouble in its log in the last hour, the latest: ${recent[0]!.text.slice(0, 200)}`, "The node's log has the rest (journalctl -u galahad -n 200, or the terminal it runs in).");
     else add("service", "service.log", "ok", f.service.warnings.length ? `nothing in its log in the last hour (${plural(f.service.warnings.length, "line")} of trouble since it started)` : "nothing in its log reads like trouble");
+  }
+
+  // A knight's own setup (PLAN #48, #17): in sensitive mode with no model of its own that can run here, its work can't
+  // run at all (it never goes elsewhere); a key of yours given to it that can go nowhere now fails its calls.
+  for (const k of f.knights ?? []) {
+    if (k.sensitive) {
+      const usable = k.sensitive.filter((m) => m.problem === null);
+      if (usable.length) add("models", `knight.${k.id}.sensitive`, "ok", `${k.name} is in sensitive mode, on ${usable.map((m) => m.ref).join(", ")}${usable.length < k.sensitive.length ? ` (${plural(k.sensitive.length - usable.length, "model")} of its own can't be used here)` : ""}`);
+      else add("models", `knight.${k.id}.sensitive`, "broken", `${k.name} is in sensitive mode, and none of its models can be used here (${k.sensitive.map((m) => `${m.ref}: ${m.problem}`).join("; ").slice(0, 300)}): its work can't run, and never goes to another model`, `Add the key its models need (galahad key add --provider <id>), or choose models of its own that can run (galahad roundtable sensitive ${k.id} on <provider/model…>).`, { finding: { severity: "warn", title: `${k.name} can't work in sensitive mode`, body: "None of the models it is held to can be used on this node." } });
+    }
+    for (const key of k.keys) {
+      if (key.problem) add("vault", `knight.${k.id}.key.${key.secret}`, "needs-you", `${k.name} was given the key ${key.secret}, which can go nowhere now: ${key.problem}`, `Pin it again (galahad secret set ${key.secret} --base-url https://…), or take it back (galahad roundtable keys ${k.id} rm ${key.secret}).`);
+      else add("vault", `knight.${k.id}.key.${key.secret}`, "ok", `${k.name} may use the key ${key.secret} without seeing it`);
+    }
   }
 
   return doctorSorted(out);

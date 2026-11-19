@@ -1,11 +1,12 @@
 import { readdirSync, readFileSync, statSync, statfsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { type DoctorReport, freeSlots, type NodeCapacity, type NodeIdentity, nextRun, type PeerStatus, redact } from "@galahad/core";
+import { type DoctorReport, freeSlots, type NodeCapacity, type NodeIdentity, nextRun, type PeerStatus, redact, type Teammate } from "@galahad/core";
 import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, planOf, resolveProvider, roster, windowsOf } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
 import { containerKernel, macFirewallInstalled, type SandboxHost } from "@galahad/sandbox";
 import type { ArchiveService } from "./archive/service.ts";
+import { ungivable } from "./key-gateway.ts";
 import type { Assets } from "./assets.ts";
 import { type Capabilities, isAlwaysOn, servedOriginFrom } from "./capabilities.ts";
 import type { Governor } from "./compute/governor.ts";
@@ -198,6 +199,8 @@ export interface DoctorDeps {
   now?: () => number;
   /** Push notifications, as this node holds them (set once there are any). */
   notify?: () => DoctorFacts["notify"];
+  /** The Roundtable's knights (absent: a node with no Roundtable). */
+  knights?: () => readonly Teammate[];
 }
 
 export interface DoctorOptions {
@@ -551,6 +554,8 @@ export async function gatherFacts(deps: DoctorDeps, opts: DoctorOptions = {}): P
     disk: system.disk(deps.home.dir),
     service: { restarts, warnings: deps.trouble.recent() },
     ...(deps.notify ? { notify: deps.notify() } : {}),
+    // (Only knights whose own setup can stop their work: sensitive mode, keys of yours.)
+    ...(deps.knights ? { knights: deps.knights().filter((k) => k.sensitive || k.keys?.length).map((k) => ({ id: k.id, name: k.name, sensitive: k.sensitive && k.models?.length ? k.models.map((ref) => ({ ref, problem: modelProblem(deps, ref) })) : null, keys: (k.keys ?? []).map((g) => ({ secret: g.secret, problem: ungivable(deps.vault, g.secret) })) })) } : {}),
   };
 }
 

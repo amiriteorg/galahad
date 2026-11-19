@@ -568,6 +568,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     ...(env.GALAHAD_BACKUP_DIR ? { backupDir: env.GALAHAD_BACKUP_DIR } : {}),
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
     notify: () => notify.doctorFacts(),
+    knights: () => team.store.teammates(),
   };
   // The heartbeat takes from a quick look what it doesn't check itself (a clock out of step, the app not published, …).
   taskDeps.doctor = () => heartbeatFromDoctor(doctorDeps);

@@ -555,3 +555,26 @@ describe("the report", () => {
     expect(span(12 * DAY)).toBe("12 days");
   });
 });
+
+describe("a knight's own setup", () => {
+  const check = (facts: DoctorFacts, id: string) => diagnose(facts).find((d) => d.id === id);
+  test("in sensitive mode with none of its models usable here, its work can't run, and it never goes elsewhere: broken, with what to do", () => {
+    const facts = { ...healthy(), knights: [{ id: "ada", name: "Ada", sensitive: [{ ref: "nearai/Qwen/Qwen3.8-27B-abliterated", problem: 'provider "nearai" has no key in the vault' }], keys: [] }] };
+    const line = check(facts, "knight.ada.sensitive")!;
+    expect(line).toMatchObject({ area: "models", state: "broken" });
+    expect(line.line).toContain("Ada is in sensitive mode, and none of its models can be used here");
+    expect(line.fix).toContain("galahad key add --provider");
+    expect(line.finding).toMatchObject({ severity: "warn", title: "Ada can't work in sensitive mode" });
+    // With one that can, it is well, and says how many can't.
+    const some = { ...healthy(), knights: [{ id: "ada", name: "Ada", sensitive: [{ ref: "nearai/a", problem: null }, { ref: "heabsy/b", problem: "no key" }], keys: [] }] };
+    expect(check(some, "knight.ada.sensitive")).toMatchObject({ state: "ok", line: "Ada is in sensitive mode, on nearai/a (1 model of its own can't be used here)" });
+  });
+
+  test("a key of yours given to a knight that can go nowhere now needs you; one that can is well", () => {
+    const facts = { ...healthy(), knights: [{ id: "ada", name: "Ada", sensitive: null, keys: [{ secret: "stripe", problem: null }, { secret: "acme", problem: "acme is pinned to no address, so there is nowhere it may go" }] }] };
+    expect(check(facts, "knight.ada.key.stripe")).toMatchObject({ area: "vault", state: "ok" });
+    expect(check(facts, "knight.ada.key.acme")).toMatchObject({ area: "vault", state: "needs-you", fix: "Pin it again (galahad secret set acme --base-url https://…), or take it back (galahad roundtable keys ada rm acme)." });
+    // A node with no Roundtable, or no knight set up so, says nothing of knights.
+    expect(diagnose(healthy()).some((d) => d.id.startsWith("knight."))).toBe(false);
+  });
+});
