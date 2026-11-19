@@ -185,6 +185,8 @@ export interface TeamOutcome {
   /** His plan, as he keeps it: what's done, what's next, what's in the way. */
   notes: string;
   tasks: { total: number; queued: number; running: number; done: number; failed: number };
+  /** How often you stepped in on this outcome's own tasks, per one done and verified, since it began (#43). */
+  northStar: NorthStar;
   reportHour: number;
   tz: string;
   lastLookAt: number | null;

@@ -1,4 +1,4 @@
-import { addUsage, costOf, dueRun, parseSchedule, type Prices, redact, type TeamOutcome, type TeamOutcomeControlInput, type TeamOutcomeInput, type TeamTask, type Usage, type UsageLine, usdLabel } from "@galahad/core";
+import { addUsage, costOf, dueRun, northStar, parseSchedule, type Prices, redact, type TeamOutcome, type TeamOutcomeControlInput, type TeamOutcomeInput, type TeamTask, type Usage, type UsageLine, usdLabel } from "@galahad/core";
 import type { ChatTools, ToolCall } from "@galahad/brain";
 import { chat } from "@galahad/brain";
 import type { MindStore } from "@galahad/mind";
@@ -108,6 +108,8 @@ export class OutcomeRunner {
       status: outcome.status,
       notes: outcome.notes,
       tasks: { total: tasks.length, queued: count(["queued", "proposed"]), running: count(["running"]), done: tasks.filter((t) => t.status === "done" && t.verified).length, failed: count(["failed", "stopped", "interrupted"]) },
+      // The north star over what this outcome already counts: its own tasks, cut at when it began (#43).
+      northStar: northStar(tasks, outcome.createdAt),
       reportHour: outcome.reportHour,
       tz: outcome.tz,
       lastLookAt: outcome.lastLookAt,

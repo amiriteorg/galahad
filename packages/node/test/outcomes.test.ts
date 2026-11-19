@@ -283,4 +283,28 @@ describe("an outcome he owns", () => {
     expect(done.store.outcome(other.id)!.ended).toBe("The app is in open testing.");
     expect(done.store.messages(other.room).at(-1)!.text).toBe("Done. The app is in open testing.");
   });
+  test("the north star per outcome says how often you stepped in on its own tasks, per one done and verified (#43)", async () => {
+    const w = world([{ calls: [give("ada", "Set up", 1), give("ada", "Build it", 1)] }]);
+    const made = w.runner.create({ title: "Android app", goal: "Port the iPhone app to Android.", knights: ["ada"], budgetUsd: 20 });
+    await until(() => w.results.length === 2);
+    await until(() => w.store.tasks(made.room).filter((t) => t.status === "done").length === 2);
+    // You stepped in twice on one of its two done tasks: once by an approval, once by a message.
+    const first = w.store.tasks(made.room)[0]!;
+    expect(w.store.intervene(first.id, "approval", "approved its work")).toBe(true);
+    expect(w.store.intervene(first.id, "message", "a message while it worked")).toBe(true);
+    const star = w.runner.view(w.store.outcome(made.id)!).northStar;
+    expect(star.completed).toBe(2);
+    expect(star.interventions).toBe(2);
+    expect(star.perCompleted).toBe(1);
+  });
+
+  test("an outcome with none of its tasks done yet has no ratio (#43)", async () => {
+    const w = world();
+    const made = w.runner.create({ title: "Fresh", goal: "Nothing of it has run.", knights: ["ada"], budgetUsd: 10 });
+    const star = w.runner.view(w.store.outcome(made.id)!).northStar;
+    expect(star.completed).toBe(0);
+    expect(star.perCompleted).toBeNull();
+    await w.runner.stop();
+  });
+
 });

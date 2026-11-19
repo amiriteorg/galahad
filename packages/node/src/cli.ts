@@ -2096,6 +2096,7 @@ Evidence: galahad artifact ${i!.artifact}`));
         const left = Math.max(0, o.budgetUsd - o.spentUsd - o.committedUsd);
         console.log(`${bold(o.title)} ${dim(o.id)} · ${o.status}${o.ended ? ` (${o.ended})` : ""}`);
         console.log(`  ${o.knights.map((k) => `@${k}`).join(" ")} · spent $${o.spentUsd.toFixed(2)} of $${o.budgetUsd}, held $${o.committedUsd.toFixed(2)}, left $${left.toFixed(2)} · tasks ${o.tasks.done} done, ${o.tasks.running} running, ${o.tasks.queued} waiting, ${o.tasks.failed} not done`);
+        console.log(o.northStar.perCompleted === null ? "  none of its tasks done yet" : `  you stepped in ${o.northStar.perCompleted.toFixed(1)} times per completed task (${o.northStar.completed} done)`);
         if (o.notes) console.log(dim(`  plan: ${o.notes.split("\n")[0]!.slice(0, 140)}`));
         console.log(dim(`  follow it: galahad roundtable chat ${o.room}`));
       };
