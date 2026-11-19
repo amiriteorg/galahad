@@ -70,12 +70,14 @@ def main():
     parser.add_argument("--home", default="/work/.hermes")
     parser.add_argument("--prompt", default="/work/.agent/prompt.md")
     parser.add_argument("--gateway-env", default="/work/.galahad-gateway.json")
-    parser.add_argument("--max-tools", type=int, default=128)
-    parser.add_argument("--max-seconds", type=int, default=900)
+    # A knight is audited, never capped (your ruling, 17 and 19 November 2026): no tool budget and no time limit of the
+    # bridge's own unless one is asked for. The run's deadline, its audits and you stop it.
+    parser.add_argument("--max-tools", type=int, default=0)
+    parser.add_argument("--max-seconds", type=int, default=0)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    if args.max_tools < 1 or args.max_seconds < 1 or (not args.check and (not args.provider or not args.model)):
-        parser.error("a provider, model and positive run budgets are required")
+    if args.max_tools < 0 or args.max_seconds < 0 or (not args.check and (not args.provider or not args.model)):
+        parser.error("a provider and a model are required, and no budget is negative")
     return serve(Bridge(args))
 `;
 

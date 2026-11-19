@@ -65,6 +65,12 @@ for raw in sys.stdin:
             for n in range(3):
                 tool(n)
             continue
+        if prompt == "many":
+            for n in range(200):
+                tool("m" + str(n))
+            text("Many done.")
+            reply(ident, {"stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1}})
+            continue
         if prompt == "rpc-error":
             send({"id": ident, "error": {"code": -32000, "message": "DO-NOT-LEAK-REQUEST-HEADERS"}})
             continue
@@ -179,6 +185,13 @@ describe("Hermes ACP driver", () => {
     expect(result.exit).toBe(1);
     expect(result.stdout).toContain("tool budget");
     expect(existsSync(join(box.home, "cancelled"))).toBe(true);
+  });
+
+  test("a knight's run has no tool budget of the bridge's own: two hundred tools, and it ends as it ends (one asked for still holds, above)", async () => {
+    const result = await fixture().run("many");
+    expect({ exit: result.exit, stderr: result.stderr }).toEqual({ exit: 0, stderr: "" });
+    expect(result.events.filter((e) => e.type === "tool")).toHaveLength(200);
+    expect(result.events.find((e) => e.type === "text")).toEqual({ type: "text", text: "Many done." });
   });
 
   test("a stop signal cancels the live ACP prompt before the subprocess ends", async () => {

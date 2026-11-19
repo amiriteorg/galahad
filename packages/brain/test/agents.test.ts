@@ -95,11 +95,12 @@ describe("a driver and the notes store", () => {
   /**
    * The SHA-256 of that for each driver as it was before the store existed (commit 6bbab45, 14 November 2026). Hermes'
    * was made again on 19 November 2026, when its bridge came to share Galahad's ACP client (acp.ts): its text, not its
-   * protocol or what it does (hermes.test.ts, and the real Hermes 0.21.1's check).
+   * protocol or what it does (hermes.test.ts, and the real Hermes 0.21.1's check); and again that day, when its run lost
+   * the tool budget and time limit of its own that a knight's never has (an asked-for one still holds: hermes.test.ts).
    */
   const BEFORE: Record<string, string> = {
     opencode: "2a533082929650be330eb0ee7397582382a74884cb93250708e9b4688c884fe7",
-    hermes: "a4bedae3e60a63ea2cbe4270df535cc7b5d622ff8529e5ea92b1fbd974629fb0",
+    hermes: "999c1f0048099249e548e34b7ece5708db0bc8ae51fe7c528f67a3f3a621d98a",
     claude: "c3ba99c9fc00e7bbc58d3f61b8ca366376feb8952821af6aafed7f54d4f22cc2",
     codex: "8b06f3b9553ca2e6e59d08785f03106dfd40a9e3b83d9e4f2adca7bcbbbcc696",
   };
