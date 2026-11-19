@@ -24,7 +24,8 @@ export const overviewView: View = (root, ctx, { scope }) => {
   const recent = h("div", { class: "card" }, skeletonRows(4));
   const lede = ctx.whoami.fleetName ? `Fleet ${ctx.whoami.fleetName}, through ${ctx.whoami.nodeName}.` : `Through ${ctx.whoami.nodeName}.`;
   let vault: { count: number; unlocked: boolean } | null = null;
-  let usage: UsageMeter | null = null;
+  /** This period's meter; null until it answers; "none" from a node from before the meter. */
+  let usage: UsageMeter | null | "none" = null;
   let ledgerMissing = false;
   let ledgerSeen = "";
 
@@ -56,8 +57,10 @@ export const overviewView: View = (root, ctx, { scope }) => {
         }),
       );
     }
-    // What this period's model calls came to against your budget (a node from before the meter has none to say).
-    if (usage) tiles.push(usageTile(ctx, usage, (next) => { usage = next; renderStats(ctx.live.fleet.value); }));
+    // What this period's model calls came to against your budget (a node from before the meter has none to say). Its
+    // place is kept while it loads, as the Vault's is: a tile put in once it answers moved the ones after it.
+    if (usage && usage !== "none") tiles.push(usageTile(ctx, usage, (next) => { usage = next; renderStats(ctx.live.fleet.value); }));
+    else if (usage === null && ctx.can("mind:read")) tiles.push(statTile({ label: "Usage", icon: "gauge", value: "–", note: "loading…" }));
     if (fleet) tiles.push(statTile({ label: "Mind", icon: "memory", value: fleet.events.toLocaleString(), note: "events in the shared mind", href: "#/memory" }));
     // The mandate's north star (#28): how often you stepped in on the knights' work, per task done and verified.
     const star = ctx.live.team.value?.northStar;
@@ -81,7 +84,9 @@ export const overviewView: View = (root, ctx, { scope }) => {
       usage = await ctx.api.get<UsageMeter>("/api/usage/meter", scope.signal);
       if (!scope.disposed) renderStats(ctx.live.fleet.value);
     } catch {
-      /* no tile: a node from before the meter */
+      // No tile: a node from before the meter.
+      usage = "none";
+      if (!scope.disposed) renderStats(ctx.live.fleet.value);
     }
   }
 
