@@ -16,6 +16,8 @@ import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, selfActionCommand, statusLine } from "./loop-cli.ts";
 import { BILAG_QUERY } from "./bilag.ts";
 import { runMcpServer } from "./mcp.ts";
+import { runAcpAgent } from "./acp-agent.ts";
+import { buzzCli, buzzDelivery } from "./buzz.ts";
 import { archiveCommand } from "./archive-cli.ts";
 import { keyAddCommand, keyElsewhereLine } from "./key-cli.ts";
 import { skillsCommand } from "./skills-cli.ts";
@@ -365,10 +367,14 @@ Bank (read-only: balances and transactions of your own accounts, through Enable 
                                   complete takes the URL the bank sent you back to, in a hidden prompt
   arms grant <agent> bank:read    let one agent read the bank (arms ungrant <agent> bank:read to stop)
 
-Agents (MCP)
+Agents (MCP, ACP)
   mcp install claude|opencode|codex|hermes [--label name] [--apply]
                                   give a coding agent Galahad's mind and sandboxes (least privilege)
   mcp --arm <label>               the MCP server itself (stdio; started by the agent, not by you)
+  acp install buzz [--label name] Galahad in a Buzz community: a credential that may only chat (nothing of yours in his
+                                  answers there), and how Buzz's harness runs him (docs/BUZZ.md)
+  acp --arm <label> [--buzz]      Galahad himself as an ACP agent (stdio; started by the harness, not by you); --buzz
+                                  posts each answer where it was asked, with Buzz's CLI
   arms | arms revoke <label>      list or revoke agent credentials
 
 Maintenance
@@ -562,6 +568,9 @@ async function main(): Promise<void> {
       steps: { type: "string" },
       arm: { type: "string" },
       apply: { type: "boolean" },
+      // `acp --buzz [--buzz-cli path]`: his answers posted to Buzz where each was asked (buzz.ts).
+      buzz: { type: "boolean" },
+      "buzz-cli": { type: "string" },
       every: { type: "string" },
       cron: { type: "string" },
       // What else wakes a loop: --wake webhook | "gmail <words>" | "github owner/repo [ci.failed,pushed,issue.opened,pr.opened]" (repeatable).
@@ -1827,6 +1836,40 @@ Evidence: galahad artifact ${i!.artifact}`));
           `Add to your Hermes config (mcp_servers):\n\nmcp_servers:\n  galahad:\n    command: ${JSON.stringify(bunPath)}\n    args: ${JSON.stringify(args)}\n\n${dim("Check Hermes's MCP docs for the exact key in your version.")}`,
         );
       }
+      return;
+    }
+
+    case "acp": {
+      if (sub !== "install") {
+        // Galahad as an ACP agent (acp-agent.ts): stdout belongs to the protocol, so nothing else may print there.
+        const config = home.readConfig();
+        const base = `http://127.0.0.1:${loadEnv().GALAHAD_PORT ?? config.port}`;
+        const token = home.readArmToken(str("arm") ?? "acp");
+        let delivery;
+        if (flags.buzz) {
+          const cli = buzzCli(str("buzz-cli"));
+          if (!cli) fail(`galahad acp --buzz posts with Buzz's CLI, and ${str("buzz-cli") ?? "buzz"} isn't there: name it with --buzz-cli <path>`);
+          // The harness gives its agent the community's relay and its key in its environment, as it gives every agent.
+          if (!process.env.BUZZ_PRIVATE_KEY || !process.env.BUZZ_RELAY_URL) fail("galahad acp --buzz runs under Buzz's harness (buzz-acp), given BUZZ_RELAY_URL and BUZZ_PRIVATE_KEY in its environment: docs/BUZZ.md");
+          delivery = buzzDelivery({ cli: cli!, env: process.env, log: (message) => process.stderr.write(`galahad acp: ${message}\n`) });
+        }
+        await runAcpAgent({ base, token, ...(delivery ? { delivery } : {}) });
+        return;
+      }
+      if (rest[0] !== "buzz") fail("usage: galahad acp install buzz [--label name]");
+      const label = str("label") ?? "buzz";
+      // A community is read by others: his answers there carry nothing of yours, and he can do nothing there but answer.
+      const minted = await new Admin(home).call<{ token: string; info: { scopes: string[] } }>("mintArm", { label, scopes: ["chat"] });
+      const tokenPath = home.writeArmToken(label, minted.token);
+      const args = [fileURLToPath(import.meta.url), "acp", "--arm", label, "--buzz", ...(flags.home ? ["--home", home.dir] : [])];
+      console.log(`${bold(`Arm "${label}" ready`)} · scopes: ${minted.info.scopes.join(", ")}\n  token: ${tokenPath} (0600; never shown, never in chat)\n`);
+      console.log(
+        `Buzz's harness runs him, on this machine, given the agent's identity in its environment (docs/BUZZ.md):\n\n` +
+          `  BUZZ_RELAY_URL=wss://<your community>  BUZZ_PRIVATE_KEY=<the agent's key>  BUZZ_AUTH_TAG=<your attestation of it>\n` +
+          `  buzz-acp --agent-command ${process.execPath} --agent-args ${args.join(",")} \\\n` +
+          `    --respond-to owner-only --no-base-prompt --no-memory\n\n` +
+          `${dim("In Buzz Desktop on this machine: a new agent with that command and those arguments (comma-separated), answering you only.")}`,
+      );
       return;
     }
 

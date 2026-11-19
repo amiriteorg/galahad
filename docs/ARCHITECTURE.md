@@ -407,6 +407,13 @@ Network reachability was verified on ultra before it was built. From an internal
 
 Tools: `recall` (a long memory, such as a quest's whole report, comes shortened to its first 600 characters with how much is left; `full=true` gives it whole: twelve whole reports were twelve thousand characters carried through every later step of an answer), `remember`, `web_search`, `decide`, `fleet`, `compute` (the census, read-only: no tool raises a ceiling, changes the budget or makes a node measure itself), `place`, `sandbox_run` / `create` / `exec` / `destroy` / `save`, `artifacts`, `artifact_read`, `archive_search`, `archive_read`, `note_idea`, `ledger`, `request_secret`, `connectors`, `connector_call`, `connector_request`, `loops`, `notices`, `skills` and `skill_read` (his skills, read-only, as data: one that waits for your approval shows no words) and `skill_write` (a proposal that waits for you: his own when asked to write up how he did something, or an outside agent's; §9½), and the four bank tools for an agent granted `bank:read`. They're Galahad's own tools (`packages/node/src/tools.ts`), the same ones his chat uses (§6); each names the routes it calls, and an agent is offered the tools whose routes' scopes it holds. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
 
+**Galahad himself as an agent (ACP).** `galahad acp` turns the other way round. A harness that runs ACP agents (JSON-RPC on stdio: Buzz's `buzz-acp`, editors) runs Galahad himself, and each turn goes to the node's chat route with an arm token of its own (`packages/node/src/acp-agent.ts`).
+- His words stream back as message chunks, his tools as tool calls.
+- A cancel stops the turn on the node.
+- A session keeps its exchange in the process: an arm keeps no chats.
+
+**What's yours stays with callers who may read it.** The about-you facts, a project's context, recalled memories, the archive and skills go into an answer only for your own devices and for callers holding `mind:read`: the same rule as the routes that read them. A chat-only arm gets Galahad and none of that, whatever it asks for. In a Buzz community (`--buzz`), his finished answer is posted where the turn was asked, with Buzz's CLI and the key the harness hands that process; the node never holds it ([BUZZ.md](BUZZ.md)).
+
 ## 8⅞. Quests: the first agent loop ✅
 
 `galahad do "<goal>"` runs one quest end to end: **plan → work → independent review → remembered.**

@@ -501,6 +501,8 @@ The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet
 - **Local only:** the credential works on the loopback listener only.
 - **Connectors, never keys:** it can call your connectors' tools; anything outward or destructive is filed for your approval.
 
+The other way round, a harness that runs ACP agents runs Galahad himself (`galahad acp`). That is how he joins a [Buzz](BUZZ.md) community: `bun galahad acp install buzz` mints a credential that may only chat and prints how Buzz's harness runs him. Others read a community, so nothing of yours goes into his answers there.
+
 ## 11. Loops and the heartbeat
 
 Galahad already has a heartbeat: every 30 minutes on your always-on node, he looks around and leaves what needs you in the inbox. After each, he fixes the few things that are safe to fix himself (an expired sandbox the reaper missed, a read-only loop that went wrong once) and records each in the ledger as his own; everything else waits for you.
