@@ -184,6 +184,7 @@ import type { Assets } from "./assets.ts";
 import { compressedJson } from "./compress.ts";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 import { handleGitGateway } from "./git-gateway.ts";
+import { handleKeyGateway, keyScope, ungivable } from "./key-gateway.ts";
 import { BankError, type BankService } from "./bank/service.ts";
 import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { type Caller, ConnectorCallError, type ConnectorService } from "./connectors.ts";
@@ -1956,7 +1957,9 @@ export function createApp(ctx: AppContext) {
     // before replacing its lease or allowing any new writer into this VM.
     if (workspace.status === "running") await stopTeamWorker(member);
     if (signal.aborted) throw new HttpError(409, "knight stopped");
-    await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(member.id)), ...(member.repository ? { repository: member.repository } : {}), providers, ...(models ? { models: [...models] } : {}) });
+    // The keys of yours it may use but never see (PLAN #17): its lease is good for them, at their own addresses alone.
+    const keys = (member.keys ?? []).map(keyScope);
+    await inProcess(teamOwner, signal).call("prepareTeamWorkspace", { on: workspace.node, id: workspace.id, quest: armQuest(teammateLabel(member.id)), ...(member.repository ? { repository: member.repository } : {}), providers, ...(models ? { models: [...models] } : {}), ...(keys.length ? { keys } : {}) });
     if (member.repository) {
       // No key in command text or git config. The leased token is read inside the VM; the remote is reset to its public URL.
       const script = `import json,os,subprocess,sys\nd=json.load(open('/work/.galahad-gateway.json'))\np='/work/repo'\nif os.path.exists(p):\n sys.exit(0 if os.path.isdir(p+'/.git') else 1)\nr=subprocess.run(['git','-c','http.extraHeader=Authorization: Bearer '+d['GALAHAD_TOKEN'],'clone','--quiet',d['GALAHAD_REPO_URL'],p],capture_output=True)\nif r.returncode: print('Repository clone failed through the read-only gateway'); sys.exit(r.returncode)\nsubprocess.run(['git','-C',p,'remote','set-url','origin',sys.argv[1]],check=True)`;
@@ -2190,6 +2193,8 @@ export function createApp(ctx: AppContext) {
       roundtable: () => teamOf().overview().workers,
       primary: () => ctx.team!.store.arrangement().primary,
       work: (id) => teamOf().snapshot().tasks.filter((task) => task.assignee === id),
+      // Where a key of yours a knight may use is pinned (PLAN #17), for telling it so.
+      keyAddress: (secret) => ctx.vault.info(secret)?.origin ?? null,
       // Each step of a knight's task, kept as it ended (PLAN #15): another can be started from it.
       checkpoint: (task, point) => teamOf().store.keepCheckpoint(task.id, point),
       story: (room) => teamOf().story(room),
@@ -2260,7 +2265,15 @@ export function createApp(ctx: AppContext) {
 
   const handlers: Record<RouteName, Handler> = {
     team: (_input, p) => { ownerOnly(p); return teamOf().snapshot(); },
-    saveTeammate: (input, p) => { ownerOnly(p); return { teammate: teamOf().saveTeammate(input) }; },
+    saveTeammate: (input, p) => {
+      ownerOnly(p);
+      // A key it may use (PLAN #17) is one it can be given: in the vault, pinned to an https address, nobody else's purpose.
+      for (const grant of input.keys ?? []) {
+        const why = ungivable(ctx.vault, grant.secret);
+        if (why) throw new HttpError(400, why);
+      }
+      return { teammate: teamOf().saveTeammate(input) };
+    },
     saveTeamRoom: (input, p) => { ownerOnly(p); return { room: teamOf().saveRoom(input) }; },
     arrangeTeam: (input, p) => { ownerOnly(p); return teamOf().arrange(input); },
     directTeammate: (input, p) => { ownerOnly(p); return { room: teamOf().direct(input.id) }; },
@@ -2637,7 +2650,7 @@ export function createApp(ctx: AppContext) {
         if (!installedConnector(ctx.store, connector)) throw new HttpError(424, "add the GitHub connector before using a repository workspace");
         git = { connector, ...repo };
       }
-      return longRunning(onNode(p, input.on, routes.prepareTeamWorkspace.path, input, () => ctx.sandbox!.prepareTeam(input.id, input.quest, git, input.providers, input.models), { sandbox: input.id }));
+      return longRunning(onNode(p, input.on, routes.prepareTeamWorkspace.path, input, () => ctx.sandbox!.prepareTeam(input.id, input.quest, git, input.providers, input.models, input.keys), { sandbox: input.id }));
     },
     renewTeamWorkspace: (input, p) => {
       if (p.kind !== "admin" && p.kind !== "node") throw new HttpError(403, "only the team controller keeps a knight's lease");
@@ -4063,6 +4076,8 @@ export function createApp(ctx: AppContext) {
     if (listener === "sandbox") {
       if (path === "/search") return handleSandboxSearch(req, { tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}) });
       if (path.startsWith("/git/")) return handleGitGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) });
+      // (And the key gateway: an API called with a key of yours a knight may use but never see, PLAN #17.)
+      if (path.startsWith("/key/")) return handleKeyGateway(req, { vault: ctx.vault, tokens: ctx.tokens, ...(ctx.ledger ? { ledger: ctx.ledger } : {}), ...(ctx.fetch ? { fetch: ctx.fetch } : {}) });
       if (!path.startsWith("/gw/")) throw new HttpError(404, "not found");
       return handleGateway(req, { store: ctx.store, vault: ctx.vault, tokens: ctx.tokens, onUsage: toolCalled });
     }

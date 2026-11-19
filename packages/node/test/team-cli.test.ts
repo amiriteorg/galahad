@@ -545,3 +545,30 @@ test("a task's steps at a terminal, and the task given again from one of them, o
   expect(lines).toEqual(["task-newnewnewnew queued: task-abcdefghijkl given again, from its step 1; completion requires its gates and independent review.", "task-newnewnewnew queued: task-abcdefghijkl given again; completion requires its gates and independent review."]);
   await expect(teamCommand(api, "again", ["task-abcdefghijkl"], { from: "0" }, () => {})).rejects.toThrow("--from names a step by its number");
 });
+
+test("keys of yours a knight may use, at a terminal: given (reads only unless --write), listed, taken back", async () => {
+  const lines: string[] = [];
+  const saved: any[] = [];
+  let keys: any[] | undefined;
+  const api = {
+    async call<T>(name: RouteName, input?: any): Promise<T> {
+      if (name === "team") return { teammates: [member("ada", keys ? { keys } : {})], rooms: [], tasks: [], deliveries: [] } as T;
+      saved.push(input);
+      keys = input.keys ?? undefined;
+      return { teammate: member("ada", keys ? { keys } : {}) } as T;
+    },
+  };
+  await teamCommand(api, "keys", ["ada"], {}, (line) => lines.push(line));
+  await teamCommand(api, "keys", ["ada", "add", "stripe"], {}, (line) => lines.push(line));
+  await teamCommand(api, "keys", ["ada", "add", "acme"], { header: "x-api-key", write: true }, (line) => lines.push(line));
+  await teamCommand(api, "keys", ["ada", "rm", "stripe"], {}, (line) => lines.push(line));
+  expect(saved.map((s) => s.keys)).toEqual([
+    [{ secret: "stripe", header: "authorization", write: false }],
+    [{ secret: "stripe", header: "authorization", write: false }, { secret: "acme", header: "x-api-key", write: true }],
+    [{ secret: "acme", header: "x-api-key", write: true }],
+  ]);
+  expect(lines[0]).toContain("ada has no keys of yours to use");
+  expect(lines).toContain("stripe · reads only · in Authorization: Bearer");
+  expect(lines).toContain("acme · reads and writes · in x-api-key");
+  await expect(teamCommand(api, "keys", ["ada", "add"], {}, () => {})).rejects.toThrow("usage: galahad roundtable keys");
+});

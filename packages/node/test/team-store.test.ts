@@ -1008,3 +1008,15 @@ describe("a task's steps, and another given from one (PLAN #15)", () => {
     expect(() => store.createTask({ room: "workshop", assignee: "ada", title: "Build", goal: "Build it.", from: { task: "task-nosuchtask00", step: 1 } })).toThrow("No such task to start from.");
   });
 });
+
+describe("keys of yours a knight may use (PLAN #17)", () => {
+  test("kept as given, each once; kept through another save; none again with null", () => {
+    const store = make(); setup(store);
+    // (As it arrives, the header and the leave to write may be left out: their defaults are given.)
+    expect(store.saveTeammate({ id: "ada", name: "Ada", keys: [{ secret: "stripe" }] } as never).keys).toEqual([{ secret: "stripe", header: "authorization", write: false }]);
+    expect(store.saveTeammate({ id: "ada", name: "Ada Lovelace" }).keys).toEqual([{ secret: "stripe", header: "authorization", write: false }]);
+    expect(() => store.saveTeammate({ id: "ada", name: "Ada", keys: [{ secret: "stripe" }, { secret: "stripe", write: true }] } as never)).toThrow();
+    expect(() => store.saveTeammate({ id: "ada", name: "Ada", keys: [{ secret: "stripe", header: "cookie" }] } as never)).toThrow();
+    expect(store.saveTeammate({ id: "ada", name: "Ada", keys: null }).keys).toBeUndefined();
+  });
+});

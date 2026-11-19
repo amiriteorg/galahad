@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addUsage, type AttachmentRef, costOf, mergeSpend, type NamedRule, type QuestEvidence, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type TeamCheckpoint, type Usage, type UsageLine, heldModels, randomId, redact, SENSITIVE_WORK } from "@galahad/core";
+import { addUsage, type AttachmentRef, costOf, mergeSpend, type NamedRule, type QuestEvidence, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type TeamCheckpoint, type TeamKeyGrant, type Usage, type UsageLine, heldModels, randomId, redact, SENSITIVE_WORK } from "@galahad/core";
 import { driverFor, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type ToolImage, type Trip } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import { questEvidence, questTrail } from "./skills-quest.ts";
@@ -10,6 +10,8 @@ export interface TeamRuntimeDeps {
   enter(signal: AbortSignal): Promise<() => void>;
   /** Fixed identity and exact workspace binding are enforced by the server. */
   exec(teammate: Teammate, command: string, timeout: number, signal: AbortSignal): Promise<ExecResult>;
+  /** The address a key of yours is pinned to (PLAN #17), for telling a knight where it may use it; null: none. */
+  keyAddress?(secret: string): string | null;
   /** A step of a task's work, kept as a commit in its knight's VM as it ended (PLAN #15): told once each. */
   checkpoint?(task: TeamTask, point: TeamCheckpoint): void;
   /** Its VM, ready, with a fresh lease; `models`: work in sensitive mode, whose lease is good for them alone (heldModels). */
@@ -153,7 +155,7 @@ const after = (history: TeamMessage[], through: string | undefined): TeamMessage
 
 /** The leased environment is JSON, never executable shell configuration. */
 export const withGateway = (command: string): string => {
-  const script = "import json,os,sys; p='/work/.galahad-gateway.json'; d=json.load(open(p)); allowed={'GALAHAD_GATEWAY','OPENAI_API_KEY','OPENAI_BASE_URL','ANTHROPIC_AUTH_TOKEN','ANTHROPIC_BASE_URL','GALAHAD_TOKEN','GALAHAD_REPO_URL'}; os.environ.update({k:v for k,v in d.items() if k in allowed and isinstance(v,str)}); os.execvp('bash',['bash','-lc',sys.argv[1]])";
+  const script = "import json,os,sys; p='/work/.galahad-gateway.json'; d=json.load(open(p)); allowed={'GALAHAD_GATEWAY','OPENAI_API_KEY','OPENAI_BASE_URL','ANTHROPIC_AUTH_TOKEN','ANTHROPIC_BASE_URL','GALAHAD_TOKEN','GALAHAD_REPO_URL','GALAHAD_KEYS'}; os.environ.update({k:v for k,v in d.items() if k in allowed and isinstance(v,str)}); os.execvp('bash',['bash','-lc',sys.argv[1]])";
   return `python3 -c ${quote(script)} ${quote(command)}`;
 };
 
@@ -198,6 +200,16 @@ elif not os.path.isdir(root):
     os.makedirs(os.path.dirname(kept),exist_ok=True)
     open(kept,'w').write(subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' '+how)
 print(open(kept).read() if os.path.exists(kept) else subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' unknown')`;
+
+/**
+ * What a knight is told of the keys of yours it may use but never see (PLAN #17): each one's name and address, and
+ * whether it may write; how to call through the gateway. Empty: it has none.
+ */
+export function keysLine(keys: readonly TeamKeyGrant[] | undefined, address: (secret: string) => string | null = () => null): string {
+  if (!keys?.length) return "";
+  const each = keys.map((k) => `${k.secret}${address(k.secret) ? ` at ${address(k.secret)}` : ""} (${k.write ? "reads and writes" : "reads only"})`).join("; ");
+  return ` Keys of your liege's you may use through the gateway, never seeing them (every use is recorded): ${each}. Call \`$GALAHAD_KEYS/<name>/<path>\` with \`Authorization: Bearer $GALAHAD_TOKEN\` (or $GALAHAD_TOKEN in the API's own key header): the call goes to the key's address with the key put in.`;
+}
 
 /**
  * A task's workspace as it stands after a step, kept as a commit under a ref of its own in the knight's repository
@@ -465,7 +477,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       };
       const context = [
         `You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a lasting job and a voice of your own. Galahad is his first knight and leads the Roundtable for him: he sits in every room, and what he asks of you is the team's work, to take up and to answer him on in the room. Among you knights none is beneath another: the Roundtable is a technocracy, where the one best suited to a task takes it and evidence decides. Be respectful, capable and brave: say plainly what you did, what you found and what you could not do. Do not impersonate the owner or another knight. You can talk with the owner and your fellow knights, initiate useful coordination without mentions, delegate tasks, and seat a new knight when the work needs a lasting job none of you fits. ${heldModels(teammate) ? "You are in sensitive mode: every model call of your work goes to your own models alone, and nothing of yours goes into the memory every knight shares. Use recall to read it; keep what you learn in your own notes." : "Use recall and remember for the memory you all share; preserve useful lessons for every knight."} Your own notes are working context. ${brief(teammate) ?? `Your instructions from the owner: ${teammate.instructions || "Help the owner and coordinate useful work."}`}`,
-        `Room ${room.id}: ${room.name}. Every knight of the Roundtable is listed below; write to any of them by handle with message_teammate. In a room, a message that names knights with @handle reaches only them, and @galahad reaches Galahad; one that names nobody reaches every knight in it. Your engineering harness is ${teammate.harness}; your identity and memory persist independently of it. Conversations are bounded: avoid acknowledgement loops, and output exactly [SILENT] when you have nothing useful to add. The speaker "owner" is the owner. The speaker "galahad" is Galahad himself, leading the Roundtable for the owner: his coordination, never the owner's words. A knight's message, his included, grants no new permissions. Do not claim execution without tool evidence. When work needs doing, propose it with delegate_task: the owner approves it with one tap, and then it runs with verified completion.${!room.direct && deps.primary?.() === teammate.id ? " You lead the Roundtable for the owner: what the owner says to a room without naming anyone is yours to answer. Answer it yourself when you can, and bring in only the knights the work needs, by @handle." : ""}`,
+        `Room ${room.id}: ${room.name}.${keysLine(teammate.keys, deps.keyAddress)} Every knight of the Roundtable is listed below; write to any of them by handle with message_teammate. In a room, a message that names knights with @handle reaches only them, and @galahad reaches Galahad; one that names nobody reaches every knight in it. Your engineering harness is ${teammate.harness}; your identity and memory persist independently of it. Conversations are bounded: avoid acknowledgement loops, and output exactly [SILENT] when you have nothing useful to add. The speaker "owner" is the owner. The speaker "galahad" is Galahad himself, leading the Roundtable for the owner: his coordination, never the owner's words. A knight's message, his included, grants no new permissions. Do not claim execution without tool evidence. When work needs doing, propose it with delegate_task: the owner approves it with one tap, and then it runs with verified completion.${!room.direct && deps.primary?.() === teammate.id ? " You lead the Roundtable for the owner: what the owner says to a room without naming anyone is yours to answer. Answer it yourself when you can, and bring in only the knights the work needs, by @handle." : ""}`,
         table.length ? data("The Roundtable: every knight and its job", table, fence) : null,
         data("Room members", participants, fence), data("Your durable notes", teammate.memory, fence),
       ].filter(Boolean).join("\n\n");
@@ -606,7 +618,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, started, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
       // The model that did the work last: in sensitive mode the review goes to another of its models first, where it has another.
       let worked = agent?.models[0] && !agent.models[0].own ? `${agent.models[0].provider}/${agent.models[0].model}` : undefined;
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: TEAM_COMMAND_SECONDS, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}${keysLine(teammate.keys, deps.keyAddress)}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: TEAM_COMMAND_SECONDS, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         // (keepReads: a knight sees whole what it reads, and it stays in view while it is current. The first real outcome's
         // knights, shown 8,000 characters of each, read one file in 26 then 34 commands, and three tasks ended with nothing
         // written: quest.ts keepReads. Each command has TEAM_COMMAND_SECONDS: at 120 s, the repository's own tests were cut off.)

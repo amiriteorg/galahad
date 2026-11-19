@@ -120,6 +120,9 @@ describe("sandbox hardening", () => {
     expect(env.OPENAI_BASE_URL).toBe(`http://${NETWORKS.gateway.gateway}:7779/gw/deepseek`);
     expect(env.ANTHROPIC_BASE_URL).toBe(`http://${NETWORKS.gateway.gateway}:7779/gw/anthropic`);
     expect(Object.values(env).every((v) => !v.startsWith("sk-"))).toBe(true);
+    // A lease with keys of yours on it says where the key gateway is; one without says nothing of it.
+    expect(env.GALAHAD_KEYS).toBeUndefined();
+    expect(gatewayEnv("gw_scoped", ["deepseek"], true).GALAHAD_KEYS).toBe(`http://${NETWORKS.gateway.gateway}:7779/key`);
   });
 
   test("commands run under an in-container deadline", () => {

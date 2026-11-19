@@ -536,6 +536,8 @@ export const routes = {
       providers: z.array(z.string().min(1).max(64)).max(16).optional(),
       /** Work in sensitive mode (heldModels): the lease is good for these models alone (absent: any of its providers'). */
       models: TeammateModels.min(1).optional(),
+      /** The keys of yours its knight may use but never see (PLAN #17), as the key gateway reads them: key:<secret>:<header>:<read|write>. */
+      keys: z.array(z.string().regex(/^key:[A-Za-z0-9._-]{1,64}:[a-z][a-z0-9-]{0,63}:(read|write)$/)).max(16).optional(),
     }),
   },
   /** A knight's lease kept while its task runs (its controller asks every ten minutes): `{ renewed }`. A lapsed one isn't brought back. */

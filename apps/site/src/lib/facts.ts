@@ -136,6 +136,7 @@ export const PHASING = {
     { state: "built", what: "Roles you make", line: "Choose the models each knight works on, a local one on whichever of your machines serves it; the reviewer stays independent." },
     { state: "built", what: "Sensitive mode", line: "A knight or one task held to the models you choose and nothing else: its plan, its review, its conversations and its coding tool, never a fallback." },
     { state: "built", what: "Any ACP agent", line: "A knight works in Gemini CLI, Goose, OpenCode or any agent that speaks ACP, set up your way in its own VM." },
+    { state: "built", what: "Keys a knight uses but never sees", line: "Its scripts call an API of yours through the gateway, which puts your key in at that API's address alone; reads only unless you say writes." },
     { state: "building", what: "Galahad writes first", line: "Ship it and give again from a task's card, \"tell me when\", what happened while you were away, and the next step of your backlog offered to an idle knight, for your yes; next, asks you repeat offered as a loop." },
     { state: "building", what: "Count the north star", line: "Each time you step in on a knight's task, counted per task done and verified, and per outcome; next, in the trials." },
     { state: "building", what: "A knight that keeps the books", line: "Bilag from your mail to Drive on their own, and drafts in Dinero; booking always asks." },
@@ -148,7 +149,7 @@ export const PHASING = {
     { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
     { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; it gives a Mac its knights' VMs, behind its firewall, with one password, and lends Galahad the Mac itself in sessions you allow." },
     { state: "building", what: "Checkpoint, rewind and fork", line: "Give a knight's task again from any of its steps, its files as they stood then; next, its conversation kept with them." },
-    { state: "next", what: "Keys a knight uses but never sees", line: "A placeholder in its script, the vault's key swapped in only at the key's own address." },
+    { state: "next", what: "Measured against the others", line: "The same tasks run by Galahad and by the bare coding tools on the same models, so what the gates and the reviewer are worth is a number." },
   ],
 } as const;
 

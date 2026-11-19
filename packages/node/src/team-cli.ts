@@ -37,7 +37,7 @@ export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): 
 /** What a task changed in its repository and where that is kept (`galahad ship <artifact>` opens a pull request from it). Empty when it kept nothing. */
 export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
-const usage = "galahad roundtable [add <id> | avatar <id> | models <id> [provider/model…] | sensitive <id> [on|off] [provider/model…] | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> [--sensitive] [--models provider/model,…] | steps <task-id> | again <task-id> [--from <step>] [goal] | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | ci [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad roundtable [add <id> | avatar <id> | models <id> [provider/model…] | sensitive <id> [on|off] [provider/model…] | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> [--sensitive] [--models provider/model,…] | steps <task-id> | again <task-id> [--from <step>] [goal] | keys <id> [add <secret> [--write] | rm <secret>] | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | ci [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
 
 /** What a knight works on, in a sentence: its own models or its role's, and whether it is in sensitive mode. */
 const knightModels = (m: Teammate): string =>
@@ -90,6 +90,21 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     print(says(knight));
     print("To choose, in order: galahad roundtable models <knight> provider/model…; --role gives it its role's again. You may choose:");
     for (const m of models) print(`  ${m.ref}${m.on.length ? ` · on ${m.on.join(", ")}` : ""}`);
+    return;
+  }
+  if (sub === "keys") {
+    // Keys of yours it may use but never see (PLAN #17): listed, given (reads only unless --write), or taken back.
+    const [id, verb, secret] = args;
+    if (!id || (verb !== undefined && !((verb === "add" || verb === "rm") && secret))) throw new Error("usage: galahad roundtable keys <knight> [add <secret> [--header x-api-key] [--write] | rm <secret>]");
+    const knight = (await api.call<TeamSnapshot>("team")).teammates.find((m) => m.id === id);
+    if (!knight) throw new Error(`no knight ${id}`);
+    let keys = knight.keys ?? [];
+    if (verb === "add") keys = [...keys.filter((k) => k.secret !== secret), { secret: secret!, header: string("header") ?? "authorization", write: flags.write === true }];
+    if (verb === "rm") keys = keys.filter((k) => k.secret !== secret);
+    if (verb) keys = (await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: knight.name, keys: keys.length ? keys : null })).teammate.keys ?? [];
+    if (!keys.length) { print(`${id} has no keys of yours to use. Give it one: galahad roundtable keys ${id} add <secret> (the secret pinned to its API's address: galahad secret set <secret> --base-url https://…)`); return; }
+    for (const k of keys) print(`${k.secret} · ${k.write ? "reads and writes" : "reads only"} · in ${k.header === "authorization" ? "Authorization: Bearer" : k.header}`);
+    print(`Its scripts call $GALAHAD_KEYS/<secret>/<path> with $GALAHAD_TOKEN where the key would go; from its next task.`);
     return;
   }
   if (sub === "sensitive") {

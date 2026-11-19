@@ -164,7 +164,8 @@ export const SEARCH_SCOPE = "search";
 export const RETIRED_SCOPE = "world";
 
 /** Environment that points tools at the sandbox gateway with a scoped token (never a key). */
-export function gatewayEnv(token: string, providers: string[]): Record<string, string> {
+/** `keys`: the lease is good for keys of yours (PLAN #17): GALAHAD_KEYS says where the key gateway is. */
+export function gatewayEnv(token: string, providers: string[], keys = false): Record<string, string> {
   const root = `http://${NETWORKS.gateway.gateway}:${SANDBOX_GATEWAY_PORT}`;
   const base = `${root}/gw`;
   const models = providers.filter((p) => p !== SEARCH_SCOPE);
@@ -174,6 +175,7 @@ export function gatewayEnv(token: string, providers: string[]): Record<string, s
     ...(models.includes("anthropic") ? { ANTHROPIC_BASE_URL: `${base}/anthropic`, ANTHROPIC_AUTH_TOKEN: token } : {}),
     ...(openai ? { OPENAI_BASE_URL: `${base}/${openai}`, OPENAI_API_KEY: token } : {}),
     ...(providers.includes(SEARCH_SCOPE) ? { GALAHAD_SEARCH: `${root}/search` } : {}),
+    ...(keys ? { GALAHAD_KEYS: `${root}/key` } : {}),
     GALAHAD_TOKEN: token,
   };
 }

@@ -29,6 +29,18 @@ export const TeamOutcomeId = z.string().regex(/^out-[a-z0-9_-]{12}$/);
  */
 export const TeamHarness = z.enum(["native", "opencode", "hermes", "claude", "codex", "acp"]);
 export type TeamHarness = z.infer<typeof TeamHarness>;
+/**
+ * A key of yours a knight may use but never see (PLAN #17): a secret in the vault, pinned to its API's address, that the
+ * gateway puts into the knight's calls there and nowhere else. `header`: where it goes (authorization, as "Bearer
+ * <key>"; or the API's own x-… header, the key as it is). `write`: whether calls that change something (POST, PUT, PATCH,
+ * DELETE) may go too; without it, reads alone.
+ */
+export const TeamKeyGrant = z.strictObject({
+  secret: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/, "a secret's name, as the vault keeps it"),
+  header: z.string().regex(/^(authorization|api-key|x-[a-z0-9-]{1,60})$/, "authorization, api-key, or an x-… header").default("authorization"),
+  write: z.boolean().default(false),
+});
+export type TeamKeyGrant = z.infer<typeof TeamKeyGrant>;
 /** An ACP agent you name to a knight (harness `acp`): the command that starts it in its ACP mode in its VM, as plain words. */
 export const TeamAcpCommand = z.string().trim().max(300).regex(/^[A-Za-z0-9._\/:=@+,-]+( [A-Za-z0-9._\/:=@+,-]+){0,15}$/, "the command that starts it in its ACP mode, as plain words: no quotes, no shell");
 export const TeamWorkspaceQuest = z.string().regex(/^arm\.team\.[a-f0-9]{10}\.[a-z][a-z0-9-]{0,31}$/);
@@ -87,6 +99,8 @@ export const TeammateInput = z.strictObject({
   harness: TeamHarness.optional(),
   /** Its ACP agent's command (harness `acp`), e.g. `goose acp`. Omitted: kept as it was; null: none. */
   acp: TeamAcpCommand.nullable().optional(),
+  /** Keys of yours it may use but never see (TeamKeyGrant), each once. Omitted: kept as they were; null or none: none. */
+  keys: z.array(TeamKeyGrant).max(16).refine((keys) => new Set(keys.map((k) => k.secret)).size === keys.length, "each key once").nullable().optional(),
   enabled: z.boolean().optional(),
   dailyTurns: z.number().int().min(0).max(1000).optional(),
   repository: z.string().trim().max(300).regex(/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*\/?$/, "an HTTPS GitHub repository without credentials, query or fragment").transform((url) => url.replace(/\/$/, "").replace(/\.git$/, "")).nullable().optional(),
@@ -315,6 +329,8 @@ export interface Teammate {
   harness: TeamHarness;
   /** The command that starts its ACP agent in its VM (harness `acp`); absent: none. */
   acp?: string;
+  /** Keys of yours it may use but never see (TeamKeyGrant); absent: none. */
+  keys?: TeamKeyGrant[];
   enabled: boolean;
   dailyTurns: number;
   turnsToday: number;

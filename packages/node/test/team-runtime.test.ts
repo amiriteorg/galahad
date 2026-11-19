@@ -3,7 +3,7 @@ import { newNodeIdentity, type ExecResult, type TeamCheckpoint, type Teammate, t
 import { taskStep, type AvatarExpression } from "@galahad/core/avatar";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import { acpDriver, AGENTS, OWN_SIGN_IN, type QuestEvent } from "@galahad/brain";
-import { harnessReadiness, progress, TEAM_COMMAND_SECONDS, teamRuntime, type TeamRuntimeDeps } from "../src/team-runtime.ts";
+import { harnessReadiness, keysLine, progress, TEAM_COMMAND_SECONDS, teamRuntime, type TeamRuntimeDeps } from "../src/team-runtime.ts";
 import type { TeamRunContext } from "../src/team.ts";
 
 const stores: MindStore[] = [];
@@ -291,6 +291,18 @@ test("sensitive mode: when none of its models answers, the work waits and asks t
   await expect(g.runtime.executeTask({ ...member, models: ["local/mimo"], sensitive: true }, { ...task, models: ["local/fake"] }, g.context)).rejects.toThrow("a task held to local/fake is never its");
   expect(g.prepared).toEqual([]);
   expect(g.bodies).toEqual([]);
+});
+
+test("a knight with keys of yours is told each one's name and address, whether it may write, and how to call through the gateway", async () => {
+  const keyed: Teammate = { ...member, keys: [{ secret: "stripe", header: "authorization", write: false }, { secret: "acme", header: "x-api-key", write: true }] };
+  expect(keysLine(keyed.keys, (secret) => (secret === "stripe" ? "https://api.stripe.com" : null))).toBe(" Keys of your liege's you may use through the gateway, never seeing them (every use is recorded): stripe at https://api.stripe.com (reads only); acme (reads and writes). Call `$GALAHAD_KEYS/<name>/<path>` with `Authorization: Bearer $GALAHAD_TOKEN` (or $GALAHAD_TOKEN in the API's own key header): the call goes to the key's address with the key put in.");
+  expect(keysLine(undefined)).toBe("");
+  const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], { teammate: () => keyed, keyAddress: () => "https://api.stripe.com" });
+  expect((await f.runtime.executeTask(keyed, task, f.context)).verified).toBe(true);
+  expect(JSON.stringify(f.bodies.map((b) => b.messages))).toContain("Keys of your liege's you may use through the gateway");
+  // (And its commands are given where the key gateway is, from the lease in its VM, never a key or a token written in.)
+  expect(f.commands.some((command) => command.includes("'GALAHAD_KEYS'"))).toBe(true);
+  expect(f.commands.some((command) => /gw_[A-Za-z0-9]/.test(command))).toBe(false);
 });
 
 test("a knight in an ACP agent of yours is never given work in sensitive mode: its calls go where you set it up to", async () => {

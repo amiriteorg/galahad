@@ -150,6 +150,15 @@ describe("persistent teammate workspaces", () => {
     expect(f.minted.at(-1)!.providers).toEqual(["openai"]);
   });
 
+  test("the keys of yours its knight may use are on its lease, for the key gateway alone, and its VM is told where that is", async () => {
+    const f = teammateHost({ status: "running" });
+    await f.host.prepareTeam(ID, QUEST, undefined, ["openai"], undefined, ["key:stripe:authorization:read"]);
+    expect(f.minted).toEqual([{ label: `sandbox:${ID}`, providers: ["openai", "key:stripe:authorization:read"], ttlMinutes: 30, maxRequests: 500 }]);
+    // (Without one, nothing of the key gateway is in its lease.)
+    await f.host.prepareTeam(ID, QUEST, undefined, ["openai"]);
+    expect(f.minted.at(-1)!.providers).toEqual(["openai"]);
+  });
+
   test("work in sensitive mode is leased its models alone, and the ledger says so", async () => {
     const f = teammateHost({ status: "running" });
     await f.host.prepareTeam(ID, QUEST, undefined, ["nearai"], ["nearai/Qwen/Qwen3.8-27B-abliterated"]);

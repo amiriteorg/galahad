@@ -65,6 +65,10 @@ of its own; "roundtable", "squires" and "team" are the same command)
   roundtable task <room> <assignee> <goal> [--after task-id,task-id] [--gate command] [--budget-usd 0.5]
                                     [--sensitive] [--models provider/model,…]: sensitive mode for this task alone,
                                     on the models named, or with none named its knight's own
+  roundtable keys <id> [add <secret> [--header x-api-key] [--write] | rm <secret>]
+                                    keys of yours it may use but never see: its scripts call $GALAHAD_KEYS/<secret>/…
+                                    and the gateway puts the key in, at the key's pinned address alone (galahad secret
+                                    set <secret> --base-url https://api.example.com); reads only unless --write
   roundtable steps <task-id>          the steps of a knight's task in a repository, each kept as it ended
   roundtable again <task-id> [--from <step>] ["<goal>"]
                                     give a task again (your stepping in, counted on it): from its start, or from
@@ -556,6 +560,9 @@ async function main(): Promise<void> {
       models: { type: "string" },
       // (The command that starts a knight's ACP agent: roundtable add --agent acp --acp "goose acp".)
       acp: { type: "string" },
+      // (A key a knight may use but never see: roundtable keys <knight> add <secret> [--header x-api-key] [--write].)
+      header: { type: "string" },
+      write: { type: "boolean" },
       tag: { type: "string", multiple: true },
       reason: { type: "string" },
       providers: { type: "string" },
@@ -1072,8 +1079,9 @@ Next:
       if (sub === "set") {
         if (!rest[0]) fail("usage: galahad secret set <name>");
         const value = await readSecret(`Value for ${rest[0]} (hidden): `);
-        await admin.call("setSecret", { name: rest[0], value, provider: str("provider"), label: str("label"), connector: str("connector") });
-        console.log("Sealed into the vault.");
+        // (--base-url pins it to that address: the one place it may ever be sent, as for a knight's key, PLAN #17.)
+        await admin.call("setSecret", { name: rest[0], value, provider: str("provider"), label: str("label"), connector: str("connector"), ...(str("base-url") ? { baseUrl: str("base-url") } : {}) });
+        console.log(str("base-url") ? `Sealed into the vault, pinned to ${new URL(str("base-url")!).origin}.` : "Sealed into the vault.");
       } else if (sub === "rm") {
         if (!rest[0]) fail("usage: galahad secret rm <name>");
         if (!confirm(`Delete secret ${rest[0]} from every node?`)) return;

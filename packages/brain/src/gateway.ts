@@ -98,6 +98,12 @@ export class GatewayTokens {
     return this.info(sha256B64u(token))?.label ?? null;
   }
 
+  /** Everything a token is scoped to (its providers, a repository's git:…, a key's key:…); null: not a token, or one good for any. */
+  scopesOf(token: string): string[] | null {
+    if (!/^gw_[A-Za-z0-9_-]{43}$/.test(token)) return null;
+    return this.info(sha256B64u(token))?.providers ?? null;
+  }
+
   /** The models a token is good for alone (a lease for work in sensitive mode); null: any of its providers'. */
   modelsOf(token: string): string[] | null {
     if (!/^gw_[A-Za-z0-9_-]{43}$/.test(token)) return null;

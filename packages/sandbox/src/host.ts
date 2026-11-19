@@ -778,7 +778,7 @@ export class SandboxHost {
    * the providers with a key now (the controller says), so a key added since the VM was made reaches it; absent, what
    * the VM was made with. `models`: work in sensitive mode, whose lease is good for those models alone.
    */
-  async prepareTeam(id: string, quest: string, git?: { connector: string; owner: string; repo: string }, providers?: readonly string[], models?: readonly string[]): Promise<SandboxView> {
+  async prepareTeam(id: string, quest: string, git?: { connector: string; owner: string; repo: string }, providers?: readonly string[], models?: readonly string[], keys?: readonly string[]): Promise<SandboxView> {
     const sandbox = await this.get(id);
     if (!sandbox) throw new SandboxError("the teammate's VM is missing; its workspace must be recovered, not replaced", 404);
     if (!TeamWorkspaceQuest.safeParse(quest).success || sandbox.quest !== quest || sandbox.ephemeral || sandbox.isolation !== "vm") {
@@ -801,10 +801,11 @@ export class SandboxHost {
     const previous = this.tokenStore.take(id);
     if (previous) this.opts.tokens.revoke(previous);
     const covered = providers ? [...providers] : sandbox.providers;
-    const scopes = [...covered, ...(git ? [`git:${git.connector}:${git.owner}:${git.repo}`] : [])];
+    // (And the keys of yours its knight may use but never see, key:…, which only the key gateway reads.)
+    const scopes = [...covered, ...(git ? [`git:${git.connector}:${git.owner}:${git.repo}`] : []), ...(keys ?? [])];
     const minted = this.opts.tokens.mint({ label: `sandbox:${id}`, providers: scopes, ...(models?.length ? { models: [...models] } : {}), ttlMinutes: TEAM_LEASE_MINUTES, maxRequests: 500 });
     this.tokenStore.put(id, minted.info.hash);
-    const env = gatewayEnv(minted.token, covered);
+    const env = gatewayEnv(minted.token, covered, Boolean(keys?.length));
     if (git) env.GALAHAD_REPO_URL = repositoryUrl(env.GALAHAD_GATEWAY!, git);
     if (!(await this.writeLease(id, env))) {
       this.opts.tokens.revoke(minted.info.hash);

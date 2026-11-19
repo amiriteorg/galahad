@@ -115,7 +115,9 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
   };
   /** Another address than its own, for a provider chosen: only one you type, here, next to the key. */
   const mayGiveAnother = (): boolean => !!providerSelect.value && providerSelect.value !== "__other" && !needsAddress();
-  const addressShown = (): boolean => needsAddress() || (another && mayGiveAnother());
+  /** A secret of yours alone may be pinned to its API's address, so a knight can be given it to use and never see (PLAN #17). */
+  const plain = (): boolean => providerSelect.value === "__other";
+  const addressShown = (): boolean => needsAddress() || plain() || (another && mayGiveAnother());
   const showAddress = () => {
     addressField.hidden = !addressShown();
     anotherRow.hidden = addressShown() || !mayGiveAnother();
@@ -124,7 +126,9 @@ export function openAddKey(ctx: Ctx, options: AddKeyOptions = {}): void {
       addressHint,
       needsAddress()
         ? "It has no address of its own: the key is only ever sent to this one."
-        : own
+        : plain()
+          ? "Optional: its API's https address, the one place it is ever sent, so a knight can be given it to use through the gateway without seeing it. Left empty, it is sent nowhere."
+          : own
           ? `Its own is ${own}. Give another only where its page shows one (another region's): the key is only ever sent to the address you give.`
           : "The key is only ever sent to the address you give.",
     );
