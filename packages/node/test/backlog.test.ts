@@ -127,6 +127,13 @@ describe("work for idle knights, from your backlog", () => {
     expect(w.asked[0]!.content).toContain("=== its open issues\n#12 Outcomes from a template [enhancement]");
   });
 
+  test("started, it looks a few minutes after the node starts, not first an hour later: a node restarted often would put it off", async () => {
+    const w = world([PROPOSAL]);
+    w.runner.start(60_000, 5);
+    for (let i = 0; i < 200 && !w.store.tasks().length; i++) await Bun.sleep(5);
+    expect(w.store.tasks().map((t) => t.status)).toEqual(["proposed"]);
+  });
+
   test("an answer of none, or one that can't be read, proposes nothing; a budget past its cap or a gate over two lines is no proposal", async () => {
     for (const answer of ['{"none": "the plan is done"}', "I think the next step is the board view.", JSON.stringify({ title: "Big", goal: "A goal long enough to be a goal.", budgetUsd: 50 }), JSON.stringify({ title: "Odd", goal: "A goal long enough to be a goal.", gates: ["bun test &&\nrm -rf /"] })]) {
       const w = world([answer]);

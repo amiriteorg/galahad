@@ -15,7 +15,7 @@ import type { TeamService } from "./team.ts";
  * until you say otherwise: `galahad roundtable backlog off`.
  */
 
-export const BACKLOG = { everyMs: 60 * 60_000, perKnightMs: 24 * 3600_000, settleMs: 10 * 60_000, planChars: 30_000, taskUsd: 3, recent: 8, issues: 20 } as const;
+export const BACKLOG = { everyMs: 60 * 60_000, firstMs: 5 * 60_000, perKnightMs: 24 * 3600_000, settleMs: 10 * 60_000, planChars: 30_000, taskUsd: 3, recent: 8, issues: 20 } as const;
 const PLANS = ["docs/PLAN.md", "PLAN.md", "ROADMAP.md", "docs/ROADMAP.md", "TODO.md"];
 
 /** What a look reads in the knight's VM: the first plan its repository has, as last fetched, and its newest commits. */
@@ -113,6 +113,7 @@ export class BacklogRunner {
   private readonly now: () => number;
   private readonly chat: typeof chat;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private first: ReturnType<typeof setTimeout> | null = null;
   private looking: Promise<TeamTask | null> | null = null;
   /** Aborted when the runner stops: a look under way is cut off, not waited for (outcomes.ts, for why). */
   private readonly halt = new AbortController();
@@ -122,12 +123,19 @@ export class BacklogRunner {
     this.chat = o.chat ?? chat;
   }
 
-  start(everyMs: number = BACKLOG.everyMs): void {
+  /**
+   * A first look a few minutes after the node starts, then one an hour: a node restarted often (each deploy) would
+   * otherwise put its first look off for as long. When each knight was last looked at is kept, so none comes twice a day.
+   */
+  start(everyMs: number = BACKLOG.everyMs, firstMs: number = BACKLOG.firstMs): void {
+    this.first = setTimeout(() => void this.tick(), firstMs);
     this.timer = setInterval(() => void this.tick(), everyMs);
   }
 
   async stop(): Promise<void> {
+    if (this.first) clearTimeout(this.first);
     if (this.timer) clearInterval(this.timer);
+    this.first = null;
     this.timer = null;
     this.halt.abort();
     await this.looking?.catch(() => null);
