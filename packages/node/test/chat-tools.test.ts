@@ -491,6 +491,33 @@ describe("what he knows of you", () => {
       for (const m of (await listed()).proposed) await call("forget", { id: m.id }, admin);
     }
   });
+
+  test("an agent that may only chat (a community's, docs/BUZZ.md) is answered without what's yours: no fact you kept, no memory", async () => {
+    const admin = home.adminToken();
+    const fact = (await (await call("remember", { text: "Signs off with initials only.", tags: ["about-you"] }, admin)).json()) as { id: string };
+    const memory = (await (await call("remember", { text: "The staging server is called heron." }, admin)).json()) as { id: string };
+    try {
+      // Your own device, and an agent that may read the mind: both are answered with what he knows.
+      const { token: reader } = (await (await call("mintArm", { label: "reader" }, admin)).json()) as { token: string };
+      for (const token of [admin, reader]) {
+        script = [say("Heron.")];
+        await ask(token, "What is the staging server called?");
+        expect(bodies[0].messages[0].content).toContain("Signs off with initials only.");
+        expect(bodies[0].messages[0].content).toContain("The staging server is called heron.");
+      }
+      // One that may only chat can't read the mind, so his answers to it carry nothing of it either.
+      const { token: chatter } = (await (await call("mintArm", { label: "chatter", scopes: ["chat"] }, admin)).json()) as { token: string };
+      script = [say("I don't know.")];
+      const events = await ask(chatter, "What is the staging server called?");
+      const sent = JSON.stringify(bodies[0].messages);
+      expect(sent).not.toContain("Signs off");
+      expect(sent).not.toContain("heron");
+      // (His skills come as the archive's entries do.)
+      expect(events.some((e) => e.type === "archive")).toBe(false);
+    } finally {
+      for (const { id } of [fact, memory]) await call("forget", { id }, admin);
+    }
+  });
 });
 
 describe("one answer's tools", () => {

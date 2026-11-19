@@ -1407,10 +1407,13 @@ export function createApp(ctx: AppContext) {
     // for the last message would ask his memory about a command's output and change the prompt's beginning each
     // time, so that no provider could read it from its cache (input tokens are the bill).
     // (A call that asks to go without recalls nothing: a trial of your own work's, whose task the mind may hold the answer to.)
-    const recallFor = wantMemories === false ? undefined : request.coding ? request.messages.find((m) => m.role === "user") : asked.role === "user" ? asked : undefined;
-    const known = [aboutYouContext(), project ? projectContext(project) : null, recallFor ? memoryContext(about ?? said(recallFor), !!request.coding) : null].filter(Boolean).join("\n\n") || undefined;
+    // What's yours goes with answers to your own devices and to an agent that may read the mind itself: never to one
+    // that may only chat (an agent in a community others read, docs/BUZZ.md), whatever it asks about.
+    const yours = isOwner(p) || p.scopes.includes("mind:read");
+    const recallFor = !yours || wantMemories === false ? undefined : request.coding ? request.messages.find((m) => m.role === "user") : asked.role === "user" ? asked : undefined;
+    const known = yours ? [aboutYouContext(), project ? projectContext(project) : null, recallFor ? memoryContext(about ?? said(recallFor), !!request.coding) : null].filter(Boolean).join("\n\n") || undefined : undefined;
     // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
-    const fromArchive = (wantArchive ?? wantTools !== false) && asked.role === "user";
+    const fromArchive = yours && (wantArchive ?? wantTools !== false) && asked.role === "user";
     // What it is about, for the archive and his skills: the question, or `about` when the last message holds more (a room's answer).
     return { request, wantTools, kept, messages, asked, recallFor, project, known, fromArchive, attempt, quest, topic: about ?? said(asked), story, upTo };
   }
