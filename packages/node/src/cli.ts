@@ -66,6 +66,7 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     he owns it for days or weeks: plans it in its own room, gives those knights
                                     tasks on his own within its budget, reports daily, asks you there
   outcome pause|resume|stop <id>   stopping it stops its waiting work
+  outcome budget <id> <usd|+usd>   its budget: a new total, or +usd on top; one that had spent what it may goes on
   bilag                            receipts and invoices copied from your mail to Google Drive: how many, the latest,
                                     and what is left to set up (docs/BOOKS.md)
   bilag on [--folder Bilag]        a loop that copies each new mail's bilag on its own, woken by Gmail, Outlook or both
@@ -2134,7 +2135,21 @@ Evidence: galahad artifact ${i!.artifact}`));
         show(outcome);
         return;
       }
-      fail("usage: galahad outcome [ls | add | pause | resume | stop]");
+      if (sub === "budget") {
+        // A new total (7), or more on top of what it has (+2): one that had spent what it may goes on.
+        const [id, amount] = rest;
+        const raw = amount?.trim() ?? "";
+        const by = Number(raw.replace(/^\+/, ""));
+        if (!id || !/^\+?\d+(\.\d+)?$/.test(raw) || !Number.isFinite(by)) fail("usage: galahad outcome budget <id> <usd | +usd>   (a new total, or +usd on top of it)");
+        const { outcomes } = await admin.call<{ outcomes: TeamOutcome[] }>("teamOutcomes");
+        const now = outcomes.find((o) => o.id === id);
+        if (!now) fail(`no outcome ${id}: galahad outcome ls`);
+        const budgetUsd = Math.round((raw.startsWith("+") ? now!.budgetUsd + by : by) * 100) / 100;
+        const { outcome } = await admin.call<{ outcome: TeamOutcome }>("controlTeamOutcome", { id, action: "budget", budgetUsd });
+        show(outcome);
+        return;
+      }
+      fail("usage: galahad outcome [ls | add | pause | resume | stop | budget]");
       return;
     }
     case "roundtable":

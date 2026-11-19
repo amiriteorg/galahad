@@ -190,6 +190,30 @@ describe("an outcome he owns", () => {
     expect(w.outcomeNotices().some((n) => n.title === "Small: its budget is spent" && n.source === `outcome:${made.id}`)).toBe(true);
   });
 
+  test("its budget is yours to raise: one that had spent what it may goes on, he is told in its room, and looks again; never below what it spent", async () => {
+    const spent: TeamTaskRecord = { startedAt: 1, endedAt: 2, ended: "done", commands: 3, revisions: 0, spent: [{ role: "engineer", model: "stand-in/m", calls: 2, unknown: 0, input: 100_000, output: 10_000, cached: 0, reasoning: 0 }] };
+    // As above: $1.78 of $1.90 spent, and it ends; then a look that gives the rest of the work.
+    const w = world([{ calls: [give("ada", "Build it", 1.5)], tokens: { input: 10_000, output: 2_000 } }, { tokens: { input: 20_000, output: 4_000 } }, { calls: [give("ada", "Finish it", 1)] }], () => ({ verified: true, record: spent }));
+    const made = w.runner.create({ title: "Small", goal: "A small thing.", knights: ["ada"], budgetUsd: 1.9 });
+    await until(() => w.store.tasks(made.room)[0]?.status === "done");
+    await until(() => w.prompts.length === 2);
+    await w.runner.settled();
+    await w.runner.tick();
+    await until(() => w.store.outcome(made.id)!.status === "spent");
+    // Below what it has spent: refused, saying how much that is.
+    expect(() => w.runner.control({ id: made.id, action: "budget", budgetUsd: 1 })).toThrow("its budget can't go below $1.78");
+    // Raised by $2: it goes on, its end undone, said in its room, and he looks again and gives the rest.
+    const raised = w.runner.control({ id: made.id, action: "budget", budgetUsd: 3.9 });
+    expect(raised).toMatchObject({ status: "active", budgetUsd: 3.9, ended: null });
+    expect(w.store.messages(made.room).some((m) => m.text.startsWith("Your liege set this outcome's budget to $3.90: $2.12 is left. It had spent what it might; I take it up again"))).toBe(true);
+    await until(() => w.store.tasks(made.room).some((t) => t.title === "Finish it"));
+    // A paused one stays paused at its new budget; one that ended stays ended.
+    w.runner.control({ id: made.id, action: "pause" });
+    expect(w.runner.control({ id: made.id, action: "budget", budgetUsd: 10 })).toMatchObject({ status: "paused", budgetUsd: 10 });
+    w.runner.control({ id: made.id, action: "stop" });
+    expect(() => w.runner.control({ id: made.id, action: "budget", budgetUsd: 20 })).toThrow("it has ended (stopped)");
+  });
+
   test("a task of it ending brings a look; when nothing changed there is none", async () => {
     let release!: () => void;
     const w = world([{ calls: [give("ada", "One step", 1)] }, { text: "" }], undefined, new Promise<void>((go) => (release = go)));

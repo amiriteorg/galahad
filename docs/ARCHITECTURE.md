@@ -324,6 +324,7 @@ An outcome is a result you give Galahad to own for days or weeks ("port the app 
 | **On his own, within its budget** | Your ruling of 18 November: he gives its knights tasks himself. Each check is the runner's, not the model's: only the knights named, a task's budget at most $25 and never more than is left, at most six waiting or running at once, at most thirty a day. Each task is a step of the outcome (`outcome` on the task), gated and reviewed in its knight's VM as any task is; shipping, and anything outward, still asks you on a card. |
 | **Its spend** | What its tasks' runs cost (their records) and his looks cost, at your prices, plus what waiting tasks' budgets hold. Under $0.25 left with nothing running, it has spent what it may: it ends, says so in its room and your Inbox. |
 | **Yours to stop** | Pause holds it; stop stops its waiting work and ends it (`controlTeamOutcome`, the room's bar in the app, `galahad outcome pause|resume|stop`). Its daily report and its end are told on your phone in fixed words ("Galahad: an outcome of yours"); a question as "this needs you". |
+| **Yours to fund** | Its budget is yours to set anew at any time (`controlTeamOutcome` with `budget`, **Budget…** on the room's bar, `galahad outcome budget <id> <usd|+usd>`), never below what it has spent and holds. One that had spent what it may goes on (its end undone), he says so in its room and looks again at once; a paused one stays paused at its new budget, and one that ended stays ended. |
 
 ## 7. Placement: using every body well ✅
 

@@ -142,6 +142,7 @@ export class OutcomeRunner {
     const outcome = this.o.store.outcome(input.id);
     if (!outcome) throw new OutcomeError(404, `no outcome ${input.id}`);
     if (outcome.status === "done" || outcome.status === "stopped") throw new OutcomeError(409, `it has ended (${outcome.status})`);
+    if (input.action === "budget") return this.rebudget(outcome, input.budgetUsd);
     const status = input.action === "pause" ? "paused" : input.action === "resume" ? "active" : "stopped";
     const next = this.o.store.putOutcome({ ...outcome, status, ...(status === "stopped" ? { ended: "You stopped it." } : {}) });
     // Stopping it stops its work: what waits or runs of it is stopped as any task of yours is.
@@ -155,6 +156,26 @@ export class OutcomeRunner {
       }
     }
     if (status === "active") void this.tick();
+    return this.view(next);
+  }
+
+  /**
+   * Its budget, set by you: never below what it has spent and what its waiting work holds. One that had spent what it
+   * may goes on (its end undone), and he is told in its room; a paused one stays paused, at its new budget.
+   */
+  private rebudget(outcome: StoredOutcome, budgetUsd: number): TeamOutcome {
+    const at = this.view(outcome);
+    const floor = at.spentUsd + at.committedUsd;
+    if (budgetUsd < floor) throw new OutcomeError(400, `it has spent ${usdLabel(at.spentUsd)}${at.committedUsd ? ` and holds ${usdLabel(at.committedUsd)} for waiting work` : ""}: its budget can't go below ${usdLabel(floor)}`);
+    const reopened = outcome.status === "spent";
+    const next = this.o.store.putOutcome({ ...outcome, budgetUsd, ...(reopened ? { status: "active" as const, ended: null } : {}) });
+    const left = budgetUsd - floor;
+    this.note(next, `Your liege set this outcome's budget to ${usdLabel(budgetUsd)}: ${usdLabel(left)} is left.${reopened ? " It had spent what it might; I take it up again from where it stood." : ""}`);
+    // A budget set anew is a reason to look, as your words are: what more it may do has changed.
+    if (next.status === "active") {
+      if (this.looking.has(next.id)) this.again.add(next.id);
+      else void this.look(next.id, "your liege set its budget anew").catch((error) => this.o.log(`outcome ${next.id}: ${(error as Error).message}`));
+    }
     return this.view(next);
   }
 

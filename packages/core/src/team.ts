@@ -163,7 +163,11 @@ export const TeamOutcomeInput = z.strictObject({
   tz: z.string().max(64).optional(),
 });
 export type TeamOutcomeInput = z.infer<typeof TeamOutcomeInput>;
-export const TeamOutcomeControlInput = z.strictObject({ id: TeamOutcomeId, action: z.enum(["pause", "resume", "stop"]) });
+export const TeamOutcomeControlInput = z.union([
+  z.strictObject({ id: TeamOutcomeId, action: z.enum(["pause", "resume", "stop"]) }),
+  /** Its budget, raised (or lowered, never below what it has spent and holds): one that had spent what it may goes on. */
+  z.strictObject({ id: TeamOutcomeId, action: z.literal("budget"), budgetUsd: z.number().min(0.5).max(1000) }),
+]);
 export type TeamOutcomeControlInput = z.infer<typeof TeamOutcomeControlInput>;
 
 export type TeamOutcomeStatus = "active" | "paused" | "done" | "stopped" | "spent";
