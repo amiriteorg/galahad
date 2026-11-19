@@ -137,7 +137,7 @@ export const PHASING = {
     { state: "building", what: "Galahad writes first", line: "Ship it and give again from a task's card, and \"tell me when\"; next, what happened while you were away." },
     { state: "building", what: "Count the north star", line: "Each time you step in on a knight's task, counted per task done and verified; next, in the trials." },
     { state: "building", what: "A knight that keeps the books", line: "Bilag from your mail to Drive on their own, and drafts in Dinero; booking always asks." },
-    { state: "building", what: "Chat apps", line: "Telegram is built; next, its rooms and files, then Slack." },
+    { state: "building", what: "Chat apps", line: "Telegram and Buzz communities are built; next, Telegram's rooms and files, then Slack." },
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Lean context", line: "Output a later run or edit made stale becomes a line; next, errors since fixed." },
     { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing; next, the test written first." },
