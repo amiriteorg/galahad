@@ -62,6 +62,27 @@ describe("an audit's answer", () => {
   });
 });
 
+describe("what an audit is told of the whole run, not only since the last look", () => {
+  test("how many commands in how many minutes, and the files its commands named most: reading the same ones again and again shows", () => {
+    const reads = (path: string, n: number) => Array.from({ length: n }, (_, i) => ({ command: `sed -n '${i * 40 + 1},${i * 40 + 40}p' ${path}`, exitCode: 0, excerpt: "…" }));
+    const steps = [...reads("packages/node/src/ci-watch.ts", 7), ...reads("packages/node/src/ci-back.ts", 5), { command: "grep -n look packages/node/src/ci-watch.ts packages/node/src/ci-back.ts", exitCode: 0, excerpt: "…" }, ...reads("docs/PLAN.md", 2)];
+    const asked = auditQuestion({ goal: "g", plan: "p", gates: [], steps: steps.slice(-3), whole: { steps, minutes: 46 } });
+    expect(asked).toContain("Since it began: 15 commands in 46 minutes.");
+    // A file named in one command is counted once in it; a file named only twice isn't worth a line.
+    expect(asked).toContain("The files its commands named most: packages/node/src/ci-watch.ts (in 8 of them), packages/node/src/ci-back.ts (in 6).");
+    expect(asked).not.toContain("docs/PLAN.md (in");
+    // Going round in circles is said in words it can't miss.
+    expect(asked).toContain("reading the same files again and again while nothing changes is going round in circles");
+  });
+
+  test("nothing named more than a few times: no list of files, only the count", () => {
+    const steps = [{ command: "cat a/b.ts", exitCode: 0, excerpt: "" }, { command: "bun test a/b.test.ts", exitCode: 1, excerpt: "" }];
+    const asked = auditQuestion({ goal: "g", plan: "p", gates: [], steps, whole: { steps, minutes: 0.4 } });
+    expect(asked).toContain("Since it began: 2 commands in under a minute.");
+    expect(asked).not.toContain("named most");
+  });
+});
+
 describe("the engineer's own loop, audited", () => {
   test(`every ${AUDIT_EVERY.steps} commands it is looked at: on its task and closer, the work goes on`, async () => {
     const q = engineer({ engineer: [...commands(25), "DONE\nThe parser is written and tested."], reviewer: ["ON\nIt is writing the parser.", "PASS\nIt holds."] }, { audit: true, gates: ["true"], evidence: ["git status --short"] });
@@ -69,7 +90,7 @@ describe("the engineer's own loop, audited", () => {
     expect(outcome.status).toBe("done");
     expect(q.audits()).toEqual([{ type: "audit", step: AUDIT_EVERY.steps, verdict: "on", note: "It is writing the parser.", model: "test/reviewer" }]);
     const asked = q.asked()[0]!;
-    for (const part of ["Its task: write the parser", "Done when: its test passes.", "1. true", "$ echo step 1", `$ echo step ${AUDIT_EVERY.steps}`, "M parser.ts"]) expect(asked).toContain(part);
+    for (const part of ["Its task: write the parser", "Done when: its test passes.", "1. true", "$ echo step 1", `$ echo step ${AUDIT_EVERY.steps}`, "M parser.ts", `Since it began: ${AUDIT_EVERY.steps} commands in under a minute.`]) expect(asked).toContain(part);
     expect(asked).not.toContain(`echo step ${AUDIT_EVERY.steps + 1}`);
   });
 

@@ -542,7 +542,7 @@ export type AuditVerdict = "on" | "steer" | "stop" | "unread";
  * The question an audit asks (QuestOptions.audit), whole: not whether the work is done (its gates and its reviewer say
  * that), but whether it is still on its task and closer to finishing it than when it was last looked at.
  */
-export function auditQuestion(input: { goal: string; plan: string; gates: string[]; steps: Step[]; evidence?: string; last?: { verdict: AuditVerdict; note: string } | null }): string {
+export function auditQuestion(input: { goal: string; plan: string; gates: string[]; steps: Step[]; evidence?: string; last?: { verdict: AuditVerdict; note: string } | null; whole?: { steps: Step[]; minutes: number } }): string {
   const since = input.last ? "the last audit" : "it began";
   return `You audit work that is still going on, independently: whether it is finished is for its gates and its reviewer to say later. Say only whether it is still working on its task, and closer to finishing it than ${input.last ? "at the last audit" : "when it began"}.
 
@@ -550,14 +550,33 @@ Its task: ${input.goal}
 
 Its plan:
 ${input.plan}
-${input.gates.length ? `\nIts gates, commands that must pass when it is done:\n${input.gates.map((g, i) => `${i + 1}. ${g}`).join("\n")}\n` : ""}
+${input.gates.length ? `\nIts gates, commands that must pass when it is done:\n${input.gates.map((g, i) => `${i + 1}. ${g}`).join("\n")}\n` : ""}${input.whole ? `\n${wholeRun(input.whole)}\n` : ""}
 What it has run since ${since} (exit code and an excerpt of the output, latest last):
 ${input.steps.map((s, i) => `${i + 1}. $ ${s.command}\n   exit ${s.exitCode}\n${s.excerpt.replace(/^/gm, "   ")}`).join("\n") || "(nothing)"}
 ${input.evidence?.trim() ? `\nWhat these commands print now, where it works:\n${input.evidence.trim()}\n` : ""}${input.last ? `\nAt the last audit: ${input.last.verdict.toUpperCase()}${input.last.note ? `: ${input.last.note}` : ""}\n` : ""}
 Reply with one word on the first line:
 ON if it is working on its task and is closer to finishing it.
-STEER if it has drifted from its task, or is going round in circles: then, on the next lines, tell it in a sentence or two what to do next.
+STEER if it has drifted from its task, or is going round in circles (reading the same files again and again while nothing changes is going round in circles): then, on the next lines, tell it in a sentence or two what to do next.
 STOP if it isn't getting closer and a word won't change that (it is stuck, or the task can't be done where it is): then say why.`;
+}
+
+/** A file named in this many of a run's commands is said to an audit; at most this many such files are. */
+const NAMED_OFTEN = 5;
+const NAMED_SHOWN = 4;
+/** A path in a command (one with a directory and an extension: `packages/node/src/ci-watch.ts`, `/work/x/a.ts`). */
+const PATH = /(?<![\w.\/-])(\/?(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z0-9]{1,8})(?![\w\/-])/g;
+
+/**
+ * What an audit is told of the whole run, which it can't see from the commands since its last look: how many commands
+ * in how long, and the files its commands named most (the first real outcome's knight read the same two files in 44 of
+ * 82 commands, writing nothing, while four audits said it was closer to done).
+ */
+function wholeRun(whole: { steps: Step[]; minutes: number }): string {
+  const named = new Map<string, number>();
+  for (const step of whole.steps) for (const path of new Set([...step.command.matchAll(PATH)].map((m) => m[1]!))) named.set(path, (named.get(path) ?? 0) + 1);
+  const most = [...named].filter(([, n]) => n >= NAMED_OFTEN).sort((a, b) => b[1] - a[1]).slice(0, NAMED_SHOWN);
+  const time = whole.minutes < 1 ? "under a minute" : `${Math.round(whole.minutes)} minute${Math.round(whole.minutes) === 1 ? "" : "s"}`;
+  return `Since it began: ${whole.steps.length} command${whole.steps.length === 1 ? "" : "s"} in ${time}.${most.length ? ` The files its commands named most: ${most.map(([path, n], i) => `${path} (in ${n}${i === 0 ? " of them" : ""})`).join(", ")}.` : ""}`;
 }
 
 /**
@@ -951,6 +970,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
 
   /** The audits so far (o.audit): when and at which step the last was, what it said, and whether it steered. */
   const audits = { at: clock(), step: 0, last: null as { verdict: AuditVerdict; note: string } | null, steered: false };
+  /** When the work began, for what an audit is told of the whole run. */
+  const began = clock();
   /** Whether an audit is due (o.audit): AUDIT_EVERY's commands since the last, or its minutes. */
   const auditDue = (): boolean => o.audit && (steps - audits.step >= AUDIT_EVERY.steps || clock() - audits.at >= AUDIT_EVERY.minutes * 60_000);
   /**
@@ -959,7 +980,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
    * repository's lock from under it). A steer after a steer is a stop: the word didn't bring the work closer. What it
    * found is said, whatever it was.
    */
-  const audit = async (since: Step[], look = true): Promise<{ verdict: AuditVerdict; note: string }> => {
+  const audit = async (since: Step[], look = true, whole: Step[] = since): Promise<{ verdict: AuditVerdict; note: string }> => {
     audits.at = clock();
     audits.step = steps;
     let evidence = "";
@@ -974,7 +995,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     let found: { verdict: AuditVerdict; note: string };
     let model = "";
     try {
-      const reply = await ask("reviewer", [{ role: "user", content: auditQuestion({ goal: o.goal, plan, gates: gates.map((g) => g.command), steps: since.slice(-2 * AUDIT_EVERY.steps), evidence, last: audits.last }) }]);
+      const reply = await ask("reviewer", [{ role: "user", content: auditQuestion({ goal: o.goal, plan, gates: gates.map((g) => g.command), steps: since.slice(-2 * AUDIT_EVERY.steps), evidence, last: audits.last, whole: { steps: whole, minutes: (clock() - began) / 60_000 } }) }]);
       model = reply.model;
       found = readAudit(reply.text) ?? { verdict: "unread", note: `Its answer couldn't be read; it began: ${clip(redact(reply.text.trim()), 200, 0)}` };
     } catch (error) {
@@ -1020,7 +1041,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     const auditNow = async (): Promise<boolean> => {
       await deps.alive?.();
       if (!auditDue()) return false;
-      const found = await audit(trail.slice(auditedAt), false);
+      const found = await audit(trail.slice(auditedAt), false, trail);
       auditedAt = trail.length;
       if (found.verdict !== "stop" && !(found.verdict === "steer" && (live ?? session))) return false;
       audited = found;
@@ -1254,7 +1275,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         break;
       }
       if (auditDue()) {
-        const found = await audit(trail.slice(auditedAt));
+        const found = await audit(trail.slice(auditedAt), true, trail);
         auditedAt = trail.length;
         if (found.verdict === "stop") {
           auditStop = found.note;
