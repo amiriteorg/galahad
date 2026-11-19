@@ -47,8 +47,10 @@ The Roundtable (your knights beside Galahad, none beneath another: each with a l
 of its own; "roundtable", "squires" and "team" are the same command)
   roundtable                        knights, rooms and tasks (those Galahad seated say so:
                                     ask him in chat to seat and brief a knight)
-  roundtable add <id> --name <name> [--instructions text] [--role planner] [--agent native|opencode|hermes|claude|codex]
-                                    [--repo https://github.com/owner/repo] [--limit daily-turns]
+  roundtable add <id> --name <name> [--instructions text] [--role planner] [--agent native|opencode|hermes|claude|codex|acp]
+                                    [--acp "<command>"] [--repo https://github.com/owner/repo] [--limit daily-turns]
+                                    --agent acp runs any agent that speaks the Agent Client Protocol, started in its VM
+                                    by the command you name (--acp "goose acp", "gemini --acp", "opencode acp")
   roundtable models <id> [provider/model…] [--role]
                                     a knight's own models, in place of its role's: its conversations, its tasks' work
                                     and its harness run on them, in order (a local model on whichever node serves it);
@@ -548,6 +550,8 @@ async function main(): Promise<void> {
       // (Sensitive mode for a task alone: its knight's own models, or those named with --models.)
       sensitive: { type: "boolean" },
       models: { type: "string" },
+      // (The command that starts a knight's ACP agent: roundtable add --agent acp --acp "goose acp".)
+      acp: { type: "string" },
       tag: { type: "string", multiple: true },
       reason: { type: "string" },
       providers: { type: "string" },

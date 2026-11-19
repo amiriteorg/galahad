@@ -278,7 +278,8 @@ export class TeamStore {
   }
   saveTeammate(raw: TeammateInput): Teammate {
     const input = teamInput(TeammateInput, raw);
-    teamText([input.name, input.instructions, input.role, input.repository].filter(Boolean).join("\n"));
+    // (Its ACP agent's command too: a key named on a command line would be kept here, in the clear.)
+    teamText([input.name, input.instructions, input.role, input.repository, input.acp].filter(Boolean).join("\n"));
     if (this.record(input.id)?.removedAt !== undefined) throw new TeamError(409, "That handle belonged to a knight that was removed. Its history stays its own: choose another handle.");
     const previous = this.teammate(input.id);
     // A VM's repository is not changed or taken away under the work that is in it. One that has none may be given its first: nothing there to orphan.
@@ -292,7 +293,13 @@ export class TeamStore {
     // Sensitive mode holds it to models of its own: never on without them, and never let go of by taking them away.
     const sensitive = input.sensitive ?? previous?.sensitive ?? false;
     if (sensitive && !models?.length) throw new TeamError(400, previous?.sensitive && input.sensitive === undefined ? `${previous.name} is in sensitive mode, held to its own models: choose others, or turn sensitive mode off first.` : "Sensitive mode holds a knight to models of its own: choose them first.");
-    return this.putTeammate({ id: input.id, name: input.name, instructions: input.instructions ?? previous?.instructions ?? "", role: input.role ?? previous?.role ?? "engineer", ...(models ? { models } : {}), ...(sensitive ? { sensitive: true } : {}), harness: input.harness ?? previous?.harness ?? "native", enabled: input.enabled ?? previous?.enabled ?? true, dailyTurns: input.dailyTurns ?? previous?.dailyTurns ?? DAILY_TURNS, repository: input.repository === undefined ? previous?.repository ?? null : input.repository, turnsToday: this.turns(input.id), workspaceNode: previous?.workspaceNode ?? null, workspace: previous?.workspace ?? null, memory: previous?.memory ?? "", avatar: input.avatar === undefined ? previous?.avatar ?? defaultAvatar(input.id) : input.avatar ?? defaultAvatar(input.id), createdBy: previous?.createdBy ?? TEAM_OWNER, instructionsBy: input.instructions === undefined || input.instructions === previous?.instructions ? previous?.instructionsBy ?? TEAM_OWNER : TEAM_OWNER, createdAt: previous?.createdAt ?? at, updatedAt: at });
+    // An ACP agent of yours (harness acp) is started by the command you named: kept until you name another or none.
+    const harness = input.harness ?? previous?.harness ?? "native";
+    const acp = input.acp === undefined ? previous?.acp : input.acp ?? undefined;
+    if (harness === "acp" && !acp) throw new TeamError(400, "Name the command that starts its ACP agent in its VM, e.g. goose acp or gemini --acp.");
+    // (It calls the models you set it up with, which sensitive mode can't hold it to.)
+    if (harness === "acp" && sensitive) throw new TeamError(400, "A knight in sensitive mode works on Galahad's own harness, OpenCode, Hermes, Claude Code or Codex: an ACP agent of yours calls the models you set it up with, which Galahad can't hold it to.");
+    return this.putTeammate({ id: input.id, name: input.name, instructions: input.instructions ?? previous?.instructions ?? "", role: input.role ?? previous?.role ?? "engineer", ...(models ? { models } : {}), ...(sensitive ? { sensitive: true } : {}), harness, ...(acp ? { acp } : {}), enabled: input.enabled ?? previous?.enabled ?? true, dailyTurns: input.dailyTurns ?? previous?.dailyTurns ?? DAILY_TURNS, repository: input.repository === undefined ? previous?.repository ?? null : input.repository, turnsToday: this.turns(input.id), workspaceNode: previous?.workspaceNode ?? null, workspace: previous?.workspace ?? null, memory: previous?.memory ?? "", avatar: input.avatar === undefined ? previous?.avatar ?? defaultAvatar(input.id) : input.avatar ?? defaultAvatar(input.id), createdBy: previous?.createdBy ?? TEAM_OWNER, instructionsBy: input.instructions === undefined || input.instructions === previous?.instructions ? previous?.instructionsBy ?? TEAM_OWNER : TEAM_OWNER, createdAt: previous?.createdAt ?? at, updatedAt: at });
   }
   /** How many more workers Galahad may make for himself: on this node in all, and in the day now ending. */
   private spare(all: Teammate[] = this.teammates()): TeamOverview["spare"] {
@@ -612,11 +619,13 @@ export class TeamStore {
       // Sensitive mode (heldModels): the models you named for it; work a knight in sensitive mode gives is held to its
       // models, whoever does it; and one in it is given none held to others.
       const models = input.models ?? (by.teammate ? heldModels(this.requireTeammate(by.teammate)) ?? undefined : undefined);
+      const assignee = this.requireTeammate(input.assignee);
       try {
-        heldModels(this.requireTeammate(input.assignee), { models });
+        heldModels(assignee, { models });
       } catch (error) {
         throw new TeamError(400, (error as Error).message);
       }
+      if (models && assignee.harness === "acp") throw new TeamError(400, `${assignee.name} works in an ACP agent of yours, which calls the models you set it up with: a task in sensitive mode goes to a knight on Galahad's own harness, OpenCode, Hermes, Claude Code or Codex.`);
       const chain = by.chainId ?? this.chain(room);
       // A knight's task is proposed to you: it is written down where it was asked for, and waits for your approval. So
       // is the work Galahad offers an idle knight from your backlog (backlog.ts): a proposal isn't a give.

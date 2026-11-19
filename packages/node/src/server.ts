@@ -114,6 +114,7 @@ import {
 import type { McpIndex } from "./mcp-index.ts";
 import {
   AGENTS,
+  acpDriver,
   CATALOG,
   ENGRAM_PROBE,
   ENGRAM_VERSION,
@@ -2605,7 +2606,8 @@ export function createApp(ctx: AppContext) {
       // Each harness: is it installed there, and what would it run on (a vendor's tool: its own sign-in, asked of
       // the tool itself and never read; then, or otherwise, a roster model through the gateway).
       const harnesses: { id: string; ready: boolean; on?: string; reason?: string }[] = [{ id: "native", ready: true }];
-      for (const [id, driver] of Object.entries(AGENTS)) {
+      // (And the ACP agent you named it, when you named one: asked to answer ACP's initialize in the VM.)
+      for (const [id, driver] of [...Object.entries(AGENTS), ...(knight.acp ? [["acp", acpDriver(knight.acp)] as const] : [])]) {
         if (busy || workspace?.status !== "running" || !member.enabled) {
           harnesses.push({ id, ready: false, reason: busy ? "Readiness is checked when this knight is idle" : "Install this harness in the knight's VM" });
           continue;

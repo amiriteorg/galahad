@@ -70,6 +70,12 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
   const instructions = h("textarea", { class: "input", rows: 6, maxlength: 8000, placeholder: "Their job, how they work, and when to ask you." }, existing?.instructions ?? "");
   const repository = h("input", { class: "input mono", type: "url", maxlength: 300, value: existing?.repository ?? "", placeholder: "https://github.com/owner/repository", autocomplete: "off" });
   const harness = h("select", { class: "select" }, ...Object.entries(HARNESS).map(([value, label]) => h("option", { value, selected: value === (existing?.harness ?? "native") }, label)));
+  // Any agent that speaks the Agent Client Protocol: the command that starts it in its ACP mode, in the knight's VM.
+  const acp = h("input", { class: "input mono", maxlength: 300, value: existing?.acp ?? "", placeholder: "goose acp", autocomplete: "off", autocorrect: "off", spellcheck: "false" });
+  const acpField = field("Its ACP agent's command", acp, { hint: "What starts it in its ACP mode in the VM, e.g. goose acp, gemini --acp or opencode acp. It runs as you set it up there (its own sign-in or configuration), with the role's model offered through the gateway as OPENAI_BASE_URL." });
+  const showAcp = () => { acpField.hidden = harness.value !== "acp"; };
+  harness.addEventListener("change", showAcp);
+  showAcp();
   const names = knightRoles(known, existing?.role);
   const role = h("select", { class: "select" }, ...names.map((value) => h("option", { value, selected: value === (existing?.role ?? "engineer") }, `${value}${known[value] && !known[value]?.models.length ? " · no model configured" : ""}`)));
   // What the chosen role's models are, under it, as it changes.
@@ -107,13 +113,15 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
     field("Job and instructions", instructions, { hint: "No keys or passwords. Those belong in the vault." }),
     field("Repository (optional)", repository, { hint: "An HTTPS GitHub repository. Tasks get their own worktrees in the VM." }),
     h("div", { class: "team-form-grid" }, field("Coding harness", harness, { hint: "Selecting a harness doesn't install it or sign it in: that is yours to do, in the knight's VM. Workspace checks show what's ready." }), field("Model role", role, { hint: roleHint })),
+    acpField,
     offered.length || own.length ? h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Models"), modelList, h("label", { class: "row" }, sensitive, h("span", {}, "Sensitive mode: only these models, for everything it does")), h("p", { class: "tiny subtle" }, modelsHint, ". A local model runs on the node that serves it, for a knight on Galahad's own harness: a vendor's coding tool can't use one.")) : null,
     field("Daily turn and job budget", dailyTurns, { hint: "Maximum reply turns and jobs per day, not a money limit. Zero holds new work." }),
     h("label", { class: "row" }, enabled, h("span", {}, "Enabled")),
   ], existing ? "Save knight" : "Create knight", async () => {
     if (findSecrets(instructions.value).length) throw new Error("Instructions contain something that looks like a secret. Keep it in the vault.");
     if (sensitive.checked && !own.length) throw new Error("Sensitive mode holds a knight to models of its own: choose them first.");
-    await ctx.api.post("/api/team/teammates", { id: id.value, name: name.value.trim(), avatar: appearance.value(), instructions: instructions.value, repository: repository.value.trim() || null, harness: harness.value, role: role.value, models: own.length ? own : null, sensitive: sensitive.checked, enabled: enabled.checked, dailyTurns: Number(dailyTurns.value) });
+    if (harness.value === "acp" && !acp.value.trim()) throw new Error("Name the command that starts its ACP agent, e.g. goose acp.");
+    await ctx.api.post("/api/team/teammates", { id: id.value, name: name.value.trim(), avatar: appearance.value(), instructions: instructions.value, repository: repository.value.trim() || null, harness: harness.value, ...(harness.value === "acp" ? { acp: acp.value.trim() } : {}), role: role.value, models: own.length ? own : null, sensitive: sensitive.checked, enabled: enabled.checked, dailyTurns: Number(dailyTurns.value) });
     toast(existing ? "Knight saved" : "Knight created");
   });
 }

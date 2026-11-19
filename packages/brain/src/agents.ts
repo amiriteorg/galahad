@@ -2,8 +2,10 @@ import { planOf } from "./providers.ts";
 import { type ExecResult, randomId, redact } from "@galahad/core";
 import { agentCleanupCommand, agentProcessCommand, AGENT_PROCESS_PY } from "./agent-process.ts";
 import { ENGRAM_ENV, engramArgv } from "./engram.ts";
+import { acpDriver } from "./acp.ts";
 import { HERMES } from "./hermes.ts";
 import { CLAUDE, CODEX } from "./vendor-cli.ts";
+export { ACP_BRIDGE, ACP_PROBE, acpDriver } from "./acp.ts";
 export { HERMES } from "./hermes.ts";
 export { CLAUDE, CODEX } from "./vendor-cli.ts";
 export { agentCleanupCommand } from "./agent-process.ts";
@@ -60,6 +62,11 @@ export interface AgentDriver {
    * command to sign in; `roster`: what kind of model it runs on through the gateway instead.
    */
   signIn?: { read(stdout: string): { signedIn: boolean; method?: string }; login: string; roster: string };
+  /**
+   * It runs as you set it up in the sandbox (an ACP agent you named: acp.ts), its own sign-in or configuration, with the
+   * role's model offered through the gateway for it to use: with none to offer, it runs on its setup alone.
+   */
+  ownSetup?: boolean;
   /**
    * Files written before the first run (absolute path → content): every model it may fall back to. `engram`:
    * the project of the VM's notes store (engram.ts) when the run is given it; the tool then starts the store's
@@ -157,6 +164,12 @@ export const OPENCODE: AgentDriver = {
 };
 
 export const AGENTS: Record<string, AgentDriver> = { opencode: OPENCODE, hermes: HERMES, claude: CLAUDE, codex: CODEX };
+
+/** A knight's harness driver: one of AGENTS, or (harness `acp`) one for the ACP agent its command starts. */
+export function driverFor(harness: string, acp?: string | null): AgentDriver | undefined {
+  if (harness === "acp") return acp ? acpDriver(acp) : undefined;
+  return AGENTS[harness];
+}
 
 export interface AgentRunDeps {
   exec(command: string, timeoutSec: number): Promise<ExecResult>;

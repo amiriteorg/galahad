@@ -120,6 +120,7 @@ With the switch on, a task first asks its VM for the binary (`/opt/engram/bin/en
 | `hermes` | One stdio server in the ACP session's `mcpServers`, with its environment inside the entry. If Hermes refuses a session that names a server, the session is opened without it and the run says it has no notes store. |
 | `claude` | `--mcp-config /work/.agent/engram-mcp.json`, a file Galahad writes beside its bridge. |
 | `codex` | Three `-c mcp_servers.engram.*` overrides, the same way its gateway provider is given. |
+| `acp` | As for Hermes: one stdio server in the ACP session's `mcpServers`; an agent that refuses it runs without, and the run says so. |
 
 Each tool starts the server itself, as a child, for the length of its run: `engram mcp --tools=mem_search,mem_get_observation,mem_save,mem_update --project <name>`. Four tools: search (previews), read one note whole, save, revise. Nothing that deletes, merges, judges a conflict, keeps a prompt or writes a session's summary is offered; the working notes above stay the handover of record.
 
@@ -254,6 +255,7 @@ Its engineering harness is a separate choice:
 | `hermes` | Owner-installed Hermes and Python 3 in the VM; `hermes acp --check` must succeed. Uses ACP sessions and a dedicated persistent `/work/.hermes` profile, with a keyed OpenAI-compatible model on the knight's role. |
 | `claude` | Owner-installed Claude Code in the VM, as Anthropic publishes it (`claude --version` must succeed), and Python 3. Runs on its own sign-in in that VM when it has one; otherwise on a keyed Anthropic-API model of the knight's role through the gateway. |
 | `codex` | Owner-installed Codex CLI in the VM, as OpenAI publishes it (`codex --version` must succeed), and Python 3. Runs on its own sign-in in that VM when it has one; otherwise on a keyed OpenAI-compatible model of the knight's role through the gateway, on an endpoint that speaks the Responses API. |
+| `acp` | **Any agent that speaks the Agent Client Protocol**, owner-installed in the VM, and Python 3: you name the command that starts it in its ACP mode (`galahad roundtable add <id> --agent acp --acp "goose acp"`, or **Any ACP agent** in its editor). Read from their own help on 19 November 2026: `goose acp`, `gemini --acp`, `opencode acp`, `hermes acp`. Its readiness is asked of it in the VM (it is started and must answer ACP's `initialize`). It runs as you set it up there, on its own sign-in or configuration in the VM's home, with the role's first model offered through the gateway in the variables most agents read (`OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`) and by name where it lists its models. What it asks permission for is given, once where it offers that (the VM is the boundary); a session it can load again is taken up by the next run. It is never given work in sensitive mode: its calls go where you set it up to. |
 
 With the notes store turned on, each of these is also given Engram in its VM, in its own way: [A notes store the harness can ask](#a-notes-store-the-harness-can-ask-engram).
 

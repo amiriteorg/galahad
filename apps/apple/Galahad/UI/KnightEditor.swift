@@ -17,6 +17,8 @@ struct KnightEditor: View {
     @State private var instructions: String
     @State private var repository: String
     @State private var harness: String
+    /// The command that starts its ACP agent in its VM (harness `acp`).
+    @State private var acp: String
     @State private var role: String
     @State private var dailyTurns: Int
     @State private var enabled: Bool
@@ -42,6 +44,7 @@ struct KnightEditor: View {
         _instructions = State(initialValue: existing?.instructions ?? "")
         _repository = State(initialValue: existing?.repository ?? "")
         _harness = State(initialValue: existing?.harness ?? "native")
+        _acp = State(initialValue: existing?.acp ?? "")
         _role = State(initialValue: existing?.role ?? "engineer")
         _own = State(initialValue: existing?.models ?? [])
         _sensitive = State(initialValue: existing?.sensitive ?? false)
@@ -60,6 +63,7 @@ struct KnightEditor: View {
         if !Knights.isHandle(handle) { return "A handle is a lowercase letter, then at most 31 lowercase letters, digits or hyphens." }
         if existing == nil, taken.contains(handle) { return "The handle \(handle) is taken. Choose another." }
         if sensitive, own.isEmpty { return "Sensitive mode holds a knight to models of its own: choose them first." }
+        if harness == "acp", acp.trimmingCharacters(in: .whitespaces).isEmpty { return "Name the command that starts its ACP agent, e.g. goose acp." }
         return nil
     }
 
@@ -151,6 +155,14 @@ struct KnightEditor: View {
                     Picker("Harness", selection: $harness) {
                         ForEach(Knights.harnesses, id: \.id) { each in Text(each.name).tag(each.id) }
                     }
+                    if harness == "acp" {
+                        // Any agent that speaks the Agent Client Protocol: what starts it in its ACP mode, in the VM.
+                        FormField("Its ACP agent's command, e.g. goose acp", text: $acp)
+                            .font(.body.monospaced())
+                            .capitals(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityIdentifier("knight-acp")
+                    }
                     Picker("Model role", selection: $role) {
                         ForEach(Knights.roles(roster: roles ?? [:], current: existing?.role), id: \.self) { each in
                             Text(roles?[each]?.models.isEmpty == true ? "\(each) · no model yet" : each).tag(each)
@@ -160,7 +172,7 @@ struct KnightEditor: View {
                     Text("How it works")
                 } footer: {
                     // (A device that may not read the roster is told only where the role's models come from.)
-                    Text("Choosing a harness doesn't install it or sign it in: that is done in the knight's VM. \(roles.map { Knights.roleLine(role: role, spec: $0[role]) + "." } ?? "The role picks its models from your Models settings.")")
+                    Text("Choosing a harness doesn't install it or sign it in: that is done in the knight's VM.\(harness == "acp" ? " An ACP agent runs as you set it up there, with the role's model offered through the gateway as OPENAI_BASE_URL." : "") \(roles.map { Knights.roleLine(role: role, spec: $0[role]) + "." } ?? "The role picks its models from your Models settings.")")
                 }
 
                 if let offered, !offered.isEmpty {
@@ -233,6 +245,7 @@ struct KnightEditor: View {
         input.sendModels = offered != nil || !(existing?.models ?? []).isEmpty
         // (Sent when it is on, or was: to a node that doesn't know it, nothing is said of it.)
         if sensitive || existing?.sensitive == true { input.sensitive = sensitive }
+        if harness == "acp" { input.acp = acp.trimmingCharacters(in: .whitespaces) }
         let knight: Teammate
         do {
             knight = try await session.save(knight: input)

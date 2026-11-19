@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { addUsage, type AttachmentRef, costOf, mergeSpend, type NamedRule, type QuestEvidence, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, heldModels, randomId, redact, SENSITIVE_WORK } from "@galahad/core";
-import { AGENTS, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type ToolImage, type Trip } from "@galahad/brain";
+import { driverFor, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type ToolImage, type Trip } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import { questEvidence, questTrail } from "./skills-quest.ts";
 import type { TeamRunContext } from "./team.ts";
@@ -228,6 +228,8 @@ export function harnessReadiness(driver: AgentDriver, probe: Pick<ExecResult, "e
   const told = driver.signIn?.read(probe.stdout);
   // (Work in sensitive mode runs on its own models alone, through the gateway: never the tool's own sign-in.)
   if (told?.signedIn && !held) return { ready: true, models: [OWN_SIGN_IN, ...roster], on: `its own sign-in in this VM${told.method ? ` (${told.method})` : ""}${gateway ? `, then ${gateway}` : ""}` };
+  // An ACP agent you named runs as you set it up in its VM: the role's model through the gateway is offered to it.
+  if (driver.ownSetup && !held) return { ready: true, models: gateway ? [...roster] : [OWN_SIGN_IN], on: gateway ? `its own setup in this VM, with ${gateway} for an agent that reads OPENAI_BASE_URL` : "its own setup in this VM" };
   if (gateway) return { ready: true, models: [...roster], on: gateway };
   if (held) return { ready: false, models: [], reason: `This work is in sensitive mode, and none of its models speaks ${driver.title}'s API (${driver.kind === "anthropic" ? "Anthropic's" : "OpenAI's"}): give it one that does, or Galahad's own harness` };
   const uncovered = outside[0] ? `. ${agentModelName(outside[0])} is on the roster, but this VM's gateway token doesn't cover its provider: it covers the providers with a key when its task began` : "";
@@ -510,8 +512,10 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const exec = (command: string, timeout = 120) => deps.exec(teammate, withGateway(`mkdir -p ${quote(temp)} && export TMPDIR=${quote(temp)} && ${sees ? `export GALAHAD_EYES=${quote(sees)} && ` : ""}cd ${quote(root)} && ${engram ? engramShell(engram) : ""}${command}`), Math.min(timeout, TEAM_COMMAND_SECONDS), ctx.signal);
       let agent;
       if (teammate.harness !== "native") {
-        const driver = AGENTS[teammate.harness];
-        if (!driver) throw new Error(`No ${teammate.harness} driver is available`);
+        // (An ACP agent calls whatever you set it up to: sensitive mode can't hold its calls to the models it names.)
+        if (held && teammate.harness === "acp") throw new Error(`${teammate.name} works in an ACP agent of your own, which calls the models you set it up with: work in sensitive mode runs on Galahad's own harness, OpenCode, Hermes, Claude Code or Codex, whose calls go through its VM's gateway`);
+        const driver = driverFor(teammate.harness, teammate.acp);
+        if (!driver) throw new Error(teammate.harness === "acp" ? "Name the command that starts its ACP agent in its VM (galahad roundtable add <id> --agent acp --acp \"goose acp\")" : `No ${teammate.harness} driver is available`);
         const probe = await exec(driver.check, 30);
         // (A check that failed says why in its own words. A vendor's tool whose bridge answered is spoken for below: there, or not.)
         const answered = Boolean(driver.signIn) && /"type":\s*"status"/.test(probe.stdout);

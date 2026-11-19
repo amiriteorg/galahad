@@ -21,12 +21,14 @@ struct KnightInput: Encodable, Sendable, Equatable {
     var sendModels = false
     /// Sensitive mode (core's heldModels); nil: left as it is, and not sent (a node too old to know it would refuse it).
     var sensitive: Bool? = nil
+    /// The command that starts its ACP agent in its VM (harness `acp`); nil: left as it is, and not sent.
+    var acp: String? = nil
     var enabled: Bool
     var dailyTurns: Int
     /// The drawing it wears (`AvatarLook.profile`).
     var avatar: AvatarProfile
 
-    enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, models, sensitive, enabled, dailyTurns, avatar }
+    enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, models, sensitive, acp, enabled, dailyTurns, avatar }
 
     func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -38,6 +40,7 @@ struct KnightInput: Encodable, Sendable, Equatable {
         try c.encode(role, forKey: .role)
         if sendModels { try c.encode(models, forKey: .models) }
         try c.encodeIfPresent(sensitive, forKey: .sensitive)
+        try c.encodeIfPresent(acp, forKey: .acp)
         try c.encode(enabled, forKey: .enabled)
         try c.encode(dailyTurns, forKey: .dailyTurns)
         try c.encode(avatar, forKey: .avatar)
@@ -73,7 +76,7 @@ struct Arrangement: Codable, Sendable, Equatable {
 
 enum Knights {
     /// The harnesses a knight can work in, as they are named to you (the PWA's HARNESS), in its order.
-    static let harnesses: [(id: String, name: String)] = [("native", "Galahad"), ("opencode", "OpenCode"), ("hermes", "Hermes Agent"), ("claude", "Claude Code"), ("codex", "Codex")]
+    static let harnesses: [(id: String, name: String)] = [("native", "Galahad"), ("opencode", "OpenCode"), ("hermes", "Hermes Agent"), ("claude", "Claude Code"), ("codex", "Codex"), ("acp", "Any ACP agent")]
 
     /// A roster role, as far as a knight's editor needs it (`forKnights` is absent from an older node).
     struct RoleInfo: Decodable, Sendable, Equatable {

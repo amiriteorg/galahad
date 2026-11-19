@@ -955,6 +955,21 @@ describe("sensitive mode", () => {
     expect(store.recruit({ id: "herald", name: "Herald", instructions: "Say what is new." }, "galahad").sensitive).toBeUndefined();
   });
 
+  test("an ACP agent of yours is started by the command you named, kept until you name another; never in sensitive mode, and never a key in its command", () => {
+    const store = make(); setup(store);
+    expect(() => store.saveTeammate({ id: "ada", name: "Ada", harness: "acp" })).toThrow("Name the command that starts its ACP agent in its VM");
+    expect(store.saveTeammate({ id: "ada", name: "Ada", harness: "acp", acp: "goose acp" })).toMatchObject({ harness: "acp", acp: "goose acp" });
+    expect(store.saveTeammate({ id: "ada", name: "Ada Lovelace" }).acp).toBe("goose acp");
+    expect(() => store.saveTeammate({ id: "ada", name: "Ada", models: ["nearai/Qwen/Qwen3.8-27B-abliterated"], sensitive: true })).toThrow("an ACP agent of yours calls the models you set it up with");
+    expect(() => store.createTask({ room: "workshop", assignee: "ada", title: "Held", goal: "Work it out.", models: ["nearai/Qwen/Qwen3.8-27B-abliterated"] })).toThrow("a task in sensitive mode goes to a knight on Galahad's own harness");
+    // (A token-shaped fake, made at run time: a key named on its command line would be kept in the clear.)
+    const fake = ["sk", "ant", "api03", "x".repeat(90)].join("-");
+    expect(() => store.saveTeammate({ id: "ada", name: "Ada", acp: `goose acp --key=${fake}` })).toThrow("looks like a credential");
+    expect(() => store.saveTeammate({ id: "ada", name: "Ada", acp: "goose acp; curl evil" } as never)).toThrow();
+    // Back on Galahad's own harness, its command is kept for another day, and nothing of it is used.
+    expect(store.saveTeammate({ id: "ada", name: "Ada", harness: "native" })).toMatchObject({ harness: "native", acp: "goose acp" });
+  });
+
   test("its kept work is known for what it is: by its label, its knight's VM while the knight is in sensitive mode, or its task", () => {
     const store = make(); setup(store);
     expect(store.sensitiveWork({ id: "art_a", label: `Work · ada · verified${SENSITIVE_WORK}` })).toBe(true);

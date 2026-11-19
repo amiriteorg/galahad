@@ -2,7 +2,7 @@ import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { newNodeIdentity, type ExecResult, type Teammate, type TeamRoom, type TeamTask, type TeamMessage } from "@galahad/core";
 import { taskStep, type AvatarExpression } from "@galahad/core/avatar";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { AGENTS, OWN_SIGN_IN, type QuestEvent } from "@galahad/brain";
+import { acpDriver, AGENTS, OWN_SIGN_IN, type QuestEvent } from "@galahad/brain";
 import { harnessReadiness, progress, TEAM_COMMAND_SECONDS, teamRuntime, type TeamRuntimeDeps } from "../src/team-runtime.ts";
 import type { TeamRunContext } from "../src/team.ts";
 
@@ -291,6 +291,14 @@ test("sensitive mode: when none of its models answers, the work waits and asks t
   await expect(g.runtime.executeTask({ ...member, models: ["local/mimo"], sensitive: true }, { ...task, models: ["local/fake"] }, g.context)).rejects.toThrow("a task held to local/fake is never its");
   expect(g.prepared).toEqual([]);
   expect(g.bodies).toEqual([]);
+});
+
+test("a knight in an ACP agent of yours is never given work in sensitive mode: its calls go where you set it up to", async () => {
+  const acp: Teammate = { ...member, harness: "acp", acp: "goose acp" };
+  const f = fixture([], { teammate: () => acp });
+  await expect(f.runtime.executeTask(acp, { ...task, models: ["local/qwen"] }, f.context)).rejects.toThrow("works in an ACP agent of your own");
+  expect(f.bodies).toEqual([]);
+  expect(f.commands.some((command) => command.includes("goose"))).toBe(false);
 });
 
 test("sensitive mode in a conversation: its turns and the story its room is told are on its own models, it is told it is in sensitive mode, and the work it gives names no models of its own choosing", async () => {
@@ -677,6 +685,11 @@ test("what a harness would run on: its own sign-in first, then the roster's mode
   // Work in sensitive mode never runs on the tool's own sign-in: on its models through the gateway, or not at all.
   expect(harnessReadiness(claude, ok({ signedIn: true, method: "claude.ai" }), [opus], [], "engineer", true)).toEqual({ ready: true, models: [opus], on: "anthropic/claude-opus-5-5 through the gateway" });
   expect(harnessReadiness(claude, ok({ signedIn: true, method: "claude.ai" }), [], [], "engineer", true)).toEqual({ ready: false, models: [], reason: "This work is in sensitive mode, and none of its models speaks Claude Code's API (Anthropic's): give it one that does, or Galahad's own harness" });
+  // An ACP agent you named runs as you set it up in its VM: with the role's model through the gateway offered to it, or on its setup alone.
+  const goose = acpDriver("goose acp");
+  const offered = { provider: "orcarouter", model: "gpt-6.1-sol" };
+  expect(harnessReadiness(goose, { exitCode: 0, stdout: "goose speaks ACP (protocol 1)" }, [offered])).toEqual({ ready: true, models: [offered], on: "its own setup in this VM, with orcarouter/gpt-6.1-sol through the gateway for an agent that reads OPENAI_BASE_URL" });
+  expect(harnessReadiness(goose, { exitCode: 0, stdout: "goose speaks ACP (protocol 1)" }, [])).toEqual({ ready: true, models: [OWN_SIGN_IN], on: "its own setup in this VM" });
   expect(harnessReadiness(claude, ok({ signedIn: true, method: "claude.ai" }), [])).toEqual({ ready: true, models: [OWN_SIGN_IN], on: "its own sign-in in this VM (claude.ai)" });
   // Not signed in: a keyed model that speaks its API, through the gateway.
   expect(harnessReadiness(claude, ok({ signedIn: false }), [opus])).toEqual({ ready: true, models: [opus], on: "anthropic/claude-opus-5-5 through the gateway" });

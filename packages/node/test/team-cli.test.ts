@@ -433,6 +433,12 @@ test("a knight's own models: what it works on and what you may choose; set in or
   expect(lines).toEqual(["ada works on ollama/mimo-v2.6:9b, deepseek/deepseek-v4-pro, in that order.", "rev works on its role's models (engineer)."]);
 });
 
+test("a knight in any ACP agent: the command that starts it is sent as you typed it", async () => {
+  const { api, saved } = node([member("ada")]);
+  await teamCommand(api, "add", ["ada"], { name: "Ada", agent: "acp", acp: "gemini --acp" }, () => {});
+  expect(saved).toEqual([{ name: "saveTeammate", input: { id: "ada", name: "Ada", harness: "acp", acp: "gemini --acp" } }]);
+});
+
 test("sensitive mode at a terminal: whether a knight is in it, on and off, and a task in it alone, on the models named or its knight's own", async () => {
   const lines: string[] = [];
   const calls: { name: RouteName; input: any }[] = [];

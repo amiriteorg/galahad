@@ -23,9 +23,14 @@ export const TeamRoomId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 export const TeamTaskId = z.string().regex(/^task-[a-z0-9_-]{12}$/);
 /** An outcome Galahad owns (PLAN #43): its id is its room's too. */
 export const TeamOutcomeId = z.string().regex(/^out-[a-z0-9_-]{12}$/);
-/** `claude` and `codex` are the vendors' own tools (Claude Code, Codex), which the owner installs and signs in in the knight's VM. */
-export const TeamHarness = z.enum(["native", "opencode", "hermes", "claude", "codex"]);
+/**
+ * `claude` and `codex` are the vendors' own tools (Claude Code, Codex), which the owner installs and signs in in the
+ * knight's VM; `acp`, any agent that speaks the Agent Client Protocol, started by the command you name (`acp`).
+ */
+export const TeamHarness = z.enum(["native", "opencode", "hermes", "claude", "codex", "acp"]);
 export type TeamHarness = z.infer<typeof TeamHarness>;
+/** An ACP agent you name to a knight (harness `acp`): the command that starts it in its ACP mode in its VM, as plain words. */
+export const TeamAcpCommand = z.string().trim().max(300).regex(/^[A-Za-z0-9._\/:=@+,-]+( [A-Za-z0-9._\/:=@+,-]+){0,15}$/, "the command that starts it in its ACP mode, as plain words: no quotes, no shell");
 export const TeamWorkspaceQuest = z.string().regex(/^arm\.team\.[a-f0-9]{10}\.[a-z][a-z0-9-]{0,31}$/);
 /** Controller-local identities must not accidentally share a VM on a fleet host. */
 export function teamArmLabel(controller: string, teammate: string): string {
@@ -80,6 +85,8 @@ export const TeammateInput = z.strictObject({
   /** Sensitive mode: every call of its work held to its own models (`models`), none elsewhere (heldModels). Omitted: kept as it was. */
   sensitive: z.boolean().optional(),
   harness: TeamHarness.optional(),
+  /** Its ACP agent's command (harness `acp`), e.g. `goose acp`. Omitted: kept as it was; null: none. */
+  acp: TeamAcpCommand.nullable().optional(),
   enabled: z.boolean().optional(),
   dailyTurns: z.number().int().min(0).max(1000).optional(),
   repository: z.string().trim().max(300).regex(/^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*\/?$/, "an HTTPS GitHub repository without credentials, query or fragment").transform((url) => url.replace(/\/$/, "").replace(/\.git$/, "")).nullable().optional(),
@@ -288,6 +295,8 @@ export interface Teammate {
   /** Sensitive mode: every call of its work goes to its own models, and none elsewhere (heldModels). Absent: off. */
   sensitive?: boolean;
   harness: TeamHarness;
+  /** The command that starts its ACP agent in its VM (harness `acp`); absent: none. */
+  acp?: string;
   enabled: boolean;
   dailyTurns: number;
   turnsToday: number;

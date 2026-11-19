@@ -71,7 +71,7 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
   }
   if (sub === "add") {
     const id = args[0];
-    const result = await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: string("name") ?? id, ...(string("instructions") ? { instructions: string("instructions") } : {}), ...(string("role") ? { role: string("role") } : {}), ...(string("agent") ? { harness: string("agent") } : {}), ...(string("repo") ? { repository: string("repo") } : {}), ...(string("limit") ? { dailyTurns: Number(string("limit")) } : {}) });
+    const result = await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: string("name") ?? id, ...(string("instructions") ? { instructions: string("instructions") } : {}), ...(string("role") ? { role: string("role") } : {}), ...(string("agent") ? { harness: string("agent") } : {}), ...(string("acp") ? { acp: string("acp") } : {}), ...(string("repo") ? { repository: string("repo") } : {}), ...(string("limit") ? { dailyTurns: Number(string("limit")) } : {}) });
     print(`${plainLine(result.teammate.name)} is ready to chat. Its VM is made on a node that makes VMs (KVM with Kata, or a Mac with Apple's container) when it is first needed.`); return;
   }
   if (sub === "models") {

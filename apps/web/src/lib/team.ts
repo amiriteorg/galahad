@@ -5,8 +5,8 @@ export type TeamTab = "chat" | "workspace";
 export interface TeamLocation { room?: string; teamTab?: TeamTab }
 
 /** A knight's coding harness, as it is named to you: his own, or a tool that does the engineer's part in the VM
- * (the vendors' own tools by their own names, in plain text). */
-export const HARNESS: Record<TeamHarness, string> = { native: "Galahad", opencode: "OpenCode", hermes: "Hermes Agent", claude: "Claude Code", codex: "Codex" };
+ * (the vendors' own tools by their own names, in plain text; any other that speaks ACP, by the command you give it). */
+export const HARNESS: Record<TeamHarness, string> = { native: "Galahad", opencode: "OpenCode", hermes: "Hermes Agent", claude: "Claude Code", codex: "Codex", acp: "Any ACP agent" };
 
 /** What the node found of one harness in a knight's VM: `on`, what it would run on there; `reason`, why it can't yet. */
 export interface HarnessStatus { id: string; ready: boolean; on?: string; reason?: string }

@@ -46,6 +46,8 @@ struct Teammate: Decodable, Sendable, Identifiable {
     /// Sensitive mode: every call of its work on its own models alone, never a fallback (core's heldModels).
     var sensitive: Bool? = nil
     let harness: String
+    /// The command that starts its ACP agent in its VM (harness `acp`).
+    var acp: String? = nil
     let enabled: Bool
     let dailyTurns: Int
     let turnsToday: Int
