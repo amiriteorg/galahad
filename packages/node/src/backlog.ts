@@ -190,7 +190,7 @@ export class BacklogRunner {
     const room = this.o.store.direct(knight.id);
     const task = this.o.service().proposeTask({ room: room.id, assignee: knight.id, title: found.title, goal: found.goal, gates: found.gates, ...(found.budgetUsd !== undefined ? { budgetUsd: found.budgetUsd } : {}) });
     // In your Inbox, in the node's own words: what he proposes is in its conversation with you, to approve or decline.
-    this.o.mind.emit(this.o.identity, "notice.raised", { key: `backlog:${task.id}`, severity: "info", title: `Work proposed for ${knight.name}`, body: `${found.title}\nIt starts when you approve it: galahad roundtable approve ${task.id}`.slice(0, 600), source: "backlog", at: this.now() });
+    this.o.mind.emit(this.o.identity, "notice.raised", { key: `backlog:${task.id}`, severity: "info", title: `Work proposed for ${knight.name}`, body: `${found.title}\nIt waits in your conversation with ${knight.name}, and starts when you approve it there (or galahad roundtable approve ${task.id}).`.slice(0, 600), source: "backlog", at: this.now() });
     return task;
   }
 }
