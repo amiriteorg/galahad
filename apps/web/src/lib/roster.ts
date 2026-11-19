@@ -73,6 +73,9 @@ function trouble(job: Job | undefined, who: string | null): string | null {
   return job.task ? withWhy(`Failed: ${titled(job)}`, job.error) : withWhy(who ? `${who} couldn't reply` : "Couldn't reply", job.error);
 }
 
+/** Who someone is, by their id: a knight by its name; Galahad, who proposes work from your backlog (backlog.ts), by his. */
+const named = (snapshot: TeamSnapshot, id: string): string => (id === "galahad" ? "Galahad" : snapshot.teammates.find((person) => person.id === id)?.name ?? id);
+
 /** Tasks a knight proposed that wait for your approval, the latest first. */
 const proposals = (jobs: Job[]): (TeamTask & { task: true })[] =>
   (jobs.filter((job) => job.task && job.status === "proposed") as (TeamTask & { task: true })[]).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -115,7 +118,7 @@ function knightRow(person: Teammate, input: RosterInput): RosterRow {
 
   // What only you can answer comes first: it is what the row is marked for.
   if (asked[0]) return say(`Asks your leave: ${asked[0].connector}.${asked[0].tool}${asked.length > 1 ? `, and ${asked.length - 1} more` : ""}`, true, "needs");
-  if (proposed[0]) return say(proposing(proposed, (id) => (id === person.id ? null : snapshot.teammates.find((other) => other.id === id)?.name ?? id)), true, "needs");
+  if (proposed[0]) return say(proposing(proposed, (id) => (id === person.id ? null : named(snapshot, id))), true, "needs");
   const running = jobs.find((job) => job.status === "running" && job.task);
   if (running?.task) return say(firstLine(running.progress) ? `${running.title} · ${firstLine(running.progress)}` : `Working on ${titled(running)}`, false, "working");
   if (jobs.some((job) => job.status === "running")) return say("Writing a reply", false, "working");
@@ -144,7 +147,7 @@ function knightRow(person: Teammate, input: RosterInput): RosterRow {
 
 function roomRow(room: TeamRoom, input: RosterInput): RosterRow {
   const { snapshot } = input;
-  const nameOf = (id: string): string => snapshot.teammates.find((person) => person.id === id)?.name ?? id;
+  const nameOf = (id: string): string => named(snapshot, id);
   const jobs: Job[] = [...snapshot.tasks.filter((task) => task.room === room.id).map((task) => ({ ...task, task: true as const })), ...snapshot.deliveries.filter((delivery) => delivery.room === room.id)];
   const fresh = endedSince(jobs, snapshot.seen?.[`room:${room.id}`], snapshot.seen !== undefined);
   const say = (line: string, needs = false): RosterRow => ({ key: `room:${room.id}`, kind: "room", id: room.id, name: room.name, room: room.id, line, needs, unread: fresh !== undefined });

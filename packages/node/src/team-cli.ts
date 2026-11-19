@@ -257,6 +257,15 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
       : "Failing checks and reviews stay yours, except in an outcome, which gives them back on its own within its budget. Turn it on with: galahad roundtable ci on");
     return;
   }
+  // Work for idle knights from your backlog (backlog.ts): on until you turn it off.
+  if (sub === "backlog") {
+    if (args.length > 1 || (args.length === 1 && args[0] !== "on" && args[0] !== "off")) throw new Error("usage: galahad roundtable backlog [on|off]");
+    const on = args.length ? (await api.call<{ backlog: boolean }>("teamBacklog", { on: args[0] === "on" })).backlog : (await api.call<TeamSnapshot>("team")).backlog === true;
+    print(on
+      ? "A knight with a repository and nothing to do is offered one task a day at most, the next step of its repository's own plan (docs/PLAN.md, PLAN.md, ROADMAP.md or TODO.md): a proposal in its conversation with you, which starts when you approve it. Turn it off with: galahad roundtable backlog off"
+      : "Idle knights are offered nothing: their work is what you and his outcomes give them. Turn it on with: galahad roundtable backlog on");
+    return;
+  }
   // (A knight by either word: `teammate` is what the command took before it was called knights.)
   // A task a knight proposed: it runs once you approve it; declined, it never runs.
   if ((sub === "approve" || sub === "decline") && args[0]) {

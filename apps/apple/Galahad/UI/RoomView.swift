@@ -53,7 +53,7 @@ struct RoomView: View {
                             composing = true
                         }
                     case .task(let task):
-                        TaskCardView(task: task, proposer: task.proposedBy.map { session.teammate($0)?.name ?? $0 }) { action in act(action, on: task) }
+                        TaskCardView(task: task, proposer: task.proposedBy.map { $0 == "galahad" ? "Galahad" : session.teammate($0)?.name ?? $0 }) { action in act(action, on: task) }
                     }
                 }
                 if !writing.isEmpty {

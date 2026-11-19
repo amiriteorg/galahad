@@ -246,6 +246,7 @@ Your knights sit at the **Roundtable**: Galahad, your primary knight, and the ot
 bun galahad roundtable add ada --name Ada --role engineer --agent native --limit 40
 bun galahad roundtable dm ada "Help me plan the next small, verifiable improvement."
 bun galahad roundtable
+bun galahad roundtable backlog off   # idle knights with a repository are offered the next step of its plan, a task a day at most, for your approval
 ```
 
 A knight you no longer want is paused (`bun galahad roundtable pause knight ada`) or removed for good (`bun galahad roundtable remove ada`, or **Workspace → Remove knight** at the Roundtable). Removal keeps what it said and retires its handle; one with a VM is removed only together with that VM. [ROUNDTABLE](ROUNDTABLE.md#removing-a-knight) has the details.

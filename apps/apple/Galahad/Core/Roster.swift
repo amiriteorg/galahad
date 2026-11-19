@@ -127,8 +127,13 @@ enum Roster {
         }.map { roomRow(for: $0.element, in: snapshot) }
     }
 
+    /// Who someone is, by their id: a knight by its name; Galahad, who proposes work from your backlog, by his (lib/roster.ts' `named`).
+    static func named(_ id: String, in snapshot: TeamSnapshot) -> String {
+        id == "galahad" ? "Galahad" : snapshot.teammates.first { $0.id == id }?.name ?? id
+    }
+
     private static func roomRow(for room: TeamRoom, in snapshot: TeamSnapshot) -> RoomRow {
-        let nameOf = { (id: String) in snapshot.teammates.first { $0.id == id }?.name ?? id }
+        let nameOf = { (id: String) in named(id, in: snapshot) }
         let jobs = snapshot.tasks.filter { $0.room == room.id }.map(Job.task) + snapshot.deliveries.filter { $0.room == room.id }.map(Job.delivery)
         let fresh = endedSince(jobs, seen: snapshot.seen?["room:\(room.id)"], keeps: snapshot.seen != nil) != nil
         let say = { (line: String, needs: Bool) in RoomRow(id: room.id, name: room.name, members: room.members, line: line, needs: needs, unread: fresh) }
@@ -186,7 +191,7 @@ enum Roster {
         if let ask = asked.first {
             return say("Asks your leave: \(ask.connector ?? "").\(ask.tool ?? "")\(asked.count > 1 ? ", and \(asked.count - 1) more" : "")", true, .needs)
         }
-        if let line = proposing(jobs, by: { id in id == person.id ? nil : snapshot.teammates.first { $0.id == id }?.name ?? id }) { return say(line, true, .needs) }
+        if let line = proposing(jobs, by: { id in id == person.id ? nil : named(id, in: snapshot) }) { return say(line, true, .needs) }
         if let running = jobs.first(where: { $0.status == "running" && $0.task != nil })?.task {
             let progress = firstLine(running.progress)
             return say(progress.isEmpty ? "Working on \(titled(running))" : "\(running.title) · \(progress)", false, .working)

@@ -189,6 +189,7 @@ import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfAc
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
 import { OutcomeError, OutcomeRunner } from "./outcomes.ts";
+import { BacklogRunner } from "./backlog.ts";
 import { offerFix } from "./ci-back.ts";
 import type { BilagService } from "./bilag.ts";
 import type { BooksAttach, BooksAttached } from "./books.ts";
@@ -278,7 +279,7 @@ export interface AppContext {
   chats: ChatStore;
   /** What you attach to your messages there: pictures and texts, kept by their SHA-256 (uploads.ts). */
   uploads: Uploads;
-  team?: { store: TeamStore; service?: TeamService; outcomes?: OutcomeRunner };
+  team?: { store: TeamStore; service?: TeamService; outcomes?: OutcomeRunner; backlog?: BacklogRunner };
   /** The turns this node runs for you: each to its end whoever listens, with what you steer and queue. */
   turns: TurnHub;
   /** The quests in hand, as whoever runs each one reports it. */
@@ -2225,6 +2226,19 @@ export function createApp(ctx: AppContext) {
     } });
     ctx.team.service.start();
     outcomes.start();
+    // Work for idle knights from your backlog (backlog.ts): one proposal a day at most for each, waiting for your tap.
+    const backlog = new BacklogRunner({
+      store: team.store,
+      service: () => team.service!,
+      mind: ctx.store,
+      identity: ctx.identity,
+      brain: () => brainFor({ device: `arm:${GALAHAD_ARM}`, kind: "arm", label: GALAHAD_ARM, scopes: [] }),
+      exec: (knight, command, timeout, signal) => execTeam(knight, command, timeout, signal),
+      busy: (knight) => team.store.outcomes().some((o) => o.status === "active" && o.knights.includes(knight)),
+      log: ctx.log,
+    });
+    team.backlog = backlog;
+    backlog.start();
   }
 
   const handlers: Record<RouteName, Handler> = {
@@ -2408,6 +2422,7 @@ export function createApp(ctx: AppContext) {
     teamMemory: (input, p) => { ownerOnly(p); return { teammate: teamOf().remember(input.id, input.text) }; },
     teamEngram: (input, p) => { ownerOnly(p); return { engram: teamOf().setEngram(input.on) }; },
     teamCi: (input, p) => { ownerOnly(p); return { ci: teamOf().setCiBack(input.on) }; },
+    teamBacklog: (input, p) => { ownerOnly(p); return { backlog: teamOf().setBacklog(input.on) }; },
     /* A knight's verified work as a pull request, on your word (PLAN #37's next step): filed as its knight's ship, so it is
      * in the outbox that the CI watcher follows (and a failure can go back to that knight), and answered by you at once,
      * from the device you tapped on. Only from this node, which keeps the work. */

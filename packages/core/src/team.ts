@@ -230,6 +230,8 @@ export const TeamEngramInput = z.strictObject({ on: z.boolean() });
 export type TeamEngramInput = z.infer<typeof TeamEngramInput>;
 /** Whether a pull request's failing checks go back to the knight whose work it was when no outcome gives them back (PLAN #29). */
 export const TeamCiInput = z.strictObject({ on: z.boolean() });
+/** Whether Galahad offers idle knights work from your backlog (on until you turn it off). */
+export const TeamBacklogInput = z.strictObject({ on: z.boolean() });
 
 /** What a knight's Workspace is told of the notes store: the node's switch, and whether this VM has the pinned binary. */
 export interface TeamEngramStatus {
@@ -500,6 +502,8 @@ export interface TeamSnapshot {
   engram?: boolean;
   /** Failing checks go back to the knight whose work it was, outside an outcome too (PLAN #29): said only when on. */
   ciBack?: boolean;
+  /** Galahad offers idle knights work from your backlog, a proposal each that waits for you (on unless you turned it off). */
+  backlog?: boolean;
   /** Galahad's own computer, when he has one: his persistent VM, made and watched as a knight's is (under his handle). */
   computer?: TeamWorkspace;
   /** Your order of the knights (`teammates` comes in it already; absent from an older node). */

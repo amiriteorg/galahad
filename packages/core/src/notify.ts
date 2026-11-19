@@ -160,6 +160,10 @@ export function toldItem(n: { key: string; severity: string; source: string; dis
   if (OUTCOME_SOURCE.test(n.source) && !n.dismissed && n.severity === "info") {
     return { key: `notice:${n.key}`, kind: "told", alert: false, title: "Galahad: an outcome of yours", body: "There's news of it: his words are in its room and your Inbox.", open: "inbox", needs: ["mind:read"] };
   }
+  // Work Galahad proposes a knight with nothing to do, from your backlog: fixed words; what it is waits in its conversation.
+  if (n.source === "backlog" && !n.dismissed && n.severity === "info") {
+    return { key: `notice:${n.key}`, kind: "told", alert: false, title: "Galahad: work for a knight", body: "He proposes a task from your backlog for a knight with nothing to do. It starts when you approve it.", open: "inbox", needs: ["mind:read"] };
+  }
   const rule = RULE_SOURCE.exec(n.source)?.[1];
   if (!rule || n.dismissed || n.severity !== "info") return null;
   return { key: `notice:${n.key}`, kind: "told", alert: false, title: `Galahad: your rule ${rule}`, body: "A command it matches has run. The Inbox says which, where and how it ended.", open: "inbox", needs: ["mind:read"] };

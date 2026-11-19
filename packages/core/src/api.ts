@@ -17,7 +17,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectBranchInput, ProjectCommitInput, ProjectGitInput, ProjectId, ProjectInput } from "./chats.ts";
-import { TeammateInput, TeamArrangeInput, TeamChangesInput, TeamCiInput, TeamEngramInput, TeamShipInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamOutcomeControlInput, TeamOutcomeInput, TeamWorkspaceQuest } from "./team.ts";
+import { TeammateInput, TeamArrangeInput, TeamBacklogInput, TeamChangesInput, TeamCiInput, TeamEngramInput, TeamShipInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamOutcomeControlInput, TeamOutcomeInput, TeamWorkspaceQuest } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
@@ -395,6 +395,8 @@ export const routes = {
   teamEngram: { method: "POST", path: "/api/team/engram", scope: "fleet:admin", input: TeamEngramInput },
   /** Whether a pull request's failing checks go back to the knight whose work it was, outside an outcome too (PLAN #29): yours alone to say. `team` says when it is on. */
   teamCi: { method: "POST", path: "/api/team/ci", scope: "fleet:admin", input: TeamCiInput },
+  /** Whether Galahad offers idle knights work from your backlog: one task a day at most for each, waiting for your approval. */
+  teamBacklog: { method: "POST", path: "/api/team/backlog", scope: "fleet:admin", input: TeamBacklogInput },
   /** A knight's verified work as a pull request, on your word (PLAN #37): filed as its knight's ship and answered by you at once, so the outbox (and the CI watcher) has it. */
   shipTeamTask: { method: "POST", path: "/api/team/ship", scope: "fleet:admin", input: TeamShipInput },
   /* Galahad's own way to the other knights, from your conversation with him (his tools: team, team_recruit, team_message).

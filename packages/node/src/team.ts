@@ -152,6 +152,9 @@ export class TeamService {
   setEngram(on: boolean): boolean { this.accepting(); const set = this.store.setEngram(on); this.changed(); return set; }
   /** Whether failing checks go back to the knight whose work it was, outside an outcome too (ci-back.ts reads it when they fail). */
   setCiBack(on: boolean): boolean { this.accepting(); const set = this.store.setCiBack(on); this.changed(); return set; }
+  setBacklog(on: boolean): boolean { this.accepting(); const set = this.store.setBacklog(on); this.changed(); return set; }
+  /** Work Galahad offers a knight from your backlog (backlog.ts): proposed, it starts only when you approve it. */
+  proposeTask(input: TeamTaskInput): TeamTask { this.accepting(); const task = this.store.createTask(input, { givenBy: TEAM_GALAHAD, propose: true }); this.changed(); return task; }
   planWorkspace(id: string, node: string): Teammate {
     this.accepting();
     this.steady(id);

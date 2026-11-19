@@ -189,6 +189,18 @@ export class TeamStore {
     this.db.query("INSERT INTO team_settings(key,value) VALUES('engram',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(on ? "on" : "off");
     return on;
   }
+  /** Whether Galahad offers idle knights work from your backlog (backlog.ts): on until you turn it off. */
+  backlog(): boolean { return this.db.query<DocRow, []>("SELECT value FROM team_settings WHERE key='backlog'").get()?.value !== "off"; }
+  setBacklog(raw: boolean): boolean {
+    const on = teamInput(z.boolean(), raw);
+    this.db.query("INSERT INTO team_settings(key,value) VALUES('backlog',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(on ? "on" : "off");
+    return on;
+  }
+  /** When a knight was last looked at for work from your backlog (0: never), kept so a restart doesn't look again. */
+  backlogLooked(knight: string): number { return Number(this.db.query<DocRow, [string]>("SELECT value FROM team_settings WHERE key=?").get(`backlog:${knight}`)?.value ?? 0); }
+  setBacklogLooked(knight: string, at: number): void {
+    this.db.query("INSERT INTO team_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(`backlog:${knight}`, String(at));
+  }
   /** Whether failing checks go back to the knight whose work it was when no outcome gives them back (PLAN #29): off until you turn it on. */
   ciBack(): boolean { return this.db.query<DocRow, []>("SELECT value FROM team_settings WHERE key='ci'").get()?.value === "on"; }
   setCiBack(raw: boolean): boolean {
@@ -574,7 +586,7 @@ export class TeamStore {
     this.db.query("INSERT INTO team_jobs(id,kind,room,teammate,chain_id,status,data,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(key, kind, room, teammate, chain, status, JSON.stringify(data), at, at);
     return key;
   }
-  createTask(raw: TeamTaskInput, by: { teammate?: string; chainId?: string; givenBy?: string; fix?: TeamTaskFix } = {}): TeamTask {
+  createTask(raw: TeamTaskInput, by: { teammate?: string; chainId?: string; givenBy?: string; fix?: TeamTaskFix; propose?: boolean } = {}): TeamTask {
     const input = teamInput(TeamTaskInput, raw);
     teamText([input.title, input.goal, ...(input.gates ?? [])].join("\n"));
     return this.db.transaction(() => {
@@ -589,13 +601,14 @@ export class TeamStore {
       }
       if (this.pending() >= TEAM_LIMITS.pending) throw new TeamError(429, "The team queue is full. Let some work finish first.");
       // Galahad's own giving is within his allowance for the day; yours is not counted, nor an outcome's (its own allowance and budget: outcomes.ts).
-      if (by.givenBy === TEAM_GALAHAD && !input.outcome && this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_jobs WHERE kind = 'task' AND json_extract(data, '$.givenBy') = ? AND json_extract(data, '$.outcome') IS NULL AND created_at > ?").get(TEAM_GALAHAD, this.now() - 86_400_000)!.n >= TEAM_LIMITS.givesPerDay) {
+      if (by.givenBy === TEAM_GALAHAD && !input.outcome && !by.propose && this.db.query<{ n: number }, [string, number]>("SELECT COUNT(*) AS n FROM team_jobs WHERE kind = 'task' AND json_extract(data, '$.givenBy') = ? AND json_extract(data, '$.outcome') IS NULL AND created_at > ?").get(TEAM_GALAHAD, this.now() - 86_400_000)!.n >= TEAM_LIMITS.givesPerDay) {
         throw new TeamError(429, `Galahad has given the Roundtable ${TEAM_LIMITS.givesPerDay} tasks in the last day, which is his allowance. The owner can give more at the Roundtable.`);
       }
       const chain = by.chainId ?? this.chain(room);
-      // A knight's task is proposed to you: it is written down where it was asked for, and waits for your approval.
-      const proposed = by.teammate ? { proposedBy: by.teammate } : {};
-      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...(input.outcome ? { outcome: input.outcome } : {}), ...(by.fix ? { fix: by.fix } : {}), ...proposed }, by.teammate ? "proposed" : "queued");
+      // A knight's task is proposed to you: it is written down where it was asked for, and waits for your approval. So
+      // is the work Galahad offers an idle knight from your backlog (backlog.ts): a proposal isn't a give.
+      const proposed = by.teammate ? { proposedBy: by.teammate } : by.propose ? { proposedBy: by.givenBy ?? TEAM_GALAHAD } : {};
+      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...(input.outcome ? { outcome: input.outcome } : {}), ...(by.fix ? { fix: by.fix } : {}), ...proposed }, by.teammate || by.propose ? "proposed" : "queued");
       return this.task(key)!;
     })();
   }
@@ -672,7 +685,7 @@ export class TeamStore {
     const removed = this.removed().map(({ id, name, removedAt }) => { const conversations = direct.filter((room) => room.members.includes(id)).map((room) => room.id); return { id, name, removedAt, ...(conversations.length ? { conversations } : {}) }; });
     const computer = this.computer();
     const { order, primary } = this.arrangement();
-    return { northStar: this.northStar(this.now() - 30 * 86_400_000), teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(this.ciBack() ? { ciBack: true } : {}), ...(computer ? { computer } : {}), order, primary, seen: this.seen() };
+    return { northStar: this.northStar(this.now() - 30 * 86_400_000), teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(this.ciBack() ? { ciBack: true } : {}), ...(this.backlog() ? { backlog: true } : {}), ...(computer ? { computer } : {}), order, primary, seen: this.seen() };
   }
   /** When you last looked at each knight's page (`knight:<id>`) and each room (`room:<id>`), on any device. */
   seen(): Record<string, number> {

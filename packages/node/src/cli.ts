@@ -102,6 +102,9 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     the fix on that branch (once a failing commit or review, three at most) and you
                                     approve the push; off (the default), they are yours, though an outcome gives its
                                     own back within its budget
+  roundtable backlog [on|off]        work for idle knights: one with a repository and nothing to do is offered the next
+                                    step of its repository's plan, a task a day at most, which starts when you approve it
+                                    (galahad roundtable approve <task>); on until you turn it off
   roundtable order <knight,knight,...>  your order of the knights, on every device (those not named come after)
   roundtable primary <knight|galahad>   who leads the Roundtable: it answers what you say to a room without a name
   roundtable avatar <id> [--look kay|gaheris|percival|palamedes|gawain|tristan|lancelot|bedivere|bors|gareth]

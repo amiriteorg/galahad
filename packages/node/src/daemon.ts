@@ -47,6 +47,7 @@ import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { WakeWatcher } from "./wakes.ts";
 import { TelegramGateway } from "./telegram.ts";
 import type { OutcomeRunner } from "./outcomes.ts";
+import type { BacklogRunner } from "./backlog.ts";
 import { loadEnv } from "./env.ts";
 import type { Home } from "./home.ts";
 import { createApp } from "./server.ts";
@@ -376,7 +377,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   // What you attach to your messages: kept while a kept chat or a room's message carries it (or a chat used it this
   // week), then removed.
   const uploads = new Uploads(join(home.dir, "uploads"));
-  const team: { store: TeamStore; service?: TeamService; outcomes?: OutcomeRunner } = { store: new TeamStore(join(home.dir, "team.db")) };
+  const team: { store: TeamStore; service?: TeamService; outcomes?: OutcomeRunner; backlog?: BacklogRunner } = { store: new TeamStore(join(home.dir, "team.db")) };
   const sweepUploads = () => {
     try {
       const removed = uploads.sweep(new Set([...chats.attachmentIds(), ...team.store.attachmentIds()]));
@@ -778,7 +779,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       shutdown.abort();
       // Every terminal's shell is ended, and whoever watched one is told (their streams end with it).
       terminals?.closeAll();
-      const teamEnded = Promise.all([team.service?.stop(), team.outcomes?.stop()]);
+      const teamEnded = Promise.all([team.service?.stop(), team.outcomes?.stop(), team.backlog?.stop()]);
       clearInterval(outbox);
       clearInterval(uploadSweep);
       if (refresh) clearInterval(refresh);

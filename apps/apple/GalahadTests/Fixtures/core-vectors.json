@@ -818,6 +818,22 @@
           "memory": "",
           "createdAt": 1763164000000,
           "updatedAt": 1763164000000
+        },
+        {
+          "id": "quin",
+          "name": "Quin",
+          "instructions": "Quin keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
         }
       ],
       "rooms": [
@@ -1161,6 +1177,24 @@
           "createdAt": 1763194600000,
           "updatedAt": 1763198200000,
           "proposedBy": "ada"
+        },
+        {
+          "id": "task-backlog00000",
+          "room": "dm-quin",
+          "assignee": "quin",
+          "title": "The backlog task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "proposed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-backlog",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000,
+          "proposedBy": "galahad"
         }
       ],
       "deliveries": [
@@ -1328,6 +1362,13 @@
         "needs": true,
         "expression": "asking",
         "state": "needs"
+      },
+      {
+        "id": "quin",
+        "line": "Galahad proposes “The backlog task”",
+        "needs": true,
+        "expression": "asking",
+        "state": "needs"
       }
     ],
     "besides": [
@@ -1410,6 +1451,11 @@
         "line": "Ada proposes “The askpip task”",
         "state": "needs",
         "beside": "Ada proposes “The askpip task”"
+      },
+      {
+        "line": "Galahad proposes “The backlog task”",
+        "state": "needs",
+        "beside": "Galahad proposes “The backlog task”"
       },
       {
         "line": "Paused",
@@ -1661,7 +1707,8 @@
           "max",
           "ned",
           "oz",
-          "pip"
+          "pip",
+          "quin"
         ],
         "needs": 3
       },

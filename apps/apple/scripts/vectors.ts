@@ -228,6 +228,7 @@ const snapshot: core.TeamSnapshot = {
     knight("ned", "Ned", { enabled: false }),
     knight("oz", "Oz"),
     knight("pip", "Pip"),
+    knight("quin", "Quin"),
   ],
   rooms: ["ada", "bea", "cy", "fay", "gus", "kit", "lou", "max", "ned"].map(direct),
   tasks: [
@@ -244,6 +245,8 @@ const snapshot: core.TeamSnapshot = {
     task("ask", "oz", "proposed", { proposedBy: "oz" }),
     task("ask2", "oz", "proposed", { proposedBy: "oz", updatedAt: at(40) }),
     task("askpip", "pip", "proposed", { proposedBy: "ada" }),
+    // Work Galahad offers an idle knight from your backlog (backlog.ts): he is named, not his id.
+    task("backlog", "quin", "proposed", { proposedBy: "galahad" }),
   ],
   deliveries: [delivery("busy", "bea", "running"), delivery("think", "eve", "queued"), delivery("old", "jo", "failed", { error: "Model unavailable", updatedAt: at(2) })],
 };
