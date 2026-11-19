@@ -12,7 +12,7 @@ interface Script {
   outputs?: Partial<ExecResult>[];
 }
 
-function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number; submitAtLimit?: boolean; keepReads?: boolean; gates?: string[] } = {}) {
+function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number; submitAtLimit?: boolean; keepReads?: boolean; gates?: string[]; escalate?: boolean } = {}) {
   const queues: Record<QuestRole, string[]> = {
     planner: [...(script.planner ?? ["1. Do it.\nDone when: it is done."])],
     engineer: [...script.engineer],
@@ -24,7 +24,7 @@ function harness(script: Script, options: { maxSteps?: number; maxRevisions?: nu
   const events: QuestEvent[] = [];
   const controller = new AbortController();
   const run = runQuest(
-    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions, ...(options.submitAtLimit ? { submitAtLimit: true } : {}), ...(options.keepReads ? { keepReads: true } : {}), ...(options.gates ? { gates: options.gates } : {}) },
+    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions, ...(options.submitAtLimit ? { submitAtLimit: true } : {}), ...(options.keepReads ? { keepReads: true } : {}), ...(options.gates ? { gates: options.gates } : {}), ...(options.escalate ? { escalate: true } : {}) },
     {
       ask: async (role, messages) => {
         seen.push({ role, messages });
@@ -471,6 +471,25 @@ describe("a knight that has run its gates is told to say so (keep-reads)", () =>
     await lean.run;
     expect(told(lean).some((content) => content.includes(NOTE))).toBe(false);
     expect(told(lean)[0]).toContain("When the quest is done and you have verified it");
+  });
+});
+
+describe("routed by the work: hard work starts on the strongest models (your word: smart routing for performance and low cost)", () => {
+  test("a plan that says the work needs the strongest models has the planner's do it from its start; one that says usual, the engineer's", async () => {
+    const strong = harness({ planner: ["1. Change the three files together.\nDone when: the tests pass.\nEngineer: strong", sh("echo done"), "DONE\nChanged."], engineer: [] }, { escalate: true });
+    expect((await strong.run).status).toBe("done");
+    expect(strong.seen.map((x) => x.role)).toEqual(["planner", "planner", "planner", "reviewer"]);
+    expect(strong.events).toContainEqual({ type: "routed", to: "planner", why: "its plan says the work needs the strongest models" });
+    const usual = harness({ planner: ["1. Fix the typo.\nDone when: it reads right.\nEngineer: usual"], engineer: [sh("echo done"), "DONE\nFixed."] }, { escalate: true });
+    expect((await usual.run).status).toBe("done");
+    expect(usual.seen.map((x) => x.role)).toEqual(["planner", "engineer", "engineer", "reviewer"]);
+    expect(usual.events.some((e) => e.type === "routed")).toBe(false);
+    // The planner is asked for the line only where the work may go to its models (escalate), and told what they cost.
+    expect(usual.seen[0]!.messages[0]!.content).toContain('Then a line "Engineer: strong" when the work needs the strongest models from its start');
+    const lean = harness({ planner: ["1. Do it.\nDone when: done.\nEngineer: strong"], engineer: [sh("echo done"), "DONE\nDone."] });
+    expect((await lean.run).status).toBe("done");
+    expect(lean.seen[0]!.messages[0]!.content).not.toContain("Engineer: strong");
+    expect(lean.seen[1]!.role).toBe("engineer");
   });
 });
 

@@ -252,6 +252,7 @@ export function progress(event: QuestEvent): string {
     case "submitted": return `Submitted for review · ${event.summary}`;
     case "skipped": return `${event.model} couldn't answer as ${event.role}: ${event.error.split("\n")[0]}. ${event.answered} answers instead`;
     case "escalated": return `Escalated · the same gate failed twice in a row: the ${event.to}'s models take the work\n$ ${event.gate}`;
+    case "routed": return `Routed · ${event.why}: the ${event.to}'s models do the work`;
     case "locked": return `Tests changed · ${event.changed.join(", ")}: the tests its gates run are the contract, so the work goes back`;
     case "budget": return event.out ? `Budget · spent ($${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)}): the work stops` : `Budget · $${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)} spent: wrapping up`;
     case "tripped": return `Tripwire · ${event.rule} ${event.does === "halt" ? "halted the task" : event.gate ? "refused a gate" : "refused a command"}: ${event.why}\n$ ${event.command}`;

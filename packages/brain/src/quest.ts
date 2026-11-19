@@ -235,6 +235,8 @@ export type QuestEvent =
   | { type: "skipped"; role: QuestRole; model: string; error: string; answered: string }
   /** A gate failed again as it failed the submission before: the rest of the work is that role's (escalate). */
   | { type: "escalated"; to: QuestRole; gate: string }
+  /** The work went to another role's models from its start, and why (escalate: its plan said it is hard). */
+  | { type: "routed"; to: QuestRole; why: string }
   /**
    * A tripwire of yours stopped a command before it ran (`gate`: one of the gates): `halt` ends the quest, `refuse`
    * leaves that command unrun and the work going on. `why`: the word and the glob it matched, the text it holds.
@@ -480,6 +482,10 @@ const planPrompt = (o: Resolved): string => `Plan this quest for an engineer who
 Quest: ${o.goal}
 
 Reply with a short numbered plan (at most 7 steps), then a line starting "Done when:" saying how we will know it is finished and verified. No preamble.${
+  o.escalate && !o.agent
+    ? `\n\nThen a line "Engineer: strong" when the work needs the strongest models from its start (it changes several files whose state must stay consistent, or the right approach is unclear), else "Engineer: usual". The strongest cost the most: ask for them only when the work needs them.`
+    : ""
+}${
   o.proposeGates
     ? `\n\nAfter that, if "Done when:" can be checked by a shell command that exits 0 only when it holds (a test run, a file that must exist, a grep), you may add up to ${MAX_PROPOSED_GATES} lines starting "Gate:" with one such command each. They are your proposal: each is run in the engineer's workspace when the work is submitted, and must pass before the review. Leave them out when no command would prove it.`
     : ""
@@ -1247,6 +1253,9 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
     }
     if (gates.length) emit({ type: "gates", gates });
+    // Work its plan says is hard starts on the planner's models (escalate's): routed by the step, not only once stuck.
+    const hard = o.escalate && !o.agent && /^\W*Engineer:\W*strong\b/im.test(plan);
+    if (hard) emit({ type: "routed", to: "planner", why: "its plan says the work needs the strongest models" });
     // Each gate once as the workspace stands, before anything is paid for: what its passing afterwards can show.
     // The test files the gates name, as they are before any work: those there now are locked (one the work is to write isn't).
     const named = [...new Set(gates.flatMap((g) => testFilesOf(g.command)))];
@@ -1323,7 +1332,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       return `\n\n(Your commands have now run every one of the gates on the work as it is. If they passed and the work is done, reply DONE now: they run again when you do, and then the independent reviewer judges it. Checking further adds time, not proof.)`;
     };
     /** Whose models do the work: the engineer's, until a gate fails twice in a row (escalate). */
-    let worker: QuestRole = "engineer";
+    let worker: QuestRole = hard ? "planner" : "engineer";
     let warned = false;
     /** Said with a step's result when there is a budget: what is spent, and past four fifths of it, to wrap up. */
     const spentNote = async (): Promise<string> => {
