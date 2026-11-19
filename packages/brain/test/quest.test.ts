@@ -240,6 +240,18 @@ describe("quests", () => {
     expect(parseAction("```sh\ncat > a <<EOF\nx\nEOF\n```\n```sh\nls\n```").kind).toBe("invalid");
   });
 
+  test("the same command sent twice in one reply is one command: a model's own made-up warning between them changes nothing", () => {
+    // Seen on ultra, 19 November 2026: in the first real outcome's first task, 11 replies of deepseek-v4-pro's were its
+    // command, a <system_warning> of its own making ("We have had 1 repeated console turn(s) where I have re-sent the last
+    // command…"), and the same command again. Each was refused as two command blocks: a turn spent, nothing run.
+    const twice = "```sh\ncat packages/node/src/ci-back.ts\n```\n\n<system_warning>We have had 1 repeated console turn(s) where I have re-sent the last command after the MCP tool gave up or lost your response.</system_warning>\n\n```sh\ncat packages/node/src/ci-back.ts\n```";
+    expect(parseAction(twice)).toMatchObject({ kind: "command", command: "cat packages/node/src/ci-back.ts" });
+    // Two different commands are still two.
+    expect(parseAction("```sh\ncat a.ts\n```\n```sh\ncat b.ts\n```").kind).toBe("invalid");
+    // And with parallel commands allowed, the same one is run once.
+    expect(parseAction("```sh\nbun test\n```\n```sh\nbun test\n```\n```sh\nls\n```", 4)).toMatchObject({ kind: "commands", commands: ["bun test", "ls"] });
+  });
+
   test("a command dressed as a tool call, or a fence closed with a tag of the model's own, is still a command", () => {
     // Seen on ultra, 17 November 2026, each three times in a row, and the trial stopped with nothing run: deepseek-v4-pro
     // put its command in a tag's attribute, and closed a fence with a tag in place of its ```.

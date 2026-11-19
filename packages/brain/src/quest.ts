@@ -383,7 +383,10 @@ export function parseAction(reply: string, parallel = 1): Action {
   if (/^DONE\b/i.test(firstLine)) return { kind: "done", summary: rest || firstLine.replace(/^DONE\W*/i, "") || "(no summary)" };
   if (/^GIVE UP\b/i.test(firstLine)) return { kind: "give-up", reason: rest || firstLine.replace(/^GIVE UP\W*/i, "") || "(no reason given)" };
   const fenced = fences(reply);
-  const { commands: blocks, thought } = fenced.blocks.length ? { commands: fenced.blocks, thought: fenced.thought } : taggedCommands(reply);
+  const { commands: found, thought } = fenced.blocks.length ? { commands: fenced.blocks, thought: fenced.thought } : taggedCommands(reply);
+  // The same command twice is one (a model sent its command, a "system warning" of its own making and the command again,
+  // eleven times in one task on 19 November 2026: each refused as two blocks, a turn spent and nothing run).
+  const blocks = [...new Set(found)];
   if (!blocks.length) {
     const closed = fenceClosedByATag(reply);
     if (closed) return { kind: "command", ...closed };
