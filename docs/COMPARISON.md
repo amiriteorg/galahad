@@ -67,6 +67,12 @@ Galahad declined a model screening risky actions on purpose: what needs you stay
 
 Since 16 November, among the five: Rakazo 0.12 can hand coding work to a T3 Code environment over MCP and stops a loop whose tool keeps returning the same result [R14]; OpenMausBot's new bots on a Mac or Windows work on "This computer" by default (0.1.165) and it caps spend per day and month [M11]; Hermes Agent's subagents survive a restart [H14]; Dots is on by default for eligible Enterprise, Edu and Healthcare workspaces from 18 November and can reach a local computer while the ChatGPT app is open [D10][D11]. Nothing new from Grok Bot was confirmed.
 
+## Since 18 November, read 19 November
+
+**Rakazo 0.13.0** (18 November) [R15]: approval settings now cover routines, chat apps and work influenced by outside content, its Auto Review (a model) weighs the owner's recent instructions, and unattended approvals expire after 30 minutes; a plain-text Gmail or Slack draft is edited on its approval card before it is sent; a connected MCP server can ask a question or for a confirmation in chat; meeting bots join calls and return speaker-labelled transcripts; routines run from webhooks, Git events, chat messages and email; outside guests join one Space; a model picker sits in the composer; and an Apple Watch app reads chats and answers requests. **OpenHands 1.42.0** (18 November) [O4] chooses among connected git providers and fixes its automations' webhook check. Hermes Agent and OpenMausBot shipped nothing new beyond canaries, and Grok Bot's release notes list nothing since its launch [G1]; its own pages, read again, still say "All your Bots share that computer", "When one Bot signs in to a site, your other Bots are signed in too" and "Your Bots aren't separated from each other" [G12].
+
+Galahad, 19 November: **edit before you approve** (an approval's texts are yours to change before your yes; your version is what's sent, the one asked is declined saying which it became: PLAN #45), and work with a budget (a task's, an outcome's) runs only on a model whose spend it can count, so a fall to an unpriced model can't spend past it unseen. Not taken: meeting bots and voice (your word of 14 November: no voice yet), and a model screening approvals (declined: the oath's classes and your word decide).
+
 ## Devin Bots, 18 November
 
 Cognition launched **Devin Bots** on 17 November 2026 [C1][C3]: "a persistent agent with its own memory and tools that can lead multiple Devins in parallel". You give a Bot an *outcome* to own; it plans the work, starts a child Devin session for each piece (each on a machine of its own), watches them, judges what came back and decides what's next, for days or weeks [C1][C2]. It is Cognition's answer to OpenAI's Dots and Anthropic's Claude Duet (a proactive agent in research preview for Pro and Max subscribers since 21 October [U1]), and it is not tied to one lab's models [C3].
@@ -93,7 +99,7 @@ What it shows Galahad: the outcome a lead owns over weeks (a plan, tasks fanned 
 
 ## Sources
 
-Read on 16 November 2026; T, A, O, H14, R14, M11, D10 and D11 on 18 November; C and U1 on 18 November (Devin Bots launched the day before).
+Read on 16 November 2026; T, A, O, H14, R14, M11, D10 and D11 on 18 November; C and U1 on 18 November (Devin Bots launched the day before); R15, O4, G1 and G12 on 19 November.
 
 - **T1** https://github.com/pingdotgg/t3code (README), https://t3.codes
 - **T2** https://github.com/pingdotgg/t3code/releases/tag/v0.1.10
@@ -109,6 +115,8 @@ Read on 16 November 2026; T, A, O, H14, R14, M11, D10 and D11 on 18 November; C 
 - **O3** https://openhands.dev/blog/openhands-index
 - **H14** https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.2
 - **R14** https://github.com/elie222/rakazo/releases/tag/v0.12.0
+- **R15** https://github.com/elie222/rakazo/releases/tag/v0.13.0
+- **O4** https://github.com/OpenHands/OpenHands/releases/tag/v1.42.0
 - **M11** https://github.com/milind-soni/OpenMausBot/releases (0.1.165 to 0.1.169)
 - **D10** https://learn.chatgpt.com/docs/dots
 - **D11** https://learn.chatgpt.com/docs/dots/computers-and-apps

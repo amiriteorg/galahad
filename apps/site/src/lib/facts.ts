@@ -98,15 +98,16 @@ export const SIZE = {
   ],
 } as const;
 
-/** Side by side on 16 November 2026, each project from its own releases, docs and App Store listing: docs/COMPARISON.md
- * has every source. Short enough for a schedule row; the doc has the whole of each. */
+/** Side by side, each project from its own releases, docs and App Store listing (read 16 November 2026; Rakazo's and
+ * Grok Bot's again on 19 November, and every project's releases since): docs/COMPARISON.md has every source. Short
+ * enough for a schedule row; the doc has the whole of each. */
 export const COMPARE = {
-  date: "16 November 2026",
+  date: "19 November 2026",
   columns: ["Runs on", "Each agent's work", "Done when", "On an iPhone", "Chat apps"],
   rows: [
-    { name: "Galahad", ours: true, cells: ["Your machines only", "A microVM per knight: KVM, or a Mac's own", "Its gates pass, then a reviewer who didn't do it accepts", "Native, in testing", "None yet"] },
+    { name: "Galahad", ours: true, cells: ["Your machines only", "A microVM per knight: KVM, or a Mac's own", "Its gates pass, then a reviewer who didn't do it accepts", "Native, in testing", "Telegram"] },
     { name: "Hermes Agent 0.23", ours: false, cells: ["Your machine, or Hermes Cloud", "On the host by default; sandboxes optional", "No enforced gate found", "None official", "About 30"] },
-    { name: "Rakazo 0.11", ours: false, cells: ["Your server, or hosted", "A Docker computer per bot; a VM per bot on Apple-silicon Macs", "No enforced gate found", "App Store", "Six"] },
+    { name: "Rakazo 0.13", ours: false, cells: ["Your server, or hosted", "A Docker computer per bot; a VM per bot on Apple-silicon Macs", "No enforced gate found", "App Store", "Six"] },
     { name: "OpenMausBot 0.1", ours: false, cells: ["Your machine, a VPS, or its cloud", "Full access by default; a container if you choose", "No gate found", "App Store", "Slack, through its cloud"] },
     { name: "Grok Bot", ours: false, cells: ["Cursor's cloud, in the US", "One microVM per user, shared by their bots", "A model screens risky actions", "App Store", "Slack, Teams, X"] },
     { name: "Dots", ours: false, cells: ["OpenAI's cloud", "A computer per dot, \"not an isolation guarantee\"", "A model screens risky actions", "The ChatGPT app", "Slack, Teams, iMessage, calls"] },
@@ -115,30 +116,36 @@ export const COMPARE = {
 
 /** What is built, being built and next: docs/PLAN.md's rows in a line each, with the state the plan gives them, in its order. */
 export const PHASING = {
-  date: "18 November 2026",
+  date: "19 November 2026",
   rows: [
+    { state: "built", what: "Edit before you approve", line: "An approval's words are yours to change before your yes: your version is what's sent." },
+    { state: "built", what: "Outcomes he owns", line: "A result you give him for days or weeks: he plans it, gives his knights tasks within its budget, and reports daily." },
+    { state: "built", what: "CI and review back to the knight", line: "A shipped pull request that fails its checks, or a review that asks for changes, goes back to the knight who did it." },
+    { state: "built", what: "Event triggers", line: "Work started by a signed webhook, new mail, or a GitHub run, push, issue or pull request, not only a clock." },
     { state: "built", what: "The workspace beside the chat", line: "A knight's files and what its task changed, beside its conversation: read only, keys redacted before they leave its VM." },
     { state: "built", what: "A usage meter", line: "What the models have cost today or this month, against a budget of yours: a line to watch, never a stop." },
     { state: "built", what: "The Inbox cleared by you", line: "Everything in it leaves when you say so, a swipe on a phone; a yes is still a deliberate press." },
     { state: "built", what: "Galahad leads in rooms", line: "What you say to a room is his; he brings in only the knights the work needs." },
     { state: "built", what: "Cheaper coding plans", line: "Twelve plans as presets, each used only as far as its vendor's terms allow." },
     { state: "built", what: "Audited, not capped", line: "A knight's run has no limit of time or commands; an independent audit keeps it on its task and getting closer." },
-    { state: "built", what: "A budget per task", line: "A task sees what it has spent and stops when it is, a coding tool's own calls included." },
+    { state: "built", what: "A budget per task", line: "A task sees what it has spent and stops when it is; it runs only on models whose spend it can count." },
     { state: "built", what: "His own computer", line: "A VM with a desktop that is his, kept between conversations." },
     { state: "built", what: "Photos and files in chat", line: "Send him a screenshot, a log or a file of code, from any app or the terminal." },
     { state: "built", what: "A chat to work in", line: "Reply to a line, edit, ask again; code coloured and numbered; pictures to zoom; @ for the knights in a room." },
     { state: "built", what: "What he knows of you", line: "Facts he proposes and you keep, sent with every answer." },
     { state: "built", what: "Roles you make", line: "Choose the models each knight works on, a local one on whichever of your machines serves it; the reviewer stays independent." },
+    { state: "building", what: "Galahad writes first", line: "Ship it and give again from a task's card, and \"tell me when\"; next, what happened while you were away." },
+    { state: "building", what: "Count the north star", line: "Each time you step in on a knight's task, counted per task done and verified; next, in the trials." },
+    { state: "building", what: "A knight that keeps the books", line: "Bilag from your mail to Drive on their own, and drafts in Dinero; booking always asks." },
+    { state: "building", what: "Chat apps", line: "Telegram is built; next, its rooms and files, then Slack." },
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Lean context", line: "Output a later run or edit made stale becomes a line; next, errors since fixed." },
     { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing; next, the test written first." },
     { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, run a check after one, or tell you it ran; next, before an answer." },
     { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
     { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; it gives a Mac its knights' VMs, behind its firewall, with one password, and lends Galahad the Mac itself in sessions you allow." },
-    { state: "next", what: "Galahad writes first", line: "What happened while you were away, and the next step offered as choices, never acting without asking." },
     { state: "next", what: "Checkpoint, rewind and fork", line: "A quest paused, moved, rewound to a step, or forked at a doubt." },
-    { state: "next", what: "Event triggers", line: "Work started by a webhook, new mail or a failed CI run, not only a clock." },
-    { state: "next", what: "Chat apps", line: "Telegram first, then Slack, Discord, Signal and WhatsApp." },
+    { state: "next", what: "Keys a knight uses but never sees", line: "A placeholder in its script, the vault's key swapped in only at the key's own address." },
   ],
 } as const;
 
