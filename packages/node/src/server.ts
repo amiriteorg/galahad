@@ -189,7 +189,7 @@ import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfAc
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
 import { OutcomeError, OutcomeRunner } from "./outcomes.ts";
-import { BacklogRunner } from "./backlog.ts";
+import { BacklogRunner, issueLines } from "./backlog.ts";
 import { offerFix } from "./ci-back.ts";
 import type { BilagService } from "./bilag.ts";
 import type { BooksAttach, BooksAttached } from "./books.ts";
@@ -2234,6 +2234,16 @@ export function createApp(ctx: AppContext) {
       identity: ctx.identity,
       brain: () => brainFor({ device: `arm:${GALAHAD_ARM}`, kind: "arm", label: GALAHAD_ARM, scopes: [] }),
       exec: (knight, command, timeout, signal) => execTeam(knight, command, timeout, signal),
+      // Its open issues, read through your connector for its owner when you added one, else through github's.
+      issues: async (repository) => {
+        const repo = githubRepo(repository);
+        if (!repo) return "";
+        const own = `github-${repo.owner.toLowerCase()}`;
+        const connector = installedConnector(ctx.store, own) ? own : "github";
+        if (!installedConnector(ctx.store, connector)) return "";
+        const outcome = await ctx.connectors.call({ connector, tool: "issues", args: { owner: repo.owner, repo: repo.repo, state: "open", per_page: 30 } }, { kind: "agent", by: "backlog" });
+        return outcome.status === "done" && outcome.result.ok ? issueLines(outcome.result.body) : "";
+      },
       busy: (knight) => team.store.outcomes().some((o) => o.status === "active" && o.knights.includes(knight)),
       log: ctx.log,
     });

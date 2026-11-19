@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, type ExecResult, newNodeIdentity, type Teammate, toldItem } from "@galahad/core";
 import type { chat as Chat } from "@galahad/brain";
 import { foundFleet, MindStore } from "@galahad/mind";
-import { BACKLOG, BACKLOG_READ, BacklogRunner, readProposal } from "../src/backlog.ts";
+import { BACKLOG, BACKLOG_READ, BacklogRunner, issueLines, readProposal } from "../src/backlog.ts";
 import { TeamStore } from "../src/team-store.ts";
 import { TeamService } from "../src/team.ts";
 
@@ -22,7 +22,7 @@ afterEach(async () => {
   }
 });
 
-function world(answers: string[] = [], options: { read?: Partial<ExecResult>; busy?: string[] } = {}) {
+function world(answers: string[] = [], options: { read?: Partial<ExecResult>; busy?: string[]; issues?: string } = {}) {
   let now = Date.UTC(2026, 10, 19, 18, 0);
   const identity = newNodeIdentity();
   const mind = new MindStore(":memory:");
@@ -49,6 +49,7 @@ function world(answers: string[] = [], options: { read?: Partial<ExecResult>; bu
       return { exitCode: 0, stdout: PLAN, stderr: "", durationMs: 1, truncated: false, ...options.read };
     },
     busy: (knight) => (options.busy ?? []).includes(knight),
+    ...(options.issues !== undefined ? { issues: async () => options.issues! } : {}),
     log: () => {},
     now: () => now,
     chat: fake,
@@ -111,6 +112,19 @@ describe("work for idle knights, from your backlog", () => {
     expect(off.read).toEqual([]);
     off.store.setBacklog(true);
     expect(await off.runner.tick()).not.toBeNull();
+  });
+
+  test("its open issues are a backlog too: with no plan to read, an issue is offered; pull requests GitHub lists among them are not", async () => {
+    const listed = JSON.stringify([
+      { number: 12, title: "Outcomes from a template", labels: [{ name: "enhancement" }], body: "Give the same\noutcome again." },
+      { number: 11, title: "A pull request", pull_request: { url: "x" } },
+      { number: 9, title: "The board view", labels: [], body: null },
+    ]);
+    expect(issueLines(listed)).toBe("#12 Outcomes from a template [enhancement]: Give the same outcome again.\n#9 The board view");
+    expect(issueLines("not json")).toBe("");
+    const w = world([PROPOSAL], { read: { stdout: "=== its newest commits\nabc123 first" }, issues: issueLines(listed) });
+    expect(await w.runner.tick()).not.toBeNull();
+    expect(w.asked[0]!.content).toContain("=== its open issues\n#12 Outcomes from a template [enhancement]");
   });
 
   test("an answer of none, or one that can't be read, proposes nothing; a budget past its cap or a gate over two lines is no proposal", async () => {
