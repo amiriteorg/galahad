@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, type TeamTrailEntry, TeamWorkspace,
   type Teammate, type TeamRoom, type TeamMessage, type TeamTask, type TeamDelivery, type TeamSnapshot, type TeamRoomView, type TeamWorkStatus, type TeamOverview,
-  TeamOutcomeInput, type TeamOutcomeStatus, type TeamTaskFix, type TeamTaskShipped, heldModels, SENSITIVE_WORK,
+  TeamOutcomeInput, type TeamOutcomeStatus, type TeamTaskFix, type TeamTaskShipped, type TeamCheckpoint, heldModels, SENSITIVE_WORK,
 } from "../../core/src/team.ts";
 import { type InterventionKind, type NorthStar, northStar } from "../../core/src/interventions.ts";
 
@@ -141,6 +141,7 @@ export class TeamStore {
       CREATE TABLE IF NOT EXISTS team_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS team_outcomes (id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS team_trail (task TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY(task, n));
+      CREATE TABLE IF NOT EXISTS team_checkpoints (task TEXT NOT NULL, step INTEGER NOT NULL, at INTEGER NOT NULL, commit_id TEXT NOT NULL, command TEXT NOT NULL, PRIMARY KEY(task, step));
       CREATE TABLE IF NOT EXISTS team_stories (room TEXT PRIMARY KEY REFERENCES team_rooms(id), text TEXT NOT NULL, through TEXT NOT NULL, updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS team_answers (
         seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, room TEXT NOT NULL REFERENCES team_rooms(id),
@@ -626,11 +627,21 @@ export class TeamStore {
         throw new TeamError(400, (error as Error).message);
       }
       if (models && assignee.harness === "acp") throw new TeamError(400, `${assignee.name} works in an ACP agent of yours, which calls the models you set it up with: a task in sensitive mode goes to a knight on Galahad's own harness, OpenCode, Hermes, Claude Code or Codex.`);
+      // Started from a step of another task (PLAN #15): the same knight's, whose VM keeps that step's checkpoint.
+      let from: TeamTask["from"];
+      if (input.from) {
+        const source = this.task(input.from.task);
+        if (!source) throw new TeamError(404, "No such task to start from.");
+        if (source.assignee !== input.assignee) throw new TeamError(400, `A task starts from a step of its own knight's work: task ${source.id} is ${source.assignee}'s, and its steps are kept in that knight's VM.`);
+        const point = this.checkpoint(source.id, input.from.step);
+        if (!point) throw new TeamError(400, `Task ${source.id} has no step ${input.from.step} kept to start from.`);
+        from = { task: source.id, step: point.step, commit: point.commit, command: point.command };
+      }
       const chain = by.chainId ?? this.chain(room);
       // A knight's task is proposed to you: it is written down where it was asked for, and waits for your approval. So
       // is the work Galahad offers an idle knight from your backlog (backlog.ts): a proposal isn't a give.
       const proposed = by.teammate ? { proposedBy: by.teammate } : by.propose ? { proposedBy: by.givenBy ?? TEAM_GALAHAD } : {};
-      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...(input.outcome ? { outcome: input.outcome } : {}), ...(models ? { models: [...models] } : {}), ...(by.fix ? { fix: by.fix } : {}), ...proposed }, by.teammate || by.propose ? "proposed" : "queued");
+      const key = this.insertJob("task", room.id, input.assignee, chain, { title: input.title, goal: input.goal, dependsOn: input.dependsOn ?? [], gates: input.gates ?? [], ...(input.budgetUsd !== undefined ? { budgetUsd: input.budgetUsd } : {}), verified: false, progress: "", output: "", ...(by.givenBy ? { givenBy: by.givenBy } : {}), ...(input.outcome ? { outcome: input.outcome } : {}), ...(models ? { models: [...models] } : {}), ...(from ? { from } : {}), ...(by.fix ? { fix: by.fix } : {}), ...proposed }, by.teammate || by.propose ? "proposed" : "queued");
       return this.task(key)!;
     })();
   }
@@ -640,6 +651,19 @@ export class TeamStore {
     if (row?.kind !== "task") return;
     // (When it ended stays as it was: shipping it is not more of its work.)
     this.db.query("UPDATE team_jobs SET data=? WHERE id=?").run(JSON.stringify({ ...JSON.parse(row.data), shipped }), key);
+  }
+  /** A step of a task's work, kept as it ended (PLAN #15): the runner says each once. Anything that isn't one is passed over. */
+  keepCheckpoint(task: string, point: TeamCheckpoint): void {
+    if (!/^[0-9a-f]{40}$/.test(point.commit) || !Number.isSafeInteger(point.step) || point.step < 1) return;
+    this.db.query("INSERT OR IGNORE INTO team_checkpoints(task,step,at,commit_id,command) VALUES(?,?,?,?,?)").run(task, point.step, point.at, point.commit, teamOutput(point.command, 300));
+  }
+  /** The steps of a task another can be started from, the first first. */
+  checkpoints(task: string): TeamCheckpoint[] {
+    return this.db.query<{ step: number; at: number; commit_id: string; command: string }, [string]>("SELECT step, at, commit_id, command FROM team_checkpoints WHERE task = ? ORDER BY step").all(task).map((r) => ({ step: r.step, commit: r.commit_id, command: r.command, at: r.at }));
+  }
+  checkpoint(task: string, step: number): TeamCheckpoint | null {
+    const r = this.db.query<{ step: number; at: number; commit_id: string; command: string }, [string, number]>("SELECT step, at, commit_id, command FROM team_checkpoints WHERE task = ? AND step = ?").get(task, step);
+    return r ? { step: r.step, commit: r.commit_id, command: r.command, at: r.at } : null;
   }
   /** Whether kept work is of work in sensitive mode (heldModels): as its label says, its knight's mode, or its task's. */
   sensitiveWork(artifact: { id: string; label: string; sandbox?: string | null }): boolean {
@@ -662,7 +686,7 @@ export class TeamStore {
   private jobRow(id: string): JobRow | null { return this.db.query<JobRow, [string]>("SELECT * FROM team_jobs WHERE id = ?").get(id); }
   job(id: string): TeamJob | null { const row = this.jobRow(id); return row ? jobOf(row) : null; }
   private taskOf(row: JobRow): TeamTask {
-    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "changes" | "givenBy" | "proposedBy" | "interventions" | "outcome" | "models" | "fix" | "shipped">;
+    const data = JSON.parse(row.data) as Pick<TeamTask, "title" | "goal" | "dependsOn" | "gates" | "budgetUsd" | "verified" | "progress" | "output" | "record" | "changes" | "givenBy" | "proposedBy" | "interventions" | "outcome" | "models" | "from" | "fix" | "shipped">;
     return { ...data, id: row.id, room: row.room, assignee: row.teammate, chainId: row.chain_id, status: row.status, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
   }
   task(id: string): TeamTask | null { const row = this.jobRow(id); return row?.kind === "task" ? this.taskOf(row) : null; }

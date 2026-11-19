@@ -1,4 +1,4 @@
-import { interventionWords, plainLine, plainText, type Prices, type TeamChangesView, type TeamFilesView, type TeamFileView, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate } from "@galahad/core";
+import { interventionWords, plainLine, plainText, type Prices, type TeamChangesView, type TeamFilesView, type TeamFileView, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate, type TeamCheckpoint } from "@galahad/core";
 import { AVATAR_LOOKS, lookProfile, resolveAvatar, withBodyColor } from "@galahad/core/avatar";
 
 interface Api { call<T>(name: RouteName, input?: unknown): Promise<T> }
@@ -37,7 +37,7 @@ export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): 
 /** What a task changed in its repository and where that is kept (`galahad ship <artifact>` opens a pull request from it). Empty when it kept nothing. */
 export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
-const usage = "galahad roundtable [add <id> | avatar <id> | models <id> [provider/model…] | sensitive <id> [on|off] [provider/model…] | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> [--sensitive] [--models provider/model,…] | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | ci [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad roundtable [add <id> | avatar <id> | models <id> [provider/model…] | sensitive <id> [on|off] [provider/model…] | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> [--sensitive] [--models provider/model,…] | steps <task-id> | again <task-id> [--from <step>] [goal] | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | ci [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
 
 /** What a knight works on, in a sentence: its own models or its role's, and whether it is in sensitive mode. */
 const knightModels = (m: Teammate): string =>
@@ -239,6 +239,29 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
       if (!flags.follow) { print(`(still ${page.task.status}: galahad roundtable trail ${page.task.id} --follow)`); return; }
       await new Promise((resolve) => setTimeout(resolve, wait));
     }
+  }
+  if (sub === "steps") {
+    // The steps of a task another can be given from (PLAN #15): each command, and when it ended.
+    if (!args[0]) throw new Error("usage: galahad roundtable steps <task-id>");
+    const { steps } = await api.call<{ steps: TeamCheckpoint[] }>("teamSteps", { task: args[0] });
+    if (!steps.length) { print(`${args[0]} has no steps kept: they are kept for a knight's task in a repository, on Galahad's own harness.`); return; }
+    for (const s of steps) print(`${String(s.step).padStart(4)}  ${new Date(s.at).toTimeString().slice(0, 8)}  ${plainLine(s.command).slice(0, 160)}`);
+    print(`Give it again from one: galahad roundtable again ${args[0]} --from <step> ["<goal>"]`);
+    return;
+  }
+  if (sub === "again") {
+    // The same task given again, as its knight's new one (your stepping in, counted on it): from its start, or from a
+    // step of it (--from), its workspace as it stood then. Your words, when you give them, are its goal.
+    const id = args[0];
+    if (!id) throw new Error('usage: galahad roundtable again <task-id> [--from <step>] ["<goal>"]');
+    const old = (await api.call<TeamSnapshot>("team")).tasks.find((t) => t.id === id);
+    if (!old) throw new Error(`no task ${id}`);
+    const step = string("from") === undefined ? undefined : Number(string("from"));
+    if (step !== undefined && (!Number.isInteger(step) || step < 1)) throw new Error("--from names a step by its number: galahad roundtable steps " + id);
+    const goal = args.slice(1).join(" ").trim() || old.goal;
+    const { task } = await api.call<{ task: { id: string } }>("createTeamTask", { room: old.room, assignee: old.assignee, title: old.title, goal, gates: old.gates, ...(old.dependsOn.length ? { dependsOn: old.dependsOn } : {}), ...(old.budgetUsd !== undefined ? { budgetUsd: old.budgetUsd } : {}), ...(old.models?.length ? { models: old.models } : {}), again: old.id, ...(step !== undefined ? { from: { task: old.id, step } } : {}) });
+    print(`${task.id} queued: ${old.id} given again${step !== undefined ? `, from its step ${step}` : ""}; completion requires its gates and independent review.`);
+    return;
   }
   if (sub === "provision" && flags.remake) {
     // Its VM made again from the image as it is now: the same VM and /work, a new container. Its own route.

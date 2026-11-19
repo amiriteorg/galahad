@@ -371,6 +371,8 @@ export const routes = {
   teamRoom: { method: "POST", path: "/api/team/room", scope: "chat", input: z.strictObject({ id: z.string().min(1).max(80) }) },
   /** What a task did, as it happened: its kept lines after number `after`, a page at a time, with the task's status now. Yours to read, like a room. */
   teamTrail: { method: "POST", path: "/api/team/trail", scope: "chat", input: z.strictObject({ task: TeamTaskId, after: z.number().int().min(0).max(10_000_000).optional() }) },
+  /** The steps of a task that another can be started from (PLAN #15): `{ steps: TeamCheckpoint[] }`, the first first. */
+  teamSteps: { method: "POST", path: "/api/team/steps", scope: "chat", input: z.strictObject({ task: TeamTaskId }) },
   /** You have looked at a knight's page or a room, on whichever device: what ended there so far is no longer new (`team`'s `seen`). */
   seeTeam: { method: "POST", path: "/api/team/seen", scope: "chat", input: TeamSeenInput },
   postTeamMessage: { method: "POST", path: "/api/team/messages", scope: "fleet:admin", input: TeamPostInput },

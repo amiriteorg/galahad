@@ -65,6 +65,10 @@ of its own; "roundtable", "squires" and "team" are the same command)
   roundtable task <room> <assignee> <goal> [--after task-id,task-id] [--gate command] [--budget-usd 0.5]
                                     [--sensitive] [--models provider/model,…]: sensitive mode for this task alone,
                                     on the models named, or with none named its knight's own
+  roundtable steps <task-id>          the steps of a knight's task in a repository, each kept as it ended
+  roundtable again <task-id> [--from <step>] ["<goal>"]
+                                    give a task again (your stepping in, counted on it): from its start, or from
+                                    one of its steps, its workspace as it stood then and what came after set aside
   roundtable give "<goal>" [--gate command]... [--title text] [--desktop] [--repo url] [--budget-usd 0.5]
                                     a task for the Roundtable: the knight best suited to it takes it (free, its work
                                     verified before, its job about this, a desktop or the repository it needs) and

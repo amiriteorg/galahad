@@ -2190,6 +2190,8 @@ export function createApp(ctx: AppContext) {
       roundtable: () => teamOf().overview().workers,
       primary: () => ctx.team!.store.arrangement().primary,
       work: (id) => teamOf().snapshot().tasks.filter((task) => task.assignee === id),
+      // Each step of a knight's task, kept as it ended (PLAN #15): another can be started from it.
+      checkpoint: (task, point) => teamOf().store.keepCheckpoint(task.id, point),
       story: (room) => teamOf().story(room),
       keepStory: (room, text, through) => teamOf().keepStory(room, text, through),
       search: (id, query) => teamOf().search(id, query),
@@ -2264,6 +2266,8 @@ export function createApp(ctx: AppContext) {
     directTeammate: (input, p) => { ownerOnly(p); return { room: teamOf().direct(input.id) }; },
     teamRoom: (input, p) => { ownerOnly(p); return teamOf().room(input.id); },
     teamTrail: (input, p) => { ownerOnly(p); return teamOf().trail(input.task, input.after ?? 0); },
+    // The steps another task can start from (PLAN #15): yours to read, as its trail is.
+    teamSteps: (input, p) => { ownerOnly(p); return { steps: teamOf().store.checkpoints(input.task) }; },
     teamOutcomes: (_input, p) => { ownerOnly(p); return { outcomes: outcomesOf().list() }; },
     setTeamOutcome: (input, p) => {
       ownerOnly(p);

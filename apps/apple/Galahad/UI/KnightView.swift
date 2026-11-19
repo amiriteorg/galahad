@@ -12,6 +12,8 @@ struct KnightView: View {
     @State private var stopping: TeamTask?
     /// The verified work being shipped as a pull request (ShipPrompt asks its title).
     @State private var shipping: TeamTask?
+    /// The task whose steps are being chosen from, to give it again from one.
+    @State private var stepping: TeamTask?
     @FocusState private var composing: Bool
     @Environment(\.dismiss) private var leave
     @State private var watching = false
@@ -57,7 +59,7 @@ struct KnightView: View {
                             composing = true
                         }
                     case .task(let task):
-                        TaskCardView(task: task, proposer: task.proposedBy.map { $0 == "galahad" ? "Galahad" : session.teammate($0)?.name ?? $0 }) { action in act(action, on: task) }
+                        TaskCardView(task: task, proposer: task.proposedBy.map { $0 == "galahad" ? "Galahad" : session.teammate($0)?.name ?? $0 }, fromStep: { stepping = task }) { action in act(action, on: task) }
                     }
                 }
                 if room.writing {
@@ -152,6 +154,7 @@ struct KnightView: View {
             Text("“\(task.title)” stops where it is. What it changed so far stays in \(name)'s workspace.")
         }
         .modifier(ShipPrompt(task: $shipping, room: room, client: session.client))
+        .modifier(StepsPicker(task: $stepping, room: room, client: session.client))
         // Asked again while you're here: its replies and its work move on as it goes.
         .task(id: row?.room) {
             while !Task.isCancelled {
@@ -183,7 +186,7 @@ struct KnightView: View {
     }
 
     /// A knight's coding harness, as it is named to you (the PWA's HARNESS).
-    static let harness = ["native": "Galahad", "opencode": "OpenCode", "hermes": "Hermes Agent", "claude": "Claude Code", "codex": "Codex"]
+    static let harness = ["native": "Galahad", "opencode": "OpenCode", "hermes": "Hermes Agent", "claude": "Claude Code", "codex": "Codex", "acp": "Any ACP agent"]
 }
 
 /// A word in a knight's room: yours on the right in the ink, the knight's and Galahad's on the left beside their
@@ -247,6 +250,8 @@ struct TaskCardView: View {
     let task: TeamTask
     /// The name of the knight that proposed it, when one did.
     var proposer: String? = nil
+    /// Opens its steps, to give it again from one (PLAN #15); nil: not offered here.
+    var fromStep: (() -> Void)? = nil
     let act: (TaskCard.Action) -> Void
 
     private var badge: (text: String, tone: TaskCard.Tone) { TaskCard.badge(task) }
@@ -305,6 +310,11 @@ struct TaskCardView: View {
                                 .tint(action == .stop ? Color.siege : .ink)
                         }
                     }
+                    if actions.contains(.again), let fromStep {
+                        Button("From a step…") { fromStep() }
+                            .buttonStyle(.bordered)
+                            .tint(.ink)
+                    }
                 }
                 .controlSize(.regular)
             }
@@ -316,6 +326,62 @@ struct TaskCardView: View {
     }
 
     private static let label: [TaskCard.Action: String] = [.decline: "Decline", .stop: "Stop", .resume: "Resume", .again: "Give again"]
+}
+
+/// The steps of a task another can be given from (PLAN #15), asked of the node as the sheet opens: each command and
+/// when it ended, with Give again from here (the PWA's task card, its steps).
+struct StepsPicker: ViewModifier {
+    @Binding var task: TeamTask?
+    let room: KnightRoom
+    let client: NodeClient
+    @State private var steps: [TaskStep]?
+    @State private var problem: String?
+
+    struct TaskStep: Decodable, Identifiable { let step: Int; let command: String; let at: Double; var id: Int { step } }
+    private struct Asked: Encodable { let task: String }
+    private struct Kept: Decodable { let steps: [TaskStep] }
+
+    func body(content: Content) -> some View {
+        content.sheet(item: Binding(get: { task.map { Picked(task: $0) } }, set: { if $0 == nil { task = nil } })) { picked in
+            NavigationStack {
+                List {
+                    if let problem {
+                        Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege)
+                    } else if let steps, steps.isEmpty {
+                        Text("No steps were kept: they are kept for a knight's task in a repository, on Galahad's own harness.").foregroundStyle(.secondary)
+                    } else if let steps {
+                        Section {
+                            ForEach(steps) { step in
+                                Button {
+                                    Task { await room.giveAgain(picked.task, from: step.step, with: client); task = nil }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("\(step.step). \(step.command)").font(.callout.monospaced()).lineLimit(2)
+                                        Text(Date(timeIntervalSince1970: step.at / 1000), style: .relative).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        } footer: {
+                            Text("Its workspace as it stood after that step. What came after is set aside, and stays this task's.")
+                        }
+                    } else {
+                        ProgressView()
+                    }
+                }
+                .navigationTitle("Give again from a step")
+                .inlineTitle()
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { task = nil } } }
+            }
+            .task {
+                steps = nil
+                problem = nil
+                do { steps = try await client.post("/api/team/steps", Asked(task: picked.task.id), as: Kept.self).steps } catch { problem = error.localizedDescription }
+            }
+            .sheetSize(width: 520, height: 560)
+        }
+    }
+
+    private struct Picked: Identifiable { let task: TeamTask; var id: String { task.id } }
 }
 
 /// Asks a pull request's title (the task's, to change) before a knight's verified work is shipped: the PWA's shipTask.

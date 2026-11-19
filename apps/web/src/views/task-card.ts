@@ -1,4 +1,4 @@
-import type { TeamTask } from "@galahad/core/team";
+import type { TeamCheckpoint, TeamTask } from "@galahad/core/team";
 import { taskRecordFacts } from "@galahad/core/team-record";
 import type { Price } from "@galahad/core/spend";
 import { type Api, isAbort } from "../api.ts";
@@ -140,6 +140,29 @@ export interface CardOptions {
   /** A running task's latest lines (views/team.ts keeps one per running task, across redraws). */
   trail: LiveTrail | null;
   act(action: TaskAction): void;
+  /** Gives it again from one of its steps (PLAN #15): its workspace as it stood after that step. */
+  againFrom?(step: number): void;
+}
+
+/**
+ * The steps of a task another can be given from, asked of the node when you open them (POST /api/team/steps): each
+ * command and when it ended, with Give again from here. Kept for a knight's task in a repository, on his own harness.
+ */
+function stepsOf(api: Api, task: TeamTask, again: (step: number) => void, signal: AbortSignal): HTMLElement {
+  const list = h("div", { class: "stack" }, h("p", { class: "tiny subtle" }, "Reading its steps…"));
+  let asked = false;
+  const steps = h("details", { class: "team-task-details" }, h("summary", { "data-key": `task-steps:${task.id}` }, "Give again from a step"), list);
+  steps.addEventListener("toggle", () => {
+    if (!steps.open || asked) return;
+    asked = true;
+    api.post<{ steps: TeamCheckpoint[] }>("/api/team/steps", { task: task.id }, signal).then(
+      ({ steps: kept }) => replace(list, kept.length
+        ? kept.map((s) => h("div", { class: "row" }, h("span", { class: "tiny subtle tnum" }, `${s.step}.`), h("code", { class: "grow ellipsis" }, s.command), h("span", { class: "tiny subtle" }, relativeTime(s.at)), button("Give again from here", { size: "sm", variant: "ghost", icon: "retry", onClick: () => again(s.step) })))
+        : [h("p", { class: "tiny subtle" }, "No steps were kept: they are kept for a knight's task in a repository, on Galahad's own harness.")]),
+      (error) => { if (!isAbort(error)) replace(list, [h("p", { class: "tiny subtle" }, `Its steps couldn't be read: ${(error as Error).message}`)]); },
+    );
+  });
+  return steps;
 }
 
 const ACTION = {
@@ -184,6 +207,7 @@ export function taskCard(ctx: Ctx, task: TeamTask, o: CardOptions): HTMLElement 
         )
       : null,
     end ? wholeTrail(ctx.api, task.id, o.signal) : null,
+    o.canAct && o.againFrom && task.status !== "queued" && task.status !== "proposed" ? stepsOf(ctx.api, task, o.againFrom, o.signal) : null,
     h(
       "details",
       { class: "team-task-details" },

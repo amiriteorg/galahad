@@ -518,3 +518,30 @@ test("a knight's workspace from a terminal: a folder, a file, and what its task 
   expect(asked).toEqual([["teamFiles", { id: "ada" }], ["teamFile", { id: "ada", path: "/work/a.ts" }], ["teamChanges", { id: "ada" }]]);
   await expect(teamCommand(api, "read", ["ada"], {}, () => {})).rejects.toThrow("usage: galahad roundtable read <knight> </work/path>");
 });
+
+test("a task's steps at a terminal, and the task given again from one of them, or from its start", async () => {
+  const lines: string[] = [];
+  const calls: { name: RouteName; input: any }[] = [];
+  const old = { id: "task-abcdefghijkl", room: "dm-ada", assignee: "ada", title: "Build", goal: "Build it.", dependsOn: [], gates: ["bun test"], status: "failed", verified: false, progress: "", output: "", error: null, chainId: "c", createdAt: 1, updatedAt: 2 };
+  const api = {
+    async call<T>(name: RouteName, input?: any): Promise<T> {
+      calls.push({ name, input });
+      if (name === "team") return { teammates: [member("ada")], rooms: [], tasks: [old], deliveries: [] } as T;
+      if (name === "teamSteps") return { steps: [{ step: 1, commit: "3".repeat(40), command: "npm run build", at: Date.UTC(2026, 10, 19, 21, 4, 5) }] } as T;
+      return { task: { id: "task-newnewnewnew" } } as T;
+    },
+  };
+  await teamCommand(api, "steps", ["task-abcdefghijkl"], {}, (line) => lines.push(line));
+  expect(lines[0]).toMatch(/^ {3}1 {2}\d\d:\d\d:\d\d {2}npm run build$/);
+  expect(lines[1]).toBe('Give it again from one: galahad roundtable again task-abcdefghijkl --from <step> ["<goal>"]');
+  lines.length = 0;
+  await teamCommand(api, "again", ["task-abcdefghijkl", "Build", "it", "the", "other", "way."], { from: "1" }, (line) => lines.push(line));
+  await teamCommand(api, "again", ["task-abcdefghijkl"], {}, (line) => lines.push(line));
+  const given = calls.filter((c) => c.name === "createTeamTask").map((c) => c.input);
+  expect(given).toEqual([
+    { room: "dm-ada", assignee: "ada", title: "Build", goal: "Build it the other way.", gates: ["bun test"], again: "task-abcdefghijkl", from: { task: "task-abcdefghijkl", step: 1 } },
+    { room: "dm-ada", assignee: "ada", title: "Build", goal: "Build it.", gates: ["bun test"], again: "task-abcdefghijkl" },
+  ]);
+  expect(lines).toEqual(["task-newnewnewnew queued: task-abcdefghijkl given again, from its step 1; completion requires its gates and independent review.", "task-newnewnewnew queued: task-abcdefghijkl given again; completion requires its gates and independent review."]);
+  await expect(teamCommand(api, "again", ["task-abcdefghijkl"], { from: "0" }, () => {})).rejects.toThrow("--from names a step by its number");
+});

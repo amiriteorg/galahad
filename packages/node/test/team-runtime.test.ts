@@ -1,5 +1,5 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
-import { newNodeIdentity, type ExecResult, type Teammate, type TeamRoom, type TeamTask, type TeamMessage } from "@galahad/core";
+import { newNodeIdentity, type ExecResult, type TeamCheckpoint, type Teammate, type TeamRoom, type TeamTask, type TeamMessage } from "@galahad/core";
 import { taskStep, type AvatarExpression } from "@galahad/core/avatar";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import { acpDriver, AGENTS, OWN_SIGN_IN, type QuestEvent } from "@galahad/brain";
@@ -929,6 +929,41 @@ test("a fix to a pull request's failing checks starts on that pull request's bra
   expect(plain(t.commands[0]!)).toEndWith(` '/work/tasks/${task.id}' '/work/.agent/base/${task.id}' 'galahad/units'`);
   expect(outcome.output).toContain(`Changes: 2 files, kept as ${KEPT}. Offered to you as a push onto galahad/units, where it began: the pull request updates once you approve it.`);
   expect(outcome.output).not.toContain("galahad ship");
+});
+
+test("a knight's steps are kept as they end (PLAN #15): after each command of its own, before the next one runs; a step that changed nothing is the step before's", async () => {
+  const knight: Teammate = { ...member, repository: "https://github.com/you/project" };
+  const order: string[] = [];
+  const points: TeamCheckpoint[] = [];
+  const [C1, T1] = ["1".repeat(40), "a".repeat(40)];
+  let keeps = 0;
+  const f = fixture([say("1. Make the change."), say("```sh\necho one > a.txt\n```"), say("```sh\ncat a.txt\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], {
+    teammate: () => knight,
+    exec: async (_m, command) => {
+      if (command.includes("commit-tree")) {
+        order.push(`keep ${command.includes(`'${T1} ${BASE}'`) ? "after one" : "first"}`);
+        return result({ stdout: keeps++ === 0 ? `${C1} ${T1} ${BASE}\n` : "same\n" });
+      }
+      if (command.includes("echo one > a.txt")) order.push("one");
+      if (command.includes("cat a.txt")) order.push("cat");
+      if (command.includes("worktree")) return result({ stdout: `${BASE} fetched\n` });
+      if (command.includes("changes.patch")) return result({ stdout: "1\n" });
+      return result();
+    },
+    checkpoint: (_task, point) => void points.push(point),
+  });
+  expect((await f.runtime.executeTask(knight, task, f.context)).verified).toBe(true);
+  expect(order).toEqual(["one", "keep first", "cat", "keep after one"]);
+  expect(points.map(({ step, commit, command }) => ({ step, commit, command }))).toEqual([{ step: 1, commit: C1, command: "echo one > a.txt" }, { step: 2, commit: C1, command: "cat a.txt" }]);
+});
+
+test("a task given from a step of another starts its worktree there, and is told where its files stand", async () => {
+  const from = { task: "task-earlier00000", step: 3, commit: "2".repeat(40), command: "npm run build" };
+  const t = repoTask({ task: { ...task, from } });
+  await t.run();
+  expect(plain(t.commands[0]!)).toEndWith(` '/work/tasks/${task.id}' '/work/.agent/base/${task.id}' '' 'task-earlier00000' '${"2".repeat(40)}'`);
+  const told = t.bodies.flatMap((body) => body.messages.map((m: any) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))).join("\n");
+  expect(told).toContain('Your workspace starts as task task-earlier00000 left it after its step 3 ("npm run build"): what that task did after it was set aside, and is not in your files.');
 });
 
 test("a knight's task in a repository starts from the repository as it is now, in a worktree of its own, and the start is kept for the task", async () => {

@@ -145,6 +145,22 @@ export type TeamPostInput = z.infer<typeof TeamPostInput>;
 export const TeamSayInput = z.strictObject({ teammate: TeammateId.optional(), room: TeamRoomId.optional(), text: z.string().trim().min(1).max(TEAM_LIMITS.message) })
   .refine((input) => Boolean(input.teammate) !== Boolean(input.room), "choose one knight or one room");
 export type TeamSayInput = z.infer<typeof TeamSayInput>;
+/**
+ * A step of a knight's task to start another from (PLAN #15): its repository workspace as it stood after that command,
+ * kept as a checkpoint in the knight's VM. Steps are counted from 1, the task's first command.
+ */
+export const TeamTaskFrom = z.strictObject({ task: TeamTaskId, step: z.number().int().min(1).max(1_000_000) });
+export type TeamTaskFrom = z.infer<typeof TeamTaskFrom>;
+
+/** One step of a task that can be started from: the command it ran, and the commit its workspace was kept as after it. */
+export interface TeamCheckpoint {
+  step: number;
+  /** The commit object, under refs/galahad/checkpoints/<task>/<step> in the knight's repository. */
+  commit: string;
+  command: string;
+  at: number;
+}
+
 export const TeamTaskInput = z.strictObject({
   room: TeamRoomId,
   assignee: TeammateId,
@@ -160,6 +176,8 @@ export const TeamTaskInput = z.strictObject({
   outcome: TeamOutcomeId.optional(),
   /** Sensitive mode for this task alone: the models every call of its work is held to, none elsewhere (heldModels); absent: its knight's. Yours to name: no knight or Galahad does. */
   models: TeammateModels.min(1).optional(),
+  /** Started from a step of another task of the same knight's: its workspace as it stood then (TeamTaskFrom). Yours to give. */
+  from: TeamTaskFrom.optional(),
 });
 export type TeamTaskInput = z.infer<typeof TeamTaskInput>;
 
@@ -425,6 +443,8 @@ export interface TeamTask {
   outcome?: string;
   /** Sensitive mode for this task alone: the models it is held to (heldModels); absent: its knight's, as its knight's mode says. */
   models?: string[];
+  /** The step of another task it was started from (PLAN #15), with that step's commit and command; absent: its repository as it was fetched. */
+  from?: TeamTaskFrom & { commit: string; command: string };
   /** The pull request whose failing checks it fixes (PLAN #29); absent: none. */
   fix?: TeamTaskFix;
   /** Its pull request, once you shipped its work from an app (PLAN #37; absent: not shipped that way). */

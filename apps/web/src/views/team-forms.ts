@@ -237,8 +237,11 @@ export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTaskInput): void {
   };
   assignee.addEventListener("change", sayHeld);
   sayHeld();
-  editor(ctx, copy ? "Give this task again" : knight ? `Give ${knight} a task` : "Give a task", "Its goal, and the commands that prove it is done. A knight works in its own workspace; the commands and an independent reviewer decide whether the work is verified.", [
-    field("Title", title), members.length > 1 ? field("Assigned to", assignee) : null, field("Goal", goal),
+  // Given again from a step of it (PLAN #15): its workspace as it stood after that step.
+  const fromStep = copy?.from ? callout("info", `It starts from step ${copy.from.step} of the task it gives again: its workspace as it stood after that step. What came after is set aside, and stays that task's.`) : null;
+  editor(ctx, copy ? (copy.from ? `Give this task again from step ${copy.from.step}` : "Give this task again") : knight ? `Give ${knight} a task` : "Give a task", "Its goal, and the commands that prove it is done. A knight works in its own workspace; the commands and an independent reviewer decide whether the work is verified.", [
+    fromStep,
+    field("Title", title), members.length > 1 && !copy?.from ? field("Assigned to", assignee) : null, field("Goal", goal),
     candidates.length ? h("fieldset", { class: "team-fieldset" }, h("legend", {}, "Wait for these tasks"), choices) : null,
     field("Done when these pass", gates, { hint: "One shell command a line, up to 16. They run in the knight's workspace." }),
     field("Budget in US dollars (optional)", budget, { hint: "US dollars at your prices: what its model calls may spend. It is told what it has spent, and stops with what it has when it is spent." }),
@@ -250,7 +253,7 @@ export function giveTask(ctx: Ctx, room: TeamRoom, copy?: TeamTaskInput): void {
     const money = budgetFrom(budget.value);
     if ("error" in money) throw new Error(money.error);
     const models = held.checked && !held.disabled ? heldModelsOf() : null;
-    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks.gates, ...(money.usd ? { budgetUsd: money.usd } : {}), ...(models ? { models: [...models] } : {}), ...(copy?.again ? { again: copy.again } : {}) });
+    await ctx.api.post("/api/team/tasks", { room: room.id, assignee: assignee.value, title: title.value.trim(), goal: goal.value.trim(), dependsOn: [...dependencies], gates: checks.gates, ...(money.usd ? { budgetUsd: money.usd } : {}), ...(models ? { models: [...models] } : {}), ...(copy?.from ? { from: copy.from } : {}), ...(copy?.again ? { again: copy.again } : {}) });
   });
 }
 

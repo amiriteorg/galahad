@@ -980,3 +980,31 @@ describe("sensitive mode", () => {
     expect(store.sensitiveWork({ id: "art_c", label: "Work · lin · verified", sandbox: "9876543210" })).toBe(false);
   });
 });
+
+describe("a task's steps, and another given from one (PLAN #15)", () => {
+  const commit = "3".repeat(40);
+  test("each step is kept once, the first first; what isn't one is passed over", () => {
+    const store = make(); setup(store);
+    const task = store.createTask({ room: "workshop", assignee: "ada", title: "Build", goal: "Build it." });
+    store.keepCheckpoint(task.id, { step: 2, commit, command: "npm test", at: 2 });
+    store.keepCheckpoint(task.id, { step: 1, commit, command: "npm run build", at: 1 });
+    // (Told again, the first word stands.)
+    store.keepCheckpoint(task.id, { step: 1, commit: "4".repeat(40), command: "other", at: 3 });
+    store.keepCheckpoint(task.id, { step: 0, commit, command: "no step", at: 4 });
+    store.keepCheckpoint(task.id, { step: 3, commit: "not-a-commit", command: "bad", at: 5 });
+    expect(store.checkpoints(task.id)).toEqual([{ step: 1, commit, command: "npm run build", at: 1 }, { step: 2, commit, command: "npm test", at: 2 }]);
+    expect(store.checkpoint(task.id, 2)?.command).toBe("npm test");
+    expect(store.checkpoint(task.id, 9)).toBeNull();
+  });
+
+  test("a task given from a step is the same knight's, from a step that was kept; it says which, with that step's commit and command", () => {
+    const store = make(); setup(store);
+    const first = store.createTask({ room: "workshop", assignee: "ada", title: "Build", goal: "Build it." });
+    store.keepCheckpoint(first.id, { step: 4, commit, command: "npm run build", at: 1 });
+    const again = store.createTask({ room: "workshop", assignee: "ada", title: "Build", goal: "Build it, the other way.", from: { task: first.id, step: 4 } });
+    expect(store.task(again.id)!.from).toEqual({ task: first.id, step: 4, commit, command: "npm run build" });
+    expect(() => store.createTask({ room: "workshop", assignee: "lin", title: "Build", goal: "Build it.", from: { task: first.id, step: 4 } })).toThrow("A task starts from a step of its own knight's work");
+    expect(() => store.createTask({ room: "workshop", assignee: "ada", title: "Build", goal: "Build it.", from: { task: first.id, step: 5 } })).toThrow(`Task ${first.id} has no step 5 kept to start from.`);
+    expect(() => store.createTask({ room: "workshop", assignee: "ada", title: "Build", goal: "Build it.", from: { task: "task-nosuchtask00", step: 1 } })).toThrow("No such task to start from.");
+  });
+});

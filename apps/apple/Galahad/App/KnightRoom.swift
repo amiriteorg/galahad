@@ -101,11 +101,12 @@ import Observation
 
     /// The same task, given again as a new one: what was asked, of whom and where, and which it gives again (your
     /// stepping in, counted on the new one), with what came of it last time (TaskCard.againGoal).
-    func giveAgain(_ task: TeamTask, with client: NodeClient) async {
+    func giveAgain(_ task: TeamTask, from step: Int? = nil, with client: NodeClient) async {
         do {
-            // (One in sensitive mode is again, on the same models.)
-            struct Again: Encodable { let room: String; let assignee: String; let title: String; let goal: String; let dependsOn: [String]; let gates: [String]; let models: [String]?; let again: String }
-            _ = try await client.post("/api/team/tasks", Again(room: task.room, assignee: task.assignee, title: task.title.trimmingCharacters(in: .whitespaces), goal: TaskCard.againGoal(task), dependsOn: task.dependsOn, gates: task.gates ?? [], models: task.models?.isEmpty == false ? task.models : nil, again: task.id), as: JSONValue.self)
+            // (One in sensitive mode is again, on the same models. `from`: a step of it, its workspace as it stood then.)
+            struct From: Encodable { let task: String; let step: Int }
+            struct Again: Encodable { let room: String; let assignee: String; let title: String; let goal: String; let dependsOn: [String]; let gates: [String]; let models: [String]?; let from: From?; let again: String }
+            _ = try await client.post("/api/team/tasks", Again(room: task.room, assignee: task.assignee, title: task.title.trimmingCharacters(in: .whitespaces), goal: TaskCard.againGoal(task), dependsOn: task.dependsOn, gates: task.gates ?? [], models: task.models?.isEmpty == false ? task.models : nil, from: step.map { From(task: task.id, step: $0) }, again: task.id), as: JSONValue.self)
             await load(room: view?.id, with: client)
         } catch {
             problem = error.localizedDescription

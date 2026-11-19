@@ -12,6 +12,8 @@ struct RoomView: View {
     @State private var stopping: TeamTask?
     /// The verified work being shipped as a pull request (ShipPrompt asks its title).
     @State private var shipping: TeamTask?
+    /// The task whose steps are being chosen from, to give it again from one.
+    @State private var stepping: TeamTask?
     @State private var problem: String?
     @FocusState private var composing: Bool
 
@@ -53,7 +55,7 @@ struct RoomView: View {
                             composing = true
                         }
                     case .task(let task):
-                        TaskCardView(task: task, proposer: task.proposedBy.map { $0 == "galahad" ? "Galahad" : session.teammate($0)?.name ?? $0 }) { action in act(action, on: task) }
+                        TaskCardView(task: task, proposer: task.proposedBy.map { $0 == "galahad" ? "Galahad" : session.teammate($0)?.name ?? $0 }, fromStep: { stepping = task }) { action in act(action, on: task) }
                     }
                 }
                 if !writing.isEmpty {
@@ -124,6 +126,7 @@ struct RoomView: View {
             Text("“\(task.title)” stops where it is. What it changed so far stays in its knight's workspace.")
         }
         .modifier(ShipPrompt(task: $shipping, room: room, client: session.client))
+        .modifier(StepsPicker(task: $stepping, room: room, client: session.client))
         .task(id: id) {
             while !Task.isCancelled {
                 await room.load(room: id, with: session.client)

@@ -250,6 +250,10 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
       signal: scope.signal,
       trail: task.status === "running" ? trail : null,
       act: (action) => act(task, action),
+      againFrom: (step) => {
+        const where = snapshot?.rooms.find((candidate) => candidate.id === task.room) ?? room;
+        if (where) giveTask(ctx, where, { ...giveAgain(task), from: { task: task.id, step } });
+      },
     });
   }
 

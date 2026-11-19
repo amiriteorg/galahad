@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addUsage, type AttachmentRef, costOf, mergeSpend, type NamedRule, type QuestEvidence, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type Usage, type UsageLine, heldModels, randomId, redact, SENSITIVE_WORK } from "@galahad/core";
+import { addUsage, type AttachmentRef, costOf, mergeSpend, type NamedRule, type QuestEvidence, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type TeamCheckpoint, type Usage, type UsageLine, heldModels, randomId, redact, SENSITIVE_WORK } from "@galahad/core";
 import { driverFor, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type ToolImage, type Trip } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import { questEvidence, questTrail } from "./skills-quest.ts";
@@ -10,6 +10,8 @@ export interface TeamRuntimeDeps {
   enter(signal: AbortSignal): Promise<() => void>;
   /** Fixed identity and exact workspace binding are enforced by the server. */
   exec(teammate: Teammate, command: string, timeout: number, signal: AbortSignal): Promise<ExecResult>;
+  /** A step of a task's work, kept as a commit in its knight's VM as it ended (PLAN #15): told once each. */
+  checkpoint?(task: TeamTask, point: TeamCheckpoint): void;
   /** Its VM, ready, with a fresh lease; `models`: work in sensitive mode, whose lease is good for them alone (heldModels). */
   prepare(teammate: Teammate, signal: AbortSignal, models?: readonly string[]): Promise<void>;
   /** Keeps a knight's lease while its task runs (asked every TEAM_LEASE_RENEW_MINUTES as the work goes on): whether it was. */
@@ -163,11 +165,23 @@ export const withGateway = (command: string): string => {
  * finds its worktree and what was written; one from before this was written says `unknown`. A fix to a pull
  * request (`<branch>`, a third argument) starts on that branch as fetched, or not at all.
  */
-const REPO_TASK_START = `import json,os,subprocess,sys
+export const REPO_TASK_START = `import json,os,subprocess,sys
 root, kept, repo = sys.argv[1], sys.argv[2], '/work/repo'
 branch = sys.argv[3] if len(sys.argv) > 3 else ''
+# A task started from a step of another (PLAN #15): that task's id, and the commit its workspace was kept as then.
+from_task, from_commit = (sys.argv[4], sys.argv[5]) if len(sys.argv) > 5 else ('', '')
 git = lambda *a: subprocess.run(['git','-C',repo,*a],capture_output=True)
-if not os.path.isdir(root):
+if not os.path.isdir(root) and from_commit:
+    if git('cat-file','-e',from_commit+'^{commit}').returncode: sys.exit('the step it starts from is no longer in the repository')
+    made = git('worktree','add','--detach',root,from_commit)
+    if made.returncode: sys.exit('could not make the worktree: '+made.stderr.decode()[-300:])
+    # Its HEAD where that step's was, the step's own changes in its files as they were; its base the task's it came from.
+    subprocess.run(['git','-C',root,'reset','-q','--mixed',from_commit+'^'],check=True)
+    src = '/work/.agent/base/'+from_task
+    base = open(src).read().split()[0] if os.path.exists(src) else subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()
+    os.makedirs(os.path.dirname(kept),exist_ok=True)
+    open(kept,'w').write(base+' from')
+elif not os.path.isdir(root):
     how = 'fetched'
     try:
         d = json.load(open('/work/.galahad-gateway.json'))
@@ -184,6 +198,25 @@ if not os.path.isdir(root):
     os.makedirs(os.path.dirname(kept),exist_ok=True)
     open(kept,'w').write(subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' '+how)
 print(open(kept).read() if os.path.exists(kept) else subprocess.check_output(['git','-C',root,'rev-parse','HEAD']).decode().strip()+' unknown')`;
+
+/**
+ * A task's workspace as it stands after a step, kept as a commit under a ref of its own in the knight's repository
+ * (PLAN #15), through an index of its own (the task's is never touched). It prints the commit, its tree and its parent,
+ * or "same" when neither changed since `last` ("<tree> <parent>" of the step before).
+ */
+export function checkpointCommand(root: string, task: string, step: number, last: string): string {
+  const index = `/work/.agent/checkpoints/${task}.index`;
+  return [
+    `cd ${quote(root)}`,
+    "mkdir -p /work/.agent/checkpoints",
+    // (The task's own index copied first, so only what changed is read again.)
+    `{ cp "$(git rev-parse --git-path index)" ${quote(index)} 2>/dev/null || rm -f ${quote(index)}; }`,
+    `GIT_INDEX_FILE=${quote(index)} git add -A . >/dev/null 2>&1`,
+    `T=$(GIT_INDEX_FILE=${quote(index)} git write-tree)`,
+    "P=$(git rev-parse HEAD)",
+    `if [ "$T $P" = ${quote(last)} ]; then echo same; else C=$(git commit-tree --no-gpg-sign "$T" -p "$P" -m ${quote(`Galahad: task ${task}, after step ${step}`)}) && git update-ref ${quote(`refs/galahad/checkpoints/${task}/${step}`)} "$C" && echo "$C $T $P"; fi`,
+  ].join(" && ");
+}
 
 /*
  * A knight's task has no count of commands and no limit of time (your ruling, 17 November 2026): limits ended real work
@@ -474,7 +507,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const root = `/work/tasks/${task.id}`;
       const sessionFile = `/work/.agent/sessions/${task.id}.${teammate.harness}`;
       const setup = teammate.repository
-        ? `python3 -c ${quote(REPO_TASK_START)} ${quote(root)} ${quote(`/work/.agent/base/${task.id}`)}${task.fix ? ` ${quote(task.fix.branch)}` : ""}`
+        ? `python3 -c ${quote(REPO_TASK_START)} ${quote(root)} ${quote(`/work/.agent/base/${task.id}`)}${task.fix || task.from ? ` ${quote(task.fix?.branch ?? "")}` : ""}${task.from ? ` ${quote(task.from.task)} ${quote(task.from.commit)}` : ""}`
         : `mkdir -p ${quote(root)}`;
       const ready = await deps.exec(teammate, setup, teammate.repository ? 420 : 120, ctx.signal);
       if (ready.exitCode !== 0) throw new Error(`Workspace not ready: ${redact(ready.stderr || ready.stdout)}`);
@@ -509,7 +542,30 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // A temporary directory of the task's own, on the workspace: a sandbox's /tmp is mounted noexec, so a test that
       // writes a script there and runs it fails with exit 126 (and with it a gate that passes everywhere else).
       const temp = `/work/.tmp/${task.id}`;
-      const exec = (command: string, timeout = 120) => deps.exec(teammate, withGateway(`mkdir -p ${quote(temp)} && export TMPDIR=${quote(temp)} && ${sees ? `export GALAHAD_EYES=${quote(sees)} && ` : ""}cd ${quote(root)} && ${engram ? engramShell(engram) : ""}${command}`), Math.min(timeout, TEAM_COMMAND_SECONDS), ctx.signal);
+      // Its steps, kept as they end (PLAN #15): in a repository, on Galahad's own harness, after each command of its own
+      // its workspace is kept as a commit (checkpointCommand), so another task can start from any of them. The next
+      // command waits for it. One that can't be kept is said once, and the work goes on.
+      const steps = { last: "", commit: "", said: false, command: "", on: false };
+      let keeping: Promise<void> = Promise.resolve();
+      const keepStep = (step: number) => {
+        const command = steps.command;
+        keeping = keeping.then(async () => {
+          const kept = await deps.exec(teammate, checkpointCommand(root, task.id, step, steps.last), 60, ctx.signal).catch((error: Error): ExecResult => ({ exitCode: -1, stdout: "", stderr: String(error?.message ?? error), durationMs: 0, truncated: false }));
+          const line = kept.stdout.trim().split("\n").at(-1) ?? "";
+          const made = /^([0-9a-f]{40}) ([0-9a-f]{40} [0-9a-f]{40})$/.exec(line);
+          if (made) [steps.commit, steps.last] = [made[1]!, made[2]!];
+          else if (line !== "same" || !steps.commit) {
+            if (!steps.said) ctx.emit(`Steps · this task's steps can't be kept to start another from: ${redact(kept.stderr.trim() || line || "no answer").slice(0, 200)}`);
+            steps.said = true;
+            return;
+          }
+          deps.checkpoint?.(task, { step, commit: steps.commit, command, at: Date.now() });
+        });
+      };
+      const exec = async (command: string, timeout = 120) => {
+        await keeping;
+        return deps.exec(teammate, withGateway(`mkdir -p ${quote(temp)} && export TMPDIR=${quote(temp)} && ${sees ? `export GALAHAD_EYES=${quote(sees)} && ` : ""}cd ${quote(root)} && ${engram ? engramShell(engram) : ""}${command}`), Math.min(timeout, TEAM_COMMAND_SECONDS), ctx.signal);
+      };
       let agent;
       if (teammate.harness !== "native") {
         // (An ACP agent calls whatever you set it up to: sensitive mode can't hold its calls to the models it names.)
@@ -534,6 +590,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         const saved = (await exec(`cat ${quote(sessionFile)} 2>/dev/null || true`, 10)).stdout.trim();
         agent = { driver, models: ready.models, workdir: root, ...(/^[A-Za-z0-9_.:-]{1,160}$/.test(saved) ? { session: saved } : {}) };
       }
+      // (A coding tool's run isn't stepped through by Galahad: its steps aren't kept.)
+      steps.on = Boolean(teammate.repository) && !agent;
       const inherited = data("Verified predecessor results (file paths belong to their original VM)", deps.dependencies(task));
       // Fenced once for the task: every turn of its planner and engineer is then sent the same beginning, which a
       // provider reads from its cache (a new fence on each call made each turn's beginning a new one).
@@ -542,7 +600,9 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const context = [ownNotes, deps.skills?.(teammate, task) ?? null].filter(Boolean).join("\n\n") || undefined;
       // What the review's evidence is made of (each command and its exit, the gates), for what the work may teach.
       const trail = questTrail();
-      const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
+      // Started from a step of another task (PLAN #15): it is told where its files stand.
+      const started = task.from ? `Your workspace starts as task ${task.from.task} left it after its step ${task.from.step} (${JSON.stringify(task.from.command.slice(0, 200))}): what that task did after it was set aside, and is not in your files.` : null;
+      const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, started, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
       // The model that did the work last: in sensitive mode the review goes to another of its models first, where it has another.
       let worked = agent?.models[0] && !agent.models[0].own ? `${agent.models[0].provider}/${agent.models[0].model}` : undefined;
       const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: TEAM_COMMAND_SECONDS, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
@@ -562,6 +622,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         emit: (event) => {
           trail.on(event);
           ctx.emit(progress(event));
+          if (steps.on && event.type === "command") steps.command = event.command;
+          else if (steps.on && event.type === "observation") keepStep(event.step);
         },
         // Its VM's lease, kept as the work goes on: renewed every TEAM_LEASE_RENEW_MINUTES, so whatever holds it (a coding
         // tool's run) works on however long the task takes. One that can't be kept is said, once.

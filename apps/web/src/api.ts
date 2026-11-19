@@ -84,10 +84,11 @@ export interface Bytes {
 /**
  * The POSTs that change nothing: they leave what the places showed as it was (and keep their own answers), where any
  * other POST forgets it all. Every route whose scope is a reading one, and these few that read under another scope:
- * the doctor (it changes nothing), watching a turn, opening a kept chat, listing sandboxes, a task's trail and a room.
+ * the doctor (it changes nothing), watching a turn, opening a kept chat, listing sandboxes, a task's trail and its steps,
+ * and a room.
  * api.test.ts holds the list to the routes. Kept here, not read from the routes, so the app's bundle carries no schema.
  */
-export const READS_UNDER_OTHER_SCOPES = ["/api/doctor", "/api/turns/attach", "/api/conversations/get", "/api/sandboxes/list", "/api/team/trail", "/api/team/room"] as const;
+export const READS_UNDER_OTHER_SCOPES = ["/api/doctor", "/api/turns/attach", "/api/conversations/get", "/api/sandboxes/list", "/api/team/trail", "/api/team/steps", "/api/team/room"] as const;
 export const READING_POSTS: ReadonlySet<string> = new Set([
   ...READS_UNDER_OTHER_SCOPES,
   "/api/team/overview",
