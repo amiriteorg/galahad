@@ -12,7 +12,7 @@ interface Script {
   outputs?: Partial<ExecResult>[];
 }
 
-function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number; submitAtLimit?: boolean; keepReads?: boolean } = {}) {
+function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number; submitAtLimit?: boolean; keepReads?: boolean; gates?: string[] } = {}) {
   const queues: Record<QuestRole, string[]> = {
     planner: [...(script.planner ?? ["1. Do it.\nDone when: it is done."])],
     engineer: [...script.engineer],
@@ -24,7 +24,7 @@ function harness(script: Script, options: { maxSteps?: number; maxRevisions?: nu
   const events: QuestEvent[] = [];
   const controller = new AbortController();
   const run = runQuest(
-    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions, ...(options.submitAtLimit ? { submitAtLimit: true } : {}), ...(options.keepReads ? { keepReads: true } : {}) },
+    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions, ...(options.submitAtLimit ? { submitAtLimit: true } : {}), ...(options.keepReads ? { keepReads: true } : {}), ...(options.gates ? { gates: options.gates } : {}) },
     {
       ask: async (role, messages) => {
         seen.push({ role, messages });
@@ -439,6 +439,38 @@ describe("a reply of the engineer's that runs away", () => {
     expect(review).toContain("1. $ cat > data.csv <<'EOF'\nrow 0,0");
     expect(review).toMatch(/… \[\d+ characters cut\] …/);
     expect(review).toContain("2. $ wc -l data.csv");
+  });
+});
+
+describe("a knight that has run its gates is told to say so (keep-reads)", () => {
+  const gates = ["bun run typecheck", "bun test outcomes"];
+  const told = (h: ReturnType<typeof harness>) => h.seen.filter((x) => x.role === "engineer").at(-1)!.messages.filter((m) => m.role === "user").map((m) => m.content);
+  const NOTE = "Your commands have now run every one of the gates on the work as it is. If they passed and the work is done, reply DONE now";
+
+  test("once his commands have run every gate clean since the work last changed: said once, and again only after another change", async () => {
+    const h = harness(
+      { engineer: [sh("sed -i 's/a/b/' src/x.ts"), sh("bun run typecheck"), sh("cd /work && bun test outcomes 2>&1 | tail -5"), sh("cat src/x.ts"), sh("sed -i 's/b/c/' src/x.ts"), sh("bun run typecheck && bun test outcomes"), "DONE\nChanged; both gates pass."] },
+      { keepReads: true, gates },
+    );
+    expect((await h.run).status).toBe("done");
+    const said = told(h).slice(1).map((content) => content.includes(NOTE));
+    // After the edit, the first gate, the second (now both: said), a read (not again), an edit (starts over), both at once (said).
+    expect(said).toEqual([false, false, true, false, false, true]);
+    // His briefing says when to stop checking.
+    expect(told(h)[0]).toContain("When the work is done and its gates pass where you run them, reply with DONE at once");
+  });
+
+  test("a gate that failed is not counted, nor is one run before a change; without keep-reads nothing is said", async () => {
+    const failing = harness(
+      { engineer: [sh("bun run typecheck"), sh("bun test outcomes"), "DONE\nDone."], outputs: [{ exitCode: 2, stdout: "error TS2304\n" }, { stdout: "ok\n" }] },
+      { keepReads: true, gates },
+    );
+    await failing.run;
+    expect(told(failing).some((content) => content.includes(NOTE))).toBe(false);
+    const lean = harness({ engineer: [sh("bun run typecheck"), sh("bun test outcomes"), "DONE\nDone."] }, { gates });
+    await lean.run;
+    expect(told(lean).some((content) => content.includes(NOTE))).toBe(false);
+    expect(told(lean)[0]).toContain("When the quest is done and you have verified it");
   });
 });
 
