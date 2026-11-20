@@ -68,8 +68,12 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
                 if (table.snapshot != null) TextButton(onClick = { giving = true }) { Text("Give a task") }
             }
         }
-        problem?.let { p -> item { Problem(p.message ?: "The node isn't answering.") } }
-        item {
+        problem?.let { p -> item { Refused(app, p) } }
+        if (table.snapshot == null && problem == null) item {
+            Text("Asking your node…", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(Space.margin))
+        }
+        // (His line says what he's doing: until the node has answered, there's nothing it could truly say.)
+        if (table.snapshot != null) item {
             Seat(
                 drawing = "galahad",
                 name = "Galahad",
@@ -99,6 +103,25 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
         item { Spacer(Modifier.height(Space.s10)) }
     }
     if (giving) GiveDialog(app) { giving = false }
+}
+
+/**
+ * What the node said, as what it means for you: a phone whose clock is a minute or more off is refused (set it to
+ * automatic); a refusal with the clocks agreeing means the node no longer knows this phone (removed there), so the way
+ * out is offered; anything else in the node's own words.
+ */
+@Composable
+private fun Refused(app: AppModel, p: NodeError) {
+    val skew = p.serverTime?.let { System.currentTimeMillis() - it }
+    when {
+        p.status == 401 && skew != null && Math.abs(skew) > 60_000 ->
+            Problem("This phone's clock is ${Math.abs(skew) / 60_000} min ${if (skew > 0) "ahead of" else "behind"} your node's, and the node refuses requests that far out. Set the time to automatic in Settings.")
+        p.status == 401 -> Column {
+            Problem("Your node no longer knows this phone: it was removed there, or the node was set up again. Forget it here, then join with a fresh invite.")
+            TextButton(onClick = app::forget, modifier = Modifier.padding(horizontal = Space.margin)) { Text("Forget this node", color = LocalBrand.current.failed) }
+        }
+        else -> Problem(p.message ?: "The node isn't answering.")
+    }
 }
 
 /** One seat at the table: a face in its ring, the name and its state's word, and one line of what it's doing. */
