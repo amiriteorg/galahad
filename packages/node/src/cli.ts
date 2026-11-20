@@ -69,6 +69,10 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     keys of yours it may use but never see: its scripts call $GALAHAD_KEYS/<secret>/…
                                     and the gateway puts the key in, at the key's pinned address alone (galahad secret
                                     set <secret> --base-url https://api.example.com); reads only unless --write
+  roundtable export <id> [--out file.md]
+                                    a knight as a file you carry: its job and how it works, never its memory or a key
+  roundtable import <file.md> [--id <new id>] [-y]
+                                    a knight file in as a new knight here, shown first; the keys it had, yours to give
   roundtable steps <task-id>          the steps of a knight's task in a repository, each kept as it ended
   roundtable again <task-id> [--from <step>] ["<goal>"]
                                     give a task again (your stepping in, counted on it): from its start, or from

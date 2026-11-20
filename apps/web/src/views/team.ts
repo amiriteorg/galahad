@@ -29,7 +29,7 @@ import { noteSaid, seatFace, tableOf } from "./roster.ts";
 import { openConsole } from "./sandboxes.ts";
 import { desktopViewer, type DesktopViewer } from "./desktop.ts";
 import { liveTrail, type LiveTrail, taskCard } from "./task-card.ts";
-import { controlTeam, editKnight, editNotes, editRoom, giveTask, growVm, provisionVm, remakeVm, removeKnight, setCiBack, setEngram, shipTask } from "./team-forms.ts";
+import { controlTeam, editKnight, editNotes, editRoom, exportKnight, giveTask, growVm, provisionVm, remakeVm, removeKnight, setCiBack, setEngram, shipTask } from "./team-forms.ts";
 import { openTerminal } from "./terminal.ts";
 import { openWorkspace } from "./workspace.ts";
 
@@ -436,6 +436,7 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
               (tableOf(ctx).primary === person.id ? button("Galahad leads", { size: "sm", title: "Give the lead back to Galahad", onClick: () => void makePrimary(ctx, GALAHAD, "Galahad") }) : button("Make primary", { size: "sm", title: `What you say to a room ${person.name} sits in without naming anyone becomes ${person.name}'s to answer`, onClick: () => void makePrimary(ctx, person.id, person.name) })),
               button(person.enabled ? "Pause knight" : "Resume knight", { size: "sm", icon: person.enabled ? "pause" : "play", onClick: () => void control({ teammate: person.id, action: person.enabled ? "pause" : "resume" }) }),
               button("Working notes", { size: "sm", icon: "memory", onClick: () => editNotes(ctx, person) }),
+              button("Export", { size: "sm", icon: "download", title: `${person.name} as a file to take in on another node: its job and how it works, never its memory or a key`, onClick: () => exportKnight(person) }),
               button("Remove knight", { size: "sm", variant: "danger", icon: "trash", onClick: () => void removeKnight(ctx, person) }),
             )
           : null,

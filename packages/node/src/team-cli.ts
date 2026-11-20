@@ -1,4 +1,4 @@
-import { interventionWords, plainLine, plainText, type Prices, type TeamChangesView, type TeamFilesView, type TeamFileView, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate, type TeamCheckpoint } from "@galahad/core";
+import { interventionWords, knightFromFile, knightToFile, plainLine, plainText, type Prices, type TeamChangesView, type TeamFilesView, type TeamFileView, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate, type TeamCheckpoint } from "@galahad/core";
 import { AVATAR_LOOKS, lookProfile, resolveAvatar, withBodyColor } from "@galahad/core/avatar";
 
 interface Api { call<T>(name: RouteName, input?: unknown): Promise<T> }
@@ -37,7 +37,7 @@ export const taskRecordLine = (task: Pick<TeamTask, "record">, prices: Prices): 
 /** What a task changed in its repository and where that is kept (`galahad ship <artifact>` opens a pull request from it). Empty when it kept nothing. */
 export const taskChangesLine = (task: Pick<TeamTask, "changes">): string => (task.changes ? ` · ${task.changes.files} file${task.changes.files === 1 ? "" : "s"} changed, kept as ${task.changes.artifact}` : "");
 
-const usage = "galahad roundtable [add <id> | avatar <id> | models <id> [provider/model…] | sensitive <id> [on|off] [provider/model…] | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> [--sensitive] [--models provider/model,…] | steps <task-id> | again <task-id> [--from <step>] [goal] | keys <id> [add <secret> [--write] | rm <secret>] | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | ci [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
+const usage = "galahad roundtable [add <id> | avatar <id> | models <id> [provider/model…] | sensitive <id> [on|off] [provider/model…] | dm <id> [message] | room <name> <member…> | chat <room> [message] | task <room> <assignee> <goal> [--sensitive] [--models provider/model,…] | steps <task-id> | again <task-id> [--from <step>] [goal] | keys <id> [add <secret> [--write] | rm <secret>] | export <id> [--out file.md] | import <file.md> [--id <new id>] [-y] | give <goal> | trail <task-id> [--follow] | provision <id> | memory <id> [text] | engram [on|off] | ci [on|off] | pause|resume|stop <room|knight|task> <id> | approve|decline <task-id> | remove <id> [--destroy-workspace] [--yes]]";
 
 /** What a knight works on, in a sentence: its own models or its role's, and whether it is in sensitive mode. */
 const knightModels = (m: Teammate): string =>
@@ -123,6 +123,51 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     if (turn === "off" && refs.length) throw new Error("Turning sensitive mode off names no models: galahad roundtable models chooses them.");
     const saved = await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: knight.name, sensitive: turn === "on", ...(refs.length ? { models: refs } : {}) });
     print(knightModels(saved.teammate));
+    return;
+  }
+  if (sub === "export") {
+    // A knight as a file you carry (PLAN #20): who it is, its job and how it works; never its memory, its record or a key.
+    const id = args[0];
+    if (!id) throw new Error("usage: galahad roundtable export <knight> [--out file.md]");
+    const knight = (await api.call<TeamSnapshot>("team")).teammates.find((m) => m.id === id);
+    if (!knight) throw new Error(`no knight ${id}`);
+    const { text, scrubbed } = knightToFile({ ...knight, ...(knight.acp ? { acp: knight.acp } : {}), repository: knight.repository ?? undefined, keys: knight.keys?.map((k) => k.secret) });
+    const out = string("out");
+    if (!out) return void write(text.trimEnd());
+    await Bun.write(out, text);
+    print(`${plainLine(knight.name)} is in ${out}: its job and how it works, never its memory, its record or a key${knight.keys?.length ? ` (the names of the ${knight.keys.length} it was given, to give again where it goes)` : ""}.${scrubbed ? ` ${scrubbed} thing${scrubbed === 1 ? "" : "s"} in its job that looked like a key ${scrubbed === 1 ? "was" : "were"} taken out.` : ""} galahad roundtable import ${out} brings it in on another node.`);
+    return;
+  }
+  if (sub === "import") {
+    // A knight file in as a new knight here: shown first, then made by the same route as any knight you add.
+    const path = args[0];
+    if (!path) throw new Error("usage: galahad roundtable import <file.md> [--id <new id>] [-y]");
+    const read = knightFromFile(path === "-" ? await Bun.stdin.text() : await Bun.file(path).text().catch(() => { throw new Error(`can't read ${path}`); }));
+    if (!read.ok) throw new Error(`That isn't a knight file: ${read.why}.`);
+    const k = read.knight;
+    const id = string("id") ?? k.id;
+    const state = await api.call<TeamSnapshot>("team");
+    // (A handle is never anyone else's: a knight's here, or one you removed.)
+    if ([...state.teammates, ...(state.removed ?? [])].some((m) => m.id === id)) throw new Error(`There is a knight ${id} here already: galahad roundtable import ${path} --id <another id>`);
+    print(`${plainLine(k.name)} (${id}) · ${k.harness ?? "native"}${k.acp ? ` running ${plainLine(k.acp)} in its VM` : ""} · ${k.sensitive && k.models?.length ? `sensitive mode, held to ${k.models.join(", ")}` : k.models?.length ? `works on ${k.models.join(", ")}` : `on its role's models (${k.role ?? "default"})`}${k.repository ? ` · ${k.repository}` : ""}`);
+    if (k.instructions) print(`Its job: ${plainText(k.instructions).split("\n").find((line) => line.trim()) ?? ""}${k.instructions.includes("\n") ? " …" : ""}`);
+    if (!flags.yes && !confirm(`Bring ${plainLine(k.name)} in as ${id}?`)) return;
+    const saved = await api.call<{ teammate: Teammate }>("saveTeammate", {
+      id,
+      name: k.name,
+      ...(k.instructions ? { instructions: k.instructions } : {}),
+      ...(k.role ? { role: k.role } : {}),
+      ...(k.models?.length ? { models: k.models } : {}),
+      ...(k.sensitive ? { sensitive: true } : {}),
+      ...(k.harness ? { harness: k.harness } : {}),
+      ...(k.acp ? { acp: k.acp } : {}),
+      ...(k.repository ? { repository: k.repository } : {}),
+      ...(k.dailyTurns !== undefined ? { dailyTurns: k.dailyTurns } : {}),
+      ...(k.avatar ? { avatar: k.avatar } : {}),
+    });
+    print(`${plainLine(saved.teammate.name)} is here as ${saved.teammate.id}. Its VM is made when it is first needed.`);
+    if (k.keys?.length) print(`Where it came from it was given ${k.keys.join(", ")}: none is given here unless you say so (galahad roundtable keys ${saved.teammate.id} add <secret>).`);
+    if (read.ignored.length) print(`Left out, not a knight's: ${read.ignored.join(", ")}.`);
     return;
   }
   if (sub === "order") {

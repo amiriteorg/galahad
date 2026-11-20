@@ -401,6 +401,19 @@ A task has no count of commands and no limit of time (the owner's ruling, 17 Nov
 
 **A planned restart is different** (the owner's word, 16 November 2026). When the node stops on purpose (a deploy, an update, `systemctl restart`: the service is asked to stop), the work it cuts off is marked so, and after the restart it is taken up again by itself, once: in its own worktree as its files stand, ahead of what was given after it, its gates and the independent reviewer deciding as ever, and anything outward still waiting for your approval and sent at most once. It waits first until whatever it was running in its knight's VM has surely ended there (every command there is killed at its own deadline, fifteen minutes at most), and nothing else of that knight's starts meanwhile; its card says so, and its trail says when it was taken up. Cut off a second time, it waits for you, its room held. Pausing or stopping it, its knight or its room before then makes it wait for you instead. The node can't tell a restart from a stop for good: work it cuts off on its way down is taken up whenever it next starts.
 
+### A knight as a file you carry
+
+A knight goes with you as a Markdown file (PLAN #20): to another node of yours, to a friend's Galahad, or kept as it is today.
+
+```sh
+bun galahad roundtable export gareth --out gareth.md
+bun galahad roundtable import gareth.md            # shown first; --id another-handle when this one is taken here
+```
+
+In the app: a knight's page → **Export** downloads it; **New knight → From a knight file** fills the form with it, to check and create like any knight.
+
+The file is its settings between `---` lines, each value JSON (which YAML reads too), then its job under its name: who it is (handle, name, look), its job, its role or its own models and sensitive mode, its coding harness (and an ACP agent's command), its repository and its daily turns. Never its memory, its record or a key: only the names of the keys it was given, which a new node lists and gives only on your word. Anything in its job that looks like a key is taken out before it is written, and said. Taken in, it is made by the same route as any knight you add, with the same checks, and never over a handle that is taken here, by a knight or by one you removed. `core/src/roundtable.ts` (`knightToFile`, `knightFromFile`) is the format, the same in the CLI and the app.
+
 ### Removing a knight
 
 Pause a knight you may want back. Remove one you do not: removal is for good, and it is yours alone. Galahad has no tool for it, and no agent or node is let through the route, whatever its scopes.

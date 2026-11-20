@@ -1,6 +1,7 @@
 import type { SandboxView, SecretView } from "@galahad/core";
+import { knightFromFile, type KnightFile, knightToFile } from "@galahad/core/roundtable";
 import { findSecrets } from "@galahad/core/secret-scan";
-import type { TeamControlInput, TeamKeyGrant, TeamRoom, TeamTask, TeamTaskInput, Teammate } from "@galahad/core/team";
+import type { TeamControlInput, TeamKeyGrant, TeamRoom, TeamSnapshot, TeamTask, TeamTaskInput, Teammate } from "@galahad/core/team";
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
 import { isAbort } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
@@ -24,7 +25,7 @@ import { toast } from "../ui/toast.ts";
 export const WORK_TONE = { proposed: "accent", queued: "neutral", running: "accent", done: "ok", failed: "danger", stopped: "neutral", interrupted: "warn" } as const;
 
 /** Shared editor mechanics: validation/errors stay in the sheet, and duplicate submits are blocked. */
-function editor(ctx: Ctx, title: string, description: string, fields: Child[], saveLabel: string, save: () => Promise<void>): void {
+function editor(ctx: Ctx, title: string, description: string, fields: Child[], saveLabel: string, save: () => Promise<void>): { close: () => void } {
   const error = h("div", { role: "status" });
   const submit = button(saveLabel, { variant: "primary", type: "submit" });
   const form = h("form", { class: "stack" }, ...fields, error);
@@ -41,6 +42,7 @@ function editor(ctx: Ctx, title: string, description: string, fields: Child[], s
   form.addEventListener("submit", (event) => { event.preventDefault(); void finish(); });
   submit.addEventListener("click", () => void finish());
   const sheet = openSheet({ title, description, size: "wide", body: form, footer: [button("Cancel", { onClick: () => sheet.close() }), submit] });
+  return { close: () => sheet.close() };
 }
 
 const goRoom = (ctx: Ctx, room: string): void => ctx.navigate("team", { room });
@@ -66,33 +68,86 @@ async function givableKeys(ctx: Ctx): Promise<SecretView[]> {
   return all.filter((secret) => !secret.provider && secret.origin?.startsWith("https://"));
 }
 
-export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
+/** What the knight form starts from: a knight you have, or one a knight file holds. */
+type Seed = Pick<Teammate, "id" | "name" | "instructions" | "harness" | "role" | "repository"> & Partial<Pick<Teammate, "acp" | "models" | "sensitive" | "dailyTurns" | "avatar">>;
+
+/** A knight file's knight as a new one here: a free handle (its own, when no knight here has it), and none of the keys it had. */
+function seedOf(draft: KnightFile, snapshot: TeamSnapshot | null): Seed {
+  const taken = takenHandles(snapshot);
+  return {
+    id: taken.includes(draft.id) ? teammateId(draft.name, taken) : draft.id,
+    name: draft.name,
+    instructions: draft.instructions,
+    harness: (draft.harness ?? "native") as Teammate["harness"],
+    role: draft.role ?? "engineer",
+    repository: draft.repository ?? null,
+    ...(draft.acp ? { acp: draft.acp } : {}),
+    ...(draft.models?.length ? { models: draft.models } : {}),
+    ...(draft.sensitive ? { sensitive: true } : {}),
+    ...(draft.dailyTurns !== undefined ? { dailyTurns: draft.dailyTurns } : {}),
+    ...(draft.avatar ? { avatar: draft.avatar as Teammate["avatar"] } : {}),
+  };
+}
+
+/** A knight as a file you carry (PLAN #20), downloaded: its job and how it works, never its memory, its record or a key. */
+export function exportKnight(person: Teammate): void {
+  const { text, scrubbed } = knightToFile({ ...person, repository: person.repository ?? undefined, keys: person.keys?.map((key) => key.secret) });
+  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
+  const link = h("a", { href: url, download: `${person.id}.md`, hidden: true });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  const taken = scrubbed ? ` ${scrubbed} thing${scrubbed === 1 ? "" : "s"} in its job that looked like a key ${scrubbed === 1 ? "was" : "were"} taken out.` : "";
+  toast(`${person.name}, as ${person.id}.md`, { tone: "ok", description: `Its job and how it works, never its memory or a key.${taken} Another node takes it in from New knight.` });
+}
+
+/** A knight file of yours (PLAN #20), read here and shown in the New knight form, to check and create like any knight. */
+function takeInKnight(ctx: Ctx, close: () => void): void {
+  const input = h("input", { type: "file", accept: ".md,text/markdown,text/plain", hidden: true });
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.size > 64 * 1024) return void toast("That file is too large to be a knight", { tone: "warn" });
+    const read = knightFromFile(await file.text());
+    if (!read.ok) return void toast("That isn't a knight file", { tone: "warn", description: `It ${read.why.replace(/^it /, "")}.` });
+    close();
+    void editKnight(ctx, undefined, read.knight);
+  });
+  document.body.append(input);
+  input.click();
+  setTimeout(() => input.remove(), 60_000);
+}
+
+export async function editKnight(ctx: Ctx, existing?: Teammate, draft?: KnightFile): Promise<void> {
   const [known, offered, givable] = await Promise.all([roles(ctx), modelChoices(ctx), givableKeys(ctx)]);
   const snapshot = ctx.live.team.value;
-  const name = h("input", { class: "input", required: true, maxlength: 80, value: existing?.name ?? "", placeholder: "e.g. Ada", autocomplete: "off" });
-  const id = h("input", { class: "input mono", required: true, maxlength: 32, pattern: HANDLE_PATTERN, value: existing?.id ?? "", readonly: Boolean(existing), autocomplete: "off", autocorrect: "off", spellcheck: "false" });
-  let idEdited = Boolean(existing);
+  // A knight taken in from a file fills the form as a new knight: you check it, and create it as any other.
+  const seed: Seed | undefined = existing ?? (draft ? seedOf(draft, snapshot) : undefined);
+  const name = h("input", { class: "input", required: true, maxlength: 80, value: seed?.name ?? "", placeholder: "e.g. Ada", autocomplete: "off" });
+  const id = h("input", { class: "input mono", required: true, maxlength: 32, pattern: HANDLE_PATTERN, value: seed?.id ?? "", readonly: Boolean(existing), autocomplete: "off", autocorrect: "off", spellcheck: "false" });
+  let idEdited = Boolean(seed);
   id.addEventListener("input", () => { idEdited = true; });
   name.addEventListener("input", () => { if (!idEdited) id.value = teammateId(name.value, takenHandles(snapshot)); });
-  const instructions = h("textarea", { class: "input", rows: 6, maxlength: 8000, placeholder: "Their job, how they work, and when to ask you." }, existing?.instructions ?? "");
-  const repository = h("input", { class: "input mono", type: "url", maxlength: 300, value: existing?.repository ?? "", placeholder: "https://github.com/owner/repository", autocomplete: "off" });
-  const harness = h("select", { class: "select" }, ...Object.entries(HARNESS).map(([value, label]) => h("option", { value, selected: value === (existing?.harness ?? "native") }, label)));
+  const instructions = h("textarea", { class: "input", rows: 6, maxlength: 8000, placeholder: "Their job, how they work, and when to ask you." }, seed?.instructions ?? "");
+  const repository = h("input", { class: "input mono", type: "url", maxlength: 300, value: seed?.repository ?? "", placeholder: "https://github.com/owner/repository", autocomplete: "off" });
+  const harness = h("select", { class: "select" }, ...Object.entries(HARNESS).map(([value, label]) => h("option", { value, selected: value === (seed?.harness ?? "native") }, label)));
   // Any agent that speaks the Agent Client Protocol: the command that starts it in its ACP mode, in the knight's VM.
-  const acp = h("input", { class: "input mono", maxlength: 300, value: existing?.acp ?? "", placeholder: "goose acp", autocomplete: "off", autocorrect: "off", spellcheck: "false" });
+  const acp = h("input", { class: "input mono", maxlength: 300, value: seed?.acp ?? "", placeholder: "goose acp", autocomplete: "off", autocorrect: "off", spellcheck: "false" });
   const acpField = field("Its ACP agent's command", acp, { hint: "What starts it in its ACP mode in the VM, e.g. goose acp, gemini --acp or opencode acp. It runs as you set it up there (its own sign-in or configuration), with the role's model offered through the gateway as OPENAI_BASE_URL." });
   const showAcp = () => { acpField.hidden = harness.value !== "acp"; };
   harness.addEventListener("change", showAcp);
   showAcp();
-  const names = knightRoles(known, existing?.role);
-  const role = h("select", { class: "select" }, ...names.map((value) => h("option", { value, selected: value === (existing?.role ?? "engineer") }, `${value}${known[value] && !known[value]?.models.length ? " · no model configured" : ""}`)));
+  const names = knightRoles(known, seed?.role);
+  const role = h("select", { class: "select" }, ...names.map((value) => h("option", { value, selected: value === (seed?.role ?? "engineer") }, `${value}${known[value] && !known[value]?.models.length ? " · no model configured" : ""}`)));
   // What the chosen role's models are, under it, as it changes.
-  const roleHint = h("span", {}, knightRoleLine(existing?.role ?? "engineer", known[existing?.role ?? "engineer"]));
+  const roleHint = h("span", {}, knightRoleLine(seed?.role ?? "engineer", known[seed?.role ?? "engineer"]));
   role.addEventListener("change", () => { roleHint.textContent = knightRoleLine(role.value, known[role.value]); });
   // Models of its own, in place of its role's: toggled on in the order they are to be tried, a local one where it runs.
-  let own = [...(existing?.models ?? [])];
+  let own = [...(seed?.models ?? [])];
   // Sensitive mode: these models alone, for every call of its work (core's heldModels).
-  const sensitive = h("input", { type: "checkbox", checked: existing?.sensitive ?? false });
-  const modelsHint = h("span", {}, knightModelsLine(own, existing?.role ?? "engineer", known[existing?.role ?? "engineer"], existing?.sensitive ?? false));
+  const sensitive = h("input", { type: "checkbox", checked: seed?.sensitive ?? false });
+  const modelsHint = h("span", {}, knightModelsLine(own, seed?.role ?? "engineer", known[seed?.role ?? "engineer"], seed?.sensitive ?? false));
   const sayModels = () => { modelsHint.textContent = knightModelsLine(own, role.value, known[role.value], sensitive.checked); };
   sensitive.addEventListener("change", sayModels);
   role.addEventListener("change", sayModels);
@@ -122,14 +177,17 @@ export async function editKnight(ctx: Ctx, existing?: Teammate): Promise<void> {
     for (const control of [box, write, header]) control.addEventListener("change", sync);
     return h("div", { class: "row" }, box, h("span", { class: "grow" }, h("div", { class: "scope-name mono" }, secret.name), h("div", { class: "tiny subtle" }, secret.origin)), header, h("label", { class: "row tiny" }, write, h("span", {}, "Writes too")));
   });
-  const dailyTurns = h("input", { class: "input", type: "number", min: 0, max: 1000, step: 1, required: true, value: existing?.dailyTurns ?? 40 });
+  const dailyTurns = h("input", { class: "input", type: "number", min: 0, max: 1000, step: 1, required: true, value: seed?.dailyTurns ?? 40 });
   const enabled = h("input", { type: "checkbox", checked: existing?.enabled ?? true });
-  const appearance = avatarEditor({ id: () => id.value, name: () => name.value, profile: existing?.avatar });
+  const appearance = avatarEditor({ id: () => id.value, name: () => name.value, profile: seed?.avatar });
   name.addEventListener("input", () => appearance.refreshIdentity());
   id.addEventListener("input", () => appearance.refreshIdentity());
   // A job Galahad wrote is his brief to this worker, and is told to it as his. Changing it here makes it yours.
   const author = existing?.instructionsBy && existing.instructionsBy !== "owner" ? (existing.instructionsBy === "galahad" ? "Galahad" : (snapshot?.teammates.find((person) => person.id === existing.instructionsBy)?.name ?? existing.instructionsBy)) : null;
-  editor(ctx, existing ? `Edit ${existing.name}` : "New knight", "A knight at your Roundtable, beside Galahad: a name, a lasting job and a workspace of its own.", [
+  const form = editor(ctx, existing ? `Edit ${existing.name}` : "New knight", "A knight at your Roundtable, beside Galahad: a name, a lasting job and a workspace of its own.", [
+    // A new knight may start from a knight file of yours (galahad roundtable export, or a knight's page): shown here to check.
+    !existing && !draft ? h("div", { class: "row" }, button("From a knight file", { size: "sm", variant: "ghost", icon: "folder", onClick: () => takeInKnight(ctx, () => form.close()) })) : null,
+    draft ? callout("info", `From a knight file: check it, then create it here.${draft.keys?.length ? ` Where it came from it was given ${draft.keys.join(", ")}; none is given here unless you tick it below.` : ""}`, { title: `${draft.name}, taken in` }) : null,
     appearance.element,
     existing && author ? callout("info", `${author} wrote this job when making ${existing.name}, and it is told to ${existing.name} as ${author}'s brief. Change its words here and the instructions are yours.`, { title: `Made by ${author}` }) : null,
     field("Name", name), field("Handle", id, { hint: "Used to address this knight. It stays the same after a rename." }),

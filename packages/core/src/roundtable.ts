@@ -1,3 +1,5 @@
+import { redact } from "./secret-scan.ts";
+
 /*
  * The Roundtable is a technocracy: the knight best suited to a task takes it, and evidence decides, never rank.
  * Pure and zod-free (the app uses it too): the node gathers the facts (each knight's record, its tasks, its VM as
@@ -148,4 +150,93 @@ export function chooseKnight(goal: string, needs: TaskNeeds, knights: readonly K
     choice: best ? { id: best.id, name: best.name, reasons: best.why } : null,
     considered: considered.map(({ turnsToday: _, ...c }) => c),
   };
+}
+
+/* ---------- a knight as a file you carry (PLAN #20) ---------- */
+
+/** What a knight file says it is, on its first line of settings. */
+export const KNIGHT_FILE = "knight 1";
+
+/** A knight as a file holds it: who it is, its job, and how it works. Never its memory, its record or its keys. */
+export interface KnightFile {
+  id: string;
+  name: string;
+  /** Its job, in the words it was given. */
+  instructions: string;
+  role?: string;
+  models?: string[];
+  sensitive?: boolean;
+  harness?: string;
+  acp?: string;
+  repository?: string;
+  dailyTurns?: number;
+  avatar?: unknown;
+  /** The names of the keys it was given where it came from: never a key, and given again only by you. */
+  keys?: string[];
+}
+
+const KNIGHT_FIELDS = ["id", "name", "role", "models", "sensitive", "harness", "acp", "repository", "dailyTurns", "avatar", "keys"] as const;
+
+/**
+ * A knight as a Markdown file: its settings between --- lines (each value JSON, which YAML reads too), then its job
+ * under its name. Anything in its job that looks like a key is taken out first (`scrubbed` says how many); its memory,
+ * its record and its keys never go into it, only the names of the keys it was given.
+ */
+export function knightToFile(knight: KnightFile): { text: string; scrubbed: number } {
+  const settings: Record<string, unknown> = { galahad: KNIGHT_FILE };
+  for (const field of KNIGHT_FIELDS) {
+    const value = knight[field];
+    if (value === undefined || value === null || (Array.isArray(value) && !value.length)) continue;
+    settings[field] = value;
+  }
+  const instructions = redact(knight.instructions.trim());
+  const scrubbed = instructions.split("[redacted").length - 1;
+  const front = Object.entries(settings).map(([key, value]) => `${key}: ${JSON.stringify(value)}`);
+  return { text: `---\n${front.join("\n")}\n---\n\n# ${knight.name}\n\n${instructions}\n`, scrubbed };
+}
+
+/**
+ * A knight file read back: its settings (a value that isn't JSON is read as the words it is), and its job, the text
+ * under its name. Only what a knight file holds is read; anything else in it is left out, and said.
+ */
+export function knightFromFile(text: string): { ok: true; knight: KnightFile; ignored: string[] } | { ok: false; why: string } {
+  const plain = text.replace(/\r\n?/g, "\n").replace(/^﻿/, "");
+  const front = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(plain);
+  if (!front) return { ok: false, why: "it doesn't open with a knight's settings (between --- lines)" };
+  const settings: Record<string, unknown> = {};
+  for (const line of front[1]!.split("\n")) {
+    const field = /^([A-Za-z][\w-]*):[ \t]*(.*)$/.exec(line);
+    if (!field) continue;
+    const raw = field[2]!.trim();
+    try {
+      settings[field[1]!] = JSON.parse(raw);
+    } catch {
+      settings[field[1]!] = raw.replace(/^(["'])(.*)\1$/, "$2");
+    }
+  }
+  if (settings.galahad !== KNIGHT_FILE) return { ok: false, why: `it isn't a knight file (its settings don't open with galahad: "${KNIGHT_FILE}")` };
+  const id = typeof settings.id === "string" ? settings.id.trim() : "";
+  const name = typeof settings.name === "string" ? settings.name.trim() : "";
+  if (!id) return { ok: false, why: "it names no id" };
+  if (!name) return { ok: false, why: "it gives the knight no name" };
+  // Its job: everything under its settings, its first heading (its name) aside.
+  const instructions = plain.slice(front[0].length).replace(/^\s*#[ \t]+[^\n]*\n?/, "").trim();
+  const knight: KnightFile = { id, name, instructions };
+  const ignored: string[] = [];
+  const words = (value: unknown): value is string => typeof value === "string" && value.trim() !== "";
+  const list = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((v) => typeof v === "string") ? (value as string[]) : undefined);
+  for (const [key, value] of Object.entries(settings)) {
+    if (key === "galahad" || key === "id" || key === "name") continue;
+    if (key === "role" && words(value)) knight.role = value.trim();
+    else if (key === "models" && list(value)) knight.models = list(value);
+    else if (key === "sensitive" && typeof value === "boolean") knight.sensitive = value;
+    else if (key === "harness" && words(value)) knight.harness = value.trim();
+    else if (key === "acp" && words(value)) knight.acp = value.trim();
+    else if (key === "repository" && words(value)) knight.repository = value.trim();
+    else if (key === "dailyTurns" && typeof value === "number") knight.dailyTurns = value;
+    else if (key === "avatar" && value && typeof value === "object") knight.avatar = value;
+    else if (key === "keys" && list(value)) knight.keys = list(value);
+    else ignored.push(key);
+  }
+  return { ok: true, knight, ignored };
 }

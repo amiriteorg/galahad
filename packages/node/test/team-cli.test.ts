@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { TeammateInput, type RouteName, type Teammate, type TeamMessage, type TeamRoom, type TeamRoomView, type TeamSnapshot } from "@galahad/core";
 import { defaultAvatar, lookProfile, matchingAccent } from "@galahad/core/avatar";
 import { teamCommand } from "../src/team-cli.ts";
@@ -571,4 +574,50 @@ test("keys of yours a knight may use, at a terminal: given (reads only unless --
   expect(lines).toContain("stripe · reads only · in Authorization: Bearer");
   expect(lines).toContain("acme · reads and writes · in x-api-key");
   await expect(teamCommand(api, "keys", ["ada", "add"], {}, () => {})).rejects.toThrow("usage: galahad roundtable keys");
+});
+
+test("export writes a knight as a file you carry; import shows it, then makes it a new knight here, never over one that's here", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "galahad-knight-file-"));
+  try {
+    const ada = member("ada", { instructions: "Reviews pull requests.\n\nAsks before merging.", harness: "codex", keys: [{ secret: "stripe", header: "authorization", write: false }], memory: "the owner's private notes" });
+    const lines: string[] = [];
+    await teamCommand(node([ada]).api, "export", ["ada"], {}, (line) => lines.push(line));
+    const file = lines.join("\n");
+    expect(file).toContain('id: "ada"');
+    expect(file).toContain('harness: "codex"');
+    expect(file).toContain('keys: ["stripe"]');
+    expect(file).not.toContain("private notes");
+    const path = join(dir, "ada.md");
+    await Bun.write(path, file);
+
+    const saved: unknown[] = [];
+    const elsewhere = (teammates: Teammate[], removed: { id: string; name: string }[] = []) => ({
+      async call<T>(name: RouteName, input?: unknown): Promise<T> {
+        if (name === "team") return { teammates, removed, rooms: [], tasks: [], deliveries: [] } as T;
+        if (name !== "saveTeammate") throw new Error(`unexpected call: ${name}`);
+        saved.push(input);
+        return { teammate: { ...member((input as { id: string }).id), ...(input as object) } } as T;
+      },
+    });
+    // A handle that's taken here, by a knight or by one you removed, is never written over.
+    await expect(teamCommand(elsewhere([member("ada")]), "import", [path], { yes: true }, () => {})).rejects.toThrow("There is a knight ada here already");
+    await expect(teamCommand(elsewhere([], [{ id: "ada", name: "Ada" }]), "import", [path], { yes: true }, () => {})).rejects.toThrow("--id <another id>");
+    // Shown first; not made without your yes.
+    const shown: string[] = [];
+    await teamCommand(elsewhere([]), "import", [path], {}, (line) => shown.push(line), () => false);
+    expect(shown[0]).toBe("Ada (ada) · codex · on its role's models (engineer)");
+    expect(shown[1]).toBe("Its job: Reviews pull requests. …");
+    expect(saved).toEqual([]);
+    // Made as a new knight under another handle; the keys it had are named, and none is given.
+    const made: string[] = [];
+    await teamCommand(elsewhere([member("ada")]), "import", [path], { id: "ada2", yes: true }, (line) => made.push(line));
+    expect(saved).toEqual([expect.objectContaining({ id: "ada2", name: "Ada", instructions: "Reviews pull requests.\n\nAsks before merging.", role: "engineer", harness: "codex", dailyTurns: 40 })]);
+    expect(saved[0]).not.toHaveProperty("keys");
+    expect(made.at(-1)).toBe("Where it came from it was given stripe: none is given here unless you say so (galahad roundtable keys ada2 add <secret>).");
+    // Not a knight file: said, and nothing made.
+    await Bun.write(join(dir, "notes.md"), "# Notes\n");
+    await expect(teamCommand(elsewhere([]), "import", [join(dir, "notes.md")], { yes: true }, () => {})).rejects.toThrow("That isn't a knight file");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
