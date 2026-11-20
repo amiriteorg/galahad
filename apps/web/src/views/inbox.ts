@@ -1,4 +1,4 @@
-import type { ActionView, LoopDraftView, LoopView, NoticeView, ScreenSessionView } from "@galahad/core";
+import type { ActionView, LoopDraftView, LoopView, NoticeView, QuestionField, QuestionView, ScreenSessionView } from "@galahad/core";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { noticeFrom } from "../lib/notices.ts";
@@ -320,6 +320,64 @@ function screenSessionCard(ctx: Ctx, s: ScreenSessionView): HTMLElement {
   );
 }
 
+/** One field of a service's question, as an input, and what it holds now (undefined: left empty). */
+function questionInput(f: QuestionField): { el: HTMLElement; value: () => unknown } {
+  switch (f.kind) {
+    case "text": {
+      const type = f.format === "email" ? "email" : f.format === "uri" ? "url" : f.format === "date" ? "date" : f.format === "date-time" ? "datetime-local" : "text";
+      const input = h("input", { class: "input", type, maxlength: f.maxLength, value: f.default ?? "", required: f.required, autocomplete: "off", autocorrect: "off", spellcheck: "false" });
+      return { el: input, value: () => (input.value.trim() ? input.value : undefined) };
+    }
+    case "number": {
+      const input = h("input", { class: "input", type: "number", step: f.integer ? 1 : "any", min: f.minimum, max: f.maximum, value: f.default ?? "", required: f.required });
+      return { el: input, value: () => (input.value === "" ? undefined : Number(input.value)) };
+    }
+    case "yes-no": {
+      const box = h("input", { type: "checkbox", checked: f.default ?? false });
+      return { el: h("label", { class: "row" }, box, h("span", {}, "Yes")), value: () => box.checked };
+    }
+    case "one": {
+      const select = h("select", { class: "select", required: f.required }, h("option", { value: "" }, "Choose…"), ...f.options.map((o) => h("option", { value: o.value, selected: o.value === f.default }, o.title)));
+      return { el: select, value: () => select.value || undefined };
+    }
+    case "many": {
+      const boxes = f.options.map((o) => ({ o, box: h("input", { type: "checkbox", checked: f.default?.includes(o.value) ?? false }) }));
+      return { el: h("div", { class: "stack tight" }, ...boxes.map(({ o, box }) => h("label", { class: "row" }, box, h("span", {}, o.title)))), value: () => boxes.filter((b) => b.box.checked).map((b) => b.o.value) };
+    }
+  }
+}
+
+/** An MCP server's question, mid-call: its words quoted (never as yours), its form, and Send or No. Its call waits. */
+function questionCard(ctx: Ctx, q: QuestionView): HTMLElement {
+  const outcome = h("div");
+  const inputs = q.fields.map((f) => ({ f, ...questionInput(f) }));
+  async function answer(accept: boolean, trigger: HTMLButtonElement): Promise<void> {
+    const content = Object.fromEntries(inputs.flatMap(({ f, value }) => (value() === undefined ? [] : [[f.name, value()]])));
+    await busy(trigger, async () => {
+      try {
+        await ctx.api.post("/api/questions/answer", { id: q.id, accept, ...(accept ? { content } : {}) });
+        toast(accept ? `Sent to ${q.label}` : `Said no to ${q.label}`, { description: "Its call goes on." });
+        await ctx.live.refreshQuestions();
+      } catch (error) {
+        replace(outcome, callout("danger", errorMessage(error), { title: "Not sent" }));
+      }
+    });
+  }
+  const send = button("Send", { variant: "primary", icon: "check" });
+  const no = button("No", { icon: "x" });
+  send.addEventListener("click", () => void answer(true, send));
+  no.addEventListener("click", () => void answer(false, no));
+  return card(
+    { tone: "accent", label: `${q.label} asks you` },
+    listRow({ lead: "plug", top: true, title: `${q.label} asks you`, sub: "Its call waits for your answer. No answer, and it goes on without one.", meta: [h("span", { class: "expires", "data-expires": String(q.expires) }, `Expires ${relativeTime(q.expires)}`)] }),
+    h("div", { class: "quote small" }, q.message),
+    ...inputs.map(({ f, el }) => field(f.required ? f.title : `${f.title} (optional)`, el, f.description ? { hint: f.description } : {})),
+    note("A service's own form: never type a password or a key into it. Keys belong in the vault."),
+    ctx.can("fleet:admin") ? formActions(no, send) : callout("quiet", "This device can't answer (no fleet:admin scope)."),
+    outcome,
+  );
+}
+
 function decidedRow(ctx: Ctx, action: ActionView): HTMLElement {
   const state = STATE[action.state] ?? { label: action.state, tone: "neutral" as Tone };
   const asked = hlcMs(action.requestedAt);
@@ -351,6 +409,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const connectorsBox = h("div", { class: "stack" });
   const actionsBox = h("div", { class: "stack" });
   const screenBox = h("div", { class: "stack" });
+  const questionsBox = h("div", { class: "stack" });
   const noticesBox = card({ flush: true });
   const historyRows = rows();
   const historySummary = h("span", { class: "small strong" });
@@ -361,6 +420,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
 
   const waiting = () => ctx.live.actions.value.filter((a) => isWaiting(a));
   const openScreen = () => ctx.live.screenSessions.value.filter((x) => x.state === "waiting" || x.state === "allowed");
+  const openQuestions = () => ctx.live.questions.value.filter((q) => q.expires > Date.now());
   const openNotices = () => ctx.live.notices.value.filter((n) => !n.dismissed);
 
   async function dismiss(n: NoticeView, trigger: HTMLButtonElement): Promise<void> {
@@ -427,6 +487,18 @@ export const inboxView: View = (root, ctx, { scope }) => {
   };
 
   let shownScreen = "";
+  // (Drawn again only when a question comes or goes: what you've half filled in stays.)
+  let shownQuestions = "";
+  const renderQuestions = () => {
+    const list = openQuestions();
+    const signature = JSON.stringify(list.map((q) => q.id));
+    if (signature !== shownQuestions) {
+      shownQuestions = signature;
+      replace(questionsBox, ...list.map((q) => questionCard(ctx, q)));
+    }
+    questionsSection.hidden = !list.length;
+    renderAllClear();
+  };
   const renderScreen = () => {
     const list = openScreen();
     const signature = JSON.stringify(list);
@@ -460,7 +532,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   };
 
   const renderAllClear = () => {
-    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + ctx.live.loopDrafts.value.length + ctx.live.aboutYou.value.length + ctx.live.connectorRequests.value.length + openScreen().length;
+    const pending = ctx.live.pairings.value.length + ctx.live.secretRequests.value.length + waiting().length + openNotices().length + ctx.live.loopDrafts.value.length + ctx.live.aboutYou.value.length + ctx.live.connectorRequests.value.length + openScreen().length + openQuestions().length;
     // Until the first answer, a skeleton: "nothing needs you" would be a guess, and pushed away a moment later.
     const loaded = ctx.live.inboxLoaded.value;
     allClear.hidden = loaded && pending > 0;
@@ -484,6 +556,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
 
   const pairingsSection = section("Devices asking to join", {}, pairingsBox);
   const screenSection = section("His use of a Mac itself", {}, screenBox);
+  const questionsSection = section("Services ask you", { note: "An MCP server asked you something in the middle of a call of Galahad's. Only you answer it, never a model; what you send goes to that service alone." }, questionsBox);
   const actionsSection = section(
     "Galahad asks your leave",
     { note: "Anything outward, and every delete, waits for you unless a standing order answers it. Approved, it's sent once; no answer in 24 hours means no." },
@@ -514,7 +587,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
       { class: "page narrow" },
       pageHead("Inbox", "Everything that needs you. Nothing here happens without your say."),
       // Shown whole once the Inbox has been read: what waits comes in at once, not section by section.
-      pageBody(allClear, pairingsSection, screenSection, actionsSection, requestsSection, connectorsSection, draftsSection, aboutYouSection, noticesSection, read ? history : null),
+      pageBody(allClear, pairingsSection, screenSection, questionsSection, actionsSection, requestsSection, connectorsSection, draftsSection, aboutYouSection, noticesSection, read ? history : null),
     ),
   );
 
@@ -525,6 +598,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   scope.add(ctx.live.aboutYou.subscribe(renderAboutYou));
   scope.add(ctx.live.actions.subscribe(renderActions));
   scope.add(ctx.live.screenSessions.subscribe(renderScreen));
+  scope.add(ctx.live.questions.subscribe(renderQuestions));
   scope.add(ctx.live.notices.subscribe(renderNotices));
   scope.add(ctx.live.inboxLoaded.subscribe(renderAllClear));
   renderPairings();
@@ -533,6 +607,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   renderConnectorRequests();
   renderAboutYou();
   renderActions();
+  renderQuestions();
   renderNotices();
   void ctx.live.refreshInbox();
   scope.interval(() => void ctx.live.refreshInbox(), 2000);

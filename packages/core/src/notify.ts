@@ -188,6 +188,23 @@ export function actionItem(a: { id: string; connector: string; tool: string; sta
   };
 }
 
+/**
+ * An MCP server's question to you, mid-call (questions.ts): which service asks, by the connector's id (a manifest's,
+ * bounded), never what it asks (its words). Like an approval, it settles a moment first: one you answered at once isn't told.
+ */
+export function questionItem(q: { id: string; connector: string; askedAt: number; expires: number }, now: number): NotifyItem | null {
+  if (q.expires <= now || now - q.askedAt < ACTION_SETTLE_MS) return null;
+  return {
+    key: `question:${q.id}`,
+    kind: "question",
+    alert: false,
+    title: "A question for you",
+    body: /^[a-z][a-z0-9-]{0,39}$/.test(q.connector) ? `${q.connector} asks you something in the Inbox; its call waits for your answer.` : "A service asks you something in the Inbox; its call waits for your answer.",
+    open: "inbox",
+    needs: ["mind:read"],
+  };
+}
+
 /** A node's name, as yours: plain, short. Another name says "a Mac". */
 const NODE_NAME = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/;
 

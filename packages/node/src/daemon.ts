@@ -46,6 +46,7 @@ import { BilagService } from "./bilag.ts";
 import { attachBilag, type BooksAttach, uploadBilag } from "./books.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { WakeWatcher } from "./wakes.ts";
+import { Questions } from "./questions.ts";
 import { SlackGateway } from "./slack.ts";
 import { TelegramGateway } from "./telegram.ts";
 import type { OutcomeRunner } from "./outcomes.ts";
@@ -432,7 +433,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
 
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
-  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}), natives: { "github.ship": shipNative(artifacts), "github.ship.update": shipNative(artifacts, true), ...gmailNatives, ...outlookNatives, ...cloudflareNatives } });
+  // MCP servers' questions mid-call (questions.ts): each waits in your Inbox for you, and its call with it.
+  const questions = new Questions({ log });
+  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, ask: (connector, params, signal) => questions.ask(connector, params, signal), ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}), natives: { "github.ship": shipNative(artifacts), "github.ship.update": shipNative(artifacts, true), ...gmailNatives, ...outlookNatives, ...cloudflareNatives } });
   const taskDeps: LoopTaskDeps = {
     bank,
     store,
@@ -537,6 +540,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     sources: {
       notices: () => store.lwwPrefix<{ key: string; severity: string; title: string; source: string; dismissed?: boolean }>("notice:").flatMap((e) => (e.value ? [{ key: e.value.key, severity: e.value.severity, title: e.value.title, source: e.value.source, dismissed: !!e.value.dismissed }] : [])),
       actions: () => connectors.actions(),
+      questions: () => questions.list(),
       screenSessions: () => store.screenSessions().map((s) => screenSessionView(s, Date.now(), (id) => store.device(id)?.name ?? id.slice(2, 10))),
       secretRequests: () => vault.requests().map((r) => r.name),
       connectorRequests: () => {
@@ -617,6 +621,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     loopDrafts,
     telegram,
     slack,
+    questions,
     connectorRequests,
     // Bilag from your mail to Google Drive, copied by the node itself (bilag.ts), read in this node's time zone.
     bilag: new BilagService({ transfer: (connector, step) => connectors.transfer(connector, step), local, tz: () => Intl.DateTimeFormat().resolvedOptions().timeZone }),
@@ -817,6 +822,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       await telegram.stop();
       await slack.stop();
       await ciWatch.stop();
+      // (A call waiting on your answer goes on without one: the node is stopping.)
+      questions.drain();
       await connectors.drain();
       await Promise.race([Promise.all([finished, turnsEnded]), Bun.sleep(opts.shutdownGraceMs ?? SHUTDOWN_GRACE_MS)]);
       // A turn still going after that is stopped: its answer kept as stopped, what's queued behind it held until you resume.

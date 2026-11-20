@@ -1,4 +1,4 @@
-import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, ScreenSessionView, SecretRequestView } from "@galahad/core";
+import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, QuestionView, ScreenSessionView, SecretRequestView } from "@galahad/core";
 import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { BrowserIdentity } from "./identity.ts";
@@ -35,6 +35,9 @@ export interface Live {
   /** His asks to use a Mac itself, and his sessions there. */
   screenSessions: Signal<ScreenSessionView[]>;
   refreshScreenSessions(): Promise<void>;
+  /** MCP servers' questions to you, mid-call: each holds its call until you answer, say no, or its time runs out. */
+  questions: Signal<QuestionView[]>;
+  refreshQuestions(): Promise<void>;
   /** What the heartbeat found, dismissed ones included (the Inbox shows the open ones). */
   notices: Signal<NoticeView[]>;
   /** Loops Galahad drafted when you asked for one in chat, waiting for you to add or dismiss. */

@@ -1,5 +1,6 @@
 import {
   actionItem,
+  questionItem,
   type ApplePushInput,
   connectorItem,
   inQuietHours,
@@ -66,6 +67,8 @@ export class NotifyError extends Error {
 export interface NotifySources {
   notices(): { key: string; severity: string; title: string; source: string; dismissed: boolean }[];
   actions(): { id: string; connector: string; tool: string; state: string; requestedAt: string; expires: number }[];
+  /** MCP servers' questions waiting for your answer, mid-call (questions.ts). */
+  questions?(): { id: string; connector: string; askedAt: number; expires: number }[];
   /** His asks to use a Mac itself, where each stands (core's screen.ts). */
   screenSessions?(): { id: string; nodeName: string; minutes: number; state: string; askedAt: number }[];
   /** The keys he's waiting for, by name. */
@@ -254,6 +257,7 @@ export class NotifyService {
     for (const notice of safely("notices", () => this.o.sources.notices())) out.push(noticeItem(notice), toldItem(notice));
     for (const action of safely("approvals", () => this.o.sources.actions())) out.push(actionItem({ id: action.id, connector: action.connector, tool: action.tool, state: action.state, requestedMs: hlcMs(action.requestedAt), expires: action.expires }, now));
     for (const session of safely("screen sessions", () => this.o.sources.screenSessions?.() ?? [])) out.push(screenItem(session, now));
+    for (const question of safely("questions", () => this.o.sources.questions?.() ?? [])) out.push(questionItem(question, now));
     for (const name of safely("key requests", () => this.o.sources.secretRequests())) out.push(secretItem(name));
     for (const id of safely("connector requests", () => this.o.sources.connectorRequests())) out.push(connectorItem(id));
     return out.filter((item): item is NotifyItem => item !== null);

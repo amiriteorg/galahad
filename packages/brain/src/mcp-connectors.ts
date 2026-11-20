@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import {
   type BuiltMcpCall,
   canonical,
@@ -26,8 +27,10 @@ import { accessToken, type OAuthContext } from "./oauth.ts";
  *
  * Same fences as request templates: every request stays on the pinned origin,
  * redirects are refused, answers are size-capped and redacted. The client declares
- * no capabilities, so a server can't ask Galahad to run a model, list files or
- * prompt you: it can only answer.
+ * no capabilities but one, so a server can't ask Galahad to run a model or list
+ * files: it can only answer, and, in a call made where you can be asked (`elicit`),
+ * ask you a question in a form (elicitation's form mode alone), which waits in your
+ * Inbox and is answered by you, never a model.
  */
 
 export interface McpContext {
@@ -37,7 +40,15 @@ export interface McpContext {
   signal?: AbortSignal;
   /** For a server you sign in to (mcp-oauth.ts): how a rotated sign-in is kept. */
   oauth?: Omit<OAuthContext, "vault" | "fetch">;
+  /**
+   * Where a question its server asks in the middle of a call goes (the node's questions.ts): to you, and its answer
+   * back. Absent: the client says it takes none, and a server asks nothing.
+   */
+  elicit?: (params: { message?: unknown; requestedSchema?: unknown }, signal?: AbortSignal) => Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, string | number | boolean | string[]> }>;
 }
+
+/** How long a call that may ask you a question is held at most: the question's wait, and the call's own time beside it. */
+export const MCP_ELICIT_TIMEOUT_MS = 8 * 60_000;
 
 /** A server you signed in to: a short-lived access token for this one job, never the sign-in itself. */
 async function signedIn(ctx: McpContext, manifest: ConnectorManifest): Promise<{ headers: Record<string, string>; key: string }> {
@@ -95,7 +106,10 @@ async function withMcp<T>(ctx: McpContext, manifest: ConnectorManifest, work: (c
     requestInit: { headers: { "user-agent": "galahad/0.1 (+https://galahad.bot)", ...(manifest.headers ?? {}), ...headers } },
     reconnectionOptions: { maxRetries: 0, initialReconnectionDelay: 1000, maxReconnectionDelay: 1000, reconnectionDelayGrowFactor: 1 },
   });
-  const client = new Client({ name: "galahad", version: "0.1.0" }, { capabilities: {} });
+  const elicit = ctx.elicit;
+  const client = new Client({ name: "galahad", version: "0.1.0" }, { capabilities: elicit ? { elicitation: {} } : {} });
+  // A question mid-call, in a form (its URL mode, which would send you to a page of the server's, is declined).
+  if (elicit) client.setRequestHandler(ElicitRequestSchema, async (request, extra) => (request.params.mode === "url" ? { action: "decline" as const } : await elicit(request.params, extra.signal)));
   // MCP tools are often model-backed and slow: two minutes for the call (connecting gets 30 s).
   const timeout = ctx.timeoutMs ?? 120_000;
   try {
@@ -196,7 +210,8 @@ export async function callMcpTool(ctx: McpContext, manifest: ConnectorManifest, 
   let ok: boolean;
   let text: string;
   try {
-    const done = await withMcp(ctx, manifest, (client, timeout) => client.callTool({ name: call.remote, arguments: call.args as Record<string, unknown> }, undefined, { timeout }));
+    // (A call that may ask you is given the question's wait too.)
+    const done = await withMcp(ctx, manifest, (client, timeout) => client.callTool({ name: call.remote, arguments: call.args as Record<string, unknown> }, undefined, { timeout: ctx.elicit ? Math.max(timeout, MCP_ELICIT_TIMEOUT_MS) : timeout }));
     key = done.key;
     const result = done.value as { content?: Content[]; structuredContent?: unknown; isError?: boolean; toolResult?: unknown };
     ok = !result.isError;

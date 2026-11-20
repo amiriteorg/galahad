@@ -191,6 +191,7 @@ import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { type Caller, ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
+import { QuestionError, type Questions } from "./questions.ts";
 import { fetchAgentSkill, SkillImportError } from "./skill-import.ts";
 import { SLACK_SCOPES, SlackError, type SlackGateway } from "./slack.ts";
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
@@ -266,6 +267,8 @@ export interface AppContext {
   telegram?: TelegramGateway | null;
   /** Slack, when an app of yours talks to Galahad through this node (slack.ts). */
   slack?: SlackGateway | null;
+  /** MCP servers' questions to you, mid-call (questions.ts). Absent: none is ever asked. */
+  questions?: Questions;
   /** Connectors agents asked you for, waiting for you to add one or dismiss the request (node-local). */
   connectorRequests: ConnectorRequests;
   /** Bilag copied from your mail to Google Drive (bilag.ts): what was copied, and copying what came before the loop's wakes. */
@@ -3292,6 +3295,20 @@ export function createApp(ctx: AppContext) {
     closeTerminal: (input, p) => {
       terminalsFor(p).close(input.terminal);
       return { closed: true };
+    },
+    questions: () => ({ questions: ctx.questions?.list() ?? [] }),
+    answerQuestion: (input, p) => {
+      if (!isOwner(p)) throw new HttpError(403, "only you answer a question a service asks you");
+      const questions = ctx.questions;
+      if (!questions) throw new HttpError(404, "no such question waits");
+      try {
+        const asked = questions.answer(input.id, input.accept, input.content ?? {});
+        // What you answered, and to whom, for the record; never what you filled in.
+        ctx.ledger?.({ class: "outward", resource: `connector.${asked.connector}`, target: `question ${asked.id}`, verdict: input.accept ? "allow" : "deny", reason: input.accept ? "you answered its question" : "you said no to its question", detail: `${asked.fields.length} field${asked.fields.length === 1 ? "" : "s"}` });
+        return { ok: true };
+      } catch (error) {
+        throw error instanceof QuestionError ? new HttpError(error.status, error.message) : error;
+      }
     },
     investigations: () => ({ investigations: investigationViews() }),
     registerInvestigation: (input) => {

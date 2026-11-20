@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, type AwayView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type SlackView, SLACK_APP_MANIFEST, type TelegramView, type TrialView } from "@galahad/core";
+import { type ArtifactView, type AwayView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type SlackView, SLACK_APP_MANIFEST, type TelegramView, type TrialView, type QuestionView, plainLine } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -366,6 +366,8 @@ Connectors (manifests, not code: keys stay in the vault; outward and delete ask 
   action ls [--all] | action approve <id> [--note …] [--edit key=text …] | action deny <id>
                                   --edit: your own words in its text before your yes (that version is sent; the one
                                   asked is declined, saying which it became)
+  questions | questions answer <id> name=value … | questions decline <id>
+                                  what an MCP server asked you in the middle of a call (its call waits): your answer
 
 Standing orders (your answer in advance: one tool, narrow arguments, an expiry)
   order ls [--all] | order revoke <id>
@@ -2057,6 +2059,45 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "connectors":
       await connectorCommand(new Admin(home), sub, rest, flags, readSecret);
       return;
+    case "questions":
+    case "question": {
+      // An MCP server's question mid-call (questions.ts): read here, answered by you alone, field by field.
+      const admin = new Admin(home);
+      const { questions } = await admin.call<{ questions: QuestionView[] }>("questions");
+      if (sub === "answer" || sub === "decline") {
+        const q = questions.find((x) => x.id === rest[0]);
+        if (!q) fail(`usage: galahad questions answer <id> name=value … | questions decline <id> (${rest[0] ? `no question ${rest[0]} waits` : "which one?"}: galahad questions lists them)`);
+        if (sub === "decline") {
+          await admin.call("answerQuestion", { id: q.id, accept: false });
+          console.log(`Said no to ${q.label}: its call goes on.`);
+          return;
+        }
+        const content: Record<string, unknown> = {};
+        for (const pair of rest.slice(1)) {
+          const at = pair.indexOf("=");
+          const field = q.fields.find((f) => f.name === pair.slice(0, at));
+          if (at < 1 || !field) fail(`${pair}: give a field it asked for as name=value (${q.fields.map((f) => f.name).join(", ")})`);
+          const raw = pair.slice(at + 1);
+          // (Each by its kind: a comma in a text is the text's.)
+          content[field.name] = field.kind === "yes-no" ? /^(y|yes|true|1)$/i.test(raw) : field.kind === "many" ? raw.split(",").map((v) => v.trim()).filter(Boolean) : field.kind === "number" ? Number(raw) : raw;
+        }
+        await admin.call("answerQuestion", { id: q.id, accept: true, content });
+        console.log(`Sent to ${q.label}: its call goes on.`);
+        return;
+      }
+      if (sub) fail("usage: galahad questions [answer <id> name=value … | decline <id>]");
+      if (!questions.length) console.log("No service asks you anything now.");
+      for (const q of questions) {
+        console.log(`${bold(q.id)} · ${plainLine(q.label)} asks (its call waits until ${new Date(q.expires).toLocaleTimeString()}):\n  ${plainLine(q.message)}`);
+        for (const f of q.fields) {
+          const kind = f.kind === "one" || f.kind === "many" ? ` · ${f.kind === "many" ? "any of" : "one of"} ${f.options.map((o) => o.value).join(", ")}` : f.kind === "yes-no" ? " · yes or no" : f.kind === "number" ? ` · a${f.integer ? " whole" : ""} number` : "";
+          console.log(`  ${f.name}${f.required ? "" : " (optional)"}: ${plainLine(f.title)}${kind}${f.description ? dim(` · ${plainLine(f.description)}`) : ""}`);
+        }
+      }
+      if (questions.length) console.log(dim("Answer with galahad questions answer <id> name=value …, or galahad questions decline <id>."));
+      return;
+    }
+
     case "action":
     case "actions":
       await actionCommand(new Admin(home), sub, rest, flags);

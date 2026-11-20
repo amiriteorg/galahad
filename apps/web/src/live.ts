@@ -1,4 +1,4 @@
-import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, ScreenSessionView, SecretRequestView } from "@galahad/core";
+import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, QuestionView, ScreenSessionView, SecretRequestView } from "@galahad/core";
 import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { Live } from "./context.ts";
@@ -39,6 +39,8 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   const actions = signal<ActionView[]>([]);
   /** His asks to use a Mac itself, and his sessions there (core's screen.ts). */
   const screenSessions = signal<ScreenSessionView[]>([]);
+  /** MCP servers' questions to you, mid-call (core's questions.ts). */
+  const questions = signal<QuestionView[]>([]);
   const notices = signal<NoticeView[]>([]);
   const online = signal(navigator.onLine);
   const inboxLoaded = signal(false);
@@ -59,6 +61,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
         secretRequests.value.length +
         actions.value.filter((a) => isWaiting(a)).length +
         screenSessions.value.filter((s) => s.state === "waiting" || s.state === "allowed").length +
+        questions.value.filter((q) => q.expires > Date.now()).length +
         notices.value.filter((n) => !n.dismissed).length +
         loopDrafts.value.length +
         connectorRequests.value.length +
@@ -71,6 +74,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   aboutYou.subscribe(recount);
   actions.subscribe(recount);
   screenSessions.subscribe(recount);
+  questions.subscribe(recount);
   notices.subscribe(recount);
 
   async function refreshFleet(): Promise<void> {
@@ -184,6 +188,21 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     }
   }
 
+  let lastQuestions = "";
+  async function refreshQuestions(): Promise<void> {
+    if (!can("mind:read")) return;
+    try {
+      const { questions: list } = await api.get<{ questions: QuestionView[] }>("/api/questions");
+      const signature = JSON.stringify(list);
+      if (signature !== lastQuestions) {
+        lastQuestions = signature;
+        questions.set(list);
+      }
+    } catch {
+      /* transient, or an older node without questions */
+    }
+  }
+
   async function refreshNotices(): Promise<void> {
     if (!can("mind:read")) return;
     try {
@@ -228,7 +247,7 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   }
 
   const refreshInbox = async () => {
-    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshScreenSessions(), refreshNotices(), refreshLoopDrafts(), refreshConnectorRequests(), refreshAboutYou()]);
+    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshScreenSessions(), refreshQuestions(), refreshNotices(), refreshLoopDrafts(), refreshConnectorRequests(), refreshAboutYou()]);
     inboxLoaded.set(true);
   };
 
@@ -245,6 +264,8 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     timers.push(setInterval(() => void refreshAboutYou(), REQUESTS_MS));
     timers.push(setInterval(() => void refreshActions(), ACTIONS_MS));
     timers.push(setInterval(() => void refreshScreenSessions(), ACTIONS_MS));
+    // (A question holds a call: it's looked for as often as an action is.)
+    timers.push(setInterval(() => void refreshQuestions(), ACTIONS_MS));
     timers.push(setInterval(() => void refreshNotices(), NOTICES_MS));
     watchTeam();
   }
@@ -268,5 +289,5 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     stop();
     listeners.abort();
   };
-  return { fleet, pairings, secretRequests, actions, screenSessions, refreshScreenSessions, notices, loopDrafts, connectorRequests, aboutYou, refreshAboutYou, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshLoopDrafts, refreshConnectorRequests, refreshInbox, stop: dispose };
+  return { fleet, pairings, secretRequests, actions, screenSessions, refreshScreenSessions, questions, refreshQuestions, notices, loopDrafts, connectorRequests, aboutYou, refreshAboutYou, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshLoopDrafts, refreshConnectorRequests, refreshInbox, stop: dispose };
 }

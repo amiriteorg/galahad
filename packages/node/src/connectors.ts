@@ -107,6 +107,11 @@ export interface ConnectorServiceOptions {
   natives?: Partial<Record<NativeName, NativeTool>>;
   /** Where Google's and Microsoft's sign-ins are reached (tests: a stand-in). */
   oauthEndpoints?: Partial<OAuthEndpoints>;
+  /**
+   * Where a question an MCP server asks in the middle of a call goes (questions.ts: your Inbox), and its answer back.
+   * Absent: its calls take none, and a server asks nothing.
+   */
+  ask?: (connector: { id: string; label: string }, params: { message?: unknown; requestedSchema?: unknown }, signal?: AbortSignal) => Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, string | number | boolean | string[]> }>;
 }
 
 /** How long an action waits for you. No answer means no. */
@@ -315,7 +320,10 @@ export class ConnectorService {
           return sendConnectorRequest(ctx, manifest, step);
         });
       }
-      return request.kind === "mcp" ? await callMcpTool(ctx, manifest, request) : await sendConnectorRequest(ctx, manifest, request);
+      // An MCP server may ask you a question mid-call: it waits in your Inbox (questions.ts), answered by you alone.
+      const ask = this.o.ask;
+      if (request.kind === "mcp") return await callMcpTool({ ...ctx, ...(ask ? { elicit: (params, signal) => ask({ id: manifest.id, label: manifest.label }, params, signal) } : {}) }, manifest, request);
+      return await sendConnectorRequest(ctx, manifest, request);
     } catch (error) {
       if (error instanceof ConnectorCallError) throw error;
       if (error instanceof ConnectorError) {

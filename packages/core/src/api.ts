@@ -22,6 +22,7 @@ import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
 import { QuestEvidenceInput, SkillApproveInput, SkillId, SkillLockInput, SkillRetireInput, SkillsBudgetInput, SkillWriteInput } from "./skills-input.ts";
+import { QUESTION_ID, QUESTION_LIMITS } from "./questions.ts";
 import { ApplePushInput, ApplePushKeyInput, NotifyDeviceRef, NotifyPrefsInput, PushSubscriptionInput } from "./notify-input.ts";
 
 /*
@@ -1154,6 +1155,25 @@ export const routes = {
           .optional(),
       })
       .refine((answer) => !answer.edits || answer.approve, "an edit goes with a yes: decline it as it is, or edit it and approve"),
+  },
+  /**
+   * MCP servers' questions to you in the middle of a call (elicitation, PLAN #49): each waits in your Inbox until you
+   * answer it or it runs out of time. Read like the actions that wait for you.
+   */
+  questions: { method: "GET", path: "/api/questions", scope: "mind:read", input: null },
+  /**
+   * Your answer to one, yours alone: what you filled in, checked against what it asked and sent back to the server that
+   * asked (accept), or no (decline). Nothing in it may look like a key: a key goes in the vault, never to a server's form.
+   */
+  answerQuestion: {
+    method: "POST",
+    path: "/api/questions/answer",
+    scope: "fleet:admin",
+    input: z.strictObject({
+      id: z.string().regex(QUESTION_ID),
+      accept: z.boolean(),
+      content: z.record(z.string().max(64), z.union([z.string().max(QUESTION_LIMITS.text), z.number(), z.boolean(), z.array(z.string().max(QUESTION_LIMITS.option)).max(QUESTION_LIMITS.options)])).optional(),
+    }),
   },
   investigations: { method: "GET", path: "/api/investigations", scope: "mind:read", input: null },
   /** Record a pre-registration before anything runs (it never changes afterwards). */
