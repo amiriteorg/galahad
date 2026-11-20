@@ -304,6 +304,32 @@ describe("a role held to one model, and a variant of the harness", () => {
   });
 });
 
+describe("a coding tool's own calls", () => {
+  test("heard as its sandbox closes, they are the trial's and the run's like any, and count against the budget", async () => {
+    // What the node counted of the sandbox's calls through the gateway: the tool's, never seen call by call.
+    const tool = { role: "engineer", model: "p/tool", calls: 3, unknown: 0, input: 9000, output: 400, cached: 6000, reasoning: 0 };
+    const unit: TrialUnit = {
+      id: "a-case",
+      title: "A case",
+      domain: "should-pass",
+      attempt: async (_node, job) => {
+        job.spent?.({ role: "reviewer", model: "p/judge", usage: { input: 700, output: 9 } });
+        job.sandboxSpent?.([tool]);
+        return { run: job.run, suite: job.suite, problem: "a-case", title: "A case", domain: "should-pass", seed: job.seed, status: "scored", score: 1, answers: [{ key: "verdict", units: "pass", expected: 1, got: 1, tolerance: 0, ok: true }], models: ["p/judge"], version: job.version, seconds: 1 };
+      },
+    };
+    const { node } = fakeNode();
+    const two = await runTrials(node, { suite: "reviewer", problems: [unit], repeat: 2, parallel: 1, network: "gateway", seed: 3 });
+    expect(two.trials[0]!.spent!.lines).toEqual([tool, { role: "reviewer", model: "p/judge", calls: 1, unknown: 0, input: 700, output: 9, cached: 0, reasoning: 0 }]);
+    expect(two.spent.find((l) => l.model === "p/tool")).toEqual({ ...tool, calls: 6, input: 18_000, output: 800, cached: 12_000 });
+    // The first trial's tool crosses the budget: no other starts.
+    const capped = await runTrials(fakeNode().node, { suite: "reviewer", problems: [unit], repeat: 3, parallel: 1, network: "gateway", seed: 3, budget: { tokens: 10_000 } });
+    expect(capped.trials).toHaveLength(1);
+    expect(capped.budgetEnded).toMatchObject({ notStarted: 2, stopped: 0 });
+    expect(capped.budgetEnded!.why).toMatch(/budget of 10\.0k tokens is spent \(10\.1k counted\)/);
+  });
+});
+
 describe("a unit of another suite", () => {
   test("its record is recorded with what it spent, like any trial; a crash in it is the unit's to report", async () => {
     const unit: TrialUnit = {

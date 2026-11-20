@@ -513,6 +513,8 @@ export interface NodeQuestHooks {
   prepare?(exec: (command: string, timeoutSec: number) => Promise<ExecResult>, info: { attempt?: number; sandbox: SandboxView }): Promise<void>;
   /** Every model call as it ends: the role, the model, its tokens as the provider reported them (null: it reported nothing). */
   spent?(call: { role: string; model: string; usage: Usage | null }): void;
+  /** What a sandbox's own calls through the gateway came to (a coding agent's), as the node counted them: once, as it closes. */
+  sandboxSpent?(lines: UsageLine[]): void;
 }
 
 /** What a quest that ran several attempts did: each one's outcome, and which was taken and why. */
@@ -566,7 +568,7 @@ async function openWorkshop(node: NodeClient, options: DoOptions, quest: string,
  * at a coding agent), and once more as each sandbox closes. A node that can't say (one from before this) is taken as
  * having nothing to add.
  */
-function gatewaySpend(node: NodeClient) {
+function gatewaySpend(node: NodeClient, closed?: (lines: UsageLine[]) => void) {
   const heard = new Map<string, { on: string; lines: UsageLine[]; closed: boolean }>();
   const ask = (id: string, on: string, closed = false): Promise<void> =>
     node.call<{ lines: UsageLine[] }>("sandboxSpend", { id, on }).then(
@@ -583,8 +585,12 @@ function gatewaySpend(node: NodeClient) {
       await Promise.all([...heard].filter(([, h]) => !h.closed).map(([id, h]) => ask(id, h.on)));
       return all();
     },
-    /** The last word on a sandbox, before it goes. */
-    settle: (sandbox: SandboxView): Promise<void> => ask(sandbox.id, sandbox.node, true),
+    /** The last word on a sandbox, before it goes (said to `closed`, when there was any). */
+    settle: (sandbox: SandboxView): Promise<void> =>
+      ask(sandbox.id, sandbox.node, true).then(() => {
+        const lines = heard.get(sandbox.id)?.lines ?? [];
+        if (lines.length) closed?.(lines);
+      }),
     all,
   };
 }
@@ -752,7 +758,7 @@ export async function runNodeQuest(
     hooks.spent?.(call);
   };
   // And what its sandboxes' own calls through the gateway came to (a coding agent's): counted beside them.
-  const tools = gatewaySpend(node);
+  const tools = gatewaySpend(node, hooks.sandboxSpent);
   // With a budget: what those calls have cost so far at your prices (asked for once, as the run starts).
   const prices: Prices = options.budgetUsd !== undefined ? await node.call<{ prices: Prices }>("prices").then((r) => r.prices, () => ({})) : {};
   const spentUsd = options.budgetUsd !== undefined

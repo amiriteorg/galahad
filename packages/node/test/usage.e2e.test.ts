@@ -296,6 +296,34 @@ describe("a quest with a budget", () => {
     }
   });
 
+  test("without a budget too, what each sandbox spent through the gateway is said once, as it closes (a trial counts it so)", async () => {
+    let sandboxId = "";
+    docker.onExec = async (_container, cmd) => {
+      if (cmd.join(" ").includes("touch /work/out/done")) {
+        const { token } = await call<{ token: string }>("mintToken", { label: `sandbox:${sandboxId}`, providers: ["stand-in"] });
+        const response = await fetch(`http://127.0.0.1:${port}/gw/stand-in/chat/completions`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({ model: "counted", stream: true, stream_options: { include_usage: true }, messages: [{ role: "user", content: "Quest: one call" }] }),
+        });
+        await response.text();
+      }
+      return { code: 0, stdout: "" };
+    };
+    try {
+      const heard: { role: string; model: string; calls: number }[][] = [];
+      const { usage } = await runNodeQuest(client(), { goal: "make the file", network: "isolated", remember: false }, {
+        started: ({ sandbox }) => void (sandboxId = sandbox.id),
+        sandboxSpent: (lines) => void heard.push(lines),
+      });
+      expect(heard.map((lines) => lines.map((l) => [l.role, l.model, l.calls]))).toEqual([[["tool", "stand-in/counted", 1]]]);
+      // And what the quest says it spent holds the same, beside its own calls.
+      expect(usage.find((l) => l.role === "tool")).toMatchObject({ model: "stand-in/counted", calls: 1 });
+    } finally {
+      docker.onExec = undefined;
+    }
+  });
+
   test("what a sandbox spent: all of it, or since a moment (a knight's VM outlives its tasks); an agent may ask only of its own", async () => {
     const { sandbox } = await call<{ sandbox: { id: string } }>("createSandbox", { network: "isolated" });
     try {

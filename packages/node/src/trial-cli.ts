@@ -14,6 +14,7 @@ import {
   effortReport,
   galahadIndex,
   type HarnessOptions,
+  mergeSpend,
   type Prices,
   type SandboxNetwork,
   spendLabel,
@@ -66,9 +67,14 @@ export interface TrialJob {
   pins?: TrialPins;
   /** Every model call as it ends (the run's budget counts them as they come). */
   spent?(call: { role: string; model: string; usage: Usage | null }): void;
+  /** What a sandbox's own calls through the gateway came to (a coding agent's), as it closes: counted like any. */
+  sandboxSpent?(lines: UsageLine[]): void;
   /** A role's model that couldn't answer, and the one that answered in its place (a trial's quest says it once). */
   passedOver?(call: PassedOver): void;
 }
+
+/** Lines folded into a count kept as it goes, in place. */
+export const absorb = (into: UsageLine[], lines: readonly UsageLine[]): void => void into.splice(0, into.length, ...mergeSpend(into, lines));
 
 /** A model of a role's that couldn't answer, why, and which one answered instead. */
 export interface PassedOver {
@@ -240,6 +246,7 @@ async function solveProblem(node: NodeClient, problem: TrialProblem, job: TrialJ
         signal: job.signal,
         effort: heldToEffort(job.effort),
         ...(job.spent ? { spent: job.spent } : {}),
+        ...(job.sandboxSpent ? { sandboxSpent: job.sandboxSpent } : {}),
         emit: (event) => {
           if ((event.type === "plan" || event.type === "thought" || event.type === "review") && event.model) models.add(event.model);
           tellPassedOver(job)(event);
@@ -292,6 +299,10 @@ export async function tryOne(node: NodeClient, problem: Tryable, job: TrialJob):
     spent: (call) => {
       addUsage(lines, call.role, call.model, call.usage);
       job.spent?.(call);
+    },
+    sandboxSpent: (through) => {
+      absorb(lines, through);
+      job.sandboxSpent?.(through);
     },
   };
   const record = isUnit(problem) ? await problem.attempt(node, counted) : await solveProblem(node, problem, counted);
@@ -469,6 +480,12 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
           addUsage(spent, call.role, call.model, call.usage);
           addUsage(mine, call.role, call.model, call.usage);
           // Spent with trials still running: they stop after their current step, so the overrun is a step's worth each.
+          if (!ended && (ended = over())) stop.abort();
+        },
+        // (A coding agent's own calls are heard as its sandbox closes: its time bounds what it can spend before then.)
+        sandboxSpent: (through) => {
+          absorb(spent, through);
+          absorb(mine, through);
           if (!ended && (ended = over())) stop.abort();
         },
         passedOver: (call) => {

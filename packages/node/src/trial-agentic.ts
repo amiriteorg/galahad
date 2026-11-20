@@ -123,6 +123,7 @@ export async function attemptTask(node: NodeClient, task: AgenticTask, level: nu
         signal: job.signal,
         effort: heldToEffort(job.effort),
         ...(job.spent ? { spent: job.spent } : {}),
+        ...(job.sandboxSpent ? { sandboxSpent: job.sandboxSpent } : {}),
         emit: (event) => {
           if ((event.type === "plan" || event.type === "thought" || event.type === "review") && event.model) models.add(event.model);
           tellPassedOver(job)(event);
