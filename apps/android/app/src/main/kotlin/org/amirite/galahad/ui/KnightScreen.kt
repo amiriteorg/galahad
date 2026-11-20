@@ -40,6 +40,7 @@ import org.amirite.galahad.core.NodeError
 import org.amirite.galahad.core.Roster
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
+import org.amirite.galahad.core.int
 import org.amirite.galahad.core.list
 import org.amirite.galahad.core.long
 import org.amirite.galahad.core.string
@@ -66,11 +67,18 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
         placeholder = "Write to ${person?.name ?: id}",
         back = back,
     ) {
+        val scope = rememberCoroutineScope()
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
             Face(Looks.of(id, person?.name ?: id, person?.avatar), row?.state, size = 120.dp, description = person?.name)
             Text(person?.name ?: id, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             StateChip(row?.state)
             row?.let { Text(Roster.besideChip(it.line, it.state), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            // Paused, a knight starts nothing new until you resume it; what it's doing now finishes.
+            person?.let { p ->
+                TextButton(onClick = {
+                    scope.launch { runCatching { app.client?.post("/api/team/control", Json.obj("teammate" to id, "action" to if (p.enabled) "pause" else "resume")); app.refresh() } }
+                }) { Text(if (p.enabled) "Pause ${p.name}" else "Resume ${p.name}") }
+            }
         }
     }
 }
@@ -234,14 +242,81 @@ private fun TaskCard(app: AppModel, t: Json) {
             word?.let { w -> Text(w, style = MaterialTheme.typography.labelMedium, color = state?.tone?.let(LocalBrand.current::of) ?: MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         Text(t["title"].string ?: "", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        (t["progress"].string ?: t["error"].string)?.takeIf { it.isNotBlank() }?.let { Text(it.lineSequence().first(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        if (status == "proposed") {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                OutlinedButton(onClick = { scope.launch { runCatching { app.client?.post("/api/team/control", Json.obj("task" to t["id"].string, "action" to "stop")); app.refresh() } } }) { Text("Decline") }
-                androidx.compose.material3.Button(onClick = { scope.launch { runCatching { app.client?.post("/api/team/control", Json.obj("task" to t["id"].string, "action" to "approve")); app.refresh() } } }) { Text("Start it") }
+        // Work that ended short says why (a quest's word for it in words: "gave-up" is "gave up"); work under way, its latest step.
+        val ended = status == "failed" || status == "stopped" || status == "interrupted"
+        val why = t["error"].string?.lineSequence()?.first()?.trim()?.let { mapOf("gave-up" to "gave up", "unverified" to "not verified")[it] ?: it }
+        (if (ended) why ?: t["progress"].string else t["progress"].string)?.takeIf { it.isNotBlank() }?.let {
+            Text(it.lineSequence().first(), style = MaterialTheme.typography.bodyMedium, color = if (ended && why != null) LocalBrand.current.failed else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        t["changes"]["files"].int?.let { Text("$it file${if (it == 1) "" else "s"} changed, kept", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        val shipped = t["shipped"]
+        val context = androidx.compose.ui.platform.LocalContext.current
+        shipped["url"].string?.let { url ->
+            TextButton(onClick = { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }) {
+                Text(shipped["pr"].int?.let { "Pull request #$it" } ?: "Its pull request")
             }
         }
+        var problem by remember { mutableStateOf<String?>(null) }
+        var shipping by remember { mutableStateOf(false) }
+        fun control(action: String) = scope.launch {
+            try {
+                app.client?.post("/api/team/control", Json.obj("task" to t["id"].string, "action" to action))
+                problem = null
+                app.refresh()
+            } catch (e: NodeError) {
+                problem = e.message
+            }
+        }
+        // What a task offers, as the iPhone's card does: by where it stands.
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+            when {
+                status == "proposed" -> {
+                    OutlinedButton(onClick = { control("stop") }) { Text("Decline") }
+                    androidx.compose.material3.Button(onClick = { control("approve") }) { Text("Start it") }
+                }
+                status == "queued" || status == "running" -> OutlinedButton(onClick = { control("stop") }) { Text("Stop", color = LocalBrand.current.failed) }
+                status == "done" && verified && t["changes"] != null && t["fix"] == null && shipped == null ->
+                    androidx.compose.material3.Button(onClick = { shipping = true }) { Text("Ship it") }
+                status == "failed" || status == "stopped" || status == "interrupted" -> OutlinedButton(onClick = { control("resume") }) { Text("Resume") }
+            }
+        }
+        problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = LocalBrand.current.failed) }
+        if (shipping) ShipDialog(app, t) { shipping = false }
     }
+}
+
+/** A knight's verified work as a pull request: its title first (the task's, to change), on a new branch, as it was verified. */
+@Composable
+private fun ShipDialog(app: AppModel, t: Json, done: () -> Unit) {
+    var title by remember { mutableStateOf((t["title"].string ?: "").take(120)) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val files = t["changes"]["files"].int
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = done,
+        title = { Text("Ship it as a pull request?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                Text("${files?.let { "$it file${if (it == 1) "" else "s"}" } ?: "Its changes"}, on a new galahad/… branch of its repository, as it was verified. Its checks are followed after.", style = MaterialTheme.typography.bodyMedium)
+                androidx.compose.material3.OutlinedTextField(value = title, onValueChange = { title = it.take(120) }, label = { Text("Pull request title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                problem?.let { Text(it, color = LocalBrand.current.failed) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = title.isNotBlank(), onClick = {
+                scope.launch {
+                    try {
+                        app.client?.post("/api/team/ship", Json.obj("task" to t["id"].string, "title" to title.trim()))
+                        app.refresh()
+                        done()
+                    } catch (e: NodeError) {
+                        problem = e.message
+                    }
+                }
+            }) { Text("Open pull request") }
+        },
+        dismissButton = { TextButton(onClick = done) { Text("Cancel") } },
+    )
 }
 
 /** A box to write in, with Send; [asTask] offers the same words as a task instead. */
