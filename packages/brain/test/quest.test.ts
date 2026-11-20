@@ -12,7 +12,7 @@ interface Script {
   outputs?: Partial<ExecResult>[];
 }
 
-function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number; submitAtLimit?: boolean; keepReads?: boolean; gates?: string[]; escalate?: boolean } = {}) {
+function harness(script: Script, options: { maxSteps?: number; maxRevisions?: number; abortAfterCommands?: number; submitAtLimit?: boolean; keepReads?: boolean; gates?: string[]; escalate?: boolean; plan?: string; unreviewed?: boolean } = {}) {
   const queues: Record<QuestRole, string[]> = {
     planner: [...(script.planner ?? ["1. Do it.\nDone when: it is done."])],
     engineer: [...script.engineer],
@@ -24,7 +24,7 @@ function harness(script: Script, options: { maxSteps?: number; maxRevisions?: nu
   const events: QuestEvent[] = [];
   const controller = new AbortController();
   const run = runQuest(
-    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions, ...(options.submitAtLimit ? { submitAtLimit: true } : {}), ...(options.keepReads ? { keepReads: true } : {}), ...(options.gates ? { gates: options.gates } : {}), ...(options.escalate ? { escalate: true } : {}) },
+    { goal: "make it so", environment: "a test sandbox", maxSteps: options.maxSteps, maxRevisions: options.maxRevisions, ...(options.submitAtLimit ? { submitAtLimit: true } : {}), ...(options.keepReads ? { keepReads: true } : {}), ...(options.gates ? { gates: options.gates } : {}), ...(options.escalate ? { escalate: true } : {}), ...(options.plan !== undefined ? { plan: options.plan } : {}), ...(options.unreviewed ? { unreviewed: true } : {}) },
     {
       ask: async (role, messages) => {
         seen.push({ role, messages });
@@ -47,6 +47,19 @@ function harness(script: Script, options: { maxSteps?: number; maxRevisions?: nu
 const sh = (command: string, thought = "Next step.") => `${thought}\n\`\`\`sh\n${command}\n\`\`\``;
 
 describe("quests", () => {
+  test("no plan and no reviewer: the goal is the whole brief, and the engineer's DONE past the gates is done", async () => {
+    const h = harness({ engineer: [sh("echo hi > a.txt"), "DONE\nWrote a.txt."] }, { plan: "", unreviewed: true, gates: ["test -f a.txt"] });
+    const outcome = await h.run;
+    expect([outcome.status, outcome.review]).toEqual(["done", undefined]);
+    // Neither the planner nor the reviewer was asked; the gate still ran, and was the last word.
+    expect(h.seen.map((s) => s.role)).toEqual(["engineer", "engineer"]);
+    expect(h.commands.some((c) => c.includes("test -f a.txt"))).toBe(true);
+    const brief = h.seen[0]!.messages[0]!.content;
+    expect(brief).toStartWith("Quest: make it so\n\nYou are working in: a test sandbox\n");
+    expect(brief).toContain("each must exit 0 before your work is done");
+    expect(brief).not.toMatch(/\bplan(ner)?\b|\breviewer\b/i);
+  });
+
   test("plan, work, review: a clean run", async () => {
     const h = harness({ engineer: [sh("echo hi > a.txt"), sh("cat a.txt"), "DONE\nWrote a.txt; cat shows hi."] });
     const outcome = await h.run;

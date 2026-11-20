@@ -27,6 +27,7 @@ import {
   type UsageView,
   usdLabel,
 } from "@galahad/core";
+import { AGENTS } from "@galahad/brain";
 import type { NodeClient } from "./quest-cli.ts";
 import { budgetLabel, describeCost, describeDone, describeEffort, describeIndex, describeTrial, estimateLabel, estimateRun, type RunResult, type TrialBudget, trialRunFromCli } from "./trial-cli.ts";
 import { loadSuite, suiteNamed, TRIAL_SUITES } from "./trial-suites.ts";
@@ -104,6 +105,15 @@ export function parsePins(pins: readonly string[]): TrialPins | undefined {
   return Object.keys(out).length ? (out as TrialPins) : undefined;
 }
 
+/** A variant a run can be made under, before anything runs: its coding tool known, and able to reach its models. */
+function checkVariant(variant: TrialVariant, network: string, suite: string): void {
+  const agent = variant.options.agent;
+  if (!agent) return;
+  if (!AGENTS[agent]) bad(`variant ${variant.name}: no coding tool "${agent}" (there is: ${Object.keys(AGENTS).join(", ")})`);
+  if (network === "isolated") bad(`variant ${variant.name}: ${agent} calls its models from the sandbox, through the gateway: give it --net gateway (models only)`);
+  if (suite === "engineering") bad(`variant ${variant.name}: a coding tool works in the workshop, and the engineering suite's problems are the Lab's`);
+}
+
 /** What `trial run`, `sweep` and `ab` share: the suite, the problems, how many, at what effort, within what budget. */
 async function runOptions(args: TrialArgs, names: readonly string[]) {
   const { flags } = args;
@@ -136,6 +146,7 @@ async function runOptions(args: TrialArgs, names: readonly string[]) {
       bad(`--variant: ${(error as Error).message}`);
     }
     if (effortRaw !== undefined && Number(effortRaw) !== variant!.options.effort) bad(`--effort ${effortRaw} and variant ${variant!.name} (effort ${variant!.options.effort}) disagree: a run is measured at one level`);
+    checkVariant(variant!, network, suite.id);
   }
   const budget = parseBudget(flags);
   // Across the free slots by default (auto); a number is kept within what the slots carry.
@@ -262,6 +273,7 @@ export async function trialCommand(args: TrialArgs): Promise<number> {
     if (variants[0]!.name === variants[1]!.name) bad("an A/B needs two different variants");
     if (str(flags, "variant") || str(flags, "effort")) bad("an A/B takes its two variants (and their effort) as its arguments, not --variant or --effort");
     const { node, suite, options } = await runOptions(args, names);
+    for (const variant of variants) checkVariant(variant, options.network, suite.id);
     const together = { ...freshGroup(), ...(options.seed !== undefined ? { seed: options.seed } : {}) };
     const spent: UsageLine[] = [];
     const made: { variant: TrialVariant; result: RunResult }[] = [];

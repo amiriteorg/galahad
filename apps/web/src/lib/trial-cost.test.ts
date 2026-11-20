@@ -62,7 +62,7 @@ describe("a run's cost, and what it bought", () => {
   });
 
   test("what set a run apart", () => {
-    const options = { gates: false, plannerGates: false, effort: 1 as const, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false };
+    const options = { gates: false, plannerGates: false, effort: 1 as const, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false, agent: null, planner: true, review: true };
     expect(heldLabels({ effort: 3 })).toEqual(["effort 3"]);
     expect(heldLabels({ effort: 1, variant: { name: "no-gates", options }, pins: { engineer: "deepseek/v4" } })).toEqual(["no-gates", "engineer = deepseek/v4"]);
     expect(heldLabels({ effort: 1, variant: { name: "baseline", options: { ...options, gates: true } } })).toEqual([]);

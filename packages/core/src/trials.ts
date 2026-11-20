@@ -69,8 +69,12 @@ export type TrialPins = z.infer<typeof TrialPins>;
  * tests print · `escalate`: a gate that fails twice in a row moves the rest of the work to the planner's models ·
  * `remind`: the quest's constraints (its goal, the plan's "Done when:", the gates) are said again every ten commands ·
  * `keepReads`: of the command outputs cut short to keep a quest affordable, current file reads stay whole, within a budget ·
- * `contract`: where no gate fails before the work, the planner first writes one test that does, and the work must pass it.
- * A run recorded before a switch existed lacks it and reads as off, which is what it was run with.
+ * `contract`: where no gate fails before the work, the planner first writes one test that does, and the work must pass it ·
+ * `agent`: a coding tool does the work (opencode, claude, codex), on the engineer's models through the gateway ·
+ * `planner`: off, no plan is made: the goal is the whole brief · `review`: off, no independent reviewer: what passes the
+ * gates (with none, the work's own word that it's done) is done. All three off is a coding tool as a person runs it.
+ * A run recorded before a switch existed lacks it and reads as what it was run with: off, and the planner and the
+ * reviewer on.
  */
 export const HarnessOptions = z.object({
   gates: z.boolean(),
@@ -85,11 +89,14 @@ export const HarnessOptions = z.object({
   remind: z.boolean().default(false),
   keepReads: z.boolean().default(false),
   contract: z.boolean().default(false),
+  agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/, "a coding tool's name is lowercase letters, digits and -").nullable().default(null),
+  planner: z.boolean().default(true),
+  review: z.boolean().default(true),
 });
 export type HarnessOptions = z.infer<typeof HarnessOptions>;
 
 /** How trials are run when nothing says otherwise: what `galahad trial run` has always done, with a task's gates on. */
-export const BASELINE: HarnessOptions = { gates: true, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false };
+export const BASELINE: HarnessOptions = { gates: true, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false, agent: null, planner: true, review: true };
 
 export const VariantName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "a variant's name is lowercase letters, digits and - (max 40)");
 export const TrialVariant = z.object({ name: VariantName, options: HarnessOptions });
@@ -119,7 +126,9 @@ export type TrialRunSettings = z.infer<typeof TrialRunSettings>;
 /**
  * The variants that come named: each differs from the baseline by one switch (bare: by all of them). `contract` differs
  * from `no-gates` by one: a task that brings gates failing before the work has its contract already, so the planner's
- * is measured where a task comes without them, as most of yours do.
+ * is measured where a task comes without them, as most of yours do. `opencode` is no variant of Galahad's: it is
+ * OpenCode alone on the engineer's models, as T3 Code runs it (no plan, no gates, no reviewer), so what Galahad's loop is
+ * worth against a bare coding tool is a number (PLAN #32).
  */
 export const VARIANTS: Readonly<Record<string, HarnessOptions>> = {
   baseline: BASELINE,
@@ -136,7 +145,8 @@ export const VARIANTS: Readonly<Record<string, HarnessOptions>> = {
   remind: { ...BASELINE, remind: true },
   "keep-reads": { ...BASELINE, keepReads: true },
   contract: { ...BASELINE, gates: false, contract: true },
-  bare: { gates: false, plannerGates: false, effort: 1, skills: false, archive: false, revisions: 0, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false },
+  bare: { ...BASELINE, gates: false, archive: false, revisions: 0 },
+  opencode: { ...BASELINE, gates: false, archive: false, revisions: 0, agent: "opencode", planner: false, review: false },
 };
 
 const ON = new Set(["on", "yes", "true", "1"]);
@@ -164,11 +174,12 @@ export function parseVariant(spelling: string): TrialVariant {
       if (OFF.has(value)) return false;
       throw new Error(`${key} is on or off, not "${value}"`);
     };
-    if (key === "gates" || key === "skills" || key === "archive" || key === "engram" || key === "diff" || key === "escalate" || key === "remind" || key === "contract") options[key] = flag();
+    if (key === "gates" || key === "skills" || key === "archive" || key === "engram" || key === "diff" || key === "escalate" || key === "remind" || key === "contract" || key === "planner" || key === "review") options[key] = flag();
     else if (key === "planner-gates" || key === "plannerGates") options.plannerGates = flag();
     else if (key === "keep-reads" || key === "keepReads") options.keepReads = flag();
     else if (key === "effort" || key === "revisions") options[key] = Number(value);
-    else throw new Error(`no harness switch "${key}" (there is: gates, planner-gates, effort, skills, archive, revisions, engram, diff, escalate, remind, keep-reads, contract)`);
+    else if (key === "agent") options.agent = OFF.has(value) ? null : value;
+    else throw new Error(`no harness switch "${key}" (there is: gates, planner-gates, effort, skills, archive, revisions, engram, diff, escalate, remind, keep-reads, contract, agent, planner, review)`);
   }
   return { name, options: z.strictObject(HarnessOptions.shape).parse(options) };
 }
@@ -188,6 +199,9 @@ export function describeVariant(options: HarnessOptions): string {
   if (options.remind !== BASELINE.remind) said.push(options.remind ? "the quest's constraints said again every ten commands" : "no constraints said again");
   if (options.keepReads !== BASELINE.keepReads) said.push(options.keepReads ? "current file reads kept whole" : "file reads cut short like any output");
   if (options.contract !== BASELINE.contract) said.push(options.contract ? "where no gate fails before the work, the planner writes a test that does" : "no contract first");
+  if (options.agent !== BASELINE.agent) said.push(options.agent ? `${options.agent} does the work` : "his own loop does the work");
+  if (options.planner !== BASELINE.planner) said.push(options.planner ? "a plan first" : "no plan");
+  if (options.review !== BASELINE.review) said.push(options.review ? "an independent reviewer" : "no reviewer");
   return said.join(", ") || "as the baseline";
 }
 

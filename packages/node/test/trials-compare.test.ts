@@ -216,6 +216,18 @@ describe("does a change to the harness help? An A/B", () => {
     ]);
   });
 
+  test("a variant whose coding tool can't do the work here is refused before anything runs", async () => {
+    const { node, recorded } = fakeNode();
+    await expect(command(node, "run", [], { suite: "agentic", variant: "opencode" })).rejects.toThrow(/opencode calls its models from the sandbox, through the gateway: give it --net gateway/);
+    await expect(command(node, "ab", ["baseline", "opencode"], { suite: "agentic" })).rejects.toThrow(/--net gateway/);
+    await expect(command(node, "run", [], { suite: "agentic", net: "gateway", variant: "mine:agent=cursor" })).rejects.toThrow(/no coding tool "cursor" \(there is: opencode, hermes, claude, codex\)/);
+    await expect(command(node, "run", [], { variant: "opencode", net: "gateway" })).rejects.toThrow(/the engineering suite's problems are the Lab's/);
+    expect(recorded).toEqual([]);
+    // And with what it needs, it is listed among the variants as what it is.
+    expect(await command(node, "variants", [])).toBe(0);
+    expect(out()).toMatch(/opencode\s+gates off, no archive context, no revisions, opencode does the work, no plan, no reviewer/);
+  });
+
   test("an A/B takes two different variants, named or spelled out; the named ones are listed", async () => {
     const { node } = fakeNode();
     await expect(command(node, "ab", ["baseline"])).rejects.toThrow(/usage: galahad trial ab/);

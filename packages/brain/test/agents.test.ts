@@ -328,6 +328,26 @@ describe("a quest with a coding agent", () => {
   });
 });
 
+describe("a bare coding tool", () => {
+  test("as a person runs it: no plan, no reviewer; what it says is done is done, and its brief names neither", async () => {
+    const box = sandbox([[LINES.start, LINES.shell, LINES.edit, LINES.text]]);
+    const asked: QuestRole[] = [];
+    const events: QuestEvent[] = [];
+    const outcome = await runQuest(
+      { goal: "make the test pass", environment: "a sandbox", plan: "", unreviewed: true, agent: { driver: OPENCODE, models: [model], minutes: 30, workdir: "/work/repo" } },
+      { ask: async (role) => (asked.push(role), { text: "PASS", model: `test/${role}` }), exec: box.exec, emit: (e) => events.push(e), sleep: noSleep },
+    );
+    expect([outcome.status, outcome.revisions, outcome.review]).toEqual(["done", 0, undefined]);
+    // None of Galahad's models was asked anything: the tool did the work, and its own word ended it.
+    expect(asked).toEqual([]);
+    expect(events.filter((e) => e.type === "plan" || e.type === "review")).toEqual([]);
+    const launch = box.commands.find((c) => c.startsWith("mkdir -p /work/.agent"))!;
+    const brief = Buffer.from(launch.match(/printf %s '([A-Za-z0-9+/=]+)'/)![1]!, "base64").toString("utf8");
+    expect(brief).toStartWith("Quest: make the test pass\n\nYou are working in: a sandbox\n");
+    expect(brief).not.toMatch(/\bplan(ner)?\b|\breviewer\b/i);
+  });
+});
+
 describe("a quest with the notes store", () => {
   /** What a command wrote into the sandbox through base64 (a driver's file, an agent's message). */
   const decoded = (command: string) => Buffer.from(command.match(/printf %s '([A-Za-z0-9+/=]+)'/)![1]!, "base64").toString("utf8");

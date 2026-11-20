@@ -138,6 +138,10 @@ export interface DoOptions {
   keepReads?: boolean;
   /** Where no gate fails before the work, the planner first writes a test that does (a trial variant: brain quest.ts contract). */
   contract?: boolean;
+  /** A plan fixed in advance: no planner call. Empty: no plan at all, the goal the whole brief (a trial variant without the planner). */
+  plan?: string;
+  /** No independent reviewer: what passes the gates, or with none the work's own word, is done (a trial variant: brain quest.ts unreviewed). */
+  unreviewed?: boolean;
   /** This quest is a trial: its id is of a trial's kind (t-…), so the archive never offers what it kept to a model. */
   trial?: boolean;
   /**
@@ -644,6 +648,8 @@ async function workIn(
       ...(options.remind ? { remind: true } : {}),
       ...(options.keepReads ? { keepReads: true } : {}),
       ...(options.contract ? { contract: true } : {}),
+      ...(options.plan !== undefined ? { plan: options.plan } : {}),
+      ...(options.unreviewed ? { unreviewed: true } : {}),
       ...(options.budgetUsd !== undefined && run.spentUsd ? { budgetUsd: options.budgetUsd } : {}),
     },
     {
@@ -959,8 +965,11 @@ async function agentFor(node: NodeClient, options: DoOptions): Promise<NonNullab
     node.call<{ providers: ProviderView[] }>("providers"),
   ]);
   // (A quest's sandbox is made for the quest: no tool is signed in there, so it runs on the roster through the gateway.)
-  const models = chooseAgentModels(roster.engineer?.models ?? [], providers, 3, driver.kind);
-  if (!models.length) throw new Error(`no engineer model on ${driver.kind === "anthropic" ? "an Anthropic-API" : "an OpenAI-compatible"} provider with a key: galahad roster set engineer <provider/model> …`);
+  // The engineer held to one model (a trial's pin): exactly that one, with nothing to fall back to.
+  const pinned = options.pins?.engineer;
+  const models = chooseAgentModels(pinned ? [pinned] : (roster.engineer?.models ?? []), providers, pinned ? 1 : 3, driver.kind);
+  const api = driver.kind === "anthropic" ? "an Anthropic-API" : "an OpenAI-compatible";
+  if (!models.length) throw new Error(pinned ? `${pinned} can't run ${driver.name}: it needs ${api} provider with a key` : `no engineer model on ${api} provider with a key: galahad roster set engineer <provider/model> …`);
   return { driver, models, minutes: wanted.minutes, workdir: wanted.repo ? "/work/repo" : "/work" };
 }
 

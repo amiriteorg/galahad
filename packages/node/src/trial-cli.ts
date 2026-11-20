@@ -76,6 +76,9 @@ export interface TrialJob {
 /** Lines folded into a count kept as it goes, in place. */
 export const absorb = (into: UsageLine[], lines: readonly UsageLine[]): void => void into.splice(0, into.length, ...mergeSpend(into, lines));
 
+/** How long a coding tool has for a trial's work: the time a run takes, not a limit that decides it. */
+export const AGENT_TRIAL_MINUTES = 60;
+
 /** A model of a role's that couldn't answer, why, and which one answered instead. */
 export interface PassedOver {
   role: string;
@@ -204,6 +207,10 @@ export function harnessOptions(job: Pick<TrialJob, "harness" | "pins" | "effort"
     ...(h?.remind ? { remind: true } : {}),
     ...(h?.keepReads ? { keepReads: true } : {}),
     ...(h?.contract ? { contract: true } : {}),
+    // A coding tool doing the work, and without the planner or the reviewer: a bare tool, as a person runs it.
+    ...(h?.agent ? { agent: { name: h.agent, minutes: AGENT_TRIAL_MINUTES } } : {}),
+    ...(h && !h.planner ? { plan: "" } : {}),
+    ...(h && !h.review ? { unreviewed: true } : {}),
   };
 }
 
