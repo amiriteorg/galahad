@@ -19,6 +19,8 @@ data class Bubble(
     val model: String? = null,
     val steps: List<String> = emptyList(),
     val error: String? = null,
+    /** The files a message of yours carried, by name. */
+    val files: List<String> = emptyList(),
 ) {
     val mine: Boolean get() = role == "user"
     val streaming: Boolean get() = status == "streaming"
@@ -106,6 +108,7 @@ class ChatModel(private val app: AppModel) {
                     model = m["model"].string,
                     steps = m["steps"].list.mapNotNull { s -> if (s["kind"].string == "tool") s["title"].string ?: s["name"].string else null },
                     error = m["error"].string,
+                    files = m["attachments"].list.mapNotNull { it["name"].string },
                 )
             }
             if (view["unread"].bool == true) runCatching { c.post("/api/conversations/seen", Json.obj("id" to id)) }
@@ -118,18 +121,22 @@ class ChatModel(private val app: AppModel) {
         }
     }
 
-    /** What you wrote, sent: a new chat is kept from its first message; a kept one goes on (the node holds what was said). */
-    fun send(text: String) {
+    /**
+     * What you wrote, with the files kept on the node for it ([attachments]: their references), sent: a new chat is kept
+     * from its first message; a kept one goes on (the node holds what was said).
+     */
+    fun send(text: String, attachments: List<Json> = emptyList()) {
         val words = text.trim()
         val c = app.client ?: return
-        if (words.isEmpty() || _live.value) return
-        _bubbles.value = _bubbles.value + Bubble("user", words) + Bubble("assistant", "", "streaming")
+        if ((words.isEmpty() && attachments.isEmpty()) || _live.value) return
+        val names = attachments.mapNotNull { it["name"].string }
+        _bubbles.value = _bubbles.value + Bubble("user", words, files = names) + Bubble("assistant", "", "streaming")
         val id = _conversation.value
         val body = Json.obj(
             "role" to "planner",
             "save" to (if (id == null) true else null),
             "conversation" to id,
-            "messages" to listOf(mapOf("role" to "user", "content" to words)),
+            "messages" to listOf(mapOf("role" to "user", "content" to words, "attachments" to attachments.ifEmpty { null })),
         )
         stream { c.events("/api/chat", body) }
     }
