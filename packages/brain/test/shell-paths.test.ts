@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { changesOf, contentsOf, readOf, readsOf, testFilesOf, writesOf } from "../src/shell-paths.ts";
+import { changesOf, checkOf, contentsOf, readOf, readsOf, testFilesOf, writesOf } from "../src/shell-paths.ts";
 
 describe("which test files a gate names", () => {
   test("a file by a test's name, or a file in a tests folder, is one", () => {
@@ -173,5 +173,19 @@ describe("which files a command changes", () => {
 
   test("reads, tests and searches change nothing", () => {
     for (const command of ["cat src/x.ts", "bun test", "grep -rn foo src", "sed -n '1,5p' src/x.ts", "ls -la", "echo '> not a redirect'", "git diff -- src/x.ts"]) expect(writesOf(command), command).toEqual([]);
+  });
+});
+
+describe("the check a command runs", () => {
+  test("a test run, a typecheck, a lint or a build, wherever it runs and however its output is piped: its program and what it names", () => {
+    expect(checkOf("cd /work/tasks/t-1 && bun test packages/node/test/ci-watch.test.ts 2>&1 | tail -80")).toEqual({ program: "bun test", targets: ["packages/node/test/ci-watch.test.ts"] });
+    expect(checkOf("bunx tsc --noEmit 2>&1 | head -40")).toEqual({ program: "bunx tsc", targets: [] });
+    expect(checkOf("CI=1 npm run lint -- --fix; echo EXIT=$?")).toEqual({ program: "npm run lint", targets: [] });
+    expect(checkOf("python3 -m pytest tests/test_api.py -q > /tmp/out.txt")).toEqual({ program: "python3 -m pytest", targets: ["tests/test_api.py"] });
+    expect(checkOf("cargo test --workspace")).toEqual({ program: "cargo test", targets: [] });
+  });
+
+  test("anything else is no check: a read, a search, an edit, a script", () => {
+    for (const command of ["cat src/a.ts", "grep -rn x src", "sed -i 's/a/b/' x.ts", "echo bun test", "python3 - <<'PY'\nprint(1)\nPY", "bun install"]) expect([command, checkOf(command)]).toEqual([command, null]);
   });
 });

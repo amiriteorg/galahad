@@ -608,6 +608,51 @@ describe("a long quest's conversation stays affordable, and stays the same", () 
     expect(runs.filter((m) => /characters cut/.test(m.content)).length).toBeGreaterThanOrEqual(1);
   });
 
+  test("a check that failed and passed later, both in the part cut short, is a line: on what it checked or on all of it, however it was piped; the beginning still holds", async () => {
+    const page = "z".repeat(3000);
+    // A test file failing, then the typecheck, each fixed in turn, and the whole suite and the typecheck passing at the end.
+    const commands = Array.from({ length: 6 }, (_, i) => [`cd /work && bun test src/t${i}.test.ts 2>&1 | tail -60`, `sed -i 's/bug/fix/' src/m${i}.ts`, "bunx tsc --noEmit 2>&1 | head -40", `sed -i 's/any/T/' src/m${i}.ts`]).flat();
+    commands.push("cd /work && bun test", "bunx tsc --noEmit", ...Array.from({ length: 8 }, (_, i) => `echo note${i}`));
+    const failing = (c: string) => / src\/t\d\.test\.ts|tsc --noEmit 2>&1/.test(c);
+    const h = harness(
+      { engineer: [...commands.map((c) => sh(c)), "DONE\nIt passes."], outputs: commands.map((c) => (failing(c) ? { exitCode: 1, stdout: `FAIL\n${page}\n` } : { stdout: c.startsWith("echo") ? `${page}\n` : "ok\n" })) },
+      { maxSteps: 40 },
+    );
+    expect((await h.run).status).toBe("done");
+    const turns = h.seen.filter((s) => s.role === "engineer").map((s) => s.messages);
+    let rewritten = 0;
+    for (let t = 1; t < turns.length; t++) if (JSON.stringify(turns[t]!.slice(0, turns[t - 1]!.length)) !== JSON.stringify(turns[t - 1])) rewritten += 1;
+    expect(rewritten).toBeLessThanOrEqual(4);
+    // Six test files, each fixed by the whole suite passing; of the typecheck's six identical runs, five superseded by the
+    // next, and the last fixed by the typecheck passing.
+    const fixed = turns.at(-1)!.filter((m) => m.content.includes("(fixed since:"));
+    expect(fixed).toHaveLength(7);
+    expect(turns.at(-1)!.filter((m) => m.content.includes("(superseded: `bunx tsc --noEmit 2>&1 | head -40`"))).toHaveLength(5);
+    const said = new Set(fixed.map((m) => m.content.split("\n")[1]));
+    expect(said).toEqual(new Set(["(fixed since: `cd /work && bun test` passed later; what failed here no longer does)", "(fixed since: `bunx tsc --noEmit` passed later; what failed here no longer does)"]));
+    for (const m of fixed) expect(m.content).toMatch(/^exit 1 · \d+ ms\n/);
+  });
+
+  test("a check that failed is never said fixed by another check, by one that checked less, or by one that failed again", () => {
+    const failed = { exitCode: 1, stdout: `FAIL\n${"q".repeat(3000)}\n` };
+    const run = (commands: [string, Partial<ExecResult>][]) =>
+      harness({ engineer: [...commands.map(([c]) => sh(c)), ...Array.from({ length: 14 }, (_, i) => sh(`echo pad${i}`)), "DONE\nDone."], outputs: [...commands.map(([, o]) => o), ...Array.from({ length: 14 }, () => ({ stdout: `${"p".repeat(3000)}\n` }))] }, { maxSteps: 40 });
+    return Promise.all([
+      run([["bun test src/a.test.ts src/b.test.ts", failed], ["bun test src/a.test.ts", {}]]),
+      run([["bunx tsc --noEmit", failed], ["bun test", {}]]),
+      run([["bun test src/a.test.ts", failed], ["bun test src/a.test.ts 2>&1 | tail -5", failed]]),
+      run([["grep -rn missing src", failed], ["grep -rn missing src docs", {}]]),
+    ]).then(async (harnesses) => {
+      for (const h of harnesses) {
+        await h.run;
+        const last = h.seen.filter((s) => s.role === "engineer").at(-1)!.messages;
+        expect(last.some((m) => m.content.includes("(fixed since:"))).toBe(false);
+        // (It was cut short all the same: only not said to be fixed.)
+        expect(last.find((m) => m.content.startsWith("exit 1"))!.content).toMatch(/characters cut/);
+      }
+    });
+  });
+
   test("keep-reads: of the outputs cut short, the newest current file reads stay whole, within a budget; the beginning still holds between batches", async () => {
     const n = 26;
     // (Pages large enough that keep-reads, which cuts by size, cuts them too.)

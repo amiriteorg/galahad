@@ -308,6 +308,24 @@ export function testFilesOf(command: string): string[] {
   return [...new Set(out)];
 }
 
+/** The programs that check work: test runners, type checkers, linters and builds, as a command line names them. */
+const CHECKER = /^(?:bun (?:test|run [\w:.-]+)|bunx (?:tsc|eslint|biome|vitest|jest|prettier)|npx (?:--no-install )?(?:tsc|eslint|biome|vitest|jest|prettier)|(?:npm|pnpm|yarn) (?:test|run [\w:.-]+)|tsc|eslint|biome check|vitest(?: run)?|jest|pytest|python3? -m (?:pytest|unittest|mypy)|go (?:test|build|vet)|cargo (?:test|build|check|clippy)|ruff(?: check)?|mypy|make(?: [\w.-]+)?)(?=\s|$)/;
+
+/**
+ * The check a one-line command runs, when it runs one (a test run, a typecheck, a lint, a build): its program and what
+ * it names to check (no target: all of it). Where it runs (`cd … &&`), its environment, and what it's piped to or
+ * redirected to are aside: `cd /work && bun test a.test.ts 2>&1 | tail -40` is `bun test` on `a.test.ts`. A script,
+ * or anything else, is no check.
+ */
+export function checkOf(command: string): { program: string; targets: string[] } | null {
+  if (command.includes("\n")) return null;
+  let line = command.trim().replace(/^(?:cd\s+[^\s;&|]+\s*&&\s*)+/, "");
+  line = line.split(/\s*(?:\|\|?|;|&&)\s*/)[0]!.replace(/\s+\d?>&\d\b|\s+\d?>>?\s*\S+/g, "").replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "").trim();
+  const program = CHECKER.exec(line)?.[0];
+  if (!program) return null;
+  return { program, targets: line.slice(program.length).trim().split(/\s+/).filter((word) => word && !word.startsWith("-")) };
+}
+
 /** The files a command writes, moves, removes or restores, in the order it names them (none it can't read for certain). */
 export function writesOf(command: string): string[] {
   const out: string[] = [];

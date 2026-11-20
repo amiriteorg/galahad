@@ -126,6 +126,23 @@ const readEditTest: Work = {
   answer: (command, i) => (command.startsWith("cat ") ? { stdout: `${page("x", 2400)}\n` } : command === "bun test" ? { exitCode: i >= 29 ? 0 : 1, stdout: `${page("f", 1500)}\n` } : {}),
 };
 
+/**
+ * Eight test files failing in turn, each fixed, then the whole suite passing; the typecheck failing, piped short, then
+ * passing; then the work looked over. None of the failures is run again as it was: each is fixed by a later check.
+ */
+const fixThenCheck: Work = {
+  commands: [
+    ...Array.from({ length: 8 }, (_, i) => [`cd /work && bun test src/t${i}.test.ts 2>&1 | tail -60`, `sed -i 's/bug/fix/' src/m${i}.ts`]).flat(),
+    "cd /work && bun test",
+    "bunx tsc --noEmit 2>&1 | head -40",
+    "sed -i 's/any/T/' src/m0.ts",
+    "bunx tsc --noEmit",
+    ...Array.from({ length: 10 }, (_, i) => `git diff --stat src/m${i % 8}.ts`),
+  ],
+  answer: (command) =>
+    /t\d\.test\.ts|head -40/.test(command) ? { exitCode: 1, stdout: `${page("f", 2500)}\n` } : command.startsWith("git diff") ? { stdout: `${page("d", 1200)}\n` } : command === "cd /work && bun test" ? { stdout: "40 pass\n" } : {},
+};
+
 /** Thirty different commands that each print a page: nothing is superseded or made stale, only cut short. */
 const longSurvey: Work = {
   commands: Array.from({ length: 30 }, (_, i) => `grep -rn "symbol${i}" src`),
@@ -135,7 +152,7 @@ const longSurvey: Work = {
 export const suite: Suite = {
   name: "context",
   about: "what a quest sends its engineer over a whole quest, for three kinds of work done by a stand-in: characters, and beginnings a provider can't cache",
-  headline: ["context.quest.tests-after-edits", "context.quest.read-edit-test", "context.quest.survey", "context.quest.read-edit-test.last-turn", "context.quest.rewrites", "context.knight.understand.commands", "context.knight.understand"],
+  headline: ["context.quest.tests-after-edits", "context.quest.read-edit-test", "context.quest.survey", "context.quest.fix-then-check", "context.quest.read-edit-test.last-turn", "context.quest.rewrites", "context.knight.understand.commands", "context.knight.understand"],
   async run(ctx) {
     const kinds: [string, Work, string][] = [
       ["tests-after-edits", testsAfterEdits, "the tests run after each of 13 edits, failing until the last (26 commands)"],
@@ -150,6 +167,10 @@ export const suite: Suite = {
       rewritten += rewrites(turns);
     }
     ctx.quality("context.quest.rewrites", rewritten, "turns", "lower", { note: "turns, over the three quests, whose conversation doesn't begin with the turn before's (a batch cut is one)" });
+    // Failures each fixed by a later check (none run again as it was): measured apart, so the three above stay as they were.
+    const fixes = await sent(fixThenCheck);
+    ctx.quality("context.quest.fix-then-check", fixes.reduce((sum, t) => sum + size(t), 0), "chars", "lower", { note: "every engineer turn's conversation, summed: eight test files failing in turn and fixed, the whole suite passing, a typecheck failing then passing, the work looked over (30 commands)" });
+    ctx.quality("context.quest.fix-then-check.rewrites", rewrites(fixes), "turns", "lower", { note: "turns of that quest whose conversation doesn't begin with the turn before's" });
     // As a knight's task runs (keepReads): the code it must understand, read until it can see all of it, then changed.
     const knight = await understand(true);
     ctx.quality("context.knight.understand.commands", knight.commands, "commands", "lower", { note: "commands a careful stand-in knight ran to change three files of the first real outcome's code, each with all five files in view as they were then, and test it (eighty: it never finished)" });

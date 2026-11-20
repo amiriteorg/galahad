@@ -1,7 +1,7 @@
 import { type ChatMessage, type ExecResult, type GateBy, MAX_PROPOSED_GATES, type NamedCheck, type NamedRule, redact, type RuleDoes } from "@galahad/core";
 import { type AgentDriver, type AgentModel, agentModelName, runAgent } from "./agents.ts";
 import { engramBriefing, engramProject } from "./engram.ts";
-import { changesOf, contentsOf, readOf, readsOf, testFilesOf, writesOf } from "./shell-paths.ts";
+import { changesOf, checkOf, contentsOf, readOf, readsOf, testFilesOf, writesOf } from "./shell-paths.ts";
 import { STEP_EFFORT } from "./roster.ts";
 import { checksAfter, tellsAfter, type Trip, tripOf } from "./tripwires.ts";
 
@@ -827,9 +827,10 @@ const touches = (written: string, read: string): boolean =>
 /**
  * The conversation as it is sent: its oldest `excerpted` observations as excerpts, everything else as it was said. Of
  * those, a run of a command that ran again later among them is only its first line, and what superseded it: its
- * newer output is further on. So is a file's contents that a later command among them changed (shell-paths: a plain
- * read, and a write that exited 0), which say what changed it. (Judged among the excerpted alone, so the beginning
- * still changes only between batches.)
+ * newer output is further on. So is a check that failed and passed later among them (the same test run, typecheck,
+ * lint or build, on what it checked or on all of it: shell-paths checkOf), which says what passed; and a file's
+ * contents that a later command among them changed (shell-paths: a plain read, and a write that exited 0), which say
+ * what changed it. (Judged among the excerpted alone, so the beginning still changes only between batches.)
  */
 function compact(messages: readonly ChatMessage[], excerpted: number, keepReads = false): ChatMessage[] {
   // The command each observation answers: the reply before it (one of several at once, or none, is never superseded).
@@ -851,6 +852,13 @@ function compact(messages: readonly ChatMessage[], excerpted: number, keepReads 
   const cut = commands.slice(0, excerpted);
   const line = (command: string): string => command.split("\n", 1)[0]!.slice(0, 80);
   const supersededAt = (k: number): boolean => cut[k] !== null && cut.indexOf(cut[k]!, k + 1) !== -1;
+  /** The later run among those cut of the check that failed at k, on what it checked or on all of it, that passed; or -1. */
+  const checks = cut.map((c) => (c ? checkOf(c) : null));
+  const fixedBy = (k: number): number => {
+    const failed = checks[k];
+    if (!failed || exits[k] === 0 || exits[k] === null) return -1;
+    return checks.findIndex((later, j) => j > k && exits[j] === 0 && later?.program === failed.program && (!later.targets.length || failed.targets.every((t) => later.targets.includes(t))));
+  };
   /** The later command among those cut that changed what the read at k showed, or -1. */
   const changedBy = (k: number, read: string): number => cut.findIndex((later, j) => j > k && later !== null && exits[j] === 0 && writesOf(later).includes(read));
   // keepReads: the newest current reads among those cut stay whole, within READS_KEPT (judged among the cut alone, so
@@ -881,6 +889,10 @@ function compact(messages: readonly ChatMessage[], excerpted: number, keepReads 
     const command = cut[k];
     if (command && supersededAt(k)) {
       return { ...m, content: `${m.content.split("\n", 1)[0]}\n(superseded: \`${line(command)}\` ran again later, and what it printed then is further on)` };
+    }
+    const fixed = command ? fixedBy(k) : -1;
+    if (fixed !== -1) {
+      return { ...m, content: `${m.content.split("\n", 1)[0]}\n(fixed since: \`${line(cut[fixed]!)}\` passed later; what failed here no longer does)` };
     }
     const read = command ? readOf(command) : null;
     const by = read ? changedBy(k, read) : -1;
