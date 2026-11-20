@@ -1,5 +1,6 @@
 import {
   ABOUT_YOU_TAG,
+  SLACK_APP_MANIFEST,
   type ActionView,
   canonical,
   chooseKnight,
@@ -190,6 +191,7 @@ import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { type Caller, ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
+import { SLACK_SCOPES, SlackError, type SlackGateway } from "./slack.ts";
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
 import { OutcomeError, OutcomeRunner } from "./outcomes.ts";
 import { BacklogRunner, issueLines } from "./backlog.ts";
@@ -261,6 +263,8 @@ export interface AppContext {
   loopDrafts: LoopDrafts;
   /** Telegram, when a bot of yours talks to Galahad through this node (telegram.ts). */
   telegram?: TelegramGateway | null;
+  /** Slack, when an app of yours talks to Galahad through this node (slack.ts). */
+  slack?: SlackGateway | null;
   /** Connectors agents asked you for, waiting for you to add one or dismiss the request (node-local). */
   connectorRequests: ConnectorRequests;
   /** Bilag copied from your mail to Google Drive (bilag.ts): what was copied, and copying what came before the loop's wakes. */
@@ -3580,6 +3584,27 @@ export function createApp(ctx: AppContext) {
     telegramDisconnect: async () => {
       const device = (await ctx.telegram?.disconnect()) ?? null;
       if (device && ctx.store.activeDevice(device)) revokeDevice(ctx.store, ctx.identity, device, "Telegram was disconnected");
+      return { ok: true };
+    },
+    // (With the app to make in Slack: the PWA shows it from here.)
+    slack: () => ({ slack: { ...(ctx.slack?.status() ?? { connected: false, workspace: null, bot: null, owner: null, linkExpires: null, device: null, problem: null }), node: ctx.nodeName }, manifest: SLACK_APP_MANIFEST }),
+    slackConnect: async (input) => {
+      const slack = ctx.slack;
+      if (!slack) throw new HttpError(409, "this node runs no chat apps");
+      let connected;
+      try {
+        // A device you revoked is never brought back: connecting again then makes a new one.
+        connected = await slack.connect(input.appToken, input.botToken, (device) => !ctx.store.device(device) || Boolean(ctx.store.activeDevice(device)));
+      } catch (error) {
+        throw error instanceof SlackError ? new HttpError(error.status === 401 ? 400 : error.status, error.message) : error;
+      }
+      // The gateway's device: a client of yours with chat and mind:read only, listed and revoked with your other devices.
+      if (!ctx.store.activeDevice(connected.device)) enrollDevice(ctx.store, ctx.identity, { device: connected.device, name: `Slack (${connected.bot} in ${connected.workspace})`, kind: "client", scopes: SLACK_SCOPES });
+      return { bot: connected.bot, workspace: connected.workspace, code: connected.code, expires: connected.expires, device: connected.device, node: ctx.nodeName };
+    },
+    slackDisconnect: async () => {
+      const device = (await ctx.slack?.disconnect()) ?? null;
+      if (device && ctx.store.activeDevice(device)) revokeDevice(ctx.store, ctx.identity, device, "Slack was disconnected");
       return { ok: true };
     },
     draftLoop: (input, p) => {

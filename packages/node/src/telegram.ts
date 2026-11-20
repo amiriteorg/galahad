@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { b64u, type ChatStreamEvent, clientIdentity, type ClientIdentity, fromB64u, newClientSecret, type Scope, signRequest } from "@galahad/core";
 import { sseData } from "@galahad/brain";
 import type { Vault } from "@galahad/mind";
-import { telegramAnswer } from "./telegram-format.ts";
+import { telegramAnswer } from "./chat-format.ts";
 
 /*
  * Telegram (PLAN #19): talk to Galahad from Telegram, through a bot of yours. The node you connect it on asks Telegram

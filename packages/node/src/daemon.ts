@@ -46,6 +46,7 @@ import { BilagService } from "./bilag.ts";
 import { attachBilag, type BooksAttach, uploadBilag } from "./books.ts";
 import { CiWatch, shippedPulls } from "./ci-watch.ts";
 import { WakeWatcher } from "./wakes.ts";
+import { SlackGateway } from "./slack.ts";
 import { TelegramGateway } from "./telegram.ts";
 import type { OutcomeRunner } from "./outcomes.ts";
 import type { BacklogRunner } from "./backlog.ts";
@@ -101,6 +102,8 @@ export interface DaemonOptions {
   wakeWatchMs?: number | false;
   /** Where Telegram's Bot API is (tests: a stand-in). */
   telegramBase?: string;
+  /** Where Slack's Web API is (tests: a stand-in). */
+  slackBase?: string;
   /** Let the fleet's founding node create its default loop, the heartbeat (default true; GALAHAD_HEARTBEAT=off disables). */
   defaultHeartbeat?: boolean;
   /** Outbound fetch for connectors (tests). */
@@ -477,6 +480,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const loopDrafts = new LoopDrafts(local);
   // Telegram (telegram.ts): a bot of yours, polled from here once connected on this node; it answers as a device of its own.
   const telegram = new TelegramGateway({ local, vault, apiBase: `http://127.0.0.1:${port}`, ...(opts.telegramBase ? { telegramBase: opts.telegramBase } : {}), log });
+  // Slack (slack.ts): an app of yours, its Socket Mode connection opened from here once connected on this node; the same.
+  const slack = new SlackGateway({ local, vault, apiBase: `http://127.0.0.1:${port}`, ...(opts.slackBase ? { slackBase: opts.slackBase } : {}), log });
   const connectorRequests = new ConnectorRequests(local);
   const loops = new LoopRunner({
     store,
@@ -611,6 +616,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     loops,
     loopDrafts,
     telegram,
+    slack,
     connectorRequests,
     // Bilag from your mail to Google Drive, copied by the node itself (bilag.ts), read in this node's time zone.
     bilag: new BilagService({ transfer: (connector, step) => connectors.transfer(connector, step), local, tz: () => Intl.DateTimeFormat().resolvedOptions().timeZone }),
@@ -722,6 +728,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   });
   if (opts.wakeWatchMs !== false) wakeWatcher.start(opts.wakeWatchMs);
   telegram.start();
+  slack.start();
   notify.start();
   // After you ship: this node follows each pull request it shipped until its checks end (ci-watch.ts).
   const ciBack = { store: team.store, service: () => team.service, outcomes: () => team.outcomes };
@@ -808,6 +815,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       await loops.stop();
       await wakeWatcher.stop();
       await telegram.stop();
+      await slack.stop();
       await ciWatch.stop();
       await connectors.drain();
       await Promise.race([Promise.all([finished, turnsEnded]), Bun.sleep(opts.shutdownGraceMs ?? SHUTDOWN_GRACE_MS)]);

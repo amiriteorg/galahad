@@ -995,6 +995,16 @@ export const routes = {
   telegramConnect: { method: "POST", path: "/api/telegram/connect", scope: "fleet:admin", input: z.strictObject({ token: z.string().trim().min(20).max(100) }) },
   /** Stop: the bot's token goes, and the gateway's device is revoked. Its chats stay yours. */
   telegramDisconnect: { method: "POST", path: "/api/telegram/disconnect", scope: "fleet:admin", input: z.strictObject({}) },
+  /** Slack (PLAN #19): whether an app of yours talks to Galahad through this node, in which workspace, and which account it answers. */
+  slack: { method: "GET", path: "/api/slack", scope: "mind:read", input: null },
+  /**
+   * Connect an app of yours (made from SLACK_APP_MANIFEST): its app-level token (Socket Mode) and its bot token, checked
+   * with Slack and sealed in the vault. The gateway becomes a device of its own (chat and mind:read only), and the code
+   * it answers, sent to the app from your account, links that account. Again: a new code (another app forgets the account).
+   */
+  slackConnect: { method: "POST", path: "/api/slack/connect", scope: "fleet:admin", input: z.strictObject({ appToken: z.string().trim().min(20).max(400), botToken: z.string().trim().min(20).max(400) }) },
+  /** Stop: the app's tokens go, and the gateway's device is revoked. Its chats stay yours. */
+  slackDisconnect: { method: "POST", path: "/api/slack/disconnect", scope: "fleet:admin", input: z.strictObject({}) },
   /** Galahad's draft of a loop you asked for in chat: never a loop until you add it (setLoop, brain:write). */
   draftLoop: { method: "POST", path: "/api/loops/drafts", scope: "chat", input: LoopDraftInput },
   dismissLoopDraft: { method: "POST", path: "/api/loops/drafts/dismiss", scope: "brain:write", input: z.strictObject({ id: LoopDraftId }) },
@@ -1651,6 +1661,42 @@ export interface TelegramView {
   problem: string | null;
   node: string;
 }
+
+/** The Slack gateway, as the node you asked runs it (slack.ts). */
+export interface SlackView {
+  connected: boolean;
+  /** The workspace the app is in, and its bot, by name. */
+  workspace: string | null;
+  bot: string | null;
+  /** Your Slack account, once linked. */
+  owner: string | null;
+  /** Until then, when the code you were given stops working. */
+  linkExpires: number | null;
+  device: string | null;
+  problem: string | null;
+  node: string;
+}
+
+/**
+ * The Slack app Galahad answers through, as Slack makes one from a manifest (api.slack.com/apps → Create New App → From
+ * a manifest): Socket Mode, so nothing of yours is opened; your direct messages with it and nothing else
+ * (`message.im`); buttons for an answer's choices; 👀 on your message while he works; your name, to say who it answers.
+ */
+export const SLACK_APP_MANIFEST = {
+  display_information: { name: "Galahad", description: "Your Galahad, in your direct messages.", background_color: "#141416" },
+  features: {
+    app_home: { home_tab_enabled: false, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
+    bot_user: { display_name: "Galahad", always_online: true },
+  },
+  oauth_config: { scopes: { bot: ["chat:write", "im:history", "reactions:write", "users:read"] } },
+  settings: {
+    event_subscriptions: { bot_events: ["message.im"] },
+    interactivity: { is_enabled: true },
+    org_deploy_enabled: false,
+    socket_mode_enabled: true,
+    token_rotation_enabled: false,
+  },
+} as const;
 
 export interface LoopDraftView {
   id: string;

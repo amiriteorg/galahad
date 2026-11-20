@@ -105,7 +105,7 @@ export const COMPARE = {
   date: "19 November 2026",
   columns: ["Runs on", "Each agent's work", "Done when", "On an iPhone", "Chat apps"],
   rows: [
-    { name: "Galahad", ours: true, cells: ["Your machines only", "A microVM per knight: KVM, or a Mac's own", "Its gates pass, then a reviewer who didn't do it accepts", "Native, in testing", "Telegram"] },
+    { name: "Galahad", ours: true, cells: ["Your machines only", "A microVM per knight: KVM, or a Mac's own", "Its gates pass, then a reviewer who didn't do it accepts", "Native, in testing", "Telegram, Slack"] },
     { name: "Hermes Agent 0.23", ours: false, cells: ["Your machine, or Hermes Cloud", "On the host by default; sandboxes optional", "No enforced gate found", "None official", "About 30"] },
     { name: "Rakazo 0.13", ours: false, cells: ["Your server, or hosted", "A Docker computer per bot; a VM per bot on Apple-silicon Macs", "No enforced gate found", "App Store", "Six"] },
     { name: "OpenMausBot 0.1", ours: false, cells: ["Your machine, a VPS, or its cloud", "Full access by default; a container if you choose", "No gate found", "App Store", "Slack, through its cloud"] },
@@ -140,7 +140,7 @@ export const PHASING = {
     { state: "building", what: "Galahad writes first", line: "Ship it and give again from a task's card, \"tell me when\", what happened while you were away, and the next step of your backlog offered to an idle knight, for your yes; next, asks you repeat offered as a loop." },
     { state: "building", what: "Count the north star", line: "Each time you step in on a knight's task, counted per task done and verified, and per outcome; next, in the trials." },
     { state: "building", what: "A knight that keeps the books", line: "Bilag from your mail to Drive on their own, and drafts in Dinero; booking always asks." },
-    { state: "building", what: "Chat apps", line: "Telegram and Buzz communities are built; next, Telegram's rooms and files, then Slack." },
+    { state: "building", what: "Chat apps", line: "Telegram, Slack and Buzz communities are built; next, the rooms and files there, then Discord and Signal." },
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Each step thinks as it needs", line: "A routine turn thinks less and a hard one more, said inside the conversation so its cache holds; a role's level is yours to pin." },
     { state: "building", what: "Lean context", line: "A knight reads whole files and keeps them in view; what a later run or edit made stale becomes a line. Next, errors since fixed." },

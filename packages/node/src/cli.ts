@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, type AwayView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type TelegramView, type TrialView } from "@galahad/core";
+import { type ArtifactView, type AwayView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type SlackView, SLACK_APP_MANIFEST, type TelegramView, type TrialView } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -161,6 +161,10 @@ Chat apps
   telegram                        whether a bot of yours talks to Galahad through this node, and which account it answers
   telegram connect                link a bot (its token from @BotFather, hidden); send it the code from your own account
   telegram disconnect             its device revoked, its token deleted; its chats stay yours
+  slack                           whether an app of yours talks to Galahad through this node, and which account it answers
+  slack manifest                  the app to make at api.slack.com/apps (From a manifest): Socket Mode, your DMs alone
+  slack connect                   link it (its two tokens, hidden); send it the code in a DM from your own account
+  slack disconnect                its device revoked, its tokens deleted; its chats stay yours
 
 Keys & models (keys are typed into a hidden prompt — never into chat, never on the command line)
   key add [--provider id]        paste any API key, or a coding plan's (provider presets marks the plans);
@@ -1070,6 +1074,41 @@ Next:
       else {
         console.log(`${bold(telegram.bot ?? "a bot")} on ${telegram.node}: ${telegram.owner ? `answers ${telegram.owner}, and nobody else` : telegram.linkExpires ? `waiting for your code (until ${new Date(telegram.linkExpires).toLocaleTimeString()})` : "no account linked: galahad telegram connect gives a new code"}.`);
         if (telegram.problem) console.log(bold(telegram.problem));
+      }
+      return;
+    }
+
+    case "slack": {
+      if (sub === "manifest") {
+        console.log(JSON.stringify(SLACK_APP_MANIFEST, null, 2));
+        return;
+      }
+      const admin = new Admin(home);
+      if (sub === "connect") {
+        console.log("Make the app at api.slack.com/apps: Create New App → From a manifest, your workspace, and what galahad slack manifest prints; then Install to Workspace.");
+        console.log("Its two tokens: Basic Information → App-Level Tokens → Generate (with connections:write) makes the first; OAuth & Permissions has the Bot User OAuth Token.");
+        // (Not a terminal: the two tokens, a line each, from standard input.)
+        const [appToken, botToken] = process.stdin.isTTY
+          ? [await readSecret("The app-level token, xapp-… (hidden): "), await readSecret("The bot token, xoxb-… (hidden): ")]
+          : (await Bun.stdin.text()).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        if (!appToken || !botToken) fail("both tokens are needed: the app-level token (xapp-…) and the bot token (xoxb-…)");
+        const connected = await admin.call<{ bot: string; workspace: string; code: string; expires: number; node: string }>("slackConnect", { appToken, botToken });
+        console.log(`Connected ${bold(connected.bot)} in ${connected.workspace} on ${connected.node}: its tokens are sealed in the vault, and it answers as a device of its own that may chat.`);
+        console.log(`Now send it this in a direct message from your own Slack account, within 15 minutes (it answers nobody else):\n\n  ${bold(connected.code)}\n`);
+        return;
+      }
+      if (sub === "disconnect") {
+        if (!flags.yes && !confirm("Disconnect Slack? Its device is revoked and its tokens deleted; the chats stay yours.")) return;
+        await admin.call("slackDisconnect", {});
+        console.log("Disconnected.");
+        return;
+      }
+      if (sub) fail("usage: galahad slack [manifest | connect | disconnect]");
+      const { slack } = await admin.call<{ slack: SlackView }>("slack");
+      if (!slack.connected) console.log("Not connected on this node. galahad slack connect links an app of yours (galahad slack manifest says what to make).");
+      else {
+        console.log(`${bold(slack.bot ?? "an app")} in ${slack.workspace ?? "your workspace"} on ${slack.node}: ${slack.owner ? `answers ${slack.owner}, and nobody else` : slack.linkExpires ? `waiting for your code (until ${new Date(slack.linkExpires).toLocaleTimeString()})` : "no account linked: galahad slack connect gives a new code"}.`);
+        if (slack.problem) console.log(bold(slack.problem));
       }
       return;
     }
