@@ -22,6 +22,7 @@ import { ArtifactStore } from "./artifacts.ts";
 import { artifactsAdapter, chatsAdapter, investigationsAdapter, memoriesAdapter, skillsAdapter, trialsAdapter } from "./archive/adapters.ts";
 import { LocalDiskBackend } from "./archive/blobs.ts";
 import { ArchiveService } from "./archive/service.ts";
+import { backupDirFor, BackupRunner } from "./backups.ts";
 import { ArchiveStore } from "./archive/store.ts";
 import { BankService } from "./bank/service.ts";
 import { ChatStore } from "./chats.ts";
@@ -84,6 +85,8 @@ export interface Daemon {
 }
 
 export interface DaemonOptions {
+  /** The daily backups of its databases (backups.ts); false: none (tests). */
+  backups?: boolean;
   log?: (message: string) => void;
   syncIntervalMs?: number;
   /** Loopback port that `tailscale serve` proxies to (default: port + 1). */
@@ -420,6 +423,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     ],
   });
   if (env.GALAHAD_ARCHIVE !== "off" && opts.archiveIntervalMs !== false) archive.start();
+  // The node backs itself up once a day (backups.ts), where the doctor looks for its backups.
+  const backups = new BackupRunner({ home: home.dir, dir: backupDirFor(home.dir, env.GALAHAD_BACKUP_DIR), log });
+  if (env.GALAHAD_BACKUPS !== "off" && opts.backups !== false) backups.start();
 
   // Checked at start (and before every bank call): a key or session readable by others keeps bank access off.
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
@@ -798,6 +804,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       await notify.stop();
       // The archive starts nothing new, and its round under way (an embedding call) is cut off.
       await archive.stop();
+      backups.stop();
       await loops.stop();
       await wakeWatcher.stop();
       await telegram.stop();

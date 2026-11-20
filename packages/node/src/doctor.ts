@@ -270,10 +270,10 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
   if (f.mind.backup) {
     const b = f.mind.backup;
     if (!b.exists || b.newestAt === null) {
-      add("mind", "mind.backup", "needs-you", `no backup of the mind in ${b.dir}`, "Keep one: copy mind.db there on a schedule with SQLite's backup (sqlite3 mind.db \".backup …\"), or set GALAHAD_BACKUP_DIR to where you keep them. A second full node is a living copy too.");
+      add("mind", "mind.backup", "needs-you", `no backup of the mind in ${b.dir}`, "The node keeps its own each day, the first a few minutes after it starts (backups.ts), unless GALAHAD_BACKUPS=off: its log says if one couldn't be kept. Set GALAHAD_BACKUP_DIR to keep them elsewhere. A second full node is a living copy too.");
     } else if (f.now - b.newestAt > BACKUP_OLD_MS) {
-      add("mind", "mind.backup", "needs-you", `the newest backup of the mind is ${span(f.now - b.newestAt)} old (${b.dir})`, "Whatever made the backups has stopped: check its timer or cron job on this machine.", {
-        finding: { severity: "info", title: `The mind's backups on ${self} have stopped`, body: `The newest file in ${b.dir} is more than a week old. Check the timer or cron job that makes them.` },
+      add("mind", "mind.backup", "needs-you", `the newest backup of the mind is ${span(f.now - b.newestAt)} old (${b.dir})`, "The node keeps one itself each day: its log says why one wasn't kept (backups: …), unless GALAHAD_BACKUPS=off.", {
+        finding: { severity: "info", title: `The mind's backups on ${self} have stopped`, body: `The newest file in ${b.dir} is more than a week old. The node's log says why its daily one wasn't kept.` },
       });
     } else add("mind", "mind.backup", "ok", `backed up ${span(f.now - b.newestAt)} ago (${plural(b.files, "file")} in ${b.dir})`);
   }

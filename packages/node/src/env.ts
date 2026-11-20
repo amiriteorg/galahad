@@ -20,11 +20,13 @@ const Env = z.object({
     .string()
     .refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p), "an absolute path")
     .optional(),
-  /** Where you keep backups of the mind, for the doctor to look at their age (default: `backups` in or beside the node's home). */
+  /** Where the node keeps its daily backups, and the doctor looks at their age (default: `backups` beside the node's home where one is, else in it). */
   GALAHAD_BACKUP_DIR: z
     .string()
     .refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p), "an absolute path")
     .optional(),
+  /** "off": the node keeps no daily backups of its databases (backups.ts). */
+  GALAHAD_BACKUPS: z.enum(["on", "off"]).optional(),
   /**
    * Notifications. Who operates this node, as push services are told (RFC 8292's contact: a mailto: or https: address;
    * default: one that names nobody). And push services to allow beyond Apple, Google, Mozilla and Microsoft: host
