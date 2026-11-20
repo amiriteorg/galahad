@@ -23,12 +23,15 @@ struct KnightInput: Encodable, Sendable, Equatable {
     var sensitive: Bool? = nil
     /// The command that starts its ACP agent in its VM (harness `acp`); nil: left as it is, and not sent.
     var acp: String? = nil
+    /// Keys of yours it may use but never see; nil: none (sent as null). Sent only when `sendKeys`.
+    var keys: [Teammate.KeyGrant]? = nil
+    var sendKeys = false
     var enabled: Bool
     var dailyTurns: Int
     /// The drawing it wears (`AvatarLook.profile`).
     var avatar: AvatarProfile
 
-    enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, models, sensitive, acp, enabled, dailyTurns, avatar }
+    enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, models, sensitive, acp, keys, enabled, dailyTurns, avatar }
 
     func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -41,6 +44,7 @@ struct KnightInput: Encodable, Sendable, Equatable {
         if sendModels { try c.encode(models, forKey: .models) }
         try c.encodeIfPresent(sensitive, forKey: .sensitive)
         try c.encodeIfPresent(acp, forKey: .acp)
+        if sendKeys { try c.encode(keys, forKey: .keys) }
         try c.encode(enabled, forKey: .enabled)
         try c.encode(dailyTurns, forKey: .dailyTurns)
         try c.encode(avatar, forKey: .avatar)

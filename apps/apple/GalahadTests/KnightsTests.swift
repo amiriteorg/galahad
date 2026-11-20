@@ -64,6 +64,14 @@ struct KnightsTests {
         input.models = ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"]
         let chosen = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any]
         #expect(chosen?["models"] as? [String] == ["ollama/mimo-v2.6:9b", "deepseek/deepseek-v4-pro"])
+        // Its keys are said only when they could be chosen (an older node would refuse them): then null for none.
+        #expect(chosen?["keys"] == nil)
+        input.sendKeys = true
+        let none = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any]
+        #expect(none?["keys"] is NSNull)
+        input.keys = [.init(secret: "stripe", header: "authorization", write: false)]
+        let given = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any]
+        #expect((given?["keys"] as? [[String: Any]])?.first?["secret"] as? String == "stripe")
         // Sensitive mode is said only when it is set: left alone, nothing of it is sent.
         #expect(chosen?["sensitive"] == nil)
         input.sensitive = true

@@ -48,6 +48,11 @@ struct Teammate: Decodable, Sendable, Identifiable {
     let harness: String
     /// The command that starts its ACP agent in its VM (harness `acp`).
     var acp: String? = nil
+    /// Keys of yours it may use but never see (PLAN #17): the gateway puts each in at its own address alone.
+    var keys: [KeyGrant]? = nil
+
+    /// A key it was given: which secret, the header it goes in, and whether calls that change something may go too.
+    struct KeyGrant: Codable, Sendable, Equatable, Hashable { let secret: String; var header: String; var write: Bool }
     let enabled: Bool
     let dailyTurns: Int
     let turnsToday: Int

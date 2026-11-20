@@ -30,6 +30,9 @@ struct KnightEditor: View {
     @State private var offered: [Knights.ModelChoice]?
     /// Sensitive mode: these models alone, for every call of its work (core's heldModels).
     @State private var sensitive: Bool
+    /// Keys of yours it may use but never see (PLAN #17); the secrets it may be given, once read (nil: not read).
+    @State private var keys: [Teammate.KeyGrant]
+    @State private var givable: [SecretView]?
     @State private var working = false
     @State private var problem: String?
 
@@ -48,6 +51,7 @@ struct KnightEditor: View {
         _role = State(initialValue: existing?.role ?? "engineer")
         _own = State(initialValue: existing?.models ?? [])
         _sensitive = State(initialValue: existing?.sensitive ?? false)
+        _keys = State(initialValue: existing?.keys ?? [])
         _dailyTurns = State(initialValue: existing?.dailyTurns ?? 40)
         _enabled = State(initialValue: existing?.enabled ?? true)
         _leads = State(initialValue: existing.map { session.primary == $0.id } ?? false)
@@ -193,6 +197,37 @@ struct KnightEditor: View {
                     }
                 }
 
+                if let givable, !givable.isEmpty || !keys.isEmpty {
+                    Section {
+                        ForEach(givable) { secret in
+                            let given = keys.first { $0.secret == secret.name }
+                            VStack(alignment: .leading, spacing: Space.s1) {
+                                Toggle(isOn: Binding(get: { given != nil }, set: { on in
+                                    keys.removeAll { $0.secret == secret.name }
+                                    if on { keys.append(.init(secret: secret.name, header: "authorization", write: false)) }
+                                })) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(secret.name).font(.callout.monospaced())
+                                        Text(secret.origin ?? "").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                if let given {
+                                    Picker("Its header", selection: Binding(get: { given.header }, set: { header in update(secret.name) { $0.header = header } })) {
+                                        ForEach(Array(Set(["authorization", "x-api-key", "api-key", given.header])).sorted(), id: \.self) { header in
+                                            Text(header == "authorization" ? "Authorization: Bearer" : header).tag(header)
+                                        }
+                                    }
+                                    Toggle("Writes too", isOn: Binding(get: { given.write }, set: { write in update(secret.name) { $0.write = write } }))
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Keys it may use")
+                    } footer: {
+                        Text("Its scripts call $GALAHAD_KEYS/<name>/… with $GALAHAD_TOKEN where the key would go: the gateway puts the key in, at its own address alone, and the key never enters its VM. Reads only, unless Writes too. A secret of yours is offered once it is pinned to its API's https address; a model's or a connector's key never is.")
+                    }
+                }
+
                 Section {
                     Stepper(value: $dailyTurns, in: 0...1000, step: 5) {
                         LabeledContent("A day") { Text("\(dailyTurns) turns and jobs").monospacedDigit() }
@@ -225,9 +260,20 @@ struct KnightEditor: View {
                 roles = await session.roles()
                 // (The order is kept while you edit: what you turn on goes last, and nothing moves under your finger.)
                 if let choices = await session.knightModels() { offered = Knights.modelChoices(choices, own: own) }
+                // (Yours alone to give: a secret pinned to an https address, nobody else's purpose.)
+                struct Listed: Decodable { let secrets: [SecretView] }
+                if let listed = try? await session.client.get("/api/secrets", as: Listed.self) {
+                    givable = listed.secrets.filter { $0.provider == nil && ($0.origin ?? "").hasPrefix("https://") }.sorted { $0.name < $1.name }
+                }
             }
         }
         .sheetSize(width: 600, height: 720)
+    }
+
+    /// One of its keys, changed in place.
+    private func update(_ secret: String, _ change: (inout Teammate.KeyGrant) -> Void) {
+        guard let at = keys.firstIndex(where: { $0.secret == secret }) else { return }
+        change(&keys[at])
     }
 
     private func save() async {
@@ -246,6 +292,11 @@ struct KnightEditor: View {
         // (Sent when it is on, or was: to a node that doesn't know it, nothing is said of it.)
         if sensitive || existing?.sensitive == true { input.sensitive = sensitive }
         if harness == "acp" { input.acp = acp.trimmingCharacters(in: .whitespaces) }
+        // Its keys, to a node that knows them: said when they could be chosen here, or it had some.
+        if givable != nil || !(existing?.keys ?? []).isEmpty {
+            input.keys = keys.isEmpty ? nil : keys
+            input.sendKeys = true
+        }
         let knight: Teammate
         do {
             knight = try await session.save(knight: input)
