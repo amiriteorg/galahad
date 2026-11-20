@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package org.amirite.galahad.ui
 
 import android.content.Intent
@@ -8,9 +10,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.VisibilityThreshold
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -91,6 +90,7 @@ fun Root(app: AppModel) {
     val screen = Screen(place, chat, knight, room)
     // A tablet, or a foldable open (the window's width, as Android's own size classes read it).
     val wide = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() } >= 600.dp
+    val motion = MaterialTheme.motionScheme
 
     // A tapped notification: its place, or the chat it was about.
     val opening by app.opening.collectAsState()
@@ -155,9 +155,9 @@ fun Root(app: AppModel) {
             AnimatedContent(
                 targetState = screen,
                 transitionSpec = {
-                    // Springs without a bounce: quick to settle, nothing that plays on after you.
-                    val slide = spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow, IntOffset.VisibilityThreshold)
-                    val fade = spring<Float>(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
+                    // Material 3 Expressive's own springs: the default spatial one for the slide, its effects one for the fade.
+                    val slide = motion.defaultSpatialSpec<IntOffset>()
+                    val fade = motion.defaultEffectsSpec<Float>()
                     when {
                         targetState.opened && !initialState.opened -> (slideInHorizontally(slide) { it / 10 } + fadeIn(fade)) togetherWith fadeOut(fade)
                         !targetState.opened && initialState.opened -> fadeIn(fade) togetherWith (slideOutHorizontally(slide) { it / 10 } + fadeOut(fade))
@@ -192,10 +192,10 @@ private fun MoreScreen(app: AppModel) {
     var newer by remember { mutableStateOf<Updates.Newer?>(null) }
     LaunchedEffect(Unit) { newer = Updates.newer(context) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.margin), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
-        Text("More", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+        Text("More", style = MaterialTheme.typography.headlineLargeEmphasized)
         newer?.let { n ->
             Panel {
-                Text("A newer Galahad is out", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("A newer Galahad is out", style = MaterialTheme.typography.titleMediumEmphasized)
                 Text("Build ${n.build} (${n.size}). It installs over this one: open it once it's downloaded.", style = MaterialTheme.typography.bodyMedium)
                 Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.url))) }) { Text("Download") }
             }
@@ -204,18 +204,18 @@ private fun MoreScreen(app: AppModel) {
         paired?.let { p ->
             Panel {
                 Text("Your node", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(p.fleetName ?: p.nodeName ?: "Galahad", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(p.fleetName ?: p.nodeName ?: "Galahad", style = MaterialTheme.typography.titleMediumEmphasized)
                 Text(p.origin, style = MaterialTheme.typography.bodyMedium)
             }
             Panel {
                 Text("This phone", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(p.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(p.name, style = MaterialTheme.typography.titleMediumEmphasized)
                 Text("Its key: ${p.device.take(14)}…", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
                 Text("Kept in this phone's secure hardware; every request is signed with it.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Panel {
-            Text("Galahad $version", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Galahad $version", style = MaterialTheme.typography.titleMediumEmphasized)
             Text("Open source (Apache-2.0).", style = MaterialTheme.typography.bodyMedium)
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/amiriteorg/galahad"))) }) { Text("The source on GitHub") }
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://galahad.sh"))) }) { Text("galahad.sh") }
@@ -268,7 +268,7 @@ private fun NotificationsPanel(app: AppModel) {
         if (granted) act { Notices.turnOn(context, it) } else said = "Android won't show them until notifications are allowed for Galahad."
     }
     Panel {
-        Text("Notifications", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("Notifications", style = MaterialTheme.typography.titleMediumEmphasized)
         Text(
             if (on) "On. Your node keeps what it would tell you, and this phone collects it about every 15 minutes (Android may wait longer while the phone sleeps). No push service carries them."
             else "Off. Galahad can tell you here when something needs you: an approval, a question, a finding, work that ended. No push service carries them: this phone collects them from your node.",

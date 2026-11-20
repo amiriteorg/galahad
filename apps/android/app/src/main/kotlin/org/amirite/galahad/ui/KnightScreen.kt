@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package org.amirite.galahad.ui
 
 import androidx.activity.compose.BackHandler
@@ -101,7 +103,7 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
         val scope = rememberCoroutineScope()
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
             Face(Looks.of(id, person?.name ?: id, person?.avatar), row?.state, size = 120.dp, description = person?.name)
-            Text(person?.name ?: id, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(person?.name ?: id, style = MaterialTheme.typography.headlineSmallEmphasized)
             StateChip(row?.state)
             row?.let { Text(Roster.besideChip(it.line, it.state), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             // Paused, a knight starts nothing new until you resume it; what it's doing now finishes.
@@ -136,7 +138,7 @@ fun RoomScreen(app: AppModel, id: String, back: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(-Space.s3)) {
                 for (m in members.take(5)) Face(Looks.of(m.id, m.name, m.avatar), table.rows.firstOrNull { it.kind == "knight" && it.id == m.id }?.state, size = 64.dp, description = m.name)
             }
-            Text(room?.name ?: "A room", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(room?.name ?: "A room", style = MaterialTheme.typography.headlineSmallEmphasized)
             row?.let { Text(it.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
@@ -275,7 +277,7 @@ private fun TaskCard(app: AppModel, t: Json) {
             Text("Task", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             word?.let { w -> Text(w, style = MaterialTheme.typography.labelMedium, color = state?.tone?.let(LocalBrand.current::of) ?: MaterialTheme.colorScheme.onSurfaceVariant) }
         }
-        Text(t["title"].string ?: "", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(t["title"].string ?: "", style = MaterialTheme.typography.titleMediumEmphasized)
         // Work that ended short says why (a quest's word for it in words: "gave-up" is "gave up"); work under way, its latest step.
         val ended = status == "failed" || status == "stopped" || status == "interrupted"
         val why = t["error"].string?.lineSequence()?.first()?.trim()?.let { mapOf("gave-up" to "gave up", "unverified" to "not verified")[it] ?: it }
@@ -304,10 +306,7 @@ private fun TaskCard(app: AppModel, t: Json) {
         // What a task offers, as the iPhone's card does: by where it stands.
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
             when {
-                status == "proposed" -> {
-                    OutlinedButton(onClick = { control("stop") }) { Text("Decline") }
-                    androidx.compose.material3.Button(onClick = { control("approve") }) { Text("Start it") }
-                }
+                status == "proposed" -> Decision(no = "Decline", yes = "Start it", onNo = { control("stop") }, onYes = { control("approve") })
                 status == "queued" || status == "running" -> OutlinedButton(onClick = { control("stop") }) { Text("Stop", color = LocalBrand.current.failed) }
                 status == "done" && verified && t["changes"] != null && t["fix"] == null && shipped == null ->
                     androidx.compose.material3.Button(onClick = { shipping = true }) { Text("Ship it") }
@@ -384,6 +383,7 @@ fun Composer(placeholder: String, asTask: String?, sending: Boolean, stop: (() -
                     },
                     enabled = text.isNotBlank() && !sending,
                     modifier = Modifier.padding(bottom = 4.dp),
+                    shapes = androidx.compose.material3.ButtonDefaults.shapes(),
                 ) { Text("Send", color = if (text.isNotBlank()) brand.onInk else MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package org.amirite.galahad.ui
 
 import androidx.compose.foundation.background
@@ -140,7 +142,7 @@ fun Markdown(text: String, modifier: Modifier = Modifier, choose: ((String) -> U
     val type = MaterialTheme.typography
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
         for (b in blocks) when (b) {
-            is Part.Heading -> SelectionContainer { Text(inline(b.text, code, brand.working), style = if (b.level <= 2) type.titleLarge else type.titleMedium, fontWeight = FontWeight.SemiBold) }
+            is Part.Heading -> SelectionContainer { Text(inline(b.text, code, brand.working), style = if (b.level <= 2) type.titleLargeEmphasized else type.titleMediumEmphasized) }
             is Part.Para -> SelectionContainer { Text(inline(b.text, code, brand.working), style = type.bodyLarge) }
             is Part.Item -> Row {
                 Text(b.marker, style = type.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(24.dp))

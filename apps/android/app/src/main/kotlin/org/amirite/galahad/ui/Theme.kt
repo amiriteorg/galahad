@@ -2,7 +2,8 @@ package org.amirite.galahad.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -16,10 +17,11 @@ import org.amirite.galahad.core.KnightState
 
 /*
  * Galahad's look on Android: Android's own components, with Galahad's accents, as the Apple app is Apple's with them.
- * The colours are the brand's, never the wallpaper's (apps/web/src/brand.ts INK, the Apple app's asset catalog and
- * Brand.swift): ink on paper, cream on the dark, the Siege Perilous red, and one colour a state (blue at work, amber
- * needs you, red failed, green done). Nothing moves by itself: a state is a still ring and a word, never a spinner (the
- * owner's word, 18 Nov). What moves answers you: a page opening or closing.
+ * Material 3 Expressive (the owner's word, 21 Nov): its motion (springs that answer a tap or a page opening), its
+ * emphasized type and its shapes. The colours are the brand's, never the wallpaper's (apps/web/src/brand.ts INK, the
+ * Apple app's asset catalog and Brand.swift): ink on paper, cream on the dark, the Siege Perilous red, and one colour a
+ * state (blue at work, amber needs you, red failed, green done). Nothing moves by itself: a state is a still ring and a
+ * word, never a spinner or Expressive's shape-changing loader (the owner's word, 18 Nov). What moves answers you.
  */
 
 @Immutable
@@ -73,6 +75,7 @@ object Space {
     val touch = 48.dp
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun GalahadTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
@@ -94,6 +97,6 @@ fun GalahadTheme(content: @Composable () -> Unit) {
     }
     val shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(20.dp))
     CompositionLocalProvider(LocalBrand provides b) {
-        MaterialTheme(colorScheme = scheme, shapes = shapes, content = content)
+        MaterialExpressiveTheme(colorScheme = scheme, shapes = shapes, content = content)
     }
 }

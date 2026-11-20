@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package org.amirite.galahad.ui
 
 import androidx.activity.compose.BackHandler
@@ -97,7 +99,7 @@ fun ChatScreen(app: AppModel, back: () -> Unit) {
             if (bubbles.isEmpty() && away.isNotEmpty()) {
                 item {
                     Panel {
-                        Text("While you were away", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text("While you were away", style = MaterialTheme.typography.titleSmallEmphasized)
                         val brand = LocalBrand.current
                         for (line in away) {
                             val color = when (line["tone"].string) { "ok" -> brand.done; "warn" -> brand.needs; "danger" -> brand.failed; else -> MaterialTheme.colorScheme.onSurfaceVariant }
@@ -195,6 +197,7 @@ private fun ChatComposer(app: AppModel, live: Boolean) {
                 androidx.compose.material3.Button(
                     enabled = (text.isNotBlank() || files.isNotEmpty()) && !sending,
                     modifier = Modifier.padding(bottom = 4.dp),
+                    shapes = androidx.compose.material3.ButtonDefaults.shapes(),
                     onClick = {
                         val client = app.client ?: return@Button
                         sending = true

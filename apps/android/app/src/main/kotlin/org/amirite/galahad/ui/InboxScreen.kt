@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package org.amirite.galahad.ui
 
 import androidx.compose.foundation.layout.Arrangement
@@ -72,7 +74,7 @@ fun InboxScreen(app: AppModel) {
         ?: if (by.startsWith("loop:")) "The loop ${by.removePrefix("loop:")}" else if (by == "galahad" || by.startsWith("arm:") || by.startsWith("n_")) "Galahad" else by
 
     LazyColumn(Modifier.fillMaxSize()) {
-        item { Text("Inbox", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = Space.margin, top = Space.s4, bottom = Space.s2)) }
+        item { Text("Inbox", style = MaterialTheme.typography.headlineLargeEmphasized, modifier = Modifier.padding(start = Space.margin, top = Space.s4, bottom = Space.s2)) }
         said?.let { item { Problem(it) } }
         if (inbox.count == 0) {
             item { Text("Nothing needs you.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(Space.margin)) }
@@ -88,17 +90,19 @@ fun InboxScreen(app: AppModel) {
         if (inbox.pairings.isNotEmpty()) item { SectionTitle("Devices asking to join") }
         items(inbox.pairings, key = { "p:${it["device"].string}" }) { p ->
             Panel {
-                Text(p["name"].string ?: "A device", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(p["name"].string ?: "A device", style = MaterialTheme.typography.titleMediumEmphasized)
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                     Text("Its code", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(p["sas"].string ?: "", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                    Text(p["sas"].string ?: "", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.headlineSmallEmphasized)
                 }
                 Text("Approve only if this is the code that device shows.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (p["conflict"].bool == true) Text("Two devices asked with one invite: approving either is refused.", color = LocalBrand.current.failed)
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    OutlinedButton(onClick = { act { app.answerPairing(p["invite"].string!!, p["device"].string!!, false) } }) { Text("Decline") }
-                    Button(onClick = { act { app.answerPairing(p["invite"].string!!, p["device"].string!!, true) } }) { Text("Approve") }
-                }
+                Decision(
+                    no = "Decline",
+                    yes = "Approve",
+                    onNo = { act { app.answerPairing(p["invite"].string!!, p["device"].string!!, false) } },
+                    onYes = { act { app.answerPairing(p["invite"].string!!, p["device"].string!!, true) } },
+                )
             }
         }
         item { Spacer(Modifier.height(Space.s10)) }
@@ -114,7 +118,7 @@ private fun Approval(a: Json, who: String, answer: (Boolean) -> Unit) {
     val left = (a["expires"].long ?: 0) - System.currentTimeMillis()
     Panel {
         Text("$who asks", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("${a["connector"].string}.${a["tool"].string}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("${a["connector"].string}.${a["tool"].string}", style = MaterialTheme.typography.titleMediumEmphasized)
         Text(a["target"].string ?: "", style = MaterialTheme.typography.bodyMedium)
         when (kind) {
             "delete" -> Text("It deletes something.", color = brand.failed, style = MaterialTheme.typography.bodyMedium)
@@ -124,10 +128,7 @@ private fun Approval(a: Json, who: String, answer: (Boolean) -> Unit) {
         TextButton(onClick = { shown = !shown }) { Text(if (shown) "Hide the request" else "Read the request") }
         if (shown) Text(a["args"]?.let(::pretty) ?: "{}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
         Text(if (left > 60_000) "No answer within ${within(left)} is a no." else "It expires now: no answer is a no.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-            OutlinedButton(onClick = { answer(false) }) { Text("Decline") }
-            Button(onClick = { answer(true) }) { Text("Approve") }
-        }
+        Decision(no = "Decline", yes = "Approve", onNo = { answer(false) }, onYes = { answer(true) })
     }
 }
 
@@ -199,12 +200,9 @@ private fun KeyAsked(k: Json, who: String, seal: (String) -> Unit, dismiss: () -
     var adding by remember { mutableStateOf(false) }
     Panel {
         Text("$who asks for a key", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(k["name"].string ?: "", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+        Text(k["name"].string ?: "", style = MaterialTheme.typography.titleMediumEmphasized, fontFamily = FontFamily.Monospace)
         Text(k["purpose"].string ?: "", style = MaterialTheme.typography.bodyMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-            OutlinedButton(onClick = dismiss) { Text("Dismiss") }
-            Button(onClick = { adding = true }) { Text("Add the key") }
-        }
+        Decision(no = "Dismiss", yes = "Add the key", onNo = dismiss, onYes = { adding = true })
     }
     if (adding) {
         var value by remember { mutableStateOf("") }

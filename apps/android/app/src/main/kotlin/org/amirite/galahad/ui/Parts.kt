@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package org.amirite.galahad.ui
 
 import androidx.compose.foundation.background
@@ -12,9 +14,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ButtonShapes
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -58,8 +64,7 @@ fun Dot(color: Color, size: Int = 8) {
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
+        style = MaterialTheme.typography.titleSmallEmphasized,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier.padding(horizontal = Space.margin, vertical = Space.s2).semantics { heading() },
     )
@@ -79,6 +84,26 @@ fun PageBar(title: String, back: () -> Unit, actions: @Composable RowScope.() ->
         windowInsets = WindowInsets(0),
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
     )
+}
+
+/**
+ * A decision, as Material 3 Expressive draws one: the two answers as a connected pair, the yes filled, each changing
+ * shape as it's pressed.
+ */
+@Composable
+fun Decision(no: String, yes: String, onNo: () -> Unit, onYes: () -> Unit, enabled: Boolean = true) {
+    Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+        OutlinedButton(
+            onClick = onNo,
+            enabled = enabled,
+            shapes = ButtonShapes(ButtonGroupDefaults.connectedLeadingButtonShape, ButtonGroupDefaults.connectedLeadingButtonPressShape),
+        ) { Text(no) }
+        Button(
+            onClick = onYes,
+            enabled = enabled,
+            shapes = ButtonShapes(ButtonGroupDefaults.connectedTrailingButtonShape, ButtonGroupDefaults.connectedTrailingButtonPressShape),
+        ) { Text(yes) }
+    }
 }
 
 /** A raised card, as the Inbox's cards are. */

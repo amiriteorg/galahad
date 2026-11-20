@@ -19,6 +19,8 @@ val keystore: String? = providers.environmentVariable("GALAHAD_ANDROID_KEYSTORE"
 android {
     namespace = "org.amirite.galahad"
     compileSdk = 37
+    // Compose 1.13 (material3 1.5, Material 3 Expressive) compiles against 37.1 or later.
+    compileSdkMinor = 2
     defaultConfig {
         applicationId = "org.amirite.galahad"
         minSdk = 29
@@ -81,7 +83,7 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.11.01"))
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")

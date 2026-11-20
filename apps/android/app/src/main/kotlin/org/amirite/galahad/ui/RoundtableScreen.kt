@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package org.amirite.galahad.ui
 
 import androidx.compose.foundation.background
@@ -64,7 +66,7 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
     LazyColumn(Modifier.fillMaxSize()) {
         item {
             Row(Modifier.fillMaxWidth().padding(start = Space.margin, end = Space.s2, top = Space.s4, bottom = Space.s2), verticalAlignment = Alignment.CenterVertically) {
-                Text(paired?.fleetName ?: "Roundtable", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(paired?.fleetName ?: "Roundtable", style = MaterialTheme.typography.headlineLargeEmphasized, modifier = Modifier.weight(1f))
                 if (table.snapshot != null) TextButton(onClick = { giving = true }) { Text("Give a task") }
             }
         }
@@ -141,7 +143,7 @@ private fun Seat(drawing: String, name: String, state: KnightState?, line: Strin
         Face(drawing, state)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(name, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 StateChip(state)
                 if (unread) Box(Modifier.clearAndSetSemantics { contentDescription = "new" }) { Dot(brand.done) }
             }
@@ -172,7 +174,7 @@ private fun RoomSeat(row: RosterRow, onClick: () -> Unit) {
         }
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                Text(row.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(row.name, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (row.unread) Dot(brand.done)
             }
             Text(row.line, style = MaterialTheme.typography.bodyMedium, color = if (row.needs) brand.needs else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)

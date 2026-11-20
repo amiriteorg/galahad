@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package org.amirite.galahad.ui
 
 import android.annotation.SuppressLint
@@ -101,7 +103,7 @@ fun ChartBlock(c: Blocks.Chart) {
         "$name: " + c.labels.indices.joinToString(", ") { i -> "${c.labels[i]} ${vs[i]?.let { withUnit(Blocks.compactNumber(it), c.unit) } ?: "no value"}" }
     }
     Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(brand.raised).padding(Space.s3), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-        c.title?.let { Text(it, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold) }
+        c.title?.let { Text(it, style = MaterialTheme.typography.titleSmallEmphasized) }
         if (c.series.size > 1) {
             Row(horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
                 c.series.forEachIndexed { i, (name, _) ->
@@ -188,7 +190,7 @@ fun StatsBlock(stats: List<Blocks.Stat>) {
                 val good = if (delta == null || delta == 0.0 || s.good == null) null else (delta > 0) == (s.good == "up")
                 Column(Modifier.weight(1f).clip(MaterialTheme.shapes.medium).background(brand.raised).padding(Space.s3), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(s.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if (s.number != null) withUnit(shown, s.unit) else shown, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                    Text(if (s.number != null) withUnit(shown, s.unit) else shown, style = MaterialTheme.typography.headlineSmallEmphasized)
                     if (delta != null) {
                         val sign = if (delta > 0) "+" else if (delta < 0) "−" else "±"
                         val arrow = if (delta > 0) "↑ " else if (delta < 0) "↓ " else ""
@@ -250,7 +252,7 @@ fun PageCard(page: String) {
     ) {
         Column(Modifier.weight(1f)) {
             Text("A page", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(title, style = MaterialTheme.typography.titleMediumEmphasized)
         }
         Button(onClick = { open = true }) { Text("Open") }
     }
@@ -271,7 +273,7 @@ private fun PageView(page: String, title: String, close: () -> Unit) {
             Column {
                 Row(Modifier.fillMaxWidth().padding(Space.s2), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = close) { Text("Close") }
-                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text(title, style = MaterialTheme.typography.titleMediumEmphasized, modifier = Modifier.weight(1f))
                     if (hasScripts && !scripts) TextButton(onClick = { scripts = true }) { Text("Run its scripts") }
                 }
                 Box(Modifier.fillMaxSize()) {

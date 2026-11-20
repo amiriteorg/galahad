@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package org.amirite.galahad.ui
 
 import android.os.Build
@@ -115,7 +117,7 @@ fun JoinScreen(app: AppModel) {
     ) {
         Spacer(Modifier.height(Space.s10))
         Image(roundtableMark(brand.ink, brand.siege), contentDescription = null, modifier = Modifier.size(56.dp))
-        Text("Join your Galahad", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+        Text("Join your Galahad", style = MaterialTheme.typography.headlineLargeEmphasized)
         Text(
             "On your node, run galahad invite --client, or choose Join a device in the app there. Paste the link it gives you, or open it on this phone.",
             style = MaterialTheme.typography.bodyLarge,
