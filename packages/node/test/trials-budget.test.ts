@@ -243,6 +243,21 @@ describe("what a run will cost, going by the past", () => {
     expect(estimateRun([past("cantilever-beam", "r-one", 300_000)], [cantilever], 1, 3, {}).tokens).toBe(900_000);
   });
 
+  test("a trial your budget can't be expected to see through isn't started: what starts finishes, and is recorded", async () => {
+    // Each trial costs 4,400 tokens, as the past says. Five slots, and 10,000 tokens: two fit, the third wouldn't.
+    const known = { trials: [past("cantilever-beam", "r-a", 4400)] };
+    const { node, recorded } = fakeNode({ past: known });
+    const result = await runTrials(node, { suite: "engineering", problems: [cantilever], repeat: 5, parallel: 5, network: "gateway", seed: 11, budget: { tokens: 10_000 } });
+    expect(result.trials).toHaveLength(2);
+    expect(recorded).toHaveLength(2);
+    // None paid for and lost: nothing was stopped mid-way.
+    expect(result.budgetEnded).toEqual({ stopped: 0, notStarted: 3, why: "1,200 tokens of the budget are left, and a trial takes about 4,400 going by past runs" });
+    expect(spendTotal(result.spent).tokens).toBe(8800);
+    // No budget of yours: the default allowance is a guard, not a forecast, and every trial runs.
+    const plain = fakeNode({ past: known });
+    expect((await runTrials(plain.node, { suite: "engineering", problems: [cantilever], repeat: 5, parallel: 5, network: "gateway", seed: 11 })).trials).toHaveLength(5);
+  });
+
   test("nothing known: it says so rather than guess", async () => {
     const none = estimateRun([past("rlc-step", "r-a", null)], [cantilever, rlc], 1, 1, {});
     expect(none).toEqual({ tokens: null, usd: null, known: 0, of: 2 });

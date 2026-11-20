@@ -419,6 +419,21 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
     }
     return null;
   };
+  // Your budget isn't spent on trials it can't be expected to see through: one stopped mid-way is paid for and not
+  // recorded. Going by past runs, a trial starts only while what's spent, what the trials under way are still expected
+  // to spend, and what it is expected to cost fit the budget. (Nothing known of the past, or no budget of yours: as
+  // many as there are slots, and the budget's stop below.)
+  const each = { tokens: estimate.tokens === null ? null : estimate.tokens / estimate.of, usd: estimate.usd === null ? null : estimate.usd / estimate.of };
+  const underway = new Map<number, UsageLine[]>();
+  const ahead = (cost: (lines: UsageLine[]) => number, per: number): number => [...underway.values()].reduce((s, lines) => s + Math.max(0, per - cost(lines)), 0);
+  const noRoom = (): string | null => {
+    if (byDefault) return null;
+    if (budget.tokens !== undefined && each.tokens !== null && spendTotal(spent).tokens + ahead((l) => spendTotal(l).tokens, each.tokens) + each.tokens > budget.tokens)
+      return `${tokensLabel(Math.max(0, budget.tokens - spendTotal(spent).tokens))} tokens of the budget are left, and a trial takes about ${tokensLabel(each.tokens)} going by past runs`;
+    if (budget.usd !== undefined && each.usd !== null && costOf(spent, prices).usd + ahead((l) => costOf(l, prices).usd, each.usd) + each.usd > budget.usd)
+      return `${usdLabel(Math.max(0, budget.usd - costOf(spent, prices).usd))} of the budget is left, and a trial costs about ${usdLabel(each.usd)} going by past runs`;
+    return null;
+  };
   // The budget's own stop: running trials end after their current step (unrecorded), and none starts.
   const stop = new AbortController();
   const signal = options.signal ? AbortSignal.any([options.signal, stop.signal]) : stop.signal;
@@ -431,7 +446,12 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
     while (next < jobs.length && !signal.aborted) {
       ended ??= over();
       if (ended) break;
-      const { problem, seed } = jobs[next++]!;
+      // (No room for another: this slot closes, and one still running looks again when its trial ends.)
+      if (noRoom()) break;
+      const index = next++;
+      const { problem, seed } = jobs[index]!;
+      const mine: UsageLine[] = [];
+      underway.set(index, mine);
       options.progress?.({ type: "start", problem, seed });
       const trial = await tryOne(node, problem, {
         seed,
@@ -447,6 +467,7 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
         ...(options.pins ? { pins: options.pins } : {}),
         spent: (call) => {
           addUsage(spent, call.role, call.model, call.usage);
+          addUsage(mine, call.role, call.model, call.usage);
           // Spent with trials still running: they stop after their current step, so the overrun is a step's worth each.
           if (!ended && (ended = over())) stop.abort();
         },
@@ -456,7 +477,7 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
           passedOver.add(key);
           options.progress?.({ type: "fallback", ...call });
         },
-      });
+      }).finally(() => underway.delete(index));
       if (trial) {
         trials.push(trial);
         options.progress?.({ type: "done", trial });
@@ -467,10 +488,11 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(plan.parallel, jobs.length)) }, worker));
-  if (ended && !options.signal?.aborted) {
+  const why = options.signal?.aborted ? null : (ended ?? (next < jobs.length ? noRoom() : null));
+  if (why) {
     const notStarted = jobs.length - next;
-    options.progress?.({ type: "spent", finished: trials.length, stopped, notStarted, why: ended });
-    return { run, trials, spent, budgetEnded: { notStarted, stopped, why: ended } };
+    options.progress?.({ type: "spent", finished: trials.length, stopped, notStarted, why });
+    return { run, trials, spent, budgetEnded: { notStarted, stopped, why } };
   }
   return { run, trials, spent };
 }

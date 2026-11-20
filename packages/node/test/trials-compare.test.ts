@@ -146,13 +146,15 @@ describe("the reviewer, measured directly", () => {
     expect(out()).toMatch(/b\/careful: right 100% .* passed what it should fail 0 of 5/);
   });
 
-  test("a sweep keeps to its budget across its candidates, and says who wasn't run", async () => {
-    const { node, runs } = fakeNode();
-    // Eight cases at 2,020 tokens are 16,160: the first candidate spends the budget.
+  test("a sweep gives each candidate an equal share of its budget: the first can't spend the next one's", async () => {
+    const { node, runs, recorded } = fakeNode();
+    // Eight cases at 2,020 tokens are 16,160: more than either share of 6,000.
     await command(node, "sweep", ["reviewer", "a/credulous", "b/careful"], { suite: "reviewer", seed: "5", budget: "12k" });
-    expect(Object.keys(runs)).toHaveLength(1);
-    expect(out()).toMatch(/Stopped at the budget/);
-    expect(out()).toContain("The budget is spent: b/careful and what follows weren't run.");
+    expect(out()).toContain("within an equal share of your budget (6,000 tokens)");
+    expect(Object.values(runs).map((s) => s.budget)).toEqual([{ tokens: 6000 }, { tokens: 6000 }]);
+    // Each kept to its own: both were measured, and both stopped at their share.
+    expect(new Set(recorded.map((t) => t.models[0]))).toEqual(new Set(["a/credulous", "b/careful"]));
+    expect(out().match(/Stopped at the budget/g)).toHaveLength(2);
   });
 
   test("what a sweep is asked is checked before anything runs", async () => {
@@ -202,6 +204,16 @@ describe("does a change to the harness help? An A/B", () => {
     expect(await command(node, "compare", [a!, b!])).toBe(0);
     expect(out()).toContain("no-archive against baseline");
     await expect(command(node, "compare", [a!, "r-none"])).rejects.toThrow(/usage: galahad trial compare/);
+  });
+
+  test("each side of an A/B keeps to half the budget: the first can't leave the second too little to be measured", async () => {
+    const { node, runs } = fakeNode();
+    expect(await command(node, "ab", ["baseline", "no-archive", "cantilever-beam"], { repeat: "2", seed: "11", budget: "1M" })).toBe(0);
+    expect(out()).toContain("each within half your budget (500k tokens)");
+    expect(Object.values(runs).map((s) => [s.variant!.name, s.budget])).toEqual([
+      ["baseline", { tokens: 500_000 }],
+      ["no-archive", { tokens: 500_000 }],
+    ]);
   });
 
   test("an A/B takes two different variants, named or spelled out; the named ones are listed", async () => {

@@ -189,16 +189,11 @@ export function describeModels(reports: readonly RoleReport[]): string {
 /** A comparison of two sets of trials, in the words the report gives it. */
 export const describeComparison = (c: Comparison): string => [`${bold(`${c.b.name} against ${c.a.name}`)} ${dim(`(runs ${[...c.a.runs, ...c.b.runs].join(", ")})`)}`, ...c.lines.map((line) => `  ${line}`)].join("\n");
 
-/** What a budget has left after what was spent (a run made after others in one command gets the rest). */
-function remaining(budget: TrialBudget | undefined, spent: readonly UsageLine[], prices: Prices): TrialBudget | undefined {
-  if (!budget) return undefined;
-  return {
-    ...(budget.tokens !== undefined ? { tokens: Math.max(1, budget.tokens - spendTotal(spent).tokens) } : {}),
-    ...(budget.usd !== undefined ? { usd: Math.max(0, budget.usd - costOf(spent, prices).usd) } : {}),
-  };
-}
-const spentOut = (budget: TrialBudget | undefined, spent: readonly UsageLine[], prices: Prices): boolean =>
-  !!budget && ((budget.tokens !== undefined && spendTotal(spent).tokens >= budget.tokens) || (budget.usd !== undefined && costOf(spent, prices).usd >= budget.usd));
+/** Each run's equal share of a budget, when one command makes several to be compared: none can spend another's. */
+const share = (budget: TrialBudget, runs: number): TrialBudget => ({
+  ...(budget.tokens !== undefined ? { tokens: Math.max(1, Math.floor(budget.tokens / runs)) } : {}),
+  ...(budget.usd !== undefined ? { usd: budget.usd / runs } : {}),
+});
 
 /** A fresh seed for runs that must pose the same tasks, and the group they share. */
 const freshGroup = (): { seed: number; group: string } => ({ seed: crypto.getRandomValues(new Uint32Array(1))[0]! >>> 1, group: `g-${Date.now().toString(36)}` });
@@ -238,14 +233,11 @@ export async function trialCommand(args: TrialArgs): Promise<number> {
     const together = { ...freshGroup(), ...(options.seed !== undefined ? { seed: options.seed } : {}) };
     const spent: UsageLine[] = [];
     const made: RunResult[] = [];
-    console.log(dim(`[a sweep of ${candidates.length} candidate(s) for ${role}: each runs the same ${options.problems.length * options.repeat} task(s) (seed ${together.seed}) with every other role as the roster has it]\n`));
+    const each = options.budget ? share(options.budget, candidates.length) : undefined;
+    console.log(dim(`[a sweep of ${candidates.length} candidate(s) for ${role}: each runs the same ${options.problems.length * options.repeat} task(s) (seed ${together.seed}) with every other role as the roster has it${each ? `, within an equal share of your budget (${budgetLabel(each)})` : ""}]\n`));
     for (const ref of candidates) {
-      if (spentOut(options.budget, spent, options.prices)) {
-        console.log(`${bold("■ The budget is spent:")} ${ref} and what follows weren't run.`);
-        break;
-      }
       console.log(bold(`— ${role} = ${ref} —`));
-      const result = await trialRunFromCli(node, { ...options, ...together, pins: { ...options.pins, [role as string]: ref }, ...(options.budget ? { budget: remaining(options.budget, spent, options.prices)! } : {}) }, suite.where);
+      const result = await trialRunFromCli(node, { ...options, ...together, pins: { ...options.pins, [role as string]: ref }, ...(each ? { budget: each } : {}) }, suite.where);
       made.push(result);
       spent.push(...result.spent);
       console.log("");
@@ -273,14 +265,11 @@ export async function trialCommand(args: TrialArgs): Promise<number> {
     const together = { ...freshGroup(), ...(options.seed !== undefined ? { seed: options.seed } : {}) };
     const spent: UsageLine[] = [];
     const made: { variant: TrialVariant; result: RunResult }[] = [];
-    console.log(dim(`[${variants[0]!.name} and ${variants[1]!.name} on the same ${options.problems.length * options.repeat} task(s) (seed ${together.seed}): the second is compared with the first]\n`));
+    const each = options.budget ? share(options.budget, 2) : undefined;
+    console.log(dim(`[${variants[0]!.name} and ${variants[1]!.name} on the same ${options.problems.length * options.repeat} task(s) (seed ${together.seed})${each ? `, each within half your budget (${budgetLabel(each)})` : ""}: the second is compared with the first]\n`));
     for (const variant of variants) {
-      if (spentOut(options.budget, spent, options.prices)) {
-        console.log(`${bold("■ The budget is spent:")} ${variant.name} wasn't run, so there is nothing to compare.`);
-        break;
-      }
       console.log(bold(`— ${variant.name}: ${describeVariant(variant.options)} —`));
-      const result = await trialRunFromCli(node, { ...options, ...together, variant, ...(options.budget ? { budget: remaining(options.budget, spent, options.prices)! } : {}) }, suite.where);
+      const result = await trialRunFromCli(node, { ...options, ...together, variant, ...(each ? { budget: each } : {}) }, suite.where);
       made.push({ variant, result });
       spent.push(...result.spent);
       console.log("");
