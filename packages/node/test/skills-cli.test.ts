@@ -246,6 +246,16 @@ describe("the commands", () => {
     expect(printed).toEqual([]);
   });
 
+  test("import takes an Agent Skill's folder in as text, and says it waits for your approval; with no folder, it says how", async () => {
+    const taken = view({ id: "sk_bbbbbbbbbbbbbbbb", title: "PDF forms", trust: "untrusted", by: "from:github.com/anthropics/skills/skills/pdf", state: "proposed", offered: null, pending: V1 });
+    const node = api({ importSkill: { skill: taken, version: V1, shortened: false } });
+    await skillsCommand(node, "import", ["https://github.com/anthropics/skills/tree/main/skills/pdf"], {}, hooks());
+    expect(node.calls).toEqual([{ name: "importSkill", input: { url: "https://github.com/anthropics/skills/tree/main/skills/pdf" } }]);
+    expect(printed[0]).toBe('Taken in as text: "PDF forms" (sk_bbbbbbbbbbbbbbbb), from github.com/anthropics/skills/skills/pdf. Only its SKILL.md was read; nothing in its folder runs.');
+    expect(printed.at(-1)).toContain("galahad skills approve sk_bbbbbbbbbbbbbbbb");
+    await expect(skillsCommand(api({}), "import", [], {}, hooks())).rejects.toThrow("which folder?");
+  });
+
   test("the budget: read, set within bounds, off at 0", async () => {
     await skillsCommand(api({ skills: { skills: [], budget: { tokensPerDay: 6000, usedToday: 900 } } }), "budget", [], {}, hooks());
     expect(printed[0]).toContain("6000 tokens a day; 900 used in the last day");

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { findSecrets } from "./secret-scan.ts";
-import { cleanSkillText, type QuestEvidence as Evidence, SKILL_ID, SKILL_LIMITS, SKILL_VERSION, SKILLS_BUDGET_MAX, type SkillDoc, skillSecret } from "./skills.ts";
+import { cleanSkillBody, cleanSkillText, type QuestEvidence as Evidence, SKILL_ID, SKILL_LIMITS, SKILL_VERSION, SKILLS_BUDGET_MAX, type SkillDoc, skillSecret } from "./skills.ts";
 
 /*
  * What the node takes in about skills, checked at the boundary (skills.ts has the record
@@ -29,6 +29,13 @@ export const SkillDocInput = z.strictObject({
     .max(SKILL_LIMITS.proofs)
     .default([]),
   pitfalls: z.array(Line(SKILL_LIMITS.pitfall)).max(SKILL_LIMITS.pitfalls).default([]),
+  /** Its instructions in full (a skill taken in from elsewhere): their lines kept, nothing hidden in them. */
+  body: z
+    .string()
+    .max(SKILL_LIMITS.body * 2)
+    .transform(cleanSkillBody)
+    .pipe(z.string().min(1).max(SKILL_LIMITS.body))
+    .optional(),
 });
 export type SkillDocInput = z.input<typeof SkillDocInput>;
 
@@ -47,6 +54,7 @@ export function readSkillDoc(v: unknown): SkillDoc | null {
     steps: v.steps,
     ...(v.proof === undefined ? {} : { proof: Array.isArray(v.proof) ? v.proof.map((p) => (isObj(p) ? { command: p.command, expect: p.expect } : p)) : v.proof }),
     ...(v.pitfalls === undefined ? {} : { pitfalls: v.pitfalls }),
+    ...(v.body === undefined ? {} : { body: v.body }),
   };
   const parsed = SkillDocInput.safeParse(known);
   return parsed.success ? parsed.data : null;

@@ -40,6 +40,8 @@ function words(doc: SkillDoc | null): HTMLElement[] {
         )
       : null,
     doc.pitfalls.length ? h("section", { class: "skill-part" }, h("h4", {}, "Pitfalls"), h("ul", {}, ...doc.pitfalls.map((p) => h("li", {}, p)))) : null,
+    // A skill taken in from elsewhere: its instructions as they were written there, as text (what a model is given).
+    doc.body ? h("section", { class: "skill-part" }, h("h4", {}, "Its instructions"), h("pre", { class: "skill-body" }, doc.body)) : null,
   ].filter((el): el is HTMLElement => el !== null);
 }
 
@@ -104,7 +106,9 @@ export function openSkillEditor(ctx: Ctx, existing?: { id: string; doc: SkillDoc
         if ("problem" in read) return say("warn", read.problem, read.field);
         void busy(save, async () => {
           try {
-            await ctx.api.post("/api/skills", { ...(existing ? { id: existing.id } : {}), doc: read.doc });
+            // Instructions it was taken in with stay as they were: this form doesn't hold them.
+            const kept = existing?.doc?.body ? { body: existing.doc.body } : {};
+            await ctx.api.post("/api/skills", { ...(existing ? { id: existing.id } : {}), doc: { ...read.doc, ...kept } });
             sheet.close();
             changed();
             toast(existing ? "Saved as a new version, yours" : "Saved: it's in use on every node", { tone: "ok" });
@@ -120,6 +124,7 @@ export function openSkillEditor(ctx: Ctx, existing?: { id: string; doc: SkillDoc
     field("What proves it worked (optional)", proof, { hint: 'One a line: a command, "=>", and what to expect of it.' }),
     field("Pitfalls (optional)", pitfalls),
     existing && existing.by !== "owner" ? callout("quiet", `This version is by ${skillAuthor(existing.by)}. Saving makes the skill yours: he uses it, and never changes what you wrote. The earlier versions stay in its history.`) : null,
+    existing?.doc?.body ? callout("quiet", "Its instructions, as it was taken in with them, stay as they are.") : null,
     status,
   );
   const sheet = openSheet({
@@ -129,6 +134,46 @@ export function openSkillEditor(ctx: Ctx, existing?: { id: string; doc: SkillDoc
     body,
     footer: [button("Cancel", { onClick: () => sheet.close() }), save],
     initialFocus: () => title,
+  });
+}
+
+/* ---------- one from elsewhere: yours to take in ---------- */
+
+/** An Agent Skill's folder on GitHub, taken in as text: it waits for your approval like any skill shaped by the outside. */
+export function openSkillImport(ctx: Ctx): void {
+  const url = h("input", { class: "input", id: "skill-import-url", type: "url", inputmode: "url", placeholder: "https://github.com/owner/repo/tree/main/skills/name", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false" });
+  const status = h("div", { role: "status" });
+  const take = button("Take it in", { variant: "primary", icon: "download", onClick: () => body.requestSubmit() });
+  const body = h(
+    "form",
+    {
+      class: "stack loose",
+      onsubmit: (event: Event) => {
+        event.preventDefault();
+        if (!url.value.trim()) return void url.focus();
+        void busy(take, async () => {
+          try {
+            const done = await ctx.api.post<{ skill: SkillView; shortened: boolean }>("/api/skills/take-in", { url: url.value.trim() });
+            sheet.close();
+            changed();
+            toast(`Taken in: ${done.skill.title}`, { tone: "ok", description: `It waits for your approval below${done.shortened ? "; its instructions were cut where it says" : ""}.` });
+          } catch (error) {
+            url.setAttribute("aria-invalid", "true");
+            replace(status, callout(error instanceof ApiError && error.status < 500 ? "warn" : "danger", errorMessage(error)));
+          }
+        });
+      },
+    },
+    field("Its folder on GitHub", url, { hint: "An Agent Skill: a folder whose SKILL.md says its name, when to use it, and how." }),
+    callout("quiet", "Only its SKILL.md is read, as text: nothing in the folder runs, and its scripts and other files stay where they are. It waits here for you; no model is given it before you've read it and approved it."),
+    status,
+  );
+  const sheet = openSheet({
+    title: "Take in a skill",
+    description: "From a folder of Agent Skills on GitHub, as words he reads.",
+    body,
+    footer: [button("Cancel", { onClick: () => sheet.close() }), take],
+    initialFocus: () => url,
   });
 }
 
@@ -425,7 +470,12 @@ export const skillsView: View = (root, ctx, { scope, opts }) => {
       pageHead(
         "Skills",
         "How he did a kind of work that passed its review, kept as notes he's given again when they bear on what he's doing. A skill is words he reads: nothing in one runs. One shaped by the outside world waits here for you first.",
-        ctx.can("mind:write") ? button("Write a skill", { variant: "primary", icon: "plus", onClick: () => openSkillEditor(ctx) }) : null,
+        h(
+          "div",
+          { class: "row" },
+          ctx.can("fleet:admin") ? button("Take one in", { icon: "download", onClick: () => openSkillImport(ctx) }) : null,
+          ctx.can("mind:write") ? button("Write a skill", { variant: "primary", icon: "plus", onClick: () => openSkillEditor(ctx) }) : null,
+        ),
       ),
       // Shown whole once his skills have answered: the budget and what waits for you came in above those in use.
       pageBody(budgetSlot, waitingSlot, section("In use", {}, list), retiredSlot),

@@ -191,6 +191,7 @@ import { handleSandboxSearch, SearchError, searchWeb } from "./search.ts";
 import { type Caller, ConnectorCallError, type ConnectorService } from "./connectors.ts";
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
+import { fetchAgentSkill, SkillImportError } from "./skill-import.ts";
 import { SLACK_SCOPES, SlackError, type SlackGateway } from "./slack.ts";
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
 import { OutcomeError, OutcomeRunner } from "./outcomes.ts";
@@ -4012,6 +4013,15 @@ export function createApp(ctx: AppContext) {
       const sandboxes = p.kind === "arm" ? armQuest(p.label!) : (input.sandbox ?? input.quest);
       return longRunning(skillErrors(() => ctx.skills.learn(input, { ref: questRef(p, input.quest), sandboxes, signal: req.signal })));
     },
+    importSkill: (input, p) =>
+      skillErrors(async () => {
+        ownerOfSkills(p);
+        const found = await fetchAgentSkill(input.url, { ...(ctx.fetch ? { fetch: ctx.fetch } : {}) }).catch((error: unknown) => {
+          throw error instanceof SkillImportError ? new HttpError(error.status, error.message) : error;
+        });
+        // Its words are its author's: untrusted, waiting for you, whoever asked for it.
+        return { ...ctx.skills.write({ doc: found.doc }, { kind: "import", from: found.where, source: found.source }), shortened: found.shortened };
+      }),
     approveSkill: (input, p) => skillErrors(() => ({ skill: ctx.skills.approve(input.id, input.version, ownerOfSkills(p)) })),
     lockSkill: (input, p) => skillErrors(() => ({ skill: ctx.skills.mark(input.id, "locked", input.locked, ownerOfSkills(p)) })),
     retireSkill: (input, p) => skillErrors(() => ({ skill: ctx.skills.mark(input.id, "retired", input.retired, ownerOfSkills(p)) })),

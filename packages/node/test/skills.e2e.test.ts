@@ -11,6 +11,7 @@ import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
 import { LocalClient } from "../src/loop-tasks.ts";
 import { runNodeQuest } from "../src/quest-cli.ts";
+import { RAW_GITHUB } from "../src/skill-import.ts";
 import { TOOLS } from "../src/tools.ts";
 import { fakeDocker } from "./fake-docker.ts";
 import { freePort } from "./ports.ts";
@@ -162,7 +163,10 @@ beforeAll(async () => {
   const fleet = foundFleet(store, identity, { fleetName: "camelot", nodeName: "ultra" });
   store.close();
   home.writeConfig({ v: 1, name: "ultra", fleet, port, keystore, advertise: "127.0.0.1" });
-  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, loopIntervalMs: 60_000, docker: docker.runner, measure, slotWaitMs: 4_000, archiveIntervalMs: false });
+  // (GitHub's raw files, as a stand-in: an Agent Skill's SKILL.md. Every other call goes where it was going.)
+  const outbound = ((input: string | URL | Request, init?: RequestInit) =>
+    String(input).startsWith(`${RAW_GITHUB}/`) ? Promise.resolve(new Response("---\nname: greet\ndescription: Use when a file must say hi.\n---\n# Greeting files\n\nWrite hi into it, then read it back.")) : fetch(input, init)) as typeof fetch;
+  daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, loopIntervalMs: 60_000, docker: docker.runner, measure, slotWaitMs: 4_000, archiveIntervalMs: false, fetch: outbound });
   await call("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${models.port}/v1` });
   for (const role of ["planner", "reviewer", "engineer", "swift"]) await call("setRoster", { role, models: ["stand-in/m"] });
 });
@@ -560,5 +564,18 @@ describe("his skills in chat, and as tools", () => {
     expect(read).toContain("Steps:\n1. write the greeting into the file\n2. check the file says it");
     expect(read).toContain("written by Galahad from quest q-");
     await call("retireSkill", { id: proposed.id, retired: true });
+  });
+});
+
+describe("a skill from elsewhere", () => {
+  test("yours alone to take in: an agent can't have the node fetch one; yours arrives waiting, by where it came from, and is given to no model before you approve it", async () => {
+    const url = "https://github.com/someone/skills/tree/main/greet";
+    const { token } = await call<{ token: string }>("mintArm", { label: "fetcher" });
+    await expect(call("importSkill", { url }, token)).rejects.toThrow(/403/);
+    const { skill } = await call<{ skill: SkillView }>("importSkill", { url });
+    expect(skill).toMatchObject({ title: "Greeting files", state: "proposed", trust: "untrusted", by: "from:github.com/someone/skills/greet" });
+    const detail = await call<{ skill: SkillDetail }>("skill", { id: skill.id });
+    expect(detail.skill.history[0]).toMatchObject({ source: url, doc: { body: "# Greeting files\n\nWrite hi into it, then read it back." } });
+    await call("retireSkill", { id: skill.id, retired: true });
   });
 });

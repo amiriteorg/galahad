@@ -32,6 +32,7 @@ export const SKILLS_USAGE = `usage:
   galahad skills rollback <id> [-y]      one step back, to the version before the latest
   galahad skills write [<id>] --title "…" --when "…" --step "…" [--step "…"]… [--proof "command => what to expect"]… [--pitfall "…"]…
   galahad skills write [<id>] --file skill.json     yours (owner); with an id, a new version of that skill
+  galahad skills import <github folder>  an Agent Skill (its SKILL.md alone, as text: nothing in it runs), waiting for your approval
   galahad skills budget [<tokens a day>] the day's budget for distilling skills from passed quests (0: off)`;
 
 const STATE: Record<SkillView["state"], string> = { proposed: "proposed", "in-use": "in use", stale: "stale", retired: "retired" };
@@ -122,6 +123,14 @@ export async function skillsCommand(api: Api, sub: string | undefined, rest: str
     case "show": {
       const { skill } = await api.call<{ skill: SkillDetail }>("skill", { id: need(rest[0]) });
       console.log(skillPage(skill).join("\n"));
+      return;
+    }
+    case "import": {
+      if (!rest[0]) throw new Error(`which folder? galahad skills import https://github.com/<owner>/<repo>/tree/<branch>/<folder>\n${SKILLS_USAGE}`);
+      const { skill, shortened } = await api.call<{ skill: SkillView; shortened: boolean }>("importSkill", { url: rest[0] });
+      console.log(`Taken in as text: "${skill.title}" (${skill.id}), from ${skillAuthor(skill.by)}. Only its SKILL.md was read; nothing in its folder runs.`);
+      if (shortened) console.log(dim("Its instructions were longer than a skill keeps: they end where it says the rest is."));
+      console.log(`${bold("It waits for your approval")} ${dim(`· no model is given it before: galahad skills approve ${skill.id} shows it in full first`)}`);
       return;
     }
     case "approve": {

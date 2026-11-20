@@ -1402,6 +1402,11 @@ export const routes = {
    * passed, one bounded call distils at most one skill from its evidence. His own quests only.
    */
   learnSkill: { method: "POST", path: "/api/skills/learn", scope: "mind:write", input: QuestEvidenceInput },
+  /**
+   * Yours alone: an Agent Skill's folder on GitHub (PLAN #34) taken in as a skill, as text: its SKILL.md alone is read,
+   * nothing in the folder runs, and the skill waits for your approval (untrusted, by where it came from) like any other.
+   */
+  importSkill: { method: "POST", path: "/api/skills/take-in", scope: "fleet:admin", input: z.strictObject({ url: z.string().trim().min(10).max(500) }) },
   /** Yours alone: approve exactly the version you read (an untrusted skill is given to no model before that). */
   approveSkill: { method: "POST", path: "/api/skills/approve", scope: "fleet:admin", input: SkillApproveInput },
   /** Yours alone: locked, he may use it but not change it. */

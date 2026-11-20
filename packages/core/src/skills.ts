@@ -1,4 +1,4 @@
-import { plainLine } from "./plain.ts";
+import { plainLine, plainText } from "./plain.ts";
 import { findSecrets } from "./secret-scan.ts";
 
 /*
@@ -28,10 +28,12 @@ export const SKILL_ID = /^sk_[A-Za-z0-9_-]{16}$/;
 export const SKILL_VERSION = /^[A-Za-z0-9_-]{43}$/;
 
 /** Every bound on a skill's text. */
-export const SKILL_LIMITS = { title: 120, when: 400, steps: 12, step: 400, proofs: 6, command: 300, expect: 200, pitfalls: 8, pitfall: 300 } as const;
+export const SKILL_LIMITS = { title: 120, when: 400, steps: 12, step: 400, proofs: 6, command: 300, expect: 200, pitfalls: 8, pitfall: 300, body: 12_000 } as const;
 
 /** A skill's text as it's kept: one line, nothing hidden in it (plain.ts). */
 export const cleanSkillText = plainLine;
+/** A skill's instructions in full as they're kept: their lines, nothing hidden in them, no blank lines past one. */
+export const cleanSkillBody = (text: string): string => plainText(text).replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
 
 /** What proves it worked: a command, and what to expect of it. */
 export interface SkillProof {
@@ -48,10 +50,15 @@ export interface SkillDoc {
   steps: string[];
   proof: SkillProof[];
   pitfalls: string[];
+  /**
+   * Its instructions in full, as they were written where it came from (an Agent Skill's SKILL.md, taken in as text):
+   * words he reads like the rest, never anything that runs.
+   */
+  body?: string;
 }
 
 /** Every piece of a skill's text (what the secret scan reads). */
-export const skillTexts = (doc: SkillDoc): string[] => [doc.title, doc.when, ...doc.steps, ...doc.proof.flatMap((p) => [p.command, p.expect]), ...doc.pitfalls];
+export const skillTexts = (doc: SkillDoc): string[] => [doc.title, doc.when, ...doc.steps, ...doc.proof.flatMap((p) => [p.command, p.expect]), ...doc.pitfalls, ...(doc.body ? [doc.body] : [])];
 
 /** The first thing in a skill that looks like a secret (it's then refused), or null. */
 export function skillSecret(doc: SkillDoc, options?: Parameters<typeof findSecrets>[1]): string | null {
@@ -70,6 +77,7 @@ export function skillInWords(doc: SkillDoc): string {
     `Steps:\n${doc.steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
     doc.proof.length ? `What proves it worked:\n${doc.proof.map((p) => `- $ ${p.command}\n  expect: ${p.expect}`).join("\n")}` : null,
     doc.pitfalls.length ? `Pitfalls:\n${doc.pitfalls.map((p) => `- ${p}`).join("\n")}` : null,
+    doc.body ? `Its instructions, as written where it came from:\n${doc.body}` : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -81,6 +89,8 @@ export function skillInWords(doc: SkillDoc): string {
 export const SKILL_BY_OWNER = "owner";
 export const SKILL_BY_GALAHAD = "galahad";
 export const skillByAgent = (label: string): string => `arm:${label}`;
+/** A skill taken in from elsewhere (an Agent Skill's folder), by where it was: `from:github.com/owner/repo/path`. */
+export const skillFrom = (where: string): string => `from:${where}`.slice(0, 100);
 
 export type SkillTrust = "owner" | "agent" | "untrusted";
 
@@ -88,6 +98,7 @@ export type SkillTrust = "owner" | "agent" | "untrusted";
 export function skillAuthor(by: string): string {
   if (by === SKILL_BY_OWNER) return "you";
   if (by === SKILL_BY_GALAHAD) return "Galahad";
+  if (by.startsWith("from:")) return by.slice(5);
   return by.startsWith("arm:") ? `the agent ${by.slice(4)}` : by;
 }
 
@@ -388,6 +399,7 @@ export function skillLine(s: OfferedSkill): string {
     steps: s.doc.steps.slice(0, SKILL_LIMITS.steps).map((x) => cut(x, SKILL_LIMITS.step)),
     ...(s.doc.proof.length ? { proof: s.doc.proof.slice(0, SKILL_LIMITS.proofs).map((p) => ({ command: cut(p.command, SKILL_LIMITS.command), expect: cut(p.expect, SKILL_LIMITS.expect) })) } : {}),
     ...(s.doc.pitfalls.length ? { pitfalls: s.doc.pitfalls.slice(0, SKILL_LIMITS.pitfalls).map((x) => cut(x, SKILL_LIMITS.pitfall)) } : {}),
+    ...(s.doc.body ? { instructions: cleanSkillBody(s.doc.body).slice(0, SKILL_LIMITS.body) } : {}),
   });
 }
 
@@ -490,3 +502,55 @@ export interface SkillsView {
   budget: { tokensPerDay: number; usedToday: number };
 }
 
+
+/* ---------- skills from elsewhere ---------- */
+
+/** The step a skill taken in from elsewhere is given: its instructions are the skill, and they come as its body. */
+export const AGENT_SKILL_STEP = "Read its instructions (below) and use what bears on the work; what they say to run is run only as the work calls for it, like any command of yours.";
+
+/**
+ * An Agent Skill (a folder whose SKILL.md opens with its `name` and `description`, then instructions in Markdown), as
+ * a skill of his: its first heading (else its name) the title, its description when to use it, its instructions the
+ * body, all of it text. Nothing in the folder runs, and nothing else in it (scripts, other files) is taken in.
+ */
+export function readAgentSkill(markdown: string, where: string): { ok: true; doc: SkillDoc; shortened: boolean } | { ok: false; why: string } {
+  const text = plainText(markdown);
+  const front = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(text);
+  if (!front) return { ok: false, why: "its SKILL.md doesn't open with an Agent Skill's name and description (a block between --- lines)" };
+  const fields = frontMatter(front[1]!);
+  const name = cleanSkillText(fields.name ?? "");
+  const description = cleanSkillText(fields.description ?? "");
+  if (!name) return { ok: false, why: "its SKILL.md names no skill (name:)" };
+  if (!description) return { ok: false, why: "its SKILL.md says nothing of when to use it (description:)" };
+  let body = cleanSkillBody(text.slice(front[0].length));
+  if (!body) return { ok: false, why: "its SKILL.md has no instructions after its name and description" };
+  const heading = /^#[ \t]+(.+?)[ \t#]*$/m.exec(body)?.[1];
+  const title = cut(heading ?? name.replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase()), SKILL_LIMITS.title);
+  // A description longer than a skill's "when" goes whole at the top of its instructions.
+  if (description.length > SKILL_LIMITS.when) body = `What it is for, in full: ${description}\n\n${body}`;
+  const shortened = body.length > SKILL_LIMITS.body;
+  if (shortened) body = `${body.slice(0, SKILL_LIMITS.body - 120).replace(/\n[^\n]*$/, "")}\n\n(Cut here: the rest is at ${cleanSkillText(where).slice(0, 100)}.)`;
+  return { ok: true, doc: { title, when: cut(description, SKILL_LIMITS.when), steps: [AGENT_SKILL_STEP], proof: [], pitfalls: [], body }, shortened };
+}
+
+/**
+ * A SKILL.md's front matter, as far as a skill needs it: `key: value` lines, a value plain or quoted, or on the
+ * indented lines under it (`key: >` folds them, `key: |` keeps their breaks, a plain value runs on).
+ */
+function frontMatter(block: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const lines = block.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const field = /^([A-Za-z][\w-]*):[ \t]*(.*)$/.exec(lines[i]!);
+    if (!field) continue;
+    let value = field[2]!.trim();
+    const more: string[] = [];
+    while (i + 1 < lines.length && /^[ \t]+\S/.test(lines[i + 1]!)) more.push(lines[++i]!.trim());
+    if (/^[>|][+-]?$/.test(value)) value = more.join(value.startsWith("|") ? "\n" : " ");
+    else if (more.length) value = [value, ...more].join(" ");
+    const quoted = /^(["'])([\s\S]*)\1$/.exec(value);
+    if (quoted) value = quoted[1] === '"' ? quoted[2]!.replace(/\\(["\\])/g, "$1") : quoted[2]!.replace(/''/g, "'");
+    out[field[1]!.toLowerCase()] = value;
+  }
+  return out;
+}

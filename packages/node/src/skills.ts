@@ -24,6 +24,7 @@ import {
   SKILL_DISTIL_RESOURCE,
   skillAuthor,
   skillByAgent,
+  skillFrom,
   type SkillDetail,
   type SkillDoc,
   type SkillLearned,
@@ -84,7 +85,9 @@ export class SkillError extends Error {
 export type SkillWriter =
   | { kind: "owner"; via?: string | undefined }
   | { kind: "galahad"; trust: "agent" | "untrusted"; quest?: string | undefined; source?: string | undefined }
-  | { kind: "agent"; label: string };
+  | { kind: "agent"; label: string }
+  /** A skill taken in from elsewhere (an Agent Skill's folder, on your word): its words are its author's, never yours. */
+  | { kind: "import"; from: string; source: string };
 
 /** At most this many skills wait for you at once: an agent can't bury your inbox in proposals. */
 export const MAX_WAITING = 40;
@@ -294,13 +297,14 @@ export class SkillsService {
     const { store, identity } = this.deps;
     const secret = skillSecret(input.doc, this.scan);
     if (secret) throw new SkillError(422, `That looks like a ${secret}. ${SECRET_REDIRECT}`);
-    const by = who.kind === "owner" ? SKILL_BY_OWNER : who.kind === "galahad" ? SKILL_BY_GALAHAD : skillByAgent(who.label);
+    const by = who.kind === "owner" ? SKILL_BY_OWNER : who.kind === "galahad" ? SKILL_BY_GALAHAD : who.kind === "import" ? skillFrom(who.from) : skillByAgent(who.label);
     const trust: SkillTrust = who.kind === "owner" ? "owner" : who.kind === "galahad" ? who.trust : "untrusted";
     let id = input.id;
     if (id) {
       const record = store.skill(id);
       if (!record) throw new SkillError(404, `no skill ${id}`);
       if (who.kind === "agent") throw new SkillError(403, "Another agent proposes a skill of its own; it doesn't change one that's there.");
+      if (who.kind === "import") throw new SkillError(403, "A skill taken in from elsewhere is a new one; it doesn't change one that's there.");
       if (who.kind === "galahad") {
         if (record.locked) throw new SkillError(403, "That skill is locked: he may use it, not change it.");
         if (record.versions.find((v) => v.id === record.head)?.by !== SKILL_BY_GALAHAD) throw new SkillError(403, "He changes only skills he wrote. That one is yours, or another agent's.");
@@ -313,7 +317,7 @@ export class SkillsService {
       id = `sk_${randomId(12)}`;
     }
     const quest = who.kind === "galahad" ? who.quest : undefined;
-    const source = who.kind === "galahad" ? who.source : who.kind === "agent" ? `arm:${who.label}` : undefined;
+    const source = who.kind === "galahad" || who.kind === "import" ? who.source : who.kind === "agent" ? `arm:${who.label}` : undefined;
     let version: string;
     try {
       version = store.emit(

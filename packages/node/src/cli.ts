@@ -206,6 +206,7 @@ Keys & models (keys are typed into a hidden prompt — never into chat, never on
                                   locked: he uses it, never changes it; retired: kept, never offered; one version back
   skills write [<id>] --title "…" --when "…" --step "…" [--proof "cmd => expect"] [--pitfall "…"] | --file skill.json
                                   write one yourself, or a new version of one (yours: he never edits them)
+  skills import <github folder>   an Agent Skill's SKILL.md taken in as text (nothing in its folder runs), waiting for you
   skills budget [<tokens a day>]  what he may spend a day distilling skills from passed quests (0: off)
   projects | project set <id> --name "…" [--instructions "…" | --instructions-file f] [--repo url] | project rm <id>
   project git|changes|clone <id> · project branch <id> <name> [--new] · project commit <id> --message "…"

@@ -44,6 +44,8 @@ export function trustWords(v: Pick<SkillVersionView, "trust" | "approvedAt" | "b
 /** Where a version came from, as the node recorded it: who wrote it, from what, and why it's untrusted when it is. */
 export function originWords(v: Pick<SkillVersionView, "by" | "quest" | "source">): string {
   const who = skillAuthor(v.by);
+  // An Agent Skill's folder you had taken in: its SKILL.md, read as text.
+  if (v.by.startsWith("from:")) return `Taken in from ${v.source ?? who}: its SKILL.md, read as text. Nothing in its folder ran or was taken in besides.`;
   const written = `Written by ${who}`;
   if (!v.source) return v.quest ? `${written}, from quest ${v.quest}.` : `${written}.`;
   // "quest:q-1 (its sandbox was online; …)" → the quest, then the node's reasons.
