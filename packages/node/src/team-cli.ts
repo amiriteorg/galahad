@@ -103,7 +103,11 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     if (verb === "rm") keys = keys.filter((k) => k.secret !== secret);
     if (verb) keys = (await api.call<{ teammate: Teammate }>("saveTeammate", { id, name: knight.name, keys: keys.length ? keys : null })).teammate.keys ?? [];
     if (!keys.length) { print(`${id} has no keys of yours to use. Give it one: galahad roundtable keys ${id} add <secret> (the secret pinned to its API's address: galahad secret set <secret> --base-url https://…)`); return; }
-    for (const k of keys) print(`${k.secret} · ${k.write ? "reads and writes" : "reads only"} · in ${k.header === "authorization" ? "Authorization: Bearer" : k.header}`);
+    // How often its scripts used each these last days (a node from before the count says nothing of it).
+    const counted = await api.call<{ days?: number; uses?: Record<string, number> }>("teamKeyUses", { id }).catch(() => null);
+    const uses = counted && typeof counted.uses === "object" && typeof counted.days === "number" ? { ...counted, uses: counted.uses } : null;
+    const used = (secret: string) => (uses ? ` · used ${uses.uses[secret] ?? 0} time${(uses.uses[secret] ?? 0) === 1 ? "" : "s"} in ${uses.days} days` : "");
+    for (const k of keys) print(`${k.secret} · ${k.write ? "reads and writes" : "reads only"} · in ${k.header === "authorization" ? "Authorization: Bearer" : k.header}${used(k.secret)}`);
     print(`Its scripts call $GALAHAD_KEYS/<secret>/<path> with $GALAHAD_TOKEN where the key would go; from its next task.`);
     return;
   }

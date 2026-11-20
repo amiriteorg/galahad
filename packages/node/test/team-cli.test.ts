@@ -556,6 +556,8 @@ test("keys of yours a knight may use, at a terminal: given (reads only unless --
   const api = {
     async call<T>(name: RouteName, input?: any): Promise<T> {
       if (name === "team") return { teammates: [member("ada", keys ? { keys } : {})], rooms: [], tasks: [], deliveries: [] } as T;
+      // How often its scripts used each, as the node counts them from the ledger.
+      if (name === "teamKeyUses") return { days: 30, uses: { stripe: 1, acme: 12 } } as T;
       saved.push(input);
       keys = input.keys ?? undefined;
       return { teammate: member("ada", keys ? { keys } : {}) } as T;
@@ -571,8 +573,8 @@ test("keys of yours a knight may use, at a terminal: given (reads only unless --
     [{ secret: "acme", header: "x-api-key", write: true }],
   ]);
   expect(lines[0]).toContain("ada has no keys of yours to use");
-  expect(lines).toContain("stripe · reads only · in Authorization: Bearer");
-  expect(lines).toContain("acme · reads and writes · in x-api-key");
+  expect(lines).toContain("stripe · reads only · in Authorization: Bearer · used 1 time in 30 days");
+  expect(lines).toContain("acme · reads and writes · in x-api-key · used 12 times in 30 days");
   await expect(teamCommand(api, "keys", ["ada", "add"], {}, () => {})).rejects.toThrow("usage: galahad roundtable keys");
 });
 

@@ -120,7 +120,18 @@ function takeInKnight(ctx: Ctx, close: () => void): void {
 }
 
 export async function editKnight(ctx: Ctx, existing?: Teammate, draft?: KnightFile): Promise<void> {
-  const [known, offered, givable] = await Promise.all([roles(ctx), modelChoices(ctx), givableKeys(ctx)]);
+  // (A knight that has keys says how often its scripts used each, these last days: PLAN #17.)
+  const [known, offered, givable, counted] = await Promise.all([
+    roles(ctx),
+    modelChoices(ctx),
+    givableKeys(ctx),
+    existing?.keys?.length ? ctx.api.post<{ days: number; uses: Record<string, number> }>("/api/team/key-uses", { id: existing.id }).catch(() => null) : null,
+  ]);
+  const usedLine = (secret: string): string => {
+    if (!counted || !keys.some((key) => key.secret === secret)) return "";
+    const n = counted.uses[secret] ?? 0;
+    return ` · used ${n} time${n === 1 ? "" : "s"} in ${counted.days} days`;
+  };
   const snapshot = ctx.live.team.value;
   // A knight taken in from a file fills the form as a new knight: you check it, and create it as any other.
   const seed: Seed | undefined = existing ?? (draft ? seedOf(draft, snapshot) : undefined);
@@ -175,7 +186,7 @@ export async function editKnight(ctx: Ctx, existing?: Teammate, draft?: KnightFi
       write.disabled = header.disabled = !box.checked;
     };
     for (const control of [box, write, header]) control.addEventListener("change", sync);
-    return h("div", { class: "row" }, box, h("span", { class: "grow" }, h("div", { class: "scope-name mono" }, secret.name), h("div", { class: "tiny subtle" }, secret.origin)), header, h("label", { class: "row tiny" }, write, h("span", {}, "Writes too")));
+    return h("div", { class: "row" }, box, h("span", { class: "grow" }, h("div", { class: "scope-name mono" }, secret.name), h("div", { class: "tiny subtle" }, `${secret.origin}${usedLine(secret.name)}`)), header, h("label", { class: "row tiny" }, write, h("span", {}, "Writes too")));
   });
   const dailyTurns = h("input", { class: "input", type: "number", min: 0, max: 1000, step: 1, required: true, value: seed?.dailyTurns ?? 40 });
   const enabled = h("input", { type: "checkbox", checked: existing?.enabled ?? true });

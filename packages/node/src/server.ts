@@ -192,6 +192,9 @@ import { type Caller, ConnectorCallError, type ConnectorService } from "./connec
 import { checkSchedule, LoopError, loopRecords, type LoopRunner, runView, selfActionOn } from "./loops.ts";
 import { HOOK_MAX_BYTES, hookEvent, hookSecretName, hookSigned } from "./wakes.ts";
 import { QuestionError, type Questions } from "./questions.ts";
+
+/** A knight's uses of each key it was given are counted over this many days (teamKeyUses). */
+const KEY_USES_DAYS = 30;
 import { fetchAgentSkill, SkillImportError } from "./skill-import.ts";
 import { SLACK_SCOPES, SlackError, type SlackGateway } from "./slack.ts";
 import { TELEGRAM_SCOPES, TelegramError, type TelegramGateway } from "./telegram.ts";
@@ -2289,6 +2292,15 @@ export function createApp(ctx: AppContext) {
     teamTrail: (input, p) => { ownerOnly(p); return teamOf().trail(input.task, input.after ?? 0); },
     // The steps another task can start from (PLAN #15): yours to read, as its trail is.
     teamSteps: (input, p) => { ownerOnly(p); return { steps: teamOf().store.checkpoints(input.task) }; },
+    teamKeyUses: (input, p) => {
+      ownerOnly(p);
+      const knight = teamOf().store.snapshot().teammates.find((m) => m.id === input.id);
+      if (!knight) throw new HttpError(404, `no knight ${input.id}`);
+      // Counted from the ledger, where each call through the key gateway names the VM whose lease made it.
+      const since = Date.now() - KEY_USES_DAYS * 86_400_000;
+      const vm = knight.workspace?.id;
+      return { days: KEY_USES_DAYS, uses: Object.fromEntries((knight.keys ?? []).map((k) => [k.secret, vm ? ctx.store.ledgerCount(`key.${k.secret}`, since, `sandbox:${vm}`) : 0])) };
+    },
     teamOutcomes: (_input, p) => { ownerOnly(p); return { outcomes: outcomesOf().list() }; },
     setTeamOutcome: (input, p) => {
       ownerOnly(p);

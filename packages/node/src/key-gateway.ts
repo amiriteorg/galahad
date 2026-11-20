@@ -94,7 +94,9 @@ export async function handleKeyGateway(req: Request, ctx: KeyGatewayContext): Pr
   headers.set(header!, header === "authorization" ? `Bearer ${key}` : key);
   const target = `${origin}${rest}${url.search}`;
   const body = READS.has(req.method) ? undefined : await req.arrayBuffer();
-  ctx.ledger?.({ class: READS.has(req.method) ? "read" : "modify", resource: `key.${name}`, target: `${req.method} ${origin}${rest}`, verdict: "allow", reason: "a knight's script used a key you gave it, through the key gateway" });
+  // (Which VM's lease called it: a knight's page counts its uses by that.)
+  const by = ctx.tokens.labelOf(token);
+  ctx.ledger?.({ class: READS.has(req.method) ? "read" : "modify", resource: `key.${name}`, target: `${req.method} ${origin}${rest}`, verdict: "allow", reason: "a knight's script used a key you gave it, through the key gateway", ...(by ? { detail: by } : {}) });
   let upstream: Response;
   try {
     // The key is pinned to its address: never a Location header followed to another.

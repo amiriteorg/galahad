@@ -52,7 +52,8 @@ describe("the key gateway", () => {
     expect(JSON.stringify(sent)).not.toContain(w.token);
     // (It goes to that address alone: a redirect is never followed.)
     expect(sent!.redirect).toBe("manual");
-    expect(w.ledger).toEqual([expect.objectContaining({ class: "read", resource: "key.stripe", target: "GET https://api.stripe.test/v1/charges", verdict: "allow" })]);
+    // (Which VM's lease made the call: a knight's page counts its uses by it.)
+    expect(w.ledger).toEqual([expect.objectContaining({ class: "read", resource: "key.stripe", target: "GET https://api.stripe.test/v1/charges", verdict: "allow", detail: "sandbox:0123456789" })]);
   });
 
   test("in the API's own header: the token found there, the key put there, as it is", async () => {
@@ -100,5 +101,19 @@ describe("the key gateway", () => {
     // Given anyway (a grant from before the key changed), the call goes nowhere.
     for (const name of ["plain", "deepseek"]) expect((await w.call(`/key/${name}/v1`, { headers: { authorization: `Bearer ${w.token}` } })).status).toBe(424);
     expect(w.reached).toEqual([]);
+  });
+
+  test("a knight's uses of a key are counted from the ledger, by the VM that made them, over the days asked", () => {
+    const identity = newNodeIdentity();
+    const store = new MindStore(":memory:");
+    foundFleet(store, identity, { fleetName: "camelot", nodeName: "ultra" });
+    const line = (detail: string, resource = "key.stripe") => store.emit(identity, "ledger.recorded", { class: "read", resource, target: "GET https://api.stripe.test/v1/x", verdict: "allow", detail });
+    line("sandbox:0123456789");
+    line("sandbox:0123456789");
+    line("sandbox:aaaaaaaaaa");
+    line("sandbox:0123456789", "key.acme");
+    expect(store.ledgerCount("key.stripe", 0, "sandbox:0123456789")).toBe(2);
+    expect(store.ledgerCount("key.stripe", 0)).toBe(3);
+    expect(store.ledgerCount("key.stripe", Date.now() + 60_000, "sandbox:0123456789")).toBe(0);
   });
 });

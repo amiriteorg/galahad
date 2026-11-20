@@ -1553,15 +1553,14 @@ export class MindStore {
   /**
    * How many accepted ledger entries of one resource were recorded since `sinceMs` (by their own clocks):
    * an exact count, whatever else fills the ledger (the day's budget of extra attempts is counted this way).
+   * With `detail`, only those whose detail is that (a key's uses by one VM: `sandbox:<id>`).
    */
-  ledgerCount(resource: string, sinceMs: number): number {
+  ledgerCount(resource: string, sinceMs: number, detail?: string): number {
     const since = `${String(Math.max(0, Math.floor(sinceMs))).padStart(15, "0")}.000000`;
-    return this.db
-      .query<{ n: number }, [string, string]>(
-        `SELECT COUNT(*) AS n FROM events e LEFT JOIN v_rejected r ON r.id = e.id
-         WHERE e.kind = 'ledger.recorded' AND e.hlc >= ? AND json_extract(e.raw, '$.body.resource') = ? AND r.id IS NULL`,
-      )
-      .get(since, resource)!.n;
+    const sql = `SELECT COUNT(*) AS n FROM events e LEFT JOIN v_rejected r ON r.id = e.id
+         WHERE e.kind = 'ledger.recorded' AND e.hlc >= ? AND json_extract(e.raw, '$.body.resource') = ? AND r.id IS NULL`;
+    if (detail === undefined) return this.db.query<{ n: number }, [string, string]>(sql).get(since, resource)!.n;
+    return this.db.query<{ n: number }, [string, string, string]>(`${sql} AND json_extract(e.raw, '$.body.detail') = ?`).get(since, resource, detail)!.n;
   }
 
   /** Devices caught signing two different histories (a stolen key, or worse). */

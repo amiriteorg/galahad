@@ -17,7 +17,7 @@ import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
 import { ConversationId, ProjectBranchInput, ProjectCommitInput, ProjectGitInput, ProjectId, ProjectInput } from "./chats.ts";
-import { TeammateInput, TeamArrangeInput, TeamBacklogInput, TeamChangesInput, TeamCiInput, TeamEngramInput, TeamShipInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamOutcomeControlInput, TeamOutcomeInput, TeamWorkspaceQuest, TeammateModels } from "./team.ts";
+import { TeammateId, TeammateInput, TeamArrangeInput, TeamBacklogInput, TeamChangesInput, TeamCiInput, TeamEngramInput, TeamShipInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamOutcomeControlInput, TeamOutcomeInput, TeamWorkspaceQuest, TeammateModels } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
 import { type ArchiveContextEntry, ArchiveBudgetInput, ArchiveDeleteInput, ArchiveId, ArchiveReindexInput, ArchiveSearchInput, NoteIdeaInput } from "./archive.ts";
@@ -374,6 +374,8 @@ export const routes = {
   teamTrail: { method: "POST", path: "/api/team/trail", scope: "chat", input: z.strictObject({ task: TeamTaskId, after: z.number().int().min(0).max(10_000_000).optional() }) },
   /** The steps of a task that another can be started from (PLAN #15): `{ steps: TeamCheckpoint[] }`, the first first. */
   teamSteps: { method: "POST", path: "/api/team/steps", scope: "chat", input: z.strictObject({ task: TeamTaskId }) },
+  /** How often a knight's scripts used each key of yours it was given, through the key gateway, in the last thirty days (PLAN #17). */
+  teamKeyUses: { method: "POST", path: "/api/team/key-uses", scope: "chat", input: z.strictObject({ id: TeammateId }) },
   /** You have looked at a knight's page or a room, on whichever device: what ended there so far is no longer new (`team`'s `seen`). */
   seeTeam: { method: "POST", path: "/api/team/seen", scope: "chat", input: TeamSeenInput },
   postTeamMessage: { method: "POST", path: "/api/team/messages", scope: "fleet:admin", input: TeamPostInput },
