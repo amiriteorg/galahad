@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite";
-import { b64u, type ChatStreamEvent, clientIdentity, type ClientIdentity, fromB64u, newClientSecret, type Scope, signRequest } from "@galahad/core";
+import { ATTACHMENT_LIMITS, type AttachmentRef, b64u, type ChatStreamEvent, clientIdentity, type ClientIdentity, fromB64u, newClientSecret, type Scope, signRequest } from "@galahad/core";
 import { sseData } from "@galahad/brain";
 import type { Vault } from "@galahad/mind";
+import { cappedBytes, keepFile } from "./chat-files.ts";
 import { telegramAnswer } from "./chat-format.ts";
 
 /*
@@ -49,7 +50,16 @@ export interface TelegramStatus {
 
 interface Update {
   update_id: number;
-  message?: { message_id: number; from?: { id: number; username?: string; first_name?: string; is_bot?: boolean }; chat: { id: number; type: string }; text?: string };
+  message?: {
+    message_id: number;
+    from?: { id: number; username?: string; first_name?: string; is_bot?: boolean };
+    chat: { id: number; type: string };
+    text?: string;
+    /** A photo, in the sizes Telegram keeps of it, smallest first; its words are its caption. */
+    photo?: { file_id: string; file_size?: number }[];
+    document?: { file_id: string; file_name?: string; file_size?: number };
+    caption?: string;
+  };
   callback_query?: { id: string; from: { id: number }; message?: { message_id: number; chat: { id: number } }; data?: string };
 }
 
@@ -231,15 +241,50 @@ export class TelegramGateway {
       await this.send(message.chat.id, "Galahad here. Write to me as you would in the app. /new starts a new chat.");
       return;
     }
+    // A photo (its largest size a message may carry) or a file, its caption the words with it.
+    const photo = message.photo?.length ? (message.photo.filter((size) => (size.file_size ?? 0) <= ATTACHMENT_LIMITS.imageBytes).at(-1) ?? message.photo[0]!) : null;
+    const files = photo ? [{ id: photo.file_id, name: "photo.jpg", size: photo.file_size }] : message.document ? [{ id: message.document.file_id, name: message.document.file_name ?? "file", size: message.document.file_size }] : [];
+    if (files.length) {
+      const words = message.caption?.trim() ?? "";
+      const kept: AttachmentRef[] = [];
+      const left: string[] = [];
+      for (const file of files) {
+        const got = await this.file(file);
+        if ("attachment" in got) kept.push(got.attachment);
+        else left.push(`${file.name}: ${got.refused}`);
+      }
+      if (left.length) await this.send(message.chat.id, `Not sent with your message (${left.join("; ")}).`);
+      if (kept.length || words) await this.ask(message.chat.id, words, kept);
+      return;
+    }
     if (!text) {
-      await this.send(message.chat.id, "Words only here for now: photos and files go through the app.");
+      await this.send(message.chat.id, "Words, a photo or a text file: anything else stays here.");
       return;
     }
     await this.ask(message.chat.id, text);
   }
 
+  /** A file you sent, fetched from Telegram (never past what a message may carry) and kept on your node, or why not. */
+  private async file(file: { id: string; name: string; size?: number | undefined }): Promise<{ attachment: AttachmentRef } | { refused: string }> {
+    const device = this.device();
+    if (!device) return { refused: "this chat has no device on your node" };
+    if ((file.size ?? 0) > ATTACHMENT_LIMITS.imageBytes) return { refused: "it's over 5 MB" };
+    try {
+      const found = await this.call<{ file_path?: string }>("getFile", { file_id: file.id });
+      // (Where Telegram keeps it, as it said: a path of its own, never one that climbs.)
+      if (!found.file_path || !/^[\w./-]{1,300}$/.test(found.file_path) || found.file_path.includes("..")) return { refused: "Telegram didn't hand it over" };
+      const response = await this.fetch(`${this.base}/file/bot${this.o.vault.reveal(TELEGRAM_TOKEN_SECRET)}/${found.file_path}`, { redirect: "manual" });
+      if (!response.ok) return { refused: `Telegram answered ${response.status}` };
+      const bytes = await cappedBytes(response, ATTACHMENT_LIMITS.imageBytes);
+      if (!bytes) return { refused: "it's over 5 MB" };
+      return await keepFile({ apiBase: this.o.apiBase, fetch: this.fetch, device }, file.name, bytes);
+    } catch (error) {
+      return { refused: (error as Error).message.slice(0, 200) };
+    }
+  }
+
   /** Your words to Galahad, as the gateway's device, in this Telegram chat's chat of yours; his answer back. */
-  private async ask(chatId: number, text: string): Promise<void> {
+  private async ask(chatId: number, text: string, attachments: AttachmentRef[] = []): Promise<void> {
     const device = this.device();
     if (!device) return;
     const typing = setInterval(() => void this.call("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {}), TYPING_EVERY_MS);
@@ -249,7 +294,7 @@ export class TelegramGateway {
     try {
       const conversation = this.get<string>(`chat:${chatId}`);
       const path = "/api/chat";
-      const body = new TextEncoder().encode(JSON.stringify({ messages: [{ role: "user", content: text }], save: true, ...(conversation ? { conversation } : {}) }));
+      const body = new TextEncoder().encode(JSON.stringify({ messages: [{ role: "user", content: text, ...(attachments.length ? { attachments } : {}) }], save: true, ...(conversation ? { conversation } : {}) }));
       const headers = await signRequest(device.id, (m) => device.sign(m), "POST", path, body);
       const response = await this.fetch(`${this.o.apiBase}${path}`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body });
       if (response.status === 401) {

@@ -126,7 +126,7 @@ function telegramCard(ctx: Ctx, telegram: TelegramView, code: LinkCode | null, c
     !telegram.owner && !(code && code.expires > Date.now())
       ? callout("info", telegram.linkExpires ? "Waiting for the code Connect gave. Lost it? Give the token again for a new one." : "No account is linked yet: give the token again for a new code.")
       : null,
-    telegram.owner ? note("Your chats from Telegram are kept with your other chats here. Photos and files go through this app for now.") : null,
+    telegram.owner ? note("Your chats from Telegram are kept with your other chats here, and a photo or a text file you send there goes with your message.") : null,
     admin && (!telegram.owner || telegram.problem) ? form : null,
     admin ? h("div", { class: "row" }, disconnect) : null,
     status,
@@ -220,7 +220,7 @@ function slackCard(ctx: Ctx, slack: SlackView, manifest: unknown, code: LinkCode
     !slack.owner && !(code && code.expires > Date.now())
       ? callout("info", slack.linkExpires ? "Waiting for the code Connect gave. Lost it? Give the tokens again for a new one." : "No account is linked yet: give the tokens again for a new code.")
       : null,
-    slack.owner ? note("Your chats from Slack are kept with your other chats here. new, on its own, starts a new one there. Photos and files go through this app for now.") : null,
+    slack.owner ? note("Your chats from Slack are kept with your other chats here, and a picture or a text file you share there goes with your message. new, on its own, starts a new one there.") : null,
     admin && (!slack.owner || slack.problem) ? form : null,
     admin ? h("div", { class: "row" }, disconnect) : null,
     status,

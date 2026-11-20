@@ -1685,7 +1685,8 @@ export interface SlackView {
 /**
  * The Slack app Galahad answers through, as Slack makes one from a manifest (api.slack.com/apps → Create New App → From
  * a manifest): Socket Mode, so nothing of yours is opened; your direct messages with it and nothing else
- * (`message.im`); buttons for an answer's choices; 👀 on your message while he works; your name, to say who it answers.
+ * (`message.im`), and the files you share there; buttons for an answer's choices; 👀 on your message while he works;
+ * your name, to say who it answers.
  */
 export const SLACK_APP_MANIFEST = {
   display_information: { name: "Galahad", description: "Your Galahad, in your direct messages.", background_color: "#141416" },
@@ -1693,7 +1694,7 @@ export const SLACK_APP_MANIFEST = {
     app_home: { home_tab_enabled: false, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
     bot_user: { display_name: "Galahad", always_online: true },
   },
-  oauth_config: { scopes: { bot: ["chat:write", "im:history", "reactions:write", "users:read"] } },
+  oauth_config: { scopes: { bot: ["chat:write", "files:read", "im:history", "reactions:write", "users:read"] } },
   settings: {
     event_subscriptions: { bot_events: ["message.im"] },
     interactivity: { is_enabled: true },

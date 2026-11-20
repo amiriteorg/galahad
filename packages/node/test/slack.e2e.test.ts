@@ -3,7 +3,7 @@ import type { ServerWebSocket } from "bun";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ConversationSummary, type FleetView, type RouteName, routes, SLACK_APP_MANIFEST, type SlackView } from "@galahad/core";
+import { type ConversationSummary, type ConversationView, type FleetView, type RouteName, routes, SLACK_APP_MANIFEST, type SlackView } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
@@ -65,6 +65,9 @@ const model = Bun.serve({
 const calls: { method: string; token: string; params: Record<string, string> }[] = [];
 let sockets: ServerWebSocket<unknown>[] = [];
 const acks: string[] = [];
+/** A screenshot as Slack serves a shared file (a PNG's first bytes), and who asked for it. */
+const SHOT = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new TextEncoder().encode("stand-in screenshot")]);
+const fileGets: string[] = [];
 let nextTs = 1;
 const slackApi = Bun.serve({
   port: 0,
@@ -72,6 +75,10 @@ const slackApi = Bun.serve({
   async fetch(req, server): Promise<Response | undefined> {
     const url = new URL(req.url);
     if (url.pathname === "/link") return server.upgrade(req) ? undefined : new Response("no", { status: 400 });
+    if (url.pathname.startsWith("/files/")) {
+      fileGets.push(req.headers.get("authorization") ?? "");
+      return req.headers.get("authorization") === `Bearer ${BOT_TOKEN}` ? new Response(SHOT) : new Response("no", { status: 403 });
+    }
     const method = url.pathname.replace(/^\/api\//, "");
     const token = (req.headers.get("authorization") ?? "").replace(/^Bearer /, "");
     const params = Object.fromEntries(new URLSearchParams(await req.text()));
@@ -232,6 +239,27 @@ describe("Slack", () => {
     expect(posts().filter((p) => p.params.text === "You said: Something else")).toHaveLength(1);
     const { conversations } = await json<{ conversations: ConversationSummary[] }>(await call("conversations", undefined));
     expect(conversations).toHaveLength(2);
+  });
+
+  test("a file you share goes with your message, fetched with the app's token from Slack's own file host and nowhere else", async () => {
+    const before = posts().length;
+    message(OWNER, "Look at this", {
+      subtype: "file_share",
+      files: [
+        { name: "shot.png", size: SHOT.byteLength, url_private_download: `http://127.0.0.1:${slackApi.port}/files/T0/shot.png` },
+        { name: "elsewhere.png", size: 10, url_private_download: "https://files.example.com/elsewhere.png" },
+      ],
+    });
+    await until("answered", () => posts().slice(before).find((p) => (p.params.text ?? "").startsWith("You said:")));
+    expect(posts().slice(before).map((p) => p.params.text)).toContain("Not sent with your message (elsewhere.png: it isn't on Slack's own file host).");
+    // The app's token went to Slack's file host once, and nowhere else.
+    expect(fileGets).toEqual([`Bearer ${BOT_TOKEN}`]);
+    const { conversations } = await json<{ conversations: ConversationSummary[] }>(await call("conversations", undefined));
+    const latest = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt)[0]!;
+    const { conversation } = await json<{ conversation: ConversationView }>(await call("conversation", { id: latest.id }));
+    const mine = conversation.messages.filter((m) => m.role === "user").at(-1)!;
+    expect(mine.content).toBe("Look at this");
+    expect(mine.attachments).toEqual([expect.objectContaining({ name: "shot.png", type: "image/png", bytes: SHOT.byteLength })]);
   });
 
   test("a connection Slack ends is made again, and answers as before", async () => {

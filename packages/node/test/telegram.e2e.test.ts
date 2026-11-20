@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ConversationSummary, type FleetView, type RouteName, routes, type TelegramView } from "@galahad/core";
+import { type ConversationSummary, type ConversationView, type FleetView, type RouteName, routes, type TelegramView } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
@@ -58,15 +58,20 @@ let nextUpdate = 1;
 let nextMessage = 500;
 const updates: Record<string, unknown>[] = [];
 const sent: { method: string; params: Record<string, unknown> }[] = [];
+/** A photo as Telegram keeps one (a JPEG's first bytes), and a PDF, by where it keeps them. */
+const FILES: Record<string, Uint8Array<ArrayBuffer>> = { "photos/file_7.jpg": new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new TextEncoder().encode("JFIF stand-in photo")]), "documents/report.pdf": new Uint8Array([...new TextEncoder().encode("%PDF-1.7\n%"), 0xe2, 0xe3, 0xcf, 0xd3, 0x0a, 0x00, 0x01]) };
 const telegramApi = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
   async fetch(req) {
+    const file = /^\/file\/bot([^/]+)\/(.+)$/.exec(new URL(req.url).pathname);
+    if (file) return file[1] === TOKEN && FILES[file[2]!] ? new Response(FILES[file[2]!]) : new Response("not found", { status: 404 });
     const match = /^\/bot([^/]+)\/(\w+)$/.exec(new URL(req.url).pathname);
     if (!match || match[1] !== TOKEN) return Response.json({ ok: false, description: "Unauthorized" }, { status: 401 });
     const method = match[2]!;
     const params = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     if (method === "getMe") return Response.json({ ok: true, result: { id: 42, username: "galahad_test_bot", is_bot: true } });
+    if (method === "getFile") return Response.json({ ok: true, result: { file_id: params.file_id, file_path: params.file_id === "big" ? "photos/file_7.jpg" : "documents/report.pdf" } });
     if (method === "getUpdates") {
       const offset = Number(params.offset ?? 0);
       for (let i = 0; i < 10; i++) {
@@ -191,6 +196,24 @@ describe("Telegram", () => {
     await until("answered", () => messages().find((m) => m.params.text === "You said: Something else"));
     const { conversations } = await json<{ conversations: ConversationSummary[] }>(await call("conversations", undefined));
     expect(conversations).toHaveLength(2);
+  });
+
+  test("a photo you send goes with your message, its caption your words; a file it can't carry is said, and stays where it is", async () => {
+    const before = messages().length;
+    updates.push({ update_id: nextUpdate++, message: { message_id: 901, from: OWNER, chat: { id: OWNER.id, type: "private" }, photo: [{ file_id: "small", file_size: 90 }, { file_id: "big", file_size: 23 }], caption: "What's in this photo?" } });
+    await until("answered", () => messages().slice(before).find((m) => String(m.params.text).startsWith("You said:")));
+    const { conversations } = await json<{ conversations: ConversationSummary[] }>(await call("conversations", undefined));
+    const latest = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt)[0]!;
+    const { conversation } = await json<{ conversation: ConversationView }>(await call("conversation", { id: latest.id }));
+    const mine = conversation.messages.filter((m) => m.role === "user").at(-1)!;
+    expect(mine.content).toBe("What's in this photo?");
+    expect(mine.attachments).toEqual([expect.objectContaining({ name: "photo.jpg", type: "image/jpeg", bytes: FILES["photos/file_7.jpg"]!.byteLength })]);
+    // A PDF isn't one a model is shown: said, and nothing asked of him.
+    const asking = asked.length;
+    updates.push({ update_id: nextUpdate++, message: { message_id: 902, from: OWNER, chat: { id: OWNER.id, type: "private" }, document: { file_id: "pdf", file_name: "report.pdf", file_size: 17 } } });
+    await until("said", () => messages().find((m) => String(m.params.text).startsWith("Not sent with your message (report.pdf: it isn't a picture")));
+    await Bun.sleep(200);
+    expect(asked.length).toBe(asking);
   });
 
   test("disconnecting revokes its device and deletes its token; its chats stay yours", async () => {

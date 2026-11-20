@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite";
-import { b64u, type ChatStreamEvent, clientIdentity, type ClientIdentity, fromB64u, newClientSecret, type Scope, signRequest } from "@galahad/core";
+import { ATTACHMENT_LIMITS, type AttachmentRef, b64u, type ChatStreamEvent, clientIdentity, type ClientIdentity, fromB64u, newClientSecret, type Scope, signRequest } from "@galahad/core";
 import { sseData } from "@galahad/brain";
 import type { Vault } from "@galahad/mind";
+import { cappedBytes, keepFile } from "./chat-files.ts";
 import { slackAnswer } from "./chat-format.ts";
 
 /*
@@ -70,7 +71,19 @@ interface Envelope {
     type?: string;
     event_id?: string;
     team_id?: string;
-    event?: { type?: string; subtype?: string; channel?: string; channel_type?: string; user?: string; bot_id?: string; text?: string; ts?: string; thread_ts?: string };
+    event?: {
+      type?: string;
+      subtype?: string;
+      channel?: string;
+      channel_type?: string;
+      user?: string;
+      bot_id?: string;
+      text?: string;
+      ts?: string;
+      thread_ts?: string;
+      /** What you shared with the message (files:read): each one's name, size and where Slack serves it. */
+      files?: { name?: string; size?: number; url_private_download?: string }[];
+    };
     // A button tapped (block_actions).
     user?: { id?: string };
     channel?: { id?: string };
@@ -370,11 +383,50 @@ export class SlackGateway {
       await this.send(event.channel, "A new chat. What's next?", event.thread_ts);
       return;
     }
+    // What you shared with it (a screenshot, a log), its words the message's.
+    const files = (event.files ?? []).slice(0, ATTACHMENT_LIMITS.perMessage);
+    if (files.length) {
+      const kept: AttachmentRef[] = [];
+      const left: string[] = [];
+      for (const file of files) {
+        const got = await this.file(file);
+        if ("attachment" in got) kept.push(got.attachment);
+        else left.push(`${file.name ?? "a file"}: ${got.refused}`);
+      }
+      if (left.length) await this.send(event.channel, `Not sent with your message (${left.join("; ")}).`, event.thread_ts);
+      if (kept.length || text) await this.ask(event.channel, text, event.thread_ts, event.ts, kept);
+      return;
+    }
     if (!text) {
-      await this.send(event.channel, "Words only here for now: photos and files go through the app.", event.thread_ts);
+      await this.send(event.channel, "Words, a picture or a text file: anything else stays here.", event.thread_ts);
       return;
     }
     await this.ask(event.channel, text, event.thread_ts, event.ts);
+  }
+
+  /** A file you shared, fetched from Slack's own file host with the app's token (never anywhere else) and kept on your node. */
+  private async file(file: { name?: string; size?: number; url_private_download?: string }): Promise<{ attachment: AttachmentRef } | { refused: string }> {
+    const device = this.device();
+    if (!device) return { refused: "this conversation has no device on your node" };
+    if ((file.size ?? 0) > ATTACHMENT_LIMITS.imageBytes) return { refused: "it's over 5 MB" };
+    let from: URL;
+    try {
+      from = new URL(file.url_private_download ?? "");
+    } catch {
+      return { refused: "Slack didn't say where it is" };
+    }
+    // The app's token goes to Slack's file host alone (a stand-in's, in tests).
+    const host = this.o.slackBase ? new URL(this.o.slackBase).origin : null;
+    if (!(from.protocol === "https:" && from.hostname === "files.slack.com") && from.origin !== host) return { refused: "it isn't on Slack's own file host" };
+    try {
+      const response = await this.fetch(from, { headers: { authorization: `Bearer ${this.o.vault.reveal(SLACK_BOT_SECRET)}` }, redirect: "manual" });
+      if (!response.ok) return { refused: response.status === 403 ? "the app can't read files (give it files:read, then install it again)" : `Slack answered ${response.status}` };
+      const bytes = await cappedBytes(response, ATTACHMENT_LIMITS.imageBytes);
+      if (!bytes) return { refused: "it's over 5 MB" };
+      return await keepFile({ apiBase: this.o.apiBase, fetch: this.fetch, device }, file.name ?? "file", bytes);
+    } catch (error) {
+      return { refused: (error as Error).message.slice(0, 200) };
+    }
   }
 
   /** Your name as Slack shows it (users:read), or your id when it can't be read. */
@@ -389,7 +441,7 @@ export class SlackGateway {
   }
 
   /** Your words to Galahad, as the gateway's device, in this conversation's chat of yours; his answer back. */
-  private async ask(channel: string, text: string, thread?: string, yours?: string): Promise<void> {
+  private async ask(channel: string, text: string, thread?: string, yours?: string, attachments: AttachmentRef[] = []): Promise<void> {
     const device = this.device();
     if (!device) return;
     // While he works, 👀 on your message (it stands still), taken off when he answers.
@@ -399,7 +451,7 @@ export class SlackGateway {
     try {
       const conversation = this.get<string>(`chat:${channel}`);
       const path = "/api/chat";
-      const body = new TextEncoder().encode(JSON.stringify({ messages: [{ role: "user", content: text }], save: true, ...(conversation ? { conversation } : {}) }));
+      const body = new TextEncoder().encode(JSON.stringify({ messages: [{ role: "user", content: text, ...(attachments.length ? { attachments } : {}) }], save: true, ...(conversation ? { conversation } : {}) }));
       const headers = await signRequest(device.id, (m) => device.sign(m), "POST", path, body);
       const response = await this.fetch(`${this.o.apiBase}${path}`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body });
       if (response.status === 401) {

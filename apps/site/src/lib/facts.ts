@@ -142,7 +142,7 @@ export const PHASING = {
     { state: "building", what: "Galahad writes first", line: "Ship it and give again from a task's card, \"tell me when\", what happened while you were away, and the next step of your backlog offered to an idle knight, for your yes; next, asks you repeat offered as a loop." },
     { state: "building", what: "Count the north star", line: "Each time you step in on a knight's task, counted per task done and verified, and per outcome; next, in the trials." },
     { state: "building", what: "A knight that keeps the books", line: "Bilag from your mail to Drive on their own, and drafts in Dinero; booking always asks." },
-    { state: "building", what: "Chat apps", line: "Telegram, Slack and Buzz communities are built; next, the rooms and files there, then Discord and Signal." },
+    { state: "building", what: "Chat apps", line: "Telegram, Slack and Buzz communities are built, photos and files too; next, the rooms there, then Discord and Signal." },
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Each step thinks as it needs", line: "A routine turn thinks less and a hard one more, said inside the conversation so its cache holds; a role's level is yours to pin." },
     { state: "building", what: "Lean context", line: "A knight reads whole files and keeps them in view; what a later run or edit made stale becomes a line. Next, errors since fixed." },
