@@ -77,8 +77,18 @@ class NodeClient(val origin: String, private val signer: Signer) {
         return c
     }
 
-    private fun unreachable(e: IOException): NodeError =
-        NodeError(0, if (e is SocketTimeoutException) "No answer from $host in time." else "Can't reach $host: ${e.message ?: e::class.simpleName}", unreachable = true)
+    /** The node couldn't be reached, in words: never the network library's own text, which names its classes and objects. */
+    private fun unreachable(e: IOException): NodeError = NodeError(
+        0,
+        when (e) {
+            is SocketTimeoutException -> "No answer from $host in time."
+            is java.net.ConnectException -> "Nothing answers at $host. Is the node running?"
+            is java.net.UnknownHostException -> "$host can't be found from this phone. Is it on your tailnet?"
+            is javax.net.ssl.SSLException -> "$host's certificate wasn't accepted."
+            else -> "Lost the connection to $host."
+        },
+        unreachable = true,
+    )
 
     private suspend fun send(method: String, path: String, body: Json?): Json = withContext(Dispatchers.IO) {
         val bytes = body?.text()?.toByteArray(Charsets.UTF_8)

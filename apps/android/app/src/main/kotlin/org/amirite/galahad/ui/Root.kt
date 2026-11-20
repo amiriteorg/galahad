@@ -3,9 +3,20 @@ package org.amirite.galahad.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -17,12 +28,15 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ShortNavigationBar
+import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.WideNavigationRail
+import androidx.compose.material3.WideNavigationRailDefaults
+import androidx.compose.material3.WideNavigationRailItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
@@ -33,22 +47,29 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.app.Updates
 
 /** Where you are: one of the three places, or a page opened from one (Galahad's chat, a knight's page). */
-private enum class Place { ROUNDTABLE, INBOX, MORE }
+private enum class Place(val label: String) { ROUNDTABLE("Roundtable"), INBOX("Inbox"), MORE("More") }
+
+/** What's on screen, for the way it comes in: a page opened over a place comes in from the side and goes back there. */
+private data class Screen(val place: Place, val chat: Boolean, val knight: String?, val room: String?) {
+    val opened: Boolean get() = chat || knight != null || room != null
+}
 
 /**
  * The app once it's paired: the Roundtable, the Inbox and More, as the iPhone's tabs are, with Galahad's chat and each
- * knight's page opened from the Roundtable. Back closes what was opened, then returns to the Roundtable.
+ * knight's page opened from the Roundtable. Back closes what was opened, then returns to the Roundtable. On a phone the
+ * places are a short bar at the foot; on a tablet or an open foldable, a rail at the side.
  */
 @Composable
 fun Root(app: AppModel) {
@@ -57,8 +78,11 @@ fun Root(app: AppModel) {
     var knight by rememberSaveable { mutableStateOf<String?>(null) }
     var room by rememberSaveable { mutableStateOf<String?>(null) }
     val inbox by app.inbox.collectAsState()
+    val screen = Screen(place, chat, knight, room)
+    // A tablet, or a foldable open (the window's width, as Android's own size classes read it).
+    val wide = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() } >= 600.dp
 
-    BackHandler(enabled = chat || knight != null || room != null || place != Place.ROUNDTABLE) {
+    BackHandler(enabled = screen.opened || place != Place.ROUNDTABLE) {
         when {
             chat -> chat = false
             knight != null -> knight = null
@@ -66,33 +90,61 @@ fun Root(app: AppModel) {
             else -> place = Place.ROUNDTABLE
         }
     }
+    val go = { to: Place ->
+        chat = false
+        knight = null
+        room = null
+        place = to
+    }
+    val icon: @Composable (Place) -> Unit = { p ->
+        when (p) {
+            Place.ROUNDTABLE -> Icon(roundtableIcon, null)
+            Place.INBOX -> BadgedBox(badge = { if (inbox.count > 0) Badge(containerColor = LocalBrand.current.siege) { Text(AppModel.badge(inbox.count)) } }) { Icon(TrayIcon, null) }
+            Place.MORE -> Icon(MoreIcon, null)
+        }
+    }
 
     Scaffold(
         bottomBar = {
-            if (!chat && knight == null && room == null) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    NavigationBarItem(selected = place == Place.ROUNDTABLE, onClick = { place = Place.ROUNDTABLE }, icon = { Icon(roundtableIcon, null) }, label = { Text("Roundtable") })
-                    NavigationBarItem(
-                        selected = place == Place.INBOX,
-                        onClick = { place = Place.INBOX },
-                        icon = {
-                            BadgedBox(badge = { if (inbox.count > 0) Badge(containerColor = LocalBrand.current.siege) { Text(AppModel.badge(inbox.count)) } }) { Icon(trayIcon, null) }
-                        },
-                        label = { Text("Inbox") },
-                    )
-                    NavigationBarItem(selected = place == Place.MORE, onClick = { place = Place.MORE }, icon = { Icon(moreIcon, null) }, label = { Text("More") })
+            if (!wide && !screen.opened) {
+                ShortNavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    for (p in Place.entries) ShortNavigationBarItem(selected = place == p, onClick = { go(p) }, icon = { icon(p) }, label = { Text(p.label) })
                 }
             }
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            when {
-                chat -> ChatScreen(app) { chat = false }
-                knight != null -> KnightScreen(app, knight!!) { knight = null }
-                room != null -> RoomScreen(app, room!!) { room = null }
-                place == Place.ROUNDTABLE -> RoundtableScreen(app, openChat = { chat = true }, openKnight = { knight = it }, openRoom = { room = it })
-                place == Place.INBOX -> InboxScreen(app)
-                else -> MoreScreen(app)
+        Row(Modifier.fillMaxSize().padding(padding)) {
+            if (wide) {
+                WideNavigationRail(colors = WideNavigationRailDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    for (p in Place.entries) WideNavigationRailItem(railExpanded = false, selected = place == p && !screen.opened, onClick = { go(p) }, icon = { icon(p) }, label = { Text(p.label) })
+                }
+            }
+            // A page opens from the side and closes back to it (shared axis); one place gives way to another in place.
+            AnimatedContent(
+                targetState = screen,
+                transitionSpec = {
+                    // Springs without a bounce: quick to settle, nothing that plays on after you.
+                    val slide = spring(Spring.DampingRatioNoBouncy, Spring.StiffnessMediumLow, IntOffset.VisibilityThreshold)
+                    val fade = spring<Float>(Spring.DampingRatioNoBouncy, Spring.StiffnessMedium)
+                    when {
+                        targetState.opened && !initialState.opened -> (slideInHorizontally(slide) { it / 10 } + fadeIn(fade)) togetherWith fadeOut(fade)
+                        !targetState.opened && initialState.opened -> fadeIn(fade) togetherWith (slideOutHorizontally(slide) { it / 10 } + fadeOut(fade))
+                        else -> fadeIn(fade) togetherWith fadeOut(fade)
+                    }
+                },
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                label = "screen",
+            ) { s ->
+                Column(Modifier.fillMaxSize()) {
+                    when {
+                        s.chat -> ChatScreen(app) { chat = false }
+                        s.knight != null -> KnightScreen(app, s.knight) { knight = null }
+                        s.room != null -> RoomScreen(app, s.room) { room = null }
+                        s.place == Place.ROUNDTABLE -> RoundtableScreen(app, openChat = { chat = true }, openKnight = { knight = it }, openRoom = { room = it })
+                        s.place == Place.INBOX -> InboxScreen(app)
+                        else -> MoreScreen(app)
+                    }
+                }
             }
         }
     }
@@ -150,18 +202,3 @@ private fun MoreScreen(app: AppModel) {
 }
 
 private val roundtableIcon: ImageVector = roundtableMark(Color.Black, Color.Black)
-
-/** A tray, for the Inbox. */
-private val trayIcon: ImageVector = ImageVector.Builder("Tray", 24.dp, 24.dp, 24f, 24f).apply {
-    path(stroke = SolidColor(Color.Black), strokeLineWidth = 1.8f) {
-        moveTo(3.5f, 13f); lineTo(6.5f, 5f); lineTo(17.5f, 5f); lineTo(20.5f, 13f); lineTo(20.5f, 19f); lineTo(3.5f, 19f); close()
-        moveTo(3.5f, 13f); lineTo(8.5f, 13f); lineTo(9.5f, 15.5f); lineTo(14.5f, 15.5f); lineTo(15.5f, 13f); lineTo(20.5f, 13f)
-    }
-}.build()
-
-/** Three dots, for More. */
-private val moreIcon: ImageVector = ImageVector.Builder("More", 24.dp, 24.dp, 24f, 24f).apply {
-    for (x in listOf(5f, 12f, 19f)) path(fill = SolidColor(Color.Black)) {
-        moveTo(x - 1.8f, 12f); arcToRelative(1.8f, 1.8f, 0f, true, true, 3.6f, 0f); arcToRelative(1.8f, 1.8f, 0f, true, true, -3.6f, 0f); close()
-    }
-}.build()

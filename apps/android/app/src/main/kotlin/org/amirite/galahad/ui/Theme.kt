@@ -16,9 +16,10 @@ import org.amirite.galahad.core.KnightState
 
 /*
  * Galahad's look on Android: Android's own components, with Galahad's accents, as the Apple app is Apple's with them.
- * The colours are the brand's (apps/web/src/brand.ts INK, the Apple app's asset catalog and Brand.swift): ink on paper,
- * cream on the dark, the Siege Perilous red, and one colour a state (blue at work, amber needs you, red failed, green
- * done). Nothing moves by itself: a state is a still ring and a word, never a spinner (the owner's word, 18 Nov).
+ * The colours are the brand's, never the wallpaper's (apps/web/src/brand.ts INK, the Apple app's asset catalog and
+ * Brand.swift): ink on paper, cream on the dark, the Siege Perilous red, and one colour a state (blue at work, amber
+ * needs you, red failed, green done). Nothing moves by itself: a state is a still ring and a word, never a spinner (the
+ * owner's word, 18 Nov). What moves answers you: a page opening or closing.
  */
 
 @Immutable

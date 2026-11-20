@@ -20,6 +20,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +66,7 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
         assignee = id,
         busy = row?.state == KnightState.WORKING,
         placeholder = "Write to ${person?.name ?: id}",
+        title = person?.name ?: id,
         back = back,
     ) {
         val scope = rememberCoroutineScope()
@@ -98,6 +100,7 @@ fun RoomScreen(app: AppModel, id: String, back: () -> Unit) {
         assignee = null,
         busy = table.snapshot?.tasks?.any { it.room == id && it.status == "running" } == true,
         placeholder = "Write to ${room?.name ?: "the room"}",
+        title = room?.name ?: "A room",
         back = back,
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -112,7 +115,8 @@ fun RoomScreen(app: AppModel, id: String, back: () -> Unit) {
 
 /**
  * A conversation's timeline under its [header], oldest first, read again every four seconds while it's open (two while
- * work runs there), and a box to write in; [assignee] offers the same words as a task for that knight instead.
+ * work runs there), and a box to write in; [assignee] offers the same words as a task for that knight instead. The bar
+ * above names it ([title]) once the header has scrolled out of sight.
  */
 @Composable
 private fun Timeline(
@@ -123,6 +127,7 @@ private fun Timeline(
     assignee: String?,
     busy: Boolean,
     placeholder: String,
+    title: String,
     back: () -> Unit,
     header: @Composable () -> Unit,
 ) {
@@ -161,10 +166,9 @@ private fun Timeline(
     }
     LaunchedEffect(entries.size) { if (entries.isNotEmpty()) list.toEnd() }
 
+    val headerGone by remember { derivedStateOf { list.firstVisibleItemIndex > 0 } }
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(Space.s2), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = back) { Text("Back") }
-        }
+        PageBar(if (headerGone) title else "", back)
         LazyColumn(Modifier.weight(1f), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.s4)) {
             item { header() }
             problem?.let { item { Problem(it) } }

@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -225,14 +225,14 @@ fun StepsBlock(steps: List<Blocks.Step>) {
     Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(brand.raised).padding(Space.s3), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
         for (s in steps) {
             val (mark, color, word) = when (s.state) {
-                "done" -> Triple("✓", brand.done, "done")
-                "doing" -> Triple("●", brand.working, "doing")
-                "failed" -> Triple("✕", brand.failed, "failed")
-                "skipped" -> Triple("–", MaterialTheme.colorScheme.onSurfaceVariant, "skipped")
-                else -> Triple("○", MaterialTheme.colorScheme.onSurfaceVariant, "to do")
+                "done" -> Triple(CheckIcon, brand.done, "done")
+                "doing" -> Triple(DotIcon, brand.working, "doing")
+                "failed" -> Triple(CloseIcon, brand.failed, "failed")
+                "skipped" -> Triple(DashIcon, MaterialTheme.colorScheme.onSurfaceVariant, "skipped")
+                else -> Triple(RingIcon, MaterialTheme.colorScheme.onSurfaceVariant, "to do")
             }
             Row(Modifier.semantics(mergeDescendants = true) { contentDescription = "${s.text}, $word" }, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                Text(mark, color = color, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(20.dp))
+                androidx.compose.material3.Icon(mark, null, tint = color, modifier = Modifier.padding(top = 2.dp).size(20.dp))
                 Text(s.text, style = MaterialTheme.typography.bodyLarge, textDecoration = if (s.state == "skipped") TextDecoration.LineThrough else null)
             }
         }

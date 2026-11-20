@@ -1,5 +1,6 @@
 package org.amirite.galahad.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -10,11 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,14 +76,14 @@ fun ChatScreen(app: AppModel, back: () -> Unit) {
     // (A block is drawn only once its fence closes, after the last words came: the end moves once more as he finishes.)
     LaunchedEffect(live) { if (!live && bubbles.isNotEmpty() && following.value) list.toEnd() }
 
+    // Back from your chats returns to this chat, not past it.
+    BackHandler(enabled = listing) { listing = false }
     if (listing) {
         Chats(app, close = { listing = false })
         return
     }
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(Space.s2), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = back) { Text("Back") }
-            Text(title ?: "Galahad", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        PageBar(title ?: "Galahad", back) {
             TextButton(onClick = { listing = true }) { Text("Chats") }
             TextButton(onClick = { chat.fresh() }, enabled = !live) { Text("New") }
         }
@@ -152,7 +156,7 @@ private fun ChatComposer(app: AppModel, live: Boolean) {
                     androidx.compose.material3.AssistChip(
                         onClick = { files = files - f },
                         label = { Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        trailingIcon = { Text("×") },
+                        trailingIcon = { Icon(CloseIcon, null, Modifier.size(AssistChipDefaults.IconSize)) },
                         modifier = Modifier.semantics { contentDescription = "Remove ${f.name}" },
                     )
                 }
@@ -212,7 +216,12 @@ private fun Message(b: Bubble, choose: ((String) -> Unit)?) {
         Row(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s1), horizontalArrangement = Arrangement.End) {
             Column(Modifier.widthIn(max = 320.dp).clip(MaterialTheme.shapes.large).background(brand.ink).padding(horizontal = Space.s3, vertical = Space.s2)) {
                 if (b.text.isNotEmpty()) Text(b.text, color = brand.onInk, style = MaterialTheme.typography.bodyLarge)
-                for (f in b.files) Text("📎 $f", color = brand.onInk.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+                for (f in b.files) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s1)) {
+                        Icon(AttachIcon, null, Modifier.size(16.dp), tint = brand.onInk.copy(alpha = 0.8f))
+                        Text(f, color = brand.onInk.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
         }
         return
@@ -237,10 +246,7 @@ private fun Chats(app: AppModel, close: () -> Unit) {
     LaunchedEffect(Unit) { app.chat.loadChats() }
     val brand = LocalBrand.current
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(Space.s2), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = close) { Text("Back") }
-            Text("Chats", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        }
+        PageBar("Chats", close)
         LazyColumn(Modifier.weight(1f)) {
             items(chats, key = { it["id"].string ?: "" }) { c ->
                 val state = c["state"].string
