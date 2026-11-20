@@ -1,11 +1,11 @@
 {
   "suite": "context",
-  "commit": "e45becff36a4+dirty",
-  "at": 1795102225396,
+  "commit": "075ce5bb2ebe",
+  "at": 1795140417787,
   "seed": 20261112,
   "machine": {
     "name": "Apple M3 Pro",
-    "calibration": 94021,
+    "calibration": 91080,
     "cores": 12
   },
   "metrics": [
@@ -14,6 +14,8 @@
     {"id":"context.quest.read-edit-test.last-turn","value":20250,"unit":"chars","kind":"quality","better":"lower","note":"the last turn of the same quest: what a long quest's every turn tends to"},
     {"id":"context.quest.survey","value":647513,"unit":"chars","kind":"quality","better":"lower","note":"every engineer turn's conversation, summed: thirty different searches that each print a page (30 commands)"},
     {"id":"context.quest.rewrites","value":6,"unit":"turns","kind":"quality","better":"lower","note":"turns, over the three quests, whose conversation doesn't begin with the turn before's (a batch cut is one)"},
+    {"id":"context.quest.fix-then-check","value":346062,"unit":"chars","kind":"quality","better":"lower","note":"every engineer turn's conversation, summed: eight test files failing in turn and fixed, the whole suite passing, a typecheck failing then passing, the work looked over (30 commands)"},
+    {"id":"context.quest.fix-then-check.rewrites","value":2,"unit":"turns","kind":"quality","better":"lower","note":"turns of that quest whose conversation doesn't begin with the turn before's"},
     {"id":"context.knight.understand.commands","value":11,"unit":"commands","kind":"quality","better":"lower","note":"commands a careful stand-in knight ran to change three files of the first real outcome's code, each with all five files in view as they were then, and test it (eighty: it never finished)"},
     {"id":"context.knight.understand.done","value":1,"unit":"tasks","kind":"quality","better":"higher","note":"whether that stand-in finished within eighty commands: nought when its reads were cut before it could see what it needed"},
     {"id":"context.knight.understand","value":657574,"unit":"chars","kind":"quality","better":"lower","note":"every turn's conversation of the same task, summed: what its view of the code cost to send"}
