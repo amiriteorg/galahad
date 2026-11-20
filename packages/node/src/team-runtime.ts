@@ -29,7 +29,7 @@ export interface TeamRuntimeDeps {
    * His skills that bear on a task's goal (skills.ts: chosen once for the task, fenced as data), for its planner and
    * engineer, never its reviewer. Absent or null: none.
    */
-  skills?(teammate: Teammate, task: TeamTask): string | null;
+  skills?(teammate: Teammate, task: TeamTask): { text: string; brief: string } | null;
   /** A task's work passed review: its evidence, so it may teach a skill (at most one, which waits for you). Never waited on. */
   learned?(teammate: Teammate, task: TeamTask, evidence: QuestEvidence): void;
   /**
@@ -611,7 +611,9 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       // provider reads from its cache (a new fence on each call made each turn's beginning a new one).
       const ownNotes = data("Your notes", teammate.memory);
       // His skills that bear on the goal go with the knight's notes: to its planner and its engineer, never its reviewer.
-      const context = [ownNotes, deps.skills?.(teammate, task) ?? null].filter(Boolean).join("\n\n") || undefined;
+      // (Its planner reads a skill's instructions whole; its engineer, asked every turn, their opening: SKILL_BRIEF.)
+      const skills = deps.skills?.(teammate, task) ?? null;
+      const contextFor = (role: string): string | undefined => [ownNotes, skills ? (role === "planner" ? skills.text : skills.brief) : null].filter(Boolean).join("\n\n") || undefined;
       // What the review's evidence is made of (each command and its exit, the gates), for what the work may teach.
       const trail = questTrail();
       // Started from a step of another task (PLAN #15): it is told where its files stand.
@@ -628,7 +630,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         // In sensitive mode every call is on its models alone, the plan's and the review's too.
         ask: async (role, messages, turn) => {
           const own = held ? (role === "reviewer" ? [...held.filter((m) => m !== worked), ...held.filter((m) => m === worked)] : held) : role === "engineer" ? teammate.models : undefined;
-          const answer = await ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : context, (model, usage) => addUsage(spent, role, model, usage), turn?.loop, own, task.budgetUsd !== undefined);
+          const answer = await ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : contextFor(role), (model, usage) => addUsage(spent, role, model, usage), turn?.loop, own, task.budgetUsd !== undefined);
           if (role !== "reviewer") worked = answer.model;
           return answer;
         },

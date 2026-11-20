@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AGENT_SKILL_STEP, readAgentSkill, readSkillDoc, SKILL_LIMITS, skillAuthor, skillFrom, skillInWords, skillLine, skillSecret, SkillDocInput } from "../src/index.ts";
+import { AGENT_SKILL_STEP, readAgentSkill, readSkillDoc, SKILL_BRIEF, SKILL_LIMITS, skillAuthor, skillFrom, skillInWords, skillLine, skillSecret, SkillDocInput } from "../src/index.ts";
 
 /*
  * Skills from elsewhere (PLAN #34): an Agent Skill's SKILL.md (its name and description between --- lines, then
@@ -82,5 +82,18 @@ describe("an Agent Skill, read as a skill of his", () => {
     expect(line.instructions).toBe(read.doc.body);
     const leaky = readAgentSkill(`${PDF}\n\nexport GITHUB_TOKEN=${["ghp", "A".repeat(36)].join("_")}`, WHERE);
     expect(leaky.ok && skillSecret(leaky.doc)).toBeTruthy();
+  });
+
+  test("brief, as an engineer's every call has it: long instructions their opening, cut at a line's end, saying how much more the planner had; short ones whole", () => {
+    const offered = (body: string) => ({ id: "sk_0123456789abcdef", version: "v".repeat(43), trust: "untrusted" as const, by: skillFrom(WHERE), quest: null, at: 0, record: "new", doc: { title: "t", when: "w", steps: [AGENT_SKILL_STEP], proof: [], pitfalls: [], body } });
+    const long = Array.from({ length: 80 }, (_, i) => `Line ${i}: ${"x".repeat(40)}`).join("\n");
+    const brief = JSON.parse(skillLine(offered(long), true)).instructions as string;
+    const [opening, said] = brief.split("\n… ");
+    expect(long.startsWith(opening!)).toBe(true);
+    expect(opening!.length).toBeLessThanOrEqual(SKILL_BRIEF);
+    expect(opening!.endsWith("x")).toBe(true);
+    expect(said).toBe(`(${long.length - opening!.length} characters more went to the planner, who planned with them whole)`);
+    expect(JSON.parse(skillLine(offered(long))).instructions).toBe(long);
+    expect(JSON.parse(skillLine(offered("Short, and whole."), true)).instructions).toBe("Short, and whole.");
   });
 });

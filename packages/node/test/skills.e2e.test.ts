@@ -164,8 +164,11 @@ beforeAll(async () => {
   store.close();
   home.writeConfig({ v: 1, name: "ultra", fleet, port, keystore, advertise: "127.0.0.1" });
   // (GitHub's raw files, as a stand-in: an Agent Skill's SKILL.md. Every other call goes where it was going.)
+  // (Its long-greetings folder holds a skill with instructions longer than an engineer is given of them.)
   const outbound = ((input: string | URL | Request, init?: RequestInit) =>
-    String(input).startsWith(`${RAW_GITHUB}/`) ? Promise.resolve(new Response("---\nname: greet\ndescription: Use when a file must say hi.\n---\n# Greeting files\n\nWrite hi into it, then read it back.")) : fetch(input, init)) as typeof fetch;
+    String(input).startsWith(`${RAW_GITHUB}/`)
+      ? Promise.resolve(new Response(String(input).includes("/long-greetings/") ? `---\nname: long-greet\ndescription: Use when a greeting file must say hi, at length.\n---\n# Long greeting files\n\n${"Write hi into the greeting file, line by line.\n".repeat(60)}THE-LAST-LINE` : "---\nname: greet\ndescription: Use when a file must say hi.\n---\n# Greeting files\n\nWrite hi into it, then read it back."))
+      : fetch(input, init)) as typeof fetch;
   daemon = await startDaemon(home, { capabilities: caps, proxyPort: freePort(), log: () => {}, loopIntervalMs: 60_000, docker: docker.runner, measure, slotWaitMs: 4_000, archiveIntervalMs: false, fetch: outbound });
   await call("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${models.port}/v1` });
   for (const role of ["planner", "reviewer", "engineer", "swift"]) await call("setRoster", { role, models: ["stand-in/m"] });
@@ -576,6 +579,27 @@ describe("a skill from elsewhere", () => {
     expect(skill).toMatchObject({ title: "Greeting files", state: "proposed", trust: "untrusted", by: "from:github.com/someone/skills/greet" });
     const detail = await call<{ skill: SkillDetail }>("skill", { id: skill.id });
     expect(detail.skill.history[0]).toMatchObject({ source: url, doc: { body: "# Greeting files\n\nWrite hi into it, then read it back." } });
+    await call("retireSkill", { id: skill.id, retired: true });
+  });
+
+  test("approved, its instructions go whole to a quest's planner, and their opening to its engineer, every call, under the same fence", async () => {
+    const { skill } = await call<{ skill: SkillView }>("importSkill", { url: "https://github.com/someone/skills/tree/main/long-greetings" });
+    const waiting = await call<{ skill: SkillDetail }>("skill", { id: skill.id });
+    await call("approveSkill", { id: skill.id, version: waiting.skill.pending });
+    asked.length = 0;
+    distilled = "NONE";
+    const { outcome } = await runNodeQuest(client(), { goal: "write hi into a long greeting file", network: "isolated" });
+    expect(outcome.status).toBe("done");
+    const mine = (role: string) => asked.filter((a) => a.role === role).map((a) => fenced(a.system).records.find((r) => r.id === skill.id));
+    const [planner] = mine("planner");
+    expect(planner?.instructions).toContain("THE-LAST-LINE");
+    const engineers = mine("engineer");
+    expect(engineers.length).toBeGreaterThan(0);
+    for (const record of engineers) {
+      expect(record?.instructions).toStartWith("# Long greeting files");
+      expect(record?.instructions).not.toContain("THE-LAST-LINE");
+      expect(record?.instructions).toMatch(/… \(\d+ characters more went to the planner, who planned with them whole\)$/);
+    }
     await call("retireSkill", { id: skill.id, retired: true });
   });
 });

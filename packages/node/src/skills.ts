@@ -208,6 +208,8 @@ export function usableSkills(store: Pick<MindStore, "skills">): Usable[] {
 /** What a quest (or an answer) was given: the fenced block, and which skills are in it. */
 export interface GivenSkills {
   text: string;
+  /** The same block for calls that aren't the planner's: each skill's instructions their opening alone (SKILL_BRIEF). */
+  brief: string;
   skills: { id: string; title: string; trust: SkillTrust }[];
 }
 
@@ -410,7 +412,13 @@ export class SkillsService {
       }
     }
     if (!given.length) return null;
-    return { text: fenceLines(SKILLS_FENCE_WHAT, SKILLS_FENCE, given.map(skillLine), nonce), skills: given.map((s) => ({ id: s.id, title: s.doc.title, trust: s.trust })) };
+    // (Both under one nonce: the planner's and the engineer's notes are the same block, the engineer's shorter.)
+    const fence = nonce ?? randomId(12);
+    return {
+      text: fenceLines(SKILLS_FENCE_WHAT, SKILLS_FENCE, given.map((s) => skillLine(s)), fence),
+      brief: fenceLines(SKILLS_FENCE_WHAT, SKILLS_FENCE, given.map((s) => skillLine(s, true)), fence),
+      skills: given.map((s) => ({ id: s.id, title: s.doc.title, trust: s.trust })),
+    };
   }
 
   /**

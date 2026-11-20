@@ -494,8 +494,8 @@ test("a VM on another node: its node is asked what the tool spent, and that is c
   expect(outcome.record!.spent.find((line) => line.role === "tool")).toMatchObject({ model: "plan/coder", calls: 2, input: 200_000 });
 });
 
-test("a knight's task is given the skills that bear on its goal (its planner and engineer, never its reviewer), and its verified work is told so it can teach one", async () => {
-  const SKILLS = "<galahad-skills>Run the migrations before the importer.</galahad-skills>";
+test("a knight's task is given the skills that bear on its goal (its planner whole, its engineer their opening, never its reviewer), and its verified work is told so it can teach one", async () => {
+  const SKILLS = { text: "<galahad-skills>Run the migrations before the importer. Then the whole of it.</galahad-skills>", brief: "<galahad-skills>Run the migrations before the importer.</galahad-skills>" };
   const asked: { teammate: string; task: string }[] = [];
   const taught: { teammate: string; task: string; evidence: any }[] = [];
   const f = fixture([say("1. Make the change."), say("```sh\necho one\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], {
@@ -505,9 +505,11 @@ test("a knight's task is given the skills that bear on its goal (its planner and
   const outcome = await f.runtime.executeTask(member, task, f.context);
   expect(outcome.verified).toBe(true);
   expect(asked).toEqual([{ teammate: "ada", task: task.id }]);
-  // The planner's and the engineer's calls carry them; the reviewer judges the evidence alone.
+  // The planner's and the engineer's calls carry them, the planner's whole; the reviewer judges the evidence alone.
   const seen = f.bodies.map((body) => JSON.stringify(body.messages).includes("Run the migrations before the importer."));
   expect(seen).toEqual([true, true, true, false]);
+  const whole = f.bodies.map((body) => JSON.stringify(body.messages).includes("Then the whole of it."));
+  expect(whole).toEqual([true, false, false, false]);
   // What it did, as the evidence of a quest of his is told: the goal, the plan, each command and its exit, the gates.
   expect(taught).toHaveLength(1);
   expect(taught[0]).toMatchObject({ teammate: "ada", task: task.id, evidence: { quest: `team:${task.id}`, goal: task.goal, status: "done", network: "online", steps: [{ command: "echo one", exitCode: 0 }] } });

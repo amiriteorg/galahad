@@ -2164,7 +2164,7 @@ export function createApp(ctx: AppContext) {
       // His skills for a knight's task, as for a quest of his: chosen once from its goal, under the task's own ref.
       skills: (_member, task) => {
         try {
-          return ctx.skills.forQuest(`team:${task.id}`, task.goal)?.text ?? null;
+          return ctx.skills.forQuest(`team:${task.id}`, task.goal);
         } catch (error) {
           ctx.log(`skills: ${(error as Error).message}`);
           return null;
@@ -2935,7 +2935,8 @@ export function createApp(ctx: AppContext) {
             // A quest of his own: the skills that bear on its goal, the same block for every call of it (skills.ts).
             const given = questSkills(quest, request.role, p);
             if (given) {
-              context = [context, given.text].filter(Boolean).join("\n\n");
+              // The planner, asked once, reads a skill's instructions whole; every other call, their opening (SKILL_BRIEF).
+              context = [context, request.role === "planner" ? given.text : given.brief].filter(Boolean).join("\n\n");
               send(skillsStep(given));
             }
             // And what else this node gave the call that others wrote: a skill learned from a quest whose planner or

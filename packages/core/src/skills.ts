@@ -29,6 +29,11 @@ export const SKILL_VERSION = /^[A-Za-z0-9_-]{43}$/;
 
 /** Every bound on a skill's text. */
 export const SKILL_LIMITS = { title: 120, when: 400, steps: 12, step: 400, proofs: 6, command: 300, expect: 200, pitfalls: 8, pitfall: 300, body: 12_000 } as const;
+/**
+ * How much of a skill's instructions go with each of a quest's engineer turns: their opening. The planner, asked once, is
+ * given them whole and plans with them; the engineer, asked every turn, works from the plan (PLAN #5, lean context).
+ */
+export const SKILL_BRIEF = 1_200;
 
 /** A skill's text as it's kept: one line, nothing hidden in it (plain.ts). */
 export const cleanSkillText = plainLine;
@@ -385,7 +390,11 @@ export const SKILLS_FENCE_WHAT =
 export const SKILLS_FENCE = "skills";
 
 /** One skill as one line of JSON: every string cleaned and bounded, so nothing in it can pose as the prompt. */
-export function skillLine(s: OfferedSkill): string {
+export function skillLine(s: OfferedSkill, brief = false): string {
+  const body = s.doc.body ? cleanSkillBody(s.doc.body).slice(0, SKILL_LIMITS.body) : "";
+  // Brief: the opening, cut at a line's end, and how much more the planner had.
+  const opening = body.length > SKILL_BRIEF ? body.slice(0, SKILL_BRIEF).replace(/\n[^\n]*$/, "") : body;
+  const instructions = brief && opening.length < body.length ? `${opening}\n… (${body.length - opening.length} characters more went to the planner, who planned with them whole)` : body;
   return jsonLine({
     id: s.id,
     trust: s.trust,
@@ -399,7 +408,7 @@ export function skillLine(s: OfferedSkill): string {
     steps: s.doc.steps.slice(0, SKILL_LIMITS.steps).map((x) => cut(x, SKILL_LIMITS.step)),
     ...(s.doc.proof.length ? { proof: s.doc.proof.slice(0, SKILL_LIMITS.proofs).map((p) => ({ command: cut(p.command, SKILL_LIMITS.command), expect: cut(p.expect, SKILL_LIMITS.expect) })) } : {}),
     ...(s.doc.pitfalls.length ? { pitfalls: s.doc.pitfalls.slice(0, SKILL_LIMITS.pitfalls).map((x) => cut(x, SKILL_LIMITS.pitfall)) } : {}),
-    ...(s.doc.body ? { instructions: cleanSkillBody(s.doc.body).slice(0, SKILL_LIMITS.body) } : {}),
+    ...(instructions ? { instructions } : {}),
   });
 }
 
