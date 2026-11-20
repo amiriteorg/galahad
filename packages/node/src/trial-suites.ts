@@ -63,7 +63,8 @@ const engineering: SuiteInfo = {
 const agentic: SuiteInfo = {
   id: "agentic",
   about: "real work in a small repository, graded by hidden tests run in a fresh sandbox against what he left",
-  where: "in the workshop, with no network",
+  // (The run's line says its network next: isolated by default, or the gateway's models only for a coding tool.)
+  where: "in the workshop",
   network: "isolated",
   networks: ["isolated", "gateway"],
   levels: { min: 1, max: LEVELS, usual: USUAL_LEVEL },
