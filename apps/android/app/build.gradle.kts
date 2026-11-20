@@ -1,0 +1,93 @@
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// A build is numbered by its time (UTC, yyyymmddHHMM, as the Apple app's are): its version code is the minutes since
+// 2026 began, so a later build always installs over an earlier one. Without one it is a developer's build, code 1.
+val build: String? = providers.gradleProperty("galahad.build").orNull
+val stamp = DateTimeFormatter.ofPattern("yyyyMMddHHmm")
+val code = build?.let { ((LocalDateTime.parse(it, stamp).toEpochSecond(ZoneOffset.UTC) - 1_767_225_600L) / 60).toInt() } ?: 1
+
+// The release key lives outside the repository: scripts/release.sh hands its path and password over in the environment.
+val keystore: String? = providers.environmentVariable("GALAHAD_ANDROID_KEYSTORE").orNull
+
+android {
+    namespace = "org.amirite.galahad"
+    compileSdk = 37
+    defaultConfig {
+        applicationId = "org.amirite.galahad"
+        minSdk = 29
+        targetSdk = 36
+        versionCode = code
+        versionName = "0.1.0" + (build?.let { " ($it)" } ?: "-dev")
+    }
+    buildFeatures {
+        compose = true
+        buildConfig = false
+    }
+    androidResources {
+        // Its words are English: the libraries' other languages would only make it bigger.
+        localeFilters += "en"
+        // Of the PWA's drawings, the two this app never shows stay out of it (aapt's own defaults kept, then those two).
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~:!galahad-helm.webp:!black-knight*.webp"
+    }
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = providers.environmentVariable("GALAHAD_ANDROID_KEYSTORE_PASSWORD").get()
+                keyAlias = "galahad"
+                keyPassword = providers.environmentVariable("GALAHAD_ANDROID_KEYSTORE_PASSWORD").get()
+                storeType = "PKCS12"
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = " debug"
+        }
+        release {
+            optimization { enable = true }
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (keystore != null) signingConfig = signingConfigs.getByName("release")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    sourceSets {
+        // The knights as the owner drew them: the PWA's own files, packaged as they are (never copied or redrawn).
+        getByName("main").assets.srcDir("../../web/src/knights")
+        // The parity vectors the Apple app is held to, read where they are: this app is held to the same bytes.
+        getByName("test").resources.srcDir("../../apple/GalahadTests/Fixtures")
+    }
+    packaging {
+        resources {
+            excludes += setOf("META-INF/*.version", "META-INF/**/*.kotlin_module", "kotlin/**", "**/*.kotlin_builtins", "DebugProbesKt.bin")
+        }
+    }
+    // Nothing about its libraries goes into the app for a store to read: what it's built from is in this repository.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+}
+
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.0")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+}

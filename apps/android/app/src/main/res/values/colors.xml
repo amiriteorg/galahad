@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="icon_background">#FFFFFF</color>
+    <!-- What shows before the first frame: the app's own ground, so it never flashes white in the dark. -->
+    <color name="window">#FFFFFF</color>
+</resources>

@@ -1,0 +1,4 @@
+# Galahad's own code, all of it: small enough to compile ahead of time when it's installed, so the first frame
+# doesn't wait for the JIT. (Compose and the other libraries bring profiles of their own.)
+HSPLorg/amirite/galahad/**->**(**)**
+Lorg/amirite/galahad/**;

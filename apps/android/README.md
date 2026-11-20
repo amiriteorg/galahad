@@ -1,0 +1,48 @@
+# Galahad for Android
+
+A native client for a Galahad node: Kotlin and Jetpack Compose, Android's own components with Galahad's accents, as
+the Apple app is Apple's. It pairs the way the PWA and the Apple app do and signs every request the way
+`packages/core` verifies it, with a device key made in the phone's secure hardware (the Keystore: StrongBox where the
+phone has one) that never leaves it.
+
+It's small on purpose: a signed release is about 2.6 MB, nearly all of it the code, the rest the knights as the owner
+drew them, packaged straight from `apps/web/src/knights` (never copied or redrawn). It needs no Google services: HTTP,
+JSON and the cryptography are what Android ships, and the only libraries are AndroidX's Compose, activity-compose and
+profile installer, and Kotlin's coroutines. Nothing moves by itself: a knight's state is a still ring and a word.
+
+What it does today (first milestone, 20 November 2026): join your node with an invite and the six-digit code; the
+Roundtable, Galahad first, each knight in its state's ring with one line of what it's doing (the same line the PWA and
+the iPhone show: the roster is ported and held to the same parity vectors); Galahad's chat, his answer streamed as he
+writes it, with his answer blocks drawn (charts, figures, steps, choices to tap, pages in a sandboxed viewer); a
+knight's page, its timeline, and a box to write to it or give it a task; the Inbox (approvals, services' questions,
+keys asked for, devices asking to join); and while you were away. Not yet: notifications (Android has no route of the
+node's own yet), a knight's screen and terminal, connectors, the Keys page, files in chat.
+
+Needs JDK 17 and the Android SDK (platform 37, build tools); Gradle comes with the wrapper (its checksum pinned).
+
+```sh
+cd apps/android
+./gradlew testDebugUnitTest        # the protocol, the roster and the answer blocks, against apps/apple's parity vectors
+./gradlew assembleDebug            # app/build/outputs/apk/debug/app-debug.apk (org.amirite.galahad.debug)
+scripts/make-key.sh                # once: the release key, outside the repository, its password in this Mac's keychain
+scripts/release.sh                 # build/release/Galahad-<build>.apk: tested, shrunk by R8, signed, verified
+```
+
+The JVM tests read `apps/apple/GalahadTests/Fixtures/core-vectors.json` where it is (`bun apps/apple/scripts/vectors.ts`
+writes it from core and the push gate checks it), so this app is held to the same bytes as the Apple app: request
+signing, the device id, canonical JSON, invites, the pairing proofs and codes, the Roundtable's rows, and every answer
+block.
+
+## Running it against a throwaway node
+
+The Apple app's dev node serves this app too (a temp home, stand-in models, loopback only). An emulator reaches its
+host's loopback through `adb reverse`:
+
+```sh
+bun apps/apple/scripts/dev-node.ts --dir /tmp/galahad-dev      # from the repository's root; prints the invite link
+adb reverse tcp:<port> tcp:<port>                               # the port in the link, and the one before it
+```
+
+Paste the link into the app, press Ask to join, compare the codes, then approve: `echo <code> > /tmp/galahad-dev/approve`.
+Plain HTTP is allowed only to this phone itself or an emulator's host (`network_security.xml`); a real node is reached
+over HTTPS, its `tailscale serve` address.
