@@ -87,7 +87,7 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
             delay(if (row?.state == KnightState.WORKING) 2_000 else 4_000)
         }
     }
-    LaunchedEffect(entries.size) { if (entries.isNotEmpty()) list.scrollToItem(entries.size) }
+    LaunchedEffect(entries.size) { if (entries.isNotEmpty()) list.toEnd() }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(Space.s2), verticalAlignment = Alignment.CenterVertically) {

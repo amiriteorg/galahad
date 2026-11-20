@@ -61,7 +61,12 @@ fun ChatScreen(app: AppModel, back: () -> Unit) {
         away = app.away()
         if (away.isNotEmpty()) app.sawAway()
     }
-    LaunchedEffect(bubbles.size, bubbles.lastOrNull()?.text?.length) { if (bubbles.isNotEmpty()) list.scrollToItem(bubbles.size + 1) }
+    // His answer is followed as it comes, unless you've scrolled up to read: then it stays where you are.
+    val following = remember { androidx.compose.runtime.derivedStateOf { !list.canScrollForward || list.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= list.layoutInfo.totalItemsCount - 2 } == true } }
+    LaunchedEffect(bubbles.size) { if (bubbles.isNotEmpty()) list.toEnd() }
+    LaunchedEffect(bubbles.lastOrNull()?.text?.length) { if (bubbles.isNotEmpty() && following.value) list.toEnd() }
+    // (A block is drawn only once its fence closes, after the last words came: the end moves once more as he finishes.)
+    LaunchedEffect(live) { if (!live && bubbles.isNotEmpty() && following.value) list.toEnd() }
 
     if (listing) {
         Chats(app, close = { listing = false })
@@ -161,3 +166,6 @@ private fun Chats(app: AppModel, close: () -> Unit) {
         }
     }
 }
+
+/** To the very end of what's there: the foot of the last item, however tall (an answer is one item). */
+suspend fun androidx.compose.foundation.lazy.LazyListState.toEnd() = scrollToItem(maxOf(0, layoutInfo.totalItemsCount - 1), Int.MAX_VALUE / 2)
