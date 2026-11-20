@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import installer from "../../../../scripts/install.sh?raw";
 import pin from "../../../../scripts/bun-pin.sh?raw";
 import appcast from "../../public/mac/appcast.xml?raw";
+import android from "../../public/android/latest.json?raw";
 
 export const REPO = "https://github.com/amiriteorg/galahad";
 export const DOCS = `${REPO}/tree/main/docs`;
@@ -40,6 +41,26 @@ export const MAC = (() => {
     date: new Date(field(/<pubDate>([^<]+)<\/pubDate>/)).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }),
   };
 })();
+/**
+ * Galahad for Android as apps/android/scripts/publish.sh last published it (public/android/latest.json): the newest
+ * signed APK on the repository's releases, its size and the certificate it's signed with. A record that can't be read,
+ * or that links anywhere else, fails the build, rather than a page with a broken download.
+ */
+export const ANDROID = (() => {
+  const a = JSON.parse(android) as { version?: string; build?: string; url?: string; size?: number; sha256?: string; certificate?: string; date?: string };
+  if (!a.version || !a.build || !a.url || !a.size || !a.sha256 || !a.certificate || !a.date) throw new Error("Android's record (public/android/latest.json) is missing a field");
+  if (!a.url.startsWith(`${REPO}/releases/download/`)) throw new Error(`Android's record links outside the repository's releases: ${a.url}`);
+  return {
+    version: a.version,
+    build: a.build,
+    url: a.url,
+    size: `${(a.size / 1e6).toFixed(1)} MB`,
+    sha256: a.sha256,
+    certificate: a.certificate,
+    date: new Date(a.date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }),
+  };
+})();
+
 /** Every build published, each with what changed. */
 export const RELEASES = `${REPO}/releases`;
 

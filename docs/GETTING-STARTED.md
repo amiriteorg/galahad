@@ -80,6 +80,8 @@ The device gets every scope except `gateway:mint`: it's your console, the bank, 
 
 **On an Android phone**, install it from Chrome's menu (**Add to Home screen**, then **Install**). Galahad is then in the share sheet of every app: share a page, a post or some text to him and a new chat opens with it in the message box, unsent, for you to add what you want done with it. (iOS has no share sheet for a web app.)
 
+**Or the Android app** (`apps/android`, Android 10 or later): download the APK from [galahad.sh](https://galahad.sh/#download) or the repository's releases, open it to install it, then paste the invite link (or open it on the phone) and compare the code on both screens. Its key is made in the phone's secure hardware and never leaves it. It says when a newer build is out, and each installs over the last. It has no notifications yet: for those, use the installed web app above.
+
 ### Let him reach you: notifications
 
 Until you turn this on, everything he has for you waits in the Inbox. With it, a paired device gets a short notification when something needs you (a warning or an alert from his heartbeat), an approval is waiting, he has finished work you left him with, or he has a question. He stays silent when there's nothing to say.

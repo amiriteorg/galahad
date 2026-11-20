@@ -4,7 +4,7 @@ import Install from "../components/Install.astro";
 import Knight from "../components/Knight.astro";
 import RoundTable from "../components/RoundTable.astro";
 import Swing from "../components/Swing.astro";
-import { BUN_VERSION, COMPARE, INSTALLER_SHA256, MAC, PHASING, RELEASES, REPO, SIZE, TRIALS, TRIALS_HARD, compact, doc } from "../lib/facts.ts";
+import { ANDROID, BUN_VERSION, COMPARE, INSTALLER_SHA256, MAC, PHASING, RELEASES, REPO, SIZE, TRIALS, TRIALS_HARD, compact, doc } from "../lib/facts.ts";
 
 /* An example Roundtable at work: six knights, each in its room (its VM), each showing in its eyes what it is doing,
    with one line of it as the app's roster says it. Illustrative, and the caption says so. */
@@ -58,7 +58,7 @@ const TUTOR_INSTALL = "curl -fsSL https://galahad.sh/TUTOR.md -o TUTOR.md && gal
             </div>
             <p class="front-note">
               For macOS and Linux, never as root. <a href="/install">Read the script</a> first, or{" "}
-              <a href="#install">see each step</a>. There is also <a href="#download">an app for the Mac</a>.
+              <a href="#install">see each step</a>. There are also <a href="#download">apps for the Mac and for Android</a>.
             </p>
           </div>
 
@@ -533,6 +533,22 @@ const TUTOR_INSTALL = "curl -fsSL https://galahad.sh/TUTOR.md -o TUTOR.md && gal
           <p>
             Signed with Apple's Developer ID and notarized, it keeps itself up to date from galahad.sh. Paired with your
             node, it is your Roundtable on the Mac; its first window can also make that Mac a node.
+          </p>
+        </div>
+        <div class="get-mac">
+          <svg class="get-plan" viewBox="0 0 56 40" aria-hidden="true" focusable="false"><rect x="18" y="2" width="20" height="36" rx="4" /><path d="M25 33h6" /></svg>
+          <p class="get-what">
+            <b>Galahad for Android</b>
+            <span>{ANDROID.version} ({ANDROID.build}), <span class="nb">{ANDROID.date}</span></span>
+            <span>{ANDROID.size}, for Android 10 and later</span>
+          </p>
+          <a class="get-button" href={ANDROID.url} aria-label={`Download Galahad for Android, ${ANDROID.size}`}>Download</a>
+        </div>
+        <div class="entrance-notes">
+          <p>
+            Signed with Galahad's own key, the same for every build (its certificate's SHA-256 begins <code>{ANDROID.certificate.slice(0, 16)}</code>),
+            it tells you when a newer build is out. Open it on your phone to install it, then join your node with an
+            invite.
           </p>
           <p>
             The iPhone and iPad app is in testing on TestFlight. Until it is in the App Store, the app installs on any
