@@ -98,6 +98,29 @@ describe("what a notification may say", () => {
     expect(actionItem({ ...waiting, tool: "Send $$$ to evil" }, now)!.body).toBe("An action is waiting for your answer in the Inbox.");
   });
 
+  test("an approval told alone carries its action, answered from the notification: approve or decline, or a delete declined alone", () => {
+    const now = at("2026-11-12T12:00:00Z");
+    const waiting = { id: "a_1234567890123456789012", connector: "github", tool: "issue.create", state: "waiting", requestedMs: now - 60_000, expires: now + 3_600_000 };
+    const outward = actionItem({ ...waiting, class: "outward" }, now)!;
+    expect(outward.action).toEqual({ id: "a_1234567890123456789012", approvable: true });
+    expect(notifyMessage([outward])).toMatchObject({ kind: "approval", action: "a_1234567890123456789012", approvable: true });
+    // A delete is approved only where its name is typed: from a notification, declined or opened.
+    expect(notifyMessage([actionItem({ ...waiting, class: "delete" }, now)!])).toMatchObject({ action: "a_1234567890123456789012", approvable: false });
+    // (Not knowing its class, it's declined alone; told with others, no action rides along at all.)
+    expect(actionItem(waiting, now)!.action).toEqual({ id: "a_1234567890123456789012", approvable: false });
+    const summary = notifyMessage([outward, actionItem({ ...waiting, id: "a_2234567890123456789012", class: "outward" }, now)!])!;
+    expect([summary.kind, summary.action]).toEqual(["summary", undefined]);
+  });
+
+  test("a payload's action is read strictly: an action id's shape, on an approval, with its yes-or-no", () => {
+    const approval = { v: 1, kind: "approval", title: "Galahad asks your approval", body: "github.issue.create is waiting.", open: "inbox", tag: "t-abc" };
+    expect(readNotifyPayload({ ...approval, action: "a_1234567890123456789012", approvable: true })).toMatchObject({ action: "a_1234567890123456789012", approvable: true });
+    expect(readNotifyPayload({ ...approval, action: "../../etc" })).toBeNull();
+    expect(readNotifyPayload({ ...approval, kind: "finished", action: "a_1234567890123456789012" })).toBeNull();
+    expect(readNotifyPayload({ ...approval, approvable: true })).toBeNull();
+    expect(readNotifyPayload({ ...approval, action: "a_1234567890123456789012", approvable: "yes" })).toBeNull();
+  });
+
   test("he asks to use a Mac itself: its name and minutes, never what for (his words); only while it waits, once settled", () => {
     const now = at("2026-11-17T14:00:00Z");
     const ask = { id: "sc_1234567890123456789012", nodeName: "mini", minutes: 30, state: "waiting", askedAt: now - 60_000 };

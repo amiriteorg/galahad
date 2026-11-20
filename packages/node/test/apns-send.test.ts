@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import http2 from "node:http2";
 import { fromB64u, type NotifyPayload, utf8 } from "@galahad/core";
-import { APPLE_TOKEN_MS, appleEndpoint, type ApplePushKey, ApplePushSender, appleTarget, readApplePushKey, storedApplePushKey } from "../src/apns-send.ts";
+import { APPLE_TOKEN_MS, appleEndpoint, type ApplePushKey, ApplePushSender, appleTarget, readApplePushKey, storedApplePushKey, applePayload } from "../src/apns-send.ts";
 
 /*
  * Sending to the owner's iPhone app through a stand-in for Apple's push service: an HTTP/2 server on loopback that keeps
@@ -79,6 +79,16 @@ describe("a notification to the iPhone app", () => {
       galahad: { v: 1, kind: "approval", open: "inbox", tag: "approval-1" },
     });
     apple.close();
+  });
+
+  test("an approval told alone carries its buttons: approve and decline, or decline alone for a delete; the action rides with ours", () => {
+    const action = "a_1234567890123456789012";
+    expect(JSON.parse(applePayload({ ...PAYLOAD, action, approvable: true }))).toEqual({
+      aps: { alert: { title: PAYLOAD.title, body: PAYLOAD.body }, sound: "default", "thread-id": "approval", category: "approval" },
+      galahad: { v: 1, kind: "approval", open: "inbox", tag: "approval-1", action },
+    });
+    expect(JSON.parse(applePayload({ ...PAYLOAD, action, approvable: false })).aps.category).toBe("approval-decline");
+    expect(JSON.parse(applePayload(PAYLOAD)).aps.category).toBeUndefined();
   });
 
   test("anything that looks like a secret never leaves: the general notification goes instead", async () => {

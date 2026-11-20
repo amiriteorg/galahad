@@ -49,4 +49,14 @@ struct PushTests {
         #expect(Push.destination(["galahad": ["v": 2, "open": "chat"]]) == .inbox)
         #expect(Push.destination(["galahad": ["v": 1, "open": "https://example.com"]]) == .inbox)
     }
+
+    @Test func aButtonAnswersOnlyTheActionItsApprovalNames() {
+        let id = "a_1234567890123456789012"
+        #expect(Push.action(["galahad": ["v": 1, "kind": "approval", "action": id]]) == id)
+        // Read as strictly as the node writes it: an approval's own, an action id's shape, nothing else.
+        #expect(Push.action(["galahad": ["v": 1, "kind": "finished", "action": id]]) == nil)
+        #expect(Push.action(["galahad": ["v": 1, "kind": "approval", "action": "../../actions"]]) == nil)
+        #expect(Push.action(["galahad": ["v": 2, "kind": "approval", "action": id]]) == nil)
+        #expect(Push.action(["aps": ["category": "approval"]]) == nil)
+    }
 }

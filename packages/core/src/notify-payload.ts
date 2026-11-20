@@ -14,6 +14,8 @@ export type NotifyOpen = (typeof NOTIFY_OPENS)[number];
 export const NOTIFY_TITLE_MAX = 60;
 export const NOTIFY_BODY_MAX = 140;
 const CONVERSATION = /^cv_[A-Za-z0-9_-]{22}$/;
+/** An action waiting for your answer (the outbox's own random id: it names nothing it is about). */
+const ACTION = /^a_[A-Za-z0-9_-]{22}$/;
 const TAG = /^[A-Za-z0-9._:-]{1,64}$/;
 /** A kept chat's id, and a notification's tag, as a payload may carry them. */
 export const isConversationId = (id: string): boolean => CONVERSATION.test(id);
@@ -30,6 +32,12 @@ export interface NotifyPayload {
   conversation?: string;
   /** The same thing told again replaces its notification rather than stacking. */
   tag: string;
+  /**
+   * An approval's own action (kind "approval", told alone): answered from the notification itself, behind the device's
+   * unlock, by Approve or Decline, or by Decline alone (`approvable` false: a delete, approved only where its name is typed).
+   */
+  action?: string;
+  approvable?: boolean;
 }
 
 /** What's shown when a push can't be read as a notification of ours: browsers require one, and it must mean something. */
@@ -52,16 +60,27 @@ export function notifyClean(text: string, max: number): string {
 export function readNotifyPayload(raw: unknown): NotifyPayload | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const p = raw as Record<string, unknown>;
-  const allowed = new Set(["v", "kind", "title", "body", "open", "conversation", "tag"]);
+  const allowed = new Set(["v", "kind", "title", "body", "open", "conversation", "tag", "action", "approvable"]);
   if (Object.keys(p).some((key) => !allowed.has(key))) return null;
   if (p.v !== 1 || typeof p.kind !== "string" || !KINDS.has(p.kind)) return null;
   if (typeof p.title !== "string" || typeof p.body !== "string" || typeof p.tag !== "string" || !TAG.test(p.tag)) return null;
   if (typeof p.open !== "string" || !(NOTIFY_OPENS as readonly string[]).includes(p.open)) return null;
   if (p.conversation !== undefined && (typeof p.conversation !== "string" || !CONVERSATION.test(p.conversation) || p.open !== "chat")) return null;
+  if (p.action !== undefined && (typeof p.action !== "string" || !ACTION.test(p.action) || p.kind !== "approval")) return null;
+  if (p.approvable !== undefined && (typeof p.approvable !== "boolean" || p.action === undefined)) return null;
   const title = notifyClean(p.title, NOTIFY_TITLE_MAX);
   const body = notifyClean(p.body, NOTIFY_BODY_MAX);
   if (!title || title !== p.title || body !== p.body) return null;
-  return { v: 1, kind: p.kind as NotifyPayload["kind"], title, body, open: p.open as NotifyOpen, ...(p.conversation ? { conversation: p.conversation as string } : {}), tag: p.tag };
+  return {
+    v: 1,
+    kind: p.kind as NotifyPayload["kind"],
+    title,
+    body,
+    open: p.open as NotifyOpen,
+    ...(p.conversation ? { conversation: p.conversation as string } : {}),
+    tag: p.tag,
+    ...(p.action ? { action: p.action as string, approvable: p.approvable === true } : {}),
+  };
 }
 
 /** The address a notification opens, within the app's own origin. */

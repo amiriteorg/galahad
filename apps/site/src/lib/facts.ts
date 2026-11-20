@@ -138,6 +138,7 @@ export const PHASING = {
     { state: "built", what: "Any ACP agent", line: "A knight works in Gemini CLI, Goose, OpenCode or any agent that speaks ACP, set up your way in its own VM." },
     { state: "built", what: "Keys a knight uses but never sees", line: "Its scripts call an API of yours through the gateway, which puts your key in at that API's address alone; reads only unless you say writes." },
     { state: "built", what: "Skills from elsewhere", line: "An Agent Skill's folder on GitHub, its SKILL.md taken in as text and nothing in it run, waiting for your approval." },
+    { state: "built", what: "Answer from your wrist", line: "Approve or decline from an iPhone notification or the Apple Watch, behind your unlock; a delete only declined there." },
     { state: "built", what: "Services ask you", line: "A connected MCP server may ask you something mid-call: it waits in your Inbox, answered by you alone, never a model." },
     { state: "built", what: "A knight as a file", line: "Export a knight to Markdown and take it in on any Galahad: its job and how it works, never its memory or a key." },
     { state: "building", what: "Galahad writes first", line: "Ship it and give again from a task's card, \"tell me when\", what happened while you were away, and the next step of your backlog offered to an idle knight, for your yes; next, asks you repeat offered as a loop." },

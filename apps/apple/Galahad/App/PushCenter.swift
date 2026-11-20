@@ -51,13 +51,26 @@ import UserNotifications
 
 enum PushProblem: LocalizedError {
     case declined
-    var errorDescription: String? { "Notifications are off for Galahad in the iPhone's Settings: turn them on there, then here." }
+    case unpaired
+    var errorDescription: String? {
+        switch self {
+        case .declined: "Notifications are off for Galahad in the iPhone's Settings: turn them on there, then here."
+        case .unpaired: "This iPhone isn't paired with your node."
+        }
+    }
 }
 
 /// What iOS tells the app about notifications: Apple's token for this install, and a notification shown or tapped.
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // An approval answered from its notification, here and on the Watch: each button behind the iPhone's own unlock.
+        let approve = UNNotificationAction(identifier: Push.Button.approve, title: "Approve", options: [.authenticationRequired])
+        let decline = UNNotificationAction(identifier: Push.Button.decline, title: "Decline", options: [.authenticationRequired, .destructive])
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(identifier: Push.Button.approval, actions: [approve, decline], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Push.Button.declineOnly, actions: [decline], intentIdentifiers: []),
+        ])
         return true
     }
 
@@ -75,8 +88,32 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let destination = Push.destination(response.notification.request.content.userInfo)
+        let userInfo = response.notification.request.content.userInfo
+        // A button pressed on the notification: the action answered there, without opening the app.
+        if [Push.Button.approve, Push.Button.decline].contains(response.actionIdentifier), let action = Push.action(userInfo) {
+            await Self.answer(action, approve: response.actionIdentifier == Push.Button.approve)
+            return
+        }
+        let destination = Push.destination(userInfo)
         await MainActor.run { PushCenter.shared.opened = destination }
+    }
+
+    /// Your answer to an action, signed by this device as the Inbox's is; then a word of how it went (a failure says to
+    /// open the app, where it still waits).
+    private static func answer(_ action: String, approve: Bool) async {
+        struct Decision: Encodable { let id: String; let approve: Bool }
+        let said: (title: String, body: String)
+        do {
+            guard let key = try DeviceKey.load(), let node = PairedNode.load(), node.device == key.device else { throw PushProblem.unpaired }
+            _ = try await NodeClient(origin: node.origin, signer: key).post("/api/actions/decide", Decision(id: action, approve: approve), as: JSONValue.self)
+            said = approve ? ("Approved", "Galahad sends it once, as asked.") : ("Declined", "Nothing was sent.")
+        } catch {
+            said = ("Not answered", "\(error.localizedDescription) It still waits in your Inbox.")
+        }
+        let content = UNMutableNotificationContent()
+        content.title = said.title
+        content.body = said.body
+        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "answered-\(action)", content: content, trigger: nil))
     }
 }
 #endif

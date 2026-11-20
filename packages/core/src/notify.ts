@@ -113,6 +113,8 @@ export interface NotifyItem {
   conversation?: string;
   /** Scopes a device must hold to be told (what it could see in the app anyway). */
   needs: string[];
+  /** An approval's action, answered from the notification itself (Decline alone when it can't be approved there). */
+  action?: { id: string; approvable: boolean };
 }
 
 /** A line that may be shown: cleaned and cut; null when it looks like it holds a secret (the caller says something general instead). */
@@ -174,7 +176,7 @@ export const ACTION_SETTLE_MS = 5_000;
 const TOOL_REF = /^[a-z][a-z0-9-]{0,39}\.[a-z][a-z0-9_.-]{0,47}$/;
 
 /** An approval waiting for your answer: which tool (its name is the manifest's, bounded), never the arguments or the reason given. */
-export function actionItem(a: { id: string; connector: string; tool: string; state: string; requestedMs: number; expires: number }, now: number): NotifyItem | null {
+export function actionItem(a: { id: string; connector: string; tool: string; state: string; requestedMs: number; expires: number; class?: string }, now: number): NotifyItem | null {
   if (a.state !== "waiting" || a.expires <= now || now - a.requestedMs < ACTION_SETTLE_MS) return null;
   const tool = `${a.connector}.${a.tool}`;
   return {
@@ -185,6 +187,8 @@ export function actionItem(a: { id: string; connector: string; tool: string; sta
     body: TOOL_REF.test(tool) ? `${tool} is waiting for your answer in the Inbox.` : "An action is waiting for your answer in the Inbox.",
     open: "inbox",
     needs: ["mind:read"],
+    // Answered from the notification too; a delete only declined there (approving one takes typing its name).
+    ...(/^a_[A-Za-z0-9_-]{22}$/.test(a.id) ? { action: { id: a.id, approvable: a.class !== undefined && a.class !== "delete" } } : {}),
   };
 }
 
@@ -345,7 +349,16 @@ export function notifyMessage(items: readonly NotifyItem[], salt = ""): NotifyPa
   if (!items.length) return null;
   if (items.length === 1) {
     const item = items[0]!;
-    return { v: 1, kind: item.kind, title: notifyClean(item.title, NOTIFY_TITLE_MAX), body: notifyClean(item.body, NOTIFY_BODY_MAX), open: item.open, ...(item.conversation ? { conversation: item.conversation } : {}), tag: tagOf(item.key, salt) };
+    return {
+      v: 1,
+      kind: item.kind,
+      title: notifyClean(item.title, NOTIFY_TITLE_MAX),
+      body: notifyClean(item.body, NOTIFY_BODY_MAX),
+      open: item.open,
+      ...(item.conversation ? { conversation: item.conversation } : {}),
+      tag: tagOf(item.key, salt),
+      ...(item.action && item.kind === "approval" ? { action: item.action.id, approvable: item.action.approvable } : {}),
+    };
   }
   const count = (kind: NotifyKind) => items.filter((item) => item.kind === kind).length;
   const parts = [

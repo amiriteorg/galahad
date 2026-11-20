@@ -68,11 +68,18 @@ export async function appleProviderToken(key: ApplePushKey, issuedAt: number): P
   return `${head}.${b64u(new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, signer, utf8(head) as Uint8Array<ArrayBuffer>)))}`;
 }
 
-/** What the iPhone app is sent: Apple's part (the alert, its sound, the thread it joins) and ours (what a tap opens). */
+/** The notification's buttons, as the app registers them: an approval answered there (approve and decline), or declined. */
+export const APPLE_CATEGORY = { approve: "approval", decline: "approval-decline" } as const;
+
+/**
+ * What the iPhone app is sent: Apple's part (the alert, its sound, the thread it joins, the buttons it shows) and ours
+ * (what a tap opens, and an approval's action for its buttons). An iPhone shows the same buttons on its Watch.
+ */
 export function applePayload(payload: NotifyPayload): string {
+  const category = payload.action ? (payload.approvable ? APPLE_CATEGORY.approve : APPLE_CATEGORY.decline) : null;
   return JSON.stringify({
-    aps: { alert: { title: payload.title, body: payload.body }, sound: "default", "thread-id": payload.kind },
-    galahad: { v: 1, kind: payload.kind, open: payload.open, tag: payload.tag, ...(payload.conversation ? { conversation: payload.conversation } : {}) },
+    aps: { alert: { title: payload.title, body: payload.body }, sound: "default", "thread-id": payload.kind, ...(category ? { category } : {}) },
+    galahad: { v: 1, kind: payload.kind, open: payload.open, tag: payload.tag, ...(payload.conversation ? { conversation: payload.conversation } : {}), ...(payload.action ? { action: payload.action } : {}) },
   });
 }
 

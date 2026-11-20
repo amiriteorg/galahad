@@ -31,6 +31,23 @@ enum Push {
     }
 
     /// Where a tapped notification opens: ours names one of the node's fixed places; anything else opens the Inbox.
+    /// The buttons an approval's notification shows (the node names one in its push: apns-send.ts APPLE_CATEGORY), and on
+    /// the Watch too: Approve and Decline, or Decline alone for a delete, which is approved only where its name is typed.
+    enum Button {
+        static let approval = "approval"
+        static let declineOnly = "approval-decline"
+        static let approve = "approve"
+        static let decline = "decline"
+    }
+
+    /// The action an approval's notification is about (the outbox's own id), or nil: read strictly, as the node writes it.
+    static func action(_ userInfo: [AnyHashable: Any]) -> String? {
+        guard let ours = userInfo["galahad"] as? [String: Any], (ours["v"] as? Int) == 1, ours["kind"] as? String == "approval",
+              let id = ours["action"] as? String, id.range(of: #"^a_[A-Za-z0-9_-]{22}$"#, options: .regularExpression) != nil
+        else { return nil }
+        return id
+    }
+
     static func destination(_ userInfo: [AnyHashable: Any]) -> Destination {
         guard let ours = userInfo["galahad"] as? [String: Any], (ours["v"] as? Int) == 1 else { return .inbox }
         switch ours["open"] as? String {
