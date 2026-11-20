@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ElicitRequestSchema, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import {
   type BuiltMcpCall,
   canonical,
@@ -209,9 +209,28 @@ export async function callMcpTool(ctx: McpContext, manifest: ConnectorManifest, 
   let key: string | null = null;
   let ok: boolean;
   let text: string;
+  // A call that may ask you is held to its own time while it works, and that time stops while its question waits on you:
+  // a server that hangs is cut off as soon as ever, and one that asks you isn't for the minutes you take to answer.
+  const own = ctx.timeoutMs ?? 120_000;
+  const held = new AbortController();
+  let clock: ReturnType<typeof setTimeout> | undefined;
+  const run = () => void (clock = setTimeout(() => held.abort(new McpError(ErrorCode.RequestTimeout, "Request timed out")), own));
+  const asks = ctx.elicit;
+  const elicit: McpContext["elicit"] = asks
+    ? async (params, signal) => {
+        clearTimeout(clock);
+        try {
+          return await asks(params, signal);
+        } finally {
+          if (!held.signal.aborted) run();
+        }
+      }
+    : undefined;
   try {
-    // (A call that may ask you is given the question's wait too.)
-    const done = await withMcp(ctx, manifest, (client, timeout) => client.callTool({ name: call.remote, arguments: call.args as Record<string, unknown> }, undefined, { timeout: ctx.elicit ? Math.max(timeout, MCP_ELICIT_TIMEOUT_MS) : timeout }));
+    run();
+    const done = await withMcp({ ...ctx, ...(elicit ? { elicit } : {}) }, manifest, (client, timeout) =>
+      client.callTool({ name: call.remote, arguments: call.args as Record<string, unknown> }, undefined, elicit ? { timeout: Math.max(timeout, MCP_ELICIT_TIMEOUT_MS), signal: held.signal } : { timeout }),
+    );
     key = done.key;
     const result = done.value as { content?: Content[]; structuredContent?: unknown; isError?: boolean; toolResult?: unknown };
     ok = !result.isError;
@@ -232,6 +251,8 @@ export async function callMcpTool(ctx: McpContext, manifest: ConnectorManifest, 
       ok = false;
       text = String((error as Error).message);
     } else throw error;
+  } finally {
+    clearTimeout(clock);
   }
   const clean = redact(text, key ? [key, Buffer.from(key).toString("base64")] : []);
   const clipped = clean.length > 60_000;
