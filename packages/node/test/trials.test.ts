@@ -135,6 +135,12 @@ describe("a run's harness", () => {
     expect(harnessOptions({ harness: VARIANTS.baseline! }).escalate).toBe(false);
     expect(harnessOptions({ harness: VARIANTS.escalate! }).escalate).toBe(true);
   });
+
+  test("nor is a contract written first unless its variant says so", () => {
+    expect(harnessOptions({}).contract).toBeUndefined();
+    expect(harnessOptions({ harness: VARIANTS.baseline! }).contract).toBeUndefined();
+    expect(harnessOptions({ harness: VARIANTS.contract! })).toMatchObject({ contract: true, proposeGates: false });
+  });
 });
 
 describe("the CLI", () => {

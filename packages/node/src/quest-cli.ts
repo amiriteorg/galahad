@@ -136,6 +136,8 @@ export interface DoOptions {
   remind?: boolean;
   /** Current file reads among the outputs cut short stay whole, within a budget (a trial variant: brain quest.ts keepReads). */
   keepReads?: boolean;
+  /** Where no gate fails before the work, the planner first writes a test that does (a trial variant: brain quest.ts contract). */
+  contract?: boolean;
   /** This quest is a trial: its id is of a trial's kind (t-…), so the archive never offers what it kept to a model. */
   trial?: boolean;
   /**
@@ -418,6 +420,9 @@ export function printQuestEvent(event: QuestEvent): void {
     case "locked":
       console.log(`  ${bold(`Not run: the work changed ${event.changed.join(", ")}`)} ${dim("· the tests its gates run are the contract; the work goes back")}`);
       return;
+    case "contract":
+      console.log(event.kept ? `  ${bold("The contract: a test that fails before the work")} ${dim(`· $ ${firstLines(event.command ?? "", 1)}`)}` : dim(`  (no contract: ${event.why})`));
+      return;
     case "budget":
       console.log(`  ${bold(event.out ? `The budget is spent ($${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)}): the work stops` : `$${event.spentUsd.toFixed(2)} of the $${event.budgetUsd.toFixed(2)} budget spent: wrapping up`)}`);
       return;
@@ -466,6 +471,9 @@ function printAttempt(attempt: number, event: QuestEvent): void {
       return;
     case "locked":
       console.log(`${tag} ${bold(`tests changed: ${event.changed.join(", ")}`)} ${dim("(sent back)")}`);
+      return;
+    case "contract":
+      console.log(`${tag} ${event.kept ? bold("contract written") : dim(`no contract (${event.why})`)}`);
       return;
     case "budget":
       console.log(`${tag} ${bold(event.out ? "the budget is spent: stopping" : `$${event.spentUsd.toFixed(2)} of $${event.budgetUsd.toFixed(2)} spent: wrapping up`)}`);
@@ -629,6 +637,7 @@ async function workIn(
       ...((options.escalate ?? !options.pins?.engineer) ? { escalate: true } : {}),
       ...(options.remind ? { remind: true } : {}),
       ...(options.keepReads ? { keepReads: true } : {}),
+      ...(options.contract ? { contract: true } : {}),
       ...(options.budgetUsd !== undefined && run.spentUsd ? { budgetUsd: options.budgetUsd } : {}),
     },
     {

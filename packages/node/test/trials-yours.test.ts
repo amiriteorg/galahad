@@ -202,7 +202,7 @@ describe("a trial of a case", () => {
     expect(node.chats).toEqual([]);
     // Beside one that does count, it is said and left out.
     const both = standIn(FIX);
-    const graded = (await attemptCase(both, widgetsCase(repo.base, { gates: [GATES.test, GATES.tool] }), job({ harness: { ...{ gates: false, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false, remind: false, keepReads: false } } })))!;
+    const graded = (await attemptCase(both, widgetsCase(repo.base, { gates: [GATES.test, GATES.tool] }), job({ harness: { ...{ gates: false, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false } } })))!;
     valid(graded);
     expect(graded).toMatchObject({ status: "scored", score: 1 });
     expect(graded.note).toBe("counted: gate 1 of 2; gate 2 fails with the task's own change too (exit 1)");

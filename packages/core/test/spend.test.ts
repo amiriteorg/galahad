@@ -168,7 +168,7 @@ describe("a run's settings, and variants of the harness", () => {
     expect(describeVariant(VARIANTS["no-gates"]!)).toBe("gates off");
     expect(describeVariant(VARIANTS.baseline!)).toBe("as the baseline");
     const mine = parseVariant("mine:gates=off,skills=on,effort=2,planner-gates=on,revisions=1,archive=no");
-    expect(mine).toEqual({ name: "mine", options: { gates: false, plannerGates: true, effort: 2, skills: true, archive: false, revisions: 1, engram: false, diff: false, escalate: false, remind: false, keepReads: false } });
+    expect(mine).toEqual({ name: "mine", options: { gates: false, plannerGates: true, effort: 2, skills: true, archive: false, revisions: 1, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false } });
     expect(describeVariant(mine.options)).toBe("gates off, the planner's own gates, effort 2, skills offered, no archive context, 1 revision");
     expect(() => parseVariant("warp")).toThrow(/no variant "warp"/);
     expect(() => parseVariant("mine:warp=on")).toThrow(/no harness switch "warp"/);
@@ -225,11 +225,21 @@ describe("a run's settings, and variants of the harness", () => {
     expect(() => parseVariant("mine:keep-reads=all")).toThrow(/keep-reads is on or off/);
   });
 
+  test("contract first is a switch of its own: off in the baseline; its variant withholds a task's gates, so it differs from no-gates by it alone", () => {
+    expect(VARIANTS.baseline!.contract).toBe(false);
+    expect(parseVariant("contract")).toEqual({ name: "contract", options: { ...VARIANTS["no-gates"]!, contract: true } });
+    expect(describeVariant(VARIANTS.contract!)).toBe("gates off, where no gate fails before the work, the planner writes a test that does");
+    for (const [name, options] of Object.entries(VARIANTS)) expect([name, options.contract]).toEqual([name, name === "contract"]);
+    expect(parseVariant("mine:contract=on").options).toEqual({ ...VARIANTS.baseline!, contract: true });
+    expect(() => parseVariant("mine:contract=maybe")).toThrow(/contract is on or off/);
+    expect(() => parseVariant("mine:warp=on")).toThrow(/keep-reads, contract\)/);
+  });
+
   test("a run recorded before a switch existed still reads, with that switch off: nothing recorded is refused or changed by a new one", () => {
     // A run's settings as the log holds them from before 14 November 2026: six switches, no notes store.
     const old = { effort: 1, parallel: 2, variant: { name: "no-gates", options: { gates: false, plannerGates: false, effort: 1 as const, skills: false, archive: true, revisions: 2 } }, seed: 9, group: "g-old1" };
     const read = TrialRunSettings.parse(old);
-    expect(read.variant).toEqual({ name: "no-gates", options: { ...old.variant.options, engram: false, diff: false, escalate: false, remind: false, keepReads: false } });
+    expect(read.variant).toEqual({ name: "no-gates", options: { ...old.variant.options, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false } });
     expect(read.variant!.options).toEqual(VARIANTS["no-gates"]!);
     expect(describeVariant(read.variant!.options)).toBe("gates off");
     // An older terminal's request to start a run names six switches too: taken, with the store off.

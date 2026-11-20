@@ -464,3 +464,85 @@ describe("the test files a gate names are the contract (locked)", () => {
     expect(h.events.some((e) => e.type === "locked")).toBe(false);
   });
 });
+
+describe("contract first: where no gate fails before the work, the planner writes one that does (PLAN #7)", () => {
+  const WRITE = `mkdir -p test && cat > test/contract.test.ts <<'EOF'\nimport { expect, test } from "bun:test";\nimport { sum } from "../src/sum.ts";\ntest("sums", () => expect(sum(1, 2)).toBe(3));\nEOF`;
+  const RUN = "bun test test/contract.test.ts";
+  const contract = (write = WRITE, run = RUN) => `It must sum.\n\`\`\`sh\n${write}\n\`\`\`\nContract: ${run}`;
+  const digest = (hex: string) => ({ stdout: `${hex.repeat(64)}  test/contract.test.ts\n` });
+  const SUM = sh("printf 'export const sum = (a, b) => a + b;' > src/sum.ts");
+  /** The sandbox: no test file until it is written, then the same one; the test fails until the work is done. */
+  const sandbox = (changedAt?: number) => (command: string, nth: number) =>
+    command.includes("sha256sum") ? (nth === 1 ? { stdout: "" } : digest(nth === changedAt ? "b" : "a")) : command === RUN ? { exitCode: nth === 1 ? 1 : 0, stdout: nth === 1 ? "error: Cannot find module '../src/sum.ts'\n" : "1 pass\n" } : {};
+  const contracts = (events: QuestEvent[]) => events.filter((e): e is Extract<QuestEvent, { type: "contract" }> => e.type === "contract");
+
+  test("its test, failing now, is a gate like any other: the engineer is told it is the contract and works until it passes; the reviewer sees it fail before", async () => {
+    const h = harness({ planner: ["1. Write sum.\nDone when: sum(1, 2) is 3.", contract()], engineer: [SUM, "DONE\nWrote sum."], exec: sandbox() }, { contract: true });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+    expect(contracts(h.events)).toEqual([{ type: "contract", kept: true, command: RUN, files: ["test/contract.test.ts"] }]);
+    expect(outcome.gates?.map((g) => [g.command, g.by, g.exitCode])).toEqual([[RUN, "planner", 0]]);
+    // Asked after the plan: what is there looked at, its test written and run once, and locked, all before the engineer begins.
+    expect(h.order.slice(0, 7)).toEqual(["planner", "planner", expect.stringContaining("sha256sum"), `$ ${WRITE}`, `$ ${RUN}`, expect.stringContaining("sha256sum"), "engineer"]);
+    const briefing = h.seen.find((s) => s.role === "engineer")!.messages[0]!.content;
+    expect(briefing).toContain(`1. $ ${RUN} (proposed by the planner)`);
+    expect(briefing).toContain("The test files they run are the contract: test/contract.test.ts.");
+    expect(reviews(h)[0]!.messages.at(-1)!.content).toContain(`1. $ ${RUN} → exit 1`);
+  });
+
+  test("the work can't change it: a submission that did goes back before the gate runs", async () => {
+    const h = harness(
+      { planner: ["1. Write sum.", contract()], engineer: [sh("echo 'test(\"x\", () => {})' > test/contract.test.ts"), "DONE\nIt passes.", sh("git checkout -- test/contract.test.ts"), SUM, "DONE\nWrote sum."], exec: sandbox(3) },
+      { contract: true },
+    );
+    expect((await h.run).status).toBe("done");
+    expect(h.events.filter((e) => e.type === "locked")).toEqual([{ type: "locked", changed: ["test/contract.test.ts"] }]);
+    expect(h.commands.filter((c) => c === RUN)).toHaveLength(2);
+  });
+
+  test("where its gates pass already, the planner's test comes after them", async () => {
+    const h = harness({ planner: ["1. Write sum.", contract()], engineer: [SUM, "DONE\nWrote sum."], exec: sandbox() }, { gates: ["bun run lint"], gatesFirst: true, contract: true });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+    expect(outcome.gates?.map((g) => [g.command, g.by])).toEqual([["bun run lint", "owner"], [RUN, "planner"]]);
+    expect(h.seen.filter((s) => s.role === "planner")[1]!.messages[0]!.content).toContain("Its gates pass already, before any work, so they show nothing about it:\n$ bun run lint");
+  });
+
+  test("none, and the work goes on as it would have: NONE; a test that passes already, or can't run (what it wrote goes again); a file that is there already (nothing run)", async () => {
+    const none = harness({ planner: ["1. Tidy the README.", "NONE\nA README's wording can't be tested."], engineer: ["DONE\nTidied."] }, { contract: true });
+    expect((await none.run).status).toBe("done");
+    expect(contracts(none.events)).toEqual([{ type: "contract", kept: false, why: "the planner found no test that could show it" }]);
+    expect(none.commands).toEqual([]);
+
+    const passes = harness({ planner: ["1. Write sum.", contract()], engineer: ["DONE\nNothing to do."], exec: (command) => (command.includes("sha256sum") ? { stdout: "" } : {}) }, { contract: true });
+    expect((await passes.run).status).toBe("done");
+    expect(contracts(passes.events)).toEqual([{ type: "contract", kept: false, why: "its test passed before any work, so it would show nothing" }]);
+    expect(passes.commands).toContain("rm -f -- 'test/contract.test.ts'");
+
+    const cant = harness(
+      { planner: ["1. Write sum.", contract(WRITE, "vitest run test/contract.test.ts")], engineer: ["DONE\nDone."], exec: (command) => (command.includes("sha256sum") ? { stdout: "" } : command.startsWith("vitest") ? { exitCode: 127, stderr: "vitest: command not found\n" } : {}) },
+      { contract: true },
+    );
+    await cant.run;
+    expect(contracts(cant.events)).toEqual([{ type: "contract", kept: false, why: "its command couldn't run here (exit 127), so it would show nothing" }]);
+    expect(cant.commands).toContain("rm -f -- 'test/contract.test.ts'");
+
+    const there = harness({ planner: ["1. Write sum.", contract()], engineer: ["DONE\nDone."], exec: (command) => (command.includes("sha256sum") ? digest("a") : {}) }, { contract: true });
+    await there.run;
+    expect(contracts(there.events)).toEqual([{ type: "contract", kept: false, why: "its test would change test/contract.test.ts, which is there already" }]);
+    expect(there.commands.filter((c) => !c.includes("sha256sum"))).toEqual([]);
+  });
+
+  test("not asked where a gate fails before the work (that is its contract already), where its gates weren't tried first, or unless asked for", async () => {
+    const failing = harness({ engineer: [sh("echo fixed > calc.txt"), "DONE\nFixed."], exec: (command, nth) => (command === "test -f calc.txt" ? { exitCode: nth === 1 ? 1 : 0 } : {}) }, { gates: ["test -f calc.txt"], gatesFirst: true, contract: true });
+    expect((await failing.run).status).toBe("done");
+    const untried = harness({ engineer: ["DONE\nDone."] }, { gates: ["true"], contract: true });
+    await untried.run;
+    const off = harness({ engineer: ["DONE\nDone."] });
+    await off.run;
+    for (const h of [failing, untried, off]) {
+      expect(h.seen.filter((s) => s.role === "planner")).toHaveLength(1);
+      expect(contracts(h.events)).toEqual([]);
+    }
+  });
+});

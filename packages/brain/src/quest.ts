@@ -131,6 +131,15 @@ export interface QuestOptions {
    */
   remind?: boolean;
   /**
+   * Contract first (PLAN #7): when no gate fails before the work (none was given, or each passes already, so its
+   * passing after shows nothing), the planner's models first write one test that fails now and will pass once the goal
+   * is met. It is kept only if it does fail now, and not because its command can't run (exit 126 or 127); then it is a
+   * gate like any other, the files it wrote locked as a gate's tests are: the engineer, on its own (cheaper) models,
+   * works until it passes, and the reviewer sees it fail before and pass after. Default off: a trial variant
+   * (`contract`) measures it before anything turns it on.
+   */
+  contract?: boolean;
+  /**
    * The engineer sees what it reads, and keeps it in view (SHOWN, compact): a file's contents come whole up to some
    * 100,000 characters, any other output is cut only past 30,000, and the conversation is cut short by its size, not
    * by a count of outputs; of what is cut, the file reads still current (neither read again nor changed since) stay
@@ -221,6 +230,8 @@ export type QuestEvent =
   | { type: "gated"; round: number; passed: boolean; results: GateResult[] }
   /** A submission changed test files a gate names (the contract): it went back before any gate ran. */
   | { type: "locked"; changed: string[] }
+  /** Contract first: the test the planner wrote, failing before the work (`kept`), or why there is none. */
+  | { type: "contract"; kept: boolean; command?: string; files?: string[]; why?: string }
   /** The budget is nearly spent (`out`: false, said once, past four fifths), or spent: the work stops. */
   | { type: "budget"; spentUsd: number; budgetUsd: number; out: boolean }
   | { type: "thought"; step: number; text: string; model: string }
@@ -523,6 +534,25 @@ const digestsOf = (stdout: string): Map<string, string> =>
 
 /** Options with their defaults applied (a fixed plan and a custom review stay optional). */
 type Resolved = Required<Omit<QuestOptions, "plan" | "review" | "agent" | "engram" | "budgetUsd">> & Pick<QuestOptions, "plan" | "review" | "agent" | "engram" | "budgetUsd">;
+
+/**
+ * Contract first (QuestOptions.contract): what the planner is asked for before the engineer begins, when no gate fails
+ * before the work. One test, written by a command it gives, that fails now and passes once the goal is met.
+ */
+export const contractPrompt = (o: Pick<Resolved, "goal" | "environment">, plan: string, before: readonly GateResult[]): string =>
+  `Before the engineer begins, write this quest's contract: ONE automated test that fails now, because the goal is not met yet, and passes once it is. The engineer works until it passes, and can't change it.
+
+Quest: ${o.goal}
+
+Plan:
+${plan}
+
+You are working in: ${o.environment}
+${before.length ? `Its gates pass already, before any work, so they show nothing about it:\n${before.map((g) => `$ ${g.command}`).join("\n")}` : "It has no gates of its own."}
+
+Reply with one \`\`\`sh block that writes the test into a new file (a heredoc; in the repository's own test style and runner if it has them; change no other file), then a line on its own:
+Contract: <the one command that runs it: exit 0 when it passes>
+If the goal can't be shown by an automated test, reply NONE and why.`;
 
 const planPrompt = (o: Resolved): string => `Plan this quest for an engineer who works alone${o.agent ? `, with a coding agent (${o.agent.driver.name})` : ", one shell command at a time"}, in: ${o.environment}
 
@@ -879,6 +909,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     submitAtLimit: Boolean(options.submitAtLimit),
     escalate: Boolean(options.escalate),
     remind: Boolean(options.remind),
+    contract: Boolean(options.contract),
     keepReads: Boolean(options.keepReads),
     audit: Boolean(options.audit),
     ...(options.plan !== undefined ? { plan: options.plan } : {}),
@@ -1319,6 +1350,80 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       const rules = await rulesNow();
       for (const gate of gates) before.push((await runGate(gate, rules)).result);
       emit({ type: "baseline", results: before });
+    }
+
+    // Contract first (QuestOptions.contract): with no gate that fails before the work, the planner writes one that does.
+    if (o.contract && (!gates.length || (before !== undefined && before.every((g) => g.exitCode === 0)))) {
+      const asked = await ask("planner", [{ role: "user", content: contractPrompt(o, plan, before ?? []), effort: STEP_EFFORT.plan }]);
+      const text = asked.text.trim();
+      const block = fences(text).blocks[0];
+      const command = /^\W*Contract:\s*(.+)$/im.exec(text)?.[1]?.trim().replace(/^`+|`+$/g, "");
+      // (What it sends to a device, /dev/null and the like, is no file of its.)
+      const writes = block ? [...new Set(writesOf(block))].filter((path) => !/^\/(dev|proc|sys)\//.test(path)) : [];
+      const none = (why: string) => emit({ type: "contract", kept: false, why });
+      const digests = async (paths: readonly string[]): Promise<Map<string, string>> => {
+        try {
+          return digestsOf((await deps.exec(digestCommand(paths), 30)).stdout);
+        } catch {
+          return new Map();
+        }
+      };
+      if (/^\W*NONE\b/i.test(text)) none("the planner found no test that could show it");
+      else if (!block || !command) none("its reply had no test to write and no command to run it");
+      else if (!writes.length) none("its reply didn't say which file its test is written to");
+      else {
+        // It goes in files of its own: one that is there already is the work's, never the contract's to change.
+        const there = [...(await digests(writes)).keys()];
+        // What writes it is a command like any other: your tripwires first, your tells after.
+        const rules = await rulesNow();
+        const found = there.length ? null : tripOf(rules, block);
+        if (found) {
+          await trip(found, block, steps);
+          if (found.does === "halt") throw new Halted(found, block);
+        }
+        let wrote: ExecResult | null = null;
+        if (!there.length && !found) {
+          check();
+          try {
+            wrote = await deps.exec(block, o.commandTimeoutSec);
+          } catch (error) {
+            wrote = { exitCode: -1, stdout: "", stderr: `The sandbox could not run this: ${(error as Error).message}`, durationMs: 0, truncated: false };
+          }
+          tell(rules, block, wrote.exitCode);
+        }
+        const gate: Gate = { command, by: "planner" };
+        const now = wrote?.exitCode === 0 ? (await runGate(gate, rules)).result : null;
+        const why = there.length
+          ? `its test would change ${there.join(", ")}, which is there already`
+          : found
+            ? `your tripwire "${found.rule}" refused what writes its test`
+            : !now
+              ? `writing its test exited ${wrote!.exitCode}`
+              : now.exitCode === 0
+                ? "its test passed before any work, so it would show nothing"
+                : couldNotRun(now)
+                  ? `its command couldn't run here (exit ${now.exitCode}), so it would show nothing`
+                  : "";
+        if (why) {
+          // What it wrote goes again (none of it was there before), so the work starts as it would have without it.
+          if (wrote) {
+            try {
+              await deps.exec(`rm -f -- ${writes.map((p) => `'${p.replaceAll("'", "'\\''")}'`).join(" ")}`, 30);
+            } catch {
+              /* the sandbox can't be asked: the files stay, and the work is judged as ever */
+            }
+          }
+          none(why);
+        } else {
+          gates = [...gates, gate];
+          before = [...(before ?? []), now!];
+          // The files it wrote are its tests: locked as a gate's are, so the work can't change what it is judged by.
+          const files = [...new Set([...writes, ...testFilesOf(command)])];
+          for (const [path, digest] of await digests(files)) locked.set(path, digest);
+          emit({ type: "contract", kept: true, command, files });
+          emit({ type: "gates", gates });
+        }
+      }
     }
 
     if (o.agent) return await agentWork(o.agent);

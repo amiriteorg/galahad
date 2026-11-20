@@ -68,7 +68,8 @@ export type TrialPins = z.infer<typeof TrialPins>;
  * note) · `diff`: the reviewer is shown the work itself, the repository's diff, beside what was run and what the
  * tests print · `escalate`: a gate that fails twice in a row moves the rest of the work to the planner's models ·
  * `remind`: the quest's constraints (its goal, the plan's "Done when:", the gates) are said again every ten commands ·
- * `keepReads`: of the command outputs cut short to keep a quest affordable, current file reads stay whole, within a budget.
+ * `keepReads`: of the command outputs cut short to keep a quest affordable, current file reads stay whole, within a budget ·
+ * `contract`: where no gate fails before the work, the planner first writes one test that does, and the work must pass it.
  * A run recorded before a switch existed lacks it and reads as off, which is what it was run with.
  */
 export const HarnessOptions = z.object({
@@ -83,11 +84,12 @@ export const HarnessOptions = z.object({
   escalate: z.boolean().default(false),
   remind: z.boolean().default(false),
   keepReads: z.boolean().default(false),
+  contract: z.boolean().default(false),
 });
 export type HarnessOptions = z.infer<typeof HarnessOptions>;
 
 /** How trials are run when nothing says otherwise: what `galahad trial run` has always done, with a task's gates on. */
-export const BASELINE: HarnessOptions = { gates: true, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false, remind: false, keepReads: false };
+export const BASELINE: HarnessOptions = { gates: true, plannerGates: false, effort: 1, skills: false, archive: true, revisions: 2, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false };
 
 export const VariantName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "a variant's name is lowercase letters, digits and - (max 40)");
 export const TrialVariant = z.object({ name: VariantName, options: HarnessOptions });
@@ -114,7 +116,11 @@ export const TrialRunSettings = z.object({
 });
 export type TrialRunSettings = z.infer<typeof TrialRunSettings>;
 
-/** The variants that come named: each differs from the baseline by one switch (bare: by all of them). */
+/**
+ * The variants that come named: each differs from the baseline by one switch (bare: by all of them). `contract` differs
+ * from `no-gates` by one: a task that brings gates failing before the work has its contract already, so the planner's
+ * is measured where a task comes without them, as most of yours do.
+ */
 export const VARIANTS: Readonly<Record<string, HarnessOptions>> = {
   baseline: BASELINE,
   "no-gates": { ...BASELINE, gates: false },
@@ -129,7 +135,8 @@ export const VARIANTS: Readonly<Record<string, HarnessOptions>> = {
   escalate: { ...BASELINE, escalate: true },
   remind: { ...BASELINE, remind: true },
   "keep-reads": { ...BASELINE, keepReads: true },
-  bare: { gates: false, plannerGates: false, effort: 1, skills: false, archive: false, revisions: 0, engram: false, diff: false, escalate: false, remind: false, keepReads: false },
+  contract: { ...BASELINE, gates: false, contract: true },
+  bare: { gates: false, plannerGates: false, effort: 1, skills: false, archive: false, revisions: 0, engram: false, diff: false, escalate: false, remind: false, keepReads: false, contract: false },
 };
 
 const ON = new Set(["on", "yes", "true", "1"]);
@@ -157,11 +164,11 @@ export function parseVariant(spelling: string): TrialVariant {
       if (OFF.has(value)) return false;
       throw new Error(`${key} is on or off, not "${value}"`);
     };
-    if (key === "gates" || key === "skills" || key === "archive" || key === "engram" || key === "diff" || key === "escalate" || key === "remind") options[key] = flag();
+    if (key === "gates" || key === "skills" || key === "archive" || key === "engram" || key === "diff" || key === "escalate" || key === "remind" || key === "contract") options[key] = flag();
     else if (key === "planner-gates" || key === "plannerGates") options.plannerGates = flag();
     else if (key === "keep-reads" || key === "keepReads") options.keepReads = flag();
     else if (key === "effort" || key === "revisions") options[key] = Number(value);
-    else throw new Error(`no harness switch "${key}" (there is: gates, planner-gates, effort, skills, archive, revisions, engram, diff, escalate, remind, keep-reads)`);
+    else throw new Error(`no harness switch "${key}" (there is: gates, planner-gates, effort, skills, archive, revisions, engram, diff, escalate, remind, keep-reads, contract)`);
   }
   return { name, options: z.strictObject(HarnessOptions.shape).parse(options) };
 }
@@ -180,6 +187,7 @@ export function describeVariant(options: HarnessOptions): string {
   if (options.escalate !== BASELINE.escalate) said.push(options.escalate ? "a gate failing twice moves the work to the planner" : "no escalation");
   if (options.remind !== BASELINE.remind) said.push(options.remind ? "the quest's constraints said again every ten commands" : "no constraints said again");
   if (options.keepReads !== BASELINE.keepReads) said.push(options.keepReads ? "current file reads kept whole" : "file reads cut short like any output");
+  if (options.contract !== BASELINE.contract) said.push(options.contract ? "where no gate fails before the work, the planner writes a test that does" : "no contract first");
   return said.join(", ") || "as the baseline";
 }
 

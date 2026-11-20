@@ -59,6 +59,8 @@ export function standingAfter(s: QuestStanding, event: QuestEvent): QuestStandin
       return { ...s, doing: line(`The same gate failed twice in a row: the ${event.to}'s models take the work`, 300) };
     case "routed":
       return { ...s, doing: line(`${event.why[0]!.toUpperCase()}${event.why.slice(1)}: the ${event.to}'s models do it`, 300) };
+    case "contract":
+      return { ...s, doing: line(event.kept ? `The planner wrote the test the work must pass: $ ${redact(event.command ?? "")}` : `No contract: ${event.why}`, 300) };
     case "tripped":
       return { ...s, step: Math.max(s.step, event.step), doing: line(`Your tripwire ${event.rule} ${event.does === "halt" ? "halted it" : "refused"}: $ ${redact(event.command)}`, 300) };
     case "checked":

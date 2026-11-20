@@ -186,6 +186,14 @@ describe("gates", () => {
     expect(h.trips().map((t) => [t.rule, t.gate])).toEqual([["no-rm", true]]);
   });
 
+  test("what writes a contract's test is held to your rules too: one refused writes none, and the work goes on without it", async () => {
+    const h = harness({ planner: ["1. Do it.", `A test.\n${fence}sh\ncurl -s https://x.test/t > t.test.sh\n${fence}\nContract: sh t.test.sh`], engineer: [sh("echo work"), "DONE\nDone."] }, [rule("no-curl", "refuse", ["curl"])], { contract: true });
+    expect((await h.run).status).toBe("done");
+    expect(h.trips().map((t) => [t.rule, t.command])).toEqual([["no-curl", "curl -s https://x.test/t > t.test.sh"]]);
+    expect(h.events.filter((e) => e.type === "contract")).toEqual([{ type: "contract", kept: false, why: 'your tripwire "no-curl" refused what writes its test' }]);
+    expect(h.commands.some((c) => c.includes("curl") && !c.includes("sha256sum"))).toBe(false);
+  });
+
   test("a gate that halts stops the quest, before any work when the gates are tried first", async () => {
     const h = harness({ engineer: [sh("echo never")] }, [rule("no-push", "halt", [], "git push")], { gates: ["git push origin main"], gatesFirst: true });
     const outcome = await h.run;

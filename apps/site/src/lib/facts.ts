@@ -144,7 +144,7 @@ export const PHASING = {
     { state: "building", what: "Computers that grow", line: "VMs grow live today; next, a disk that grows when it runs low." },
     { state: "building", what: "Each step thinks as it needs", line: "A routine turn thinks less and a hard one more, said inside the conversation so its cache holds; a role's level is yours to pin." },
     { state: "building", what: "Lean context", line: "A knight reads whole files and keeps them in view; what a later run or edit made stale becomes a line. Next, errors since fixed." },
-    { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing; next, the test written first." },
+    { state: "building", what: "Contract first", line: "A gate that passes before the work is said to prove nothing, and the planner can write the failing test first: a trial variant until it is measured." },
     { state: "building", what: "Hooks and tripwires", line: "Your rules halt or refuse a command, run a check after one, or tell you it ran; next, before an answer." },
     { state: "building", what: "Trials from your own work", line: "Your verified tasks, worked again and graded by their own gates; next, after every change." },
     { state: "building", what: "The Mac app", line: "Client and node in one, signed and self-updating; it gives a Mac its knights' VMs, behind its firewall, with one password, and lends Galahad the Mac itself in sessions you allow." },
