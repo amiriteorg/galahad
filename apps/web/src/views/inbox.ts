@@ -348,7 +348,7 @@ function questionInput(f: QuestionField): { el: HTMLElement; value: () => unknow
 }
 
 /** An MCP server's question, mid-call: its words quoted (never as yours), its form, and Send or No. Its call waits. */
-function questionCard(ctx: Ctx, q: QuestionView): HTMLElement {
+export function questionCard(ctx: Ctx, q: QuestionView): HTMLElement {
   const outcome = h("div");
   const inputs = q.fields.map((f) => ({ f, ...questionInput(f) }));
   async function answer(accept: boolean, trigger: HTMLButtonElement): Promise<void> {

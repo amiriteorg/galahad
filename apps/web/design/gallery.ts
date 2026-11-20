@@ -15,6 +15,8 @@ import type { KnightState } from "../src/lib/knight-state.ts";
 import { h, Scope } from "../src/ui/dom.ts";
 import { icon } from "../src/ui/icons.ts";
 import { selector } from "../src/ui/selector.ts";
+import type { Ctx } from "../src/context.ts";
+import { questionCard } from "../src/views/inbox.ts";
 
 const TONES: Tone[] = ["ok", "warn", "danger", "info", "accent", "agent", "neutral", "needs"];
 /** Each state a knight can be in, with the face it shows in it. */
@@ -198,6 +200,30 @@ const page = h(
       state("a key", field("API key", secretInput().wrap, { hint: "Sealed at once; only its last four characters are ever shown." })),
       state("choices", h("div", { class: "stack" }, segment.el.cloneNode(true) as HTMLElement, switchControl("Notifications on this device", true, () => {}, { hint: "Through the browser's push service." }), range.el, tags.el, picker.el)),
       state("codes", copyField("galahad invite --client"), sasCode("023811")),
+    ),
+
+    shown(
+      "questionCard()",
+      "An MCP server's question in the middle of a call: its words quoted as its, a field for each thing it asks, then Send or No.",
+      state(
+        "every kind of field",
+        // (Drawn as the Inbox draws it; its buttons answer nobody here.)
+        questionCard({ can: () => true, api: { post: async () => ({}) }, live: { refreshQuestions: async () => {} } } as unknown as Ctx, {
+          id: "qn_gallery00000000",
+          connector: "tracker",
+          label: "Tracker",
+          message: "Which repository should the issue go in, and how urgent is it?",
+          askedAt: Date.now(),
+          expires: Date.now() + 4 * 60_000,
+          fields: [
+            { name: "repo", kind: "text", title: "Repository", description: "owner/name", required: true, format: null, minLength: null, maxLength: 100, default: null },
+            { name: "count", kind: "number", title: "How many copies", description: null, required: false, integer: true, minimum: 1, maximum: 10, default: 1 },
+            { name: "urgent", kind: "yes-no", title: "Urgent", description: null, required: false, default: false },
+            { name: "area", kind: "one", title: "Area", description: null, required: true, options: [{ value: "node", title: "The node" }, { value: "pwa", title: "The app" }], default: null },
+            { name: "labels", kind: "many", title: "Labels", description: null, required: false, options: [{ value: "bug", title: "Bug" }, { value: "docs", title: "Docs" }], minItems: null, maxItems: 2, default: ["bug"] },
+          ],
+        }),
+      ),
     ),
 
     section("openSheet()", { note: "A centred dialog on a wide screen, a tray from the bottom on a phone; its actions in its foot." }, sheetInPlace()),
