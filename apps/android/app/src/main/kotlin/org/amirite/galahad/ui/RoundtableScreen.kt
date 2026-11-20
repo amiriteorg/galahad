@@ -53,7 +53,7 @@ import org.amirite.galahad.core.RosterRow
  * last looked, on any device, has a green dot, as an unread email does.
  */
 @Composable
-fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -> Unit) {
+fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -> Unit, openRoom: (String) -> Unit) {
     val table by app.table.collectAsState()
     val problem by app.problem.collectAsState()
     val paired by app.paired.collectAsState()
@@ -98,7 +98,7 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
         }
         if (rooms.isNotEmpty()) {
             item { SectionTitle("Rooms", Modifier.padding(top = Space.s4)) }
-            items(rooms, key = { "r:${it.id}" }) { row -> RoomSeat(row) }
+            items(rooms, key = { "r:${it.id}" }) { row -> RoomSeat(row) { openRoom(row.id) } }
         }
         item { Spacer(Modifier.height(Space.s10)) }
     }
@@ -159,14 +159,15 @@ private fun Seat(drawing: String, name: String, state: KnightState?, line: Strin
 }
 
 @Composable
-private fun RoomSeat(row: RosterRow) {
+private fun RoomSeat(row: RosterRow, onClick: () -> Unit) {
     val brand = LocalBrand.current
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s2),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).semantics(mergeDescendants = true) { role = Role.Button }.padding(horizontal = Space.margin, vertical = Space.s2),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
     ) {
-        Box(Modifier.size(Space.rowFace).clip(CircleShape).background(brand.raised), contentAlignment = Alignment.Center) {
+        // (A room's mark, for the eye only: a screen reader says its name.)
+        Box(Modifier.size(Space.rowFace).clip(CircleShape).background(brand.raised).clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
             Text("#", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Column(Modifier.weight(1f)) {

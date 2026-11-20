@@ -55,19 +55,21 @@ fun Root(app: AppModel) {
     var place by rememberSaveable { mutableStateOf(Place.ROUNDTABLE) }
     var chat by rememberSaveable { mutableStateOf(false) }
     var knight by rememberSaveable { mutableStateOf<String?>(null) }
+    var room by rememberSaveable { mutableStateOf<String?>(null) }
     val inbox by app.inbox.collectAsState()
 
-    BackHandler(enabled = chat || knight != null || place != Place.ROUNDTABLE) {
+    BackHandler(enabled = chat || knight != null || room != null || place != Place.ROUNDTABLE) {
         when {
             chat -> chat = false
             knight != null -> knight = null
+            room != null -> room = null
             else -> place = Place.ROUNDTABLE
         }
     }
 
     Scaffold(
         bottomBar = {
-            if (!chat && knight == null) {
+            if (!chat && knight == null && room == null) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     NavigationBarItem(selected = place == Place.ROUNDTABLE, onClick = { place = Place.ROUNDTABLE }, icon = { Icon(roundtableIcon, null) }, label = { Text("Roundtable") })
                     NavigationBarItem(
@@ -87,7 +89,8 @@ fun Root(app: AppModel) {
             when {
                 chat -> ChatScreen(app) { chat = false }
                 knight != null -> KnightScreen(app, knight!!) { knight = null }
-                place == Place.ROUNDTABLE -> RoundtableScreen(app, openChat = { chat = true }, openKnight = { knight = it })
+                room != null -> RoomScreen(app, room!!) { room = null }
+                place == Place.ROUNDTABLE -> RoundtableScreen(app, openChat = { chat = true }, openKnight = { knight = it }, openRoom = { room = it })
                 place == Place.INBOX -> InboxScreen(app)
                 else -> MoreScreen(app)
             }

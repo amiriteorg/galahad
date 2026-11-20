@@ -49,30 +49,94 @@ private data class Entry(val at: Long, val key: String, val speaker: String?, va
 
 /**
  * A knight's page: its face and state, then its timeline (what you and it said, and its tasks as they stand, oldest
- * first), and a box to write to it or to give it a task. Read again every four seconds while it's open (two while it
- * works); opening it is looking, so what ended here is no longer new to you.
+ * first), and a box to write to it or to give it a task. Opening it is looking, so what ended here is no longer new.
  */
 @Composable
 fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
     val table by app.table.collectAsState()
     val row = table.rows.firstOrNull { it.kind == "knight" && it.id == id }
     val person = table.snapshot?.teammates?.firstOrNull { it.id == id }
-    var room by remember { mutableStateOf<String?>(null) }
-    var entries by remember { mutableStateOf<List<Entry>>(emptyList()) }
-    var problem by remember { mutableStateOf<String?>(null) }
+    Timeline(
+        app,
+        key = "knight:$id",
+        roomOf = { c -> c.post("/api/team/direct", Json.obj("id" to id))["room"].let { it.string ?: it["id"].string } },
+        seen = Json.obj("knight" to id),
+        assignee = id,
+        busy = row?.state == KnightState.WORKING,
+        placeholder = "Write to ${person?.name ?: id}",
+        back = back,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+            Face(Looks.of(id, person?.name ?: id, person?.avatar), row?.state, size = 120.dp, description = person?.name)
+            Text(person?.name ?: id, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            StateChip(row?.state)
+            row?.let { Text(Roster.besideChip(it.line, it.state), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
+/** A room's page: who sits in it, what was said there and its tasks, and a box to write to them all. */
+@Composable
+fun RoomScreen(app: AppModel, id: String, back: () -> Unit) {
+    val table by app.table.collectAsState()
+    val row = table.rows.firstOrNull { it.kind == "room" && it.id == id }
+    val room = table.snapshot?.rooms?.firstOrNull { it.id == id }
+    val members = room?.members?.mapNotNull { m -> table.snapshot?.teammates?.firstOrNull { it.id == m } } ?: emptyList()
+    Timeline(
+        app,
+        key = "room:$id",
+        roomOf = { id },
+        seen = Json.obj("room" to id),
+        assignee = null,
+        busy = table.snapshot?.tasks?.any { it.room == id && it.status == "running" } == true,
+        placeholder = "Write to ${room?.name ?: "the room"}",
+        back = back,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(-Space.s3)) {
+                for (m in members.take(5)) Face(Looks.of(m.id, m.name, m.avatar), table.rows.firstOrNull { it.kind == "knight" && it.id == m.id }?.state, size = 64.dp, description = m.name)
+            }
+            Text(room?.name ?: "A room", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            row?.let { Text(it.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
+/**
+ * A conversation's timeline under its [header], oldest first, read again every four seconds while it's open (two while
+ * work runs there), and a box to write in; [assignee] offers the same words as a task for that knight instead.
+ */
+@Composable
+private fun Timeline(
+    app: AppModel,
+    key: String,
+    roomOf: suspend (org.amirite.galahad.core.NodeClient) -> String?,
+    seen: Json,
+    assignee: String?,
+    busy: Boolean,
+    placeholder: String,
+    back: () -> Unit,
+    header: @Composable () -> Unit,
+) {
+    val table by app.table.collectAsState()
+    var room by remember(key) { mutableStateOf<String?>(null) }
+    var entries by remember(key) { mutableStateOf<List<Entry>>(emptyList()) }
+    var problem by remember(key) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
+    val names = table.snapshot?.teammates?.associate { it.id to it.name } ?: emptyMap()
 
     suspend fun read() {
         val c = app.client ?: return
         try {
-            val r = room ?: c.post("/api/team/direct", Json.obj("id" to id))["room"].let { it.string ?: it["id"].string }.also { room = it }
+            val r = room ?: roomOf(c).also { room = it } ?: return
             val view = c.post("/api/team/room", Json.obj("id" to r))
             val said = view["messages"].list.map { m ->
                 val speaker = m["speaker"].string ?: ""
-                Entry(m["createdAt"].long ?: 0, "m:${m["id"].string ?: m["createdAt"].long}", if (speaker == "owner") null else m["speakerName"].string ?: person?.name ?: speaker, speaker == "owner", m["text"].string ?: "", null)
+                val who = when (speaker) { "owner" -> null; "galahad" -> "Galahad"; "system" -> "The Roundtable"; else -> m["speakerName"].string ?: names[speaker] ?: speaker }
+                Entry(m["createdAt"].long ?: 0, "m:${m["id"].string ?: m["createdAt"].long}", who, speaker == "owner", m["text"].string ?: "", null)
             }
-            val tasks = view["tasks"].list.filter { it["assignee"].string == id }.map { t -> Entry(t["createdAt"].long ?: t["updatedAt"].long ?: 0, "t:${t["id"].string}", null, false, "", t) }
+            val tasks = view["tasks"].list.filter { assignee == null || it["assignee"].string == assignee }.map { t -> Entry(t["createdAt"].long ?: t["updatedAt"].long ?: 0, "t:${t["id"].string}", null, false, "", t) }
             entries = (said + tasks).sortedBy { it.at }
             problem = null
         } catch (e: NodeError) {
@@ -80,11 +144,11 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
         }
     }
 
-    LaunchedEffect(id) {
-        runCatching { app.client?.post("/api/team/seen", Json.obj("knight" to id)) }
+    LaunchedEffect(key) {
+        runCatching { app.client?.post("/api/team/seen", seen) }
         while (true) {
             read()
-            delay(if (row?.state == KnightState.WORKING) 2_000 else 4_000)
+            delay(if (busy) 2_000 else 4_000)
         }
     }
     LaunchedEffect(entries.size) { if (entries.isNotEmpty()) list.toEnd() }
@@ -94,28 +158,21 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
             TextButton(onClick = back) { Text("Back") }
         }
         LazyColumn(Modifier.weight(1f), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.s4)) {
-            item {
-                Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    Face(Looks.of(id, person?.name ?: id, person?.avatar), row?.state, size = 120.dp, description = person?.name)
-                    Text(person?.name ?: id, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                    StateChip(row?.state)
-                    row?.let { Text(Roster.besideChip(it.line, it.state), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-            }
+            item { header() }
             problem?.let { item { Problem(it) } }
             items(entries, key = { it.key }) { e -> if (e.task != null) TaskCard(app, e.task) else Said(e) }
         }
         Composer(
-            placeholder = "Write to ${person?.name ?: id}",
-            asTask = "Give it as a task",
+            placeholder = placeholder,
+            asTask = if (assignee != null) "Give it as a task" else null,
             sending = false,
             onSend = { text, task ->
                 val r = room ?: return@Composer
                 scope.launch {
                     try {
-                        if (task) {
+                        if (task && assignee != null) {
                             val title = text.lineSequence().first().take(200)
-                            app.client?.post("/api/team/tasks", Json.obj("room" to r, "assignee" to id, "title" to title, "goal" to text))
+                            app.client?.post("/api/team/tasks", Json.obj("room" to r, "assignee" to assignee, "title" to title, "goal" to text))
                         } else {
                             app.client?.post("/api/team/messages", Json.obj("room" to r, "text" to text))
                         }
