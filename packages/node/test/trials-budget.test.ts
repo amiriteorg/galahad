@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { type ChatStreamEvent, type RouteName, routes, spendTotal, TrialRecord, type TrialRunsView, type TrialView, type Usage, VARIANTS } from "@galahad/core";
+import { type ChatStreamEvent, type RouteName, routes, spendTotal, TrialRecord, TrialRunId, type TrialRunsView, type TrialView, type Usage, VARIANTS } from "@galahad/core";
 import { ENGINEERING_SUITE, pose, type TrialProblem } from "@galahad/brain";
-import { DEFAULT_TOKENS_PER_ATTEMPT, describeCost, describeDone, describeFallback, describeTrial, estimateLabel, estimateRun, runTrials, type TrialUnit } from "../src/trial-cli.ts";
+import { DEFAULT_TOKENS_PER_ATTEMPT, describeCost, describeDone, describeFallback, describeTrial, estimateLabel, estimateRun, freshRunId, runTrials, type TrialUnit } from "../src/trial-cli.ts";
 import { parseBudget, parsePins, parseTokens } from "../src/trial-commands.ts";
 
 /*
@@ -198,6 +198,18 @@ describe("a run's budget", () => {
     const b = await runTrials(blind.node, { suite: "engineering", problems: [cantilever], repeat: 2, parallel: 1, network: "gateway", seed: 11, budget: { usd: 5 }, prices: { "fake/planner": { input: 1, output: 1 } } });
     expect(b.trials).toHaveLength(0);
     expect(b.budgetEnded!.why).toMatch(/needs a price for every model that answers, and there's none for fake\/engineer/);
+  });
+
+  test("two runs begun in the same millisecond are two runs (seen on Ultra: a sweep's second run took the first's id)", () => {
+    const now = Date.now;
+    Date.now = () => 1_794_000_000_000;
+    try {
+      const ids = Array.from({ length: 50 }, () => freshRunId());
+      expect(new Set(ids).size).toBe(50);
+      for (const id of ids) expect(TrialRunId.safeParse(id).success).toBe(true);
+    } finally {
+      Date.now = now;
+    }
   });
 
   test("how a budget is spelled", () => {

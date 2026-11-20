@@ -191,7 +191,17 @@ import { galahadRevision } from "./revision.ts";
 const freshSeed = (): number => crypto.getRandomValues(new Uint32Array(1))[0]!;
 
 /** A run's id: when it started (the Index is computed per run). */
-export const freshRunId = (): string => `r-${Date.now().toString(36)}`;
+/**
+ * When it began, and four characters of chance, never an id this process made before: two runs begun in the same
+ * millisecond (a sweep's or an A/B's, one that had no room for a trial) are two runs, not one recorded twice.
+ */
+const madeRuns = new Set<string>();
+export function freshRunId(): string {
+  for (;;) {
+    const id = `r-${Date.now().toString(36)}${(crypto.getRandomValues(new Uint32Array(1))[0]! % 36 ** 4).toString(36).padStart(4, "0")}`;
+    if (!madeRuns.has(id)) return (madeRuns.add(id), id);
+  }
+}
 
 /** The harness switches as a quest's options (a task's own gates are the caller's to add). */
 export function harnessOptions(job: Pick<TrialJob, "harness" | "pins" | "effort">): Partial<DoOptions> {
