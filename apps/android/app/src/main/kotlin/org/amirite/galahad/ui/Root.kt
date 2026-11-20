@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -23,6 +24,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +41,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.amirite.galahad.app.AppModel
+import org.amirite.galahad.app.Updates
 
 /** Where you are: one of the three places, or a page opened from one (Galahad's chat, a knight's page). */
 private enum class Place { ROUNDTABLE, INBOX, MORE }
@@ -98,8 +102,17 @@ private fun MoreScreen(app: AppModel) {
     var forgetting by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
+    var newer by remember { mutableStateOf<Updates.Newer?>(null) }
+    LaunchedEffect(Unit) { newer = Updates.newer(context) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.margin), verticalArrangement = Arrangement.spacedBy(Space.s3)) {
         Text("More", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+        newer?.let { n ->
+            Panel {
+                Text("A newer Galahad is out", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("Build ${n.build} (${n.size}). It installs over this one: open it once it's downloaded.", style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.url))) }) { Text("Download") }
+            }
+        }
         paired?.let { p ->
             Panel {
                 Text("Your node", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)

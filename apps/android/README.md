@@ -15,7 +15,9 @@ Roundtable, Galahad first, each knight in its state's ring with one line of what
 the iPhone show: the roster is ported and held to the same parity vectors); Galahad's chat, his answer streamed as he
 writes it, with his answer blocks drawn (charts, figures, steps, choices to tap, pages in a sandboxed viewer); a
 knight's page, its timeline, and a box to write to it or give it a task; the Inbox (approvals, services' questions,
-keys asked for, devices asking to join); and while you were away. Not yet: notifications (Android has no route of the
+keys asked for, devices asking to join); and while you were away. More says when a newer build is out (it asks
+galahad.sh's `android/latest.json` at most once a day, sending nothing of yours) and downloads it from GitHub's releases;
+it installs over the last because every build is signed with the same key. Not yet: notifications (Android has no route of the
 node's own yet), a knight's screen and terminal, connectors, the Keys page, files in chat.
 
 Needs JDK 17 and the Android SDK (platform 37, build tools); Gradle comes with the wrapper (its checksum pinned).
