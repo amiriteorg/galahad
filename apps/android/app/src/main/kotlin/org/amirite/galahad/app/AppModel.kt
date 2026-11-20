@@ -46,6 +46,14 @@ data class Inbox(
     val pairings: List<Json> = emptyList(),
 ) {
     val count: Int get() = actions.size + questions.size + keys.size + pairings.size
+
+    companion object {
+        /**
+         * A device asking to join, as the Inbox's list tells one apart from another: by its invite and its key together,
+         * since one device may ask again with a new invite while its first ask still waits.
+         */
+        fun pairingKey(p: Json): String = "p:${p["invite"].string}:${p["device"].string}"
+    }
 }
 
 /** The Roundtable as this phone last read it. */

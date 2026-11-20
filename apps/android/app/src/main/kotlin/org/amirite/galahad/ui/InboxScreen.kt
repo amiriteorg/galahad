@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
+import org.amirite.galahad.app.Inbox
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.NodeError
 import org.amirite.galahad.core.Roster
@@ -88,7 +89,7 @@ fun InboxScreen(app: AppModel) {
             KeyAsked(k, asker(k["requestedBy"].string ?: ""), seal = { value -> act { app.sealKey(k["name"].string!!, value, k["provider"].string) } }, dismiss = { act { app.dismissKey(k["name"].string!!) } })
         }
         if (inbox.pairings.isNotEmpty()) item { SectionTitle("Devices asking to join") }
-        items(inbox.pairings, key = { "p:${it["device"].string}" }) { p ->
+        items(inbox.pairings, key = Inbox::pairingKey) { p ->
             Panel {
                 Text(p["name"].string ?: "A device", style = MaterialTheme.typography.titleMediumEmphasized)
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
