@@ -61,11 +61,18 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
     val table by app.table.collectAsState()
     val row = table.rows.firstOrNull { it.kind == "knight" && it.id == id }
     val person = table.snapshot?.teammates?.firstOrNull { it.id == id }
-    // Its screen, watched and taken over; Back returns here.
+    // Its VM: its screen, watched and taken over, or a terminal in it; Back returns here.
     var watching by rememberSaveable(id) { mutableStateOf(false) }
+    var inTerminal by rememberSaveable(id) { mutableStateOf(false) }
+    var vmMenu by remember { mutableStateOf(false) }
     BackHandler(enabled = watching) { watching = false }
     if (watching) {
         DesktopScreen(app, id, person?.name ?: id) { watching = false }
+        return
+    }
+    val sandbox = person?.workspace?.get("id").string
+    if (inTerminal && sandbox != null) {
+        TerminalScreen(app, sandbox, person?.name ?: id) { inTerminal = false }
         return
     }
     Timeline(
@@ -79,7 +86,17 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
         title = person?.name ?: id,
         back = back,
         // Any VM, as the iPhone offers it: one without a desktop says so (the node's refusal) and how to get one.
-        actions = { if (person?.workspace != null) TextButton(onClick = { watching = true }) { Text("Screen") } },
+        actions = {
+            if (sandbox != null) {
+                androidx.compose.foundation.layout.Box {
+                    TextButton(onClick = { vmMenu = true }) { Text("Its VM") }
+                    androidx.compose.material3.DropdownMenu(expanded = vmMenu, onDismissRequest = { vmMenu = false }) {
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Its screen") }, onClick = { vmMenu = false; watching = true })
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Its terminal") }, onClick = { vmMenu = false; inTerminal = true })
+                    }
+                }
+            }
+        },
     ) {
         val scope = rememberCoroutineScope()
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
