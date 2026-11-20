@@ -22,6 +22,17 @@ struct InboxView: View {
                     Text("Let one in only if it shows the same code.")
                 }
             }
+            if !session.questions.isEmpty {
+                Section {
+                    ForEach(session.questions) { question in
+                        QuestionRow(session: session, question: question)
+                    }
+                } header: {
+                    Text("Services ask you")
+                } footer: {
+                    Text("An MCP server asked you something in the middle of a call of Galahad's. Only you answer it; what you send goes to that service alone.")
+                }
+            }
             if !session.screenSessions.isEmpty {
                 Section {
                     ForEach(session.screenSessions) { screen in
@@ -546,6 +557,109 @@ struct NoticeRow: View {
 
 /// His ask to use a Mac itself (docs/MAC.md, M4), or his session there: what for (his words), for how long, and your
 /// answer; while it runs, watching it and ending it.
+/// An MCP server's question, mid-call: its words, quoted as its, a field for each thing it asks, then Send or No.
+struct QuestionRow: View {
+    let session: Session
+    let question: QuestionView
+    @State private var texts: [String: String] = [:]
+    @State private var yeses: [String: Bool] = [:]
+    @State private var picked: [String: Set<String>] = [:]
+    @State private var problem: String?
+    @State private var sending = false
+
+    var body: some View {
+        InboxRow(symbol: "questionmark.bubble") {
+            Text("\(question.label) asks you").font(.headline)
+            Text(question.message).font(.subheadline)
+            ForEach(question.fields, id: \.name) { field in
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    input(field)
+                    if let description = field.description { Text(description).font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+            Text("Its call waits for your answer until \(Text(Date(timeIntervalSince1970: question.expires / 1000), style: .time)). A service's own form: never a password or a key.")
+                .font(.footnote).foregroundStyle(.secondary)
+            if let problem { Text(problem).font(.footnote).foregroundStyle(.red) }
+            if session.can("fleet:admin") {
+                InboxButtons {
+                    Button("No") { Task { await send(false) } }.buttonStyle(.bordered)
+                    Button("Send") { Task { await send(true) } }.buttonStyle(.borderedProminent)
+                }
+                .disabled(sending)
+            }
+        }
+        .onAppear(perform: fillDefaults)
+    }
+
+    @ViewBuilder private func input(_ field: QuestionField) -> some View {
+        let label = field.required ? field.title : "\(field.title) (optional)"
+        switch field.kind {
+        case "yes-no":
+            Toggle(label, isOn: Binding(get: { yeses[field.name] ?? false }, set: { yeses[field.name] = $0 }))
+        case "one":
+            Picker(label, selection: Binding(get: { texts[field.name] ?? "" }, set: { texts[field.name] = $0 })) {
+                Text("Choose…").tag("")
+                ForEach(field.options ?? [], id: \.value) { Text($0.title).tag($0.value) }
+            }
+        case "many":
+            Text(label).font(.subheadline)
+            ForEach(field.options ?? [], id: \.value) { option in
+                Toggle(option.title, isOn: Binding(get: { picked[field.name]?.contains(option.value) ?? false }, set: { on in
+                    var chosen = picked[field.name] ?? []
+                    if on { chosen.insert(option.value) } else { chosen.remove(option.value) }
+                    picked[field.name] = chosen
+                }))
+            }
+        case "number":
+            TextField(label, text: Binding(get: { texts[field.name] ?? "" }, set: { texts[field.name] = $0 })).keyboard(.decimal)
+        default:
+            TextField(label, text: Binding(get: { texts[field.name] ?? "" }, set: { texts[field.name] = $0 }))
+                .capitals(.never)
+                .autocorrectionDisabled()
+        }
+    }
+
+    /// What the server suggested, filled in once.
+    private func fillDefaults() {
+        for field in question.fields where texts[field.name] == nil && yeses[field.name] == nil && picked[field.name] == nil {
+            switch field.default {
+            case .string(let text): texts[field.name] = text
+            case .number(let number): texts[field.name] = number.rounded() == number ? String(Int(number)) : String(number)
+            case .bool(let yes): yeses[field.name] = yes
+            case .array(let values): picked[field.name] = Set(values.compactMap { value -> String? in
+                if case .string(let text) = value { return text }
+                return nil
+            })
+            default: break
+            }
+        }
+    }
+
+    private func send(_ accept: Bool) async {
+        var content: [String: QuestionAnswer] = [:]
+        for field in question.fields {
+            let text = (texts[field.name] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            switch field.kind {
+            case "yes-no": content[field.name] = .yes(yeses[field.name] ?? false)
+            case "many": if let chosen = picked[field.name], !chosen.isEmpty { content[field.name] = .several(chosen.sorted()) }
+            case "number":
+                guard !text.isEmpty else { continue }
+                guard let number = Double(text.replacingOccurrences(of: ",", with: ".")) else { problem = "\(field.title): a number is needed."; return }
+                content[field.name] = .number(number)
+            default: if !text.isEmpty { content[field.name] = .text(text) }
+            }
+        }
+        sending = true
+        defer { sending = false }
+        do {
+            try await session.answer(question: question, accept: accept, content: content)
+            problem = nil
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
 struct ScreenSessionRow: View {
     let session: Session
     let screen: ScreenSessionView

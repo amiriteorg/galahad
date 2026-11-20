@@ -22,6 +22,8 @@ import Observation
     private(set) var notices: [NoticeView] = []
     /// His asks to use a Mac itself, and his sessions there while they last.
     private(set) var screenSessions: [ScreenSessionView] = []
+    /// MCP servers' questions to you, mid-call: each holds its call until you answer, say no, or its time runs out.
+    private(set) var questions: [QuestionView] = []
     private(set) var turns: [TurnView] = []
     /// His chats with an answer you haven't read yet, on any device (his ring is green while there are some).
     private(set) var unreadChats: [UnreadChat] = []
@@ -53,7 +55,7 @@ import Observation
     func can(_ scope: String) -> Bool { whoami?.scopes.contains(scope) ?? true }
 
     var waiting: [ActionView] { actions.filter { $0.waiting() } }
-    var inboxCount: Int { waiting.count + requests.count + pairings.count + facts.count + notices.count + screenSessions.count }
+    var inboxCount: Int { waiting.count + requests.count + pairings.count + facts.count + notices.count + screenSessions.count + questions.count }
     var asks: [Ask] { waiting.map { Ask(by: $0.by, connector: $0.connector, tool: $0.tool) } }
     var rows: [RosterRow] { team.map { Roster.rows(snapshot: $0, asks: asks) } ?? [] }
 
@@ -107,6 +109,7 @@ import Observation
         async let about = attempt { try await client.get("/api/about-you", as: AboutYou.self) }
         async let notices = attempt { try await client.get("/api/notices", as: Listed.self).notices ?? [] }
         async let screens = attempt { try await client.get("/api/screen/sessions", as: Listed.self).sessions ?? [] }
+        async let questioned = attempt { try await client.get("/api/questions", as: Listed.self).questions ?? [] }
         async let turns = attempt { try await client.get("/api/turns", as: Listed.self) }
         async let quests = attempt { try await client.get("/api/quests", as: Listed.self).quests ?? [] }
         async let usage = attempt { try await client.get("/api/usage/meter", as: UsageMeter.self) }
@@ -131,6 +134,7 @@ import Observation
         if case .success(let about) = await about { self.facts = about.proposed }
         if case .success(let list) = await notices { self.notices = Notices.open(list) }
         if case .success(let list) = await screens { self.screenSessions = list.filter { $0.state == "waiting" || $0.state == "allowed" } }
+        if case .success(let list) = await questioned { self.questions = list }
         if case .success(let listed) = await turns {
             self.turns = listed.turns ?? []
             self.unreadChats = listed.unread ?? []
@@ -223,6 +227,13 @@ import Observation
         await refresh()
     }
 
+    /// Your answer to a service's question: what you filled in (sent to that service alone), or no. Its call goes on.
+    func answer(question: QuestionView, accept: Bool, content: [String: QuestionAnswer] = [:]) async throws {
+        struct Answer: Encodable { let id: String; let accept: Bool; let content: [String: QuestionAnswer]? }
+        _ = try await client.post("/api/questions/answer", Answer(id: question.id, accept: accept, content: accept ? content : nil), as: JSONValue.self)
+        await refresh()
+    }
+
     /// Ends his session on a Mac now: nothing of it is his after this.
     func end(screen: ScreenSessionView) async throws {
         struct End: Encodable { let id: String }
@@ -312,6 +323,7 @@ import Observation
         var pairings: [PairingView]?
         var notices: [NoticeView]?
         var sessions: [ScreenSessionView]?
+        var questions: [QuestionView]?
         var turns: [TurnView]?
         /// Which writing of the chats this is (on `GET /api/turns`).
         var chats: String?

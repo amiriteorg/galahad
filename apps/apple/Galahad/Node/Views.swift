@@ -233,6 +233,52 @@ struct ScreenSessionView: Decodable, Sendable, Identifiable, Equatable {
     let until: Double?
 }
 
+/// `GET /api/questions`: an MCP server's question to you, asked in the middle of a call (core's questions.ts). Its call
+/// waits for your answer, your no, or its time running out; nothing answers it but you.
+struct QuestionView: Decodable, Sendable, Identifiable, Equatable {
+    let id: String
+    let connector: String
+    /// The connector's name, as you installed it.
+    let label: String
+    /// What it asks: the server's words, one line.
+    let message: String
+    let fields: [QuestionField]
+    /// Milliseconds.
+    let askedAt: Double
+    let expires: Double
+}
+
+/// One thing a server's question asks for: a text, a number, a yes or no, or one or several of a list.
+struct QuestionField: Decodable, Sendable, Equatable {
+    struct Option: Decodable, Sendable, Equatable { let value: String; let title: String }
+    let name: String
+    /// text · number · yes-no · one · many
+    let kind: String
+    let title: String
+    let description: String?
+    let required: Bool
+    /// A text's kind: email, uri, date or date-time.
+    let format: String?
+    let integer: Bool?
+    let options: [Option]?
+    let `default`: JSONValue?
+}
+
+/// What you fill in for one field of a server's question, as the node takes it.
+enum QuestionAnswer: Encodable, Equatable {
+    case text(String), number(Double), yes(Bool), several([String])
+
+    func encode(to encoder: any Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .text(let text): try value.encode(text)
+        case .number(let number): try value.encode(number)
+        case .yes(let yes): try value.encode(yes)
+        case .several(let values): try value.encode(values)
+        }
+    }
+}
+
 /// `GET /api/pairings`: a device asking to join, with the code it shows.
 /// `GET /api/about-you`: a fact about you, as a memory of the mind. Yours (`owner`) goes with every answer of his; his
 /// (an agent's) is only proposed, and waits for you to keep it.
