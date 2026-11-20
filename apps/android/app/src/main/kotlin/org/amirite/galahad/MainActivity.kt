@@ -1,6 +1,8 @@
 package org.amirite.galahad
 
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -15,8 +17,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
+import org.amirite.galahad.app.Attachments
 import org.amirite.galahad.app.Notices
 import org.amirite.galahad.core.Joining
+import org.amirite.galahad.core.Share
 import org.amirite.galahad.ui.GalahadTheme
 import org.amirite.galahad.ui.JoinScreen
 import org.amirite.galahad.ui.Root
@@ -55,13 +59,30 @@ class MainActivity : ComponentActivity() {
         take(intent)
     }
 
-    /** A tapped notification opens where it says; a `galahad:` link carrying an invite, opened on this phone, fills in the join. */
+    /**
+     * A tapped notification opens where it says; a `galahad:` link carrying an invite, opened or shared on this phone,
+     * fills in the join; anything else shared from another app goes to a new chat's message box, unsent.
+     */
     private fun take(intent: Intent?) {
-        intent?.getStringExtra(Notices.OPEN)?.let { open ->
+        intent ?: return
+        intent.getStringExtra(Notices.OPEN)?.let { open ->
             app.opening.value = open to intent.getStringExtra(Notices.CONVERSATION)
             return
         }
-        val link = intent?.dataString ?: intent?.getStringExtra(Intent.EXTRA_TEXT) ?: return
-        Joining.handed(link)?.let { app.handed.value = it }
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        (intent.dataString ?: text)?.let(Joining::handed)?.let {
+            app.handed.value = it
+            return
+        }
+        if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) return
+        val pictures = if (intent.type?.startsWith("image/") != true) emptyList() else if (intent.action == Intent.ACTION_SEND_MULTIPLE) streams(intent) else listOfNotNull(stream(intent))
+        val words = Share.read(intent.getStringExtra(Intent.EXTRA_SUBJECT), text)
+        if (words != null || pictures.isNotEmpty()) app.shared.value = AppModel.Shared(words, pictures.take(Attachments.PER_MESSAGE))
     }
+
+    private fun stream(intent: Intent): Uri? =
+        if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java) else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
+
+    private fun streams(intent: Intent): List<Uri> =
+        (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) else @Suppress("DEPRECATION") intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)) ?: emptyList()
 }

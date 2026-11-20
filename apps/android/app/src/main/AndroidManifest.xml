@@ -33,6 +33,18 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="galahad" />
             </intent-filter>
+            <!-- Something shared from another app: a new chat with it in the message box, unsent (the web app's share target). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
         <!-- Collects what the node kept for this phone, on Android's schedule (app/Notices.kt). -->
         <service

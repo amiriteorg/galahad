@@ -91,6 +91,11 @@ class AppModel(context: Context) {
     /** The app is on screen (its activity started): what asks the node again and again asks only then. */
     val front = MutableStateFlow(false)
 
+    /** Something shared from another app, for a new chat's message box: its words, and pictures to attach. */
+    data class Shared(val words: String?, val pictures: List<android.net.Uri>)
+
+    val shared = MutableStateFlow<Shared?>(null)
+
     val chat = ChatModel(this)
 
     var client: NodeClient? = null

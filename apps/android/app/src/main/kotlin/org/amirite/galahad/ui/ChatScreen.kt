@@ -143,9 +143,20 @@ private fun ChatComposer(app: AppModel, live: Boolean) {
             said = e.message
         }
     }
-    val photo = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+    fun addPhoto(uri: android.net.Uri): kotlinx.coroutines.Job {
         val photos = files.count { it.type.startsWith("image/") }
-        uri?.let { u -> add { Attachments.picture(context, u, if (photos == 0) "Photo" else "Photo ${photos + 1}") } }
+        return add { Attachments.picture(context, uri, if (photos == 0) "Photo" else "Photo ${photos + 1}") }
+    }
+    val photo = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(::addPhoto) }
+    // What another app shared: its words in the box, unsent; its pictures attached, drawn again as a photo is.
+    val shared by app.shared.collectAsState()
+    LaunchedEffect(shared) {
+        val s = shared ?: return@LaunchedEffect
+        app.shared.value = null
+        s.words?.let { text = if (text.isBlank()) it else "$text\n\n$it" }
+        for (picture in s.pictures) {
+            addPhoto(picture).join()
+        }
     }
     val textFile = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri -> uri?.let { u -> add { Attachments.text(context, u) } } }
     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = Space.s3, vertical = Space.s2), verticalArrangement = Arrangement.spacedBy(Space.s1)) {

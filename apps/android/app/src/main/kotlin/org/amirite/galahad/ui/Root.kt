@@ -104,6 +104,16 @@ fun Root(app: AppModel) {
         app.opening.value = null
     }
 
+    // Something shared from another app: a new chat, with it in the message box (the composer takes it from there).
+    val shared by app.shared.collectAsState()
+    LaunchedEffect(shared != null) {
+        if (shared == null) return@LaunchedEffect
+        knight = null
+        room = null
+        app.chat.fresh()
+        chat = true
+    }
+
     BackHandler(enabled = screen.opened || place != Place.ROUNDTABLE) {
         when {
             chat -> chat = false
