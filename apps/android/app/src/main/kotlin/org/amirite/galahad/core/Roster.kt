@@ -17,11 +17,14 @@ data class Teammate(
     val turnsToday: Int,
     val createdBy: String?,
     val avatar: Json?,
+    /** Its VM, once it has one (null: none yet). */
+    val workspace: Json? = null,
 ) {
     companion object {
         fun of(j: Json) = Teammate(
             j["id"].string ?: "", j["name"].string ?: "", j["instructions"].string ?: "", j["role"].string ?: "",
             j["enabled"].bool ?: true, j["dailyTurns"].int ?: 0, j["turnsToday"].int ?: 0, j["createdBy"].string, j["avatar"],
+            j["workspace"]?.takeIf { it != Json.Null },
         )
     }
 }

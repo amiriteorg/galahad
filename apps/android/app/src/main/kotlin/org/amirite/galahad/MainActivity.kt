@@ -31,8 +31,13 @@ class MainActivity : ComponentActivity() {
         // The node is asked only while the app is on screen.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                app.inFront()
-                app.poll()
+                app.front.value = true
+                try {
+                    app.inFront()
+                    app.poll()
+                } finally {
+                    app.front.value = false
+                }
             }
         }
         setContent {

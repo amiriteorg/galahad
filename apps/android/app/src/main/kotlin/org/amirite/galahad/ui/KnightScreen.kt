@@ -1,9 +1,11 @@
 package org.amirite.galahad.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -25,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +61,13 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
     val table by app.table.collectAsState()
     val row = table.rows.firstOrNull { it.kind == "knight" && it.id == id }
     val person = table.snapshot?.teammates?.firstOrNull { it.id == id }
+    // Its screen, watched and taken over; Back returns here.
+    var watching by rememberSaveable(id) { mutableStateOf(false) }
+    BackHandler(enabled = watching) { watching = false }
+    if (watching) {
+        DesktopScreen(app, id, person?.name ?: id) { watching = false }
+        return
+    }
     Timeline(
         app,
         key = "knight:$id",
@@ -68,6 +78,8 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
         placeholder = "Write to ${person?.name ?: id}",
         title = person?.name ?: id,
         back = back,
+        // Any VM, as the iPhone offers it: one without a desktop says so (the node's refusal) and how to get one.
+        actions = { if (person?.workspace != null) TextButton(onClick = { watching = true }) { Text("Screen") } },
     ) {
         val scope = rememberCoroutineScope()
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -129,6 +141,7 @@ private fun Timeline(
     placeholder: String,
     title: String,
     back: () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {},
     header: @Composable () -> Unit,
 ) {
     val table by app.table.collectAsState()
@@ -168,7 +181,7 @@ private fun Timeline(
 
     val headerGone by remember { derivedStateOf { list.firstVisibleItemIndex > 0 } }
     Column(Modifier.fillMaxSize().imePadding()) {
-        PageBar(if (headerGone) title else "", back)
+        PageBar(if (headerGone) title else "", back, actions)
         LazyColumn(Modifier.weight(1f), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.s4)) {
             item { header() }
             problem?.let { item { Problem(it) } }

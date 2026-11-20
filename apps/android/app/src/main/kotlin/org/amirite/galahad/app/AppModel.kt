@@ -88,6 +88,9 @@ class AppModel(context: Context) {
     /** Where a tapped notification opens: its place (core's NotifyOpen) and a kept chat. */
     val opening = MutableStateFlow<Pair<String, String?>?>(null)
 
+    /** The app is on screen (its activity started): what asks the node again and again asks only then. */
+    val front = MutableStateFlow(false)
+
     val chat = ChatModel(this)
 
     var client: NodeClient? = null
