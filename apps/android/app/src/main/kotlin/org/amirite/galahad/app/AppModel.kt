@@ -65,6 +65,7 @@ data class Table(
  * the Apple app does; off screen it asks nothing (Android would stop it anyway, and the battery is yours).
  */
 class AppModel(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences("galahad", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -83,6 +84,9 @@ class AppModel(context: Context) {
 
     /** An invite handed over by a `galahad:` link or a share, to join with. */
     val handed = MutableStateFlow<String?>(null)
+
+    /** Where a tapped notification opens: its place (core's NotifyOpen) and a kept chat. */
+    val opening = MutableStateFlow<Pair<String, String?>?>(null)
 
     val chat = ChatModel(this)
 
@@ -114,6 +118,7 @@ class AppModel(context: Context) {
 
     /** Forget the node here: the key goes too, so this phone's old id is no longer anyone's. */
     fun forget() {
+        Notices.stop(appContext)
         prefs.edit().remove("paired-node").apply()
         runCatching { DeviceKey.forget() }
         _paired.value = null
@@ -121,6 +126,16 @@ class AppModel(context: Context) {
         _table.value = Table()
         _inbox.value = Inbox()
         chat.reset()
+    }
+
+    /**
+     * The app has come to the front: what the node kept for this phone's notifications is taken and dropped (the app
+     * shows it all), and this phone stops asking if they were turned off elsewhere.
+     */
+    suspend fun inFront() {
+        val c = client ?: return
+        if (!Notices.on(appContext)) return
+        if (runCatching { Notices.collect(appContext, c, show = false) }.getOrNull() == false) Notices.stop(appContext)
     }
 
     /** Asks every five seconds while [active] runs (the activity's STARTED state). */

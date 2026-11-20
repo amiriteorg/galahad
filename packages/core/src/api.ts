@@ -1452,6 +1452,10 @@ export const routes = {
   pushSubscribe: { method: "POST", path: "/api/notify/subscribe", scope: "mind:read", input: PushSubscriptionInput },
   /** The iPhone app turns notifications on, for itself: its Apple push token, kept as that device's (off and test: the two below). */
   applePushSubscribe: { method: "POST", path: "/api/notify/apple", scope: "mind:read", input: ApplePushInput },
+  /** The Android app turns notifications on, for itself: no push service is called; the node keeps each one for it, and the app collects them (the next). */
+  collectSubscribe: { method: "POST", path: "/api/notify/collect/on", scope: "mind:read", input: z.strictObject({}) },
+  /** What the node kept for this device (one that collects its notifications), handed over once and forgotten; `on` false when its notifications are off. */
+  notifyCollect: { method: "POST", path: "/api/notify/collect", scope: "mind:read", input: z.strictObject({}) },
   /** The owner's Apple push key, which the iPhone app's notifications are sent with: sealed, pinned to Apple's push service. A key: vault:write. */
   setApplePushKey: { method: "POST", path: "/api/notify/apple-key", scope: "vault:write", input: ApplePushKeyInput },
   /** Off again: this device's own; another's by id only from a terminal or a device that may administer the fleet. */

@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
+import org.amirite.galahad.app.Notices
 import org.amirite.galahad.core.Joining
 import org.amirite.galahad.ui.GalahadTheme
 import org.amirite.galahad.ui.JoinScreen
@@ -28,7 +29,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         take(intent)
         // The node is asked only while the app is on screen.
-        lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { app.poll() } }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                app.inFront()
+                app.poll()
+            }
+        }
         setContent {
             GalahadTheme {
                 Surface(Modifier.fillMaxSize()) {
@@ -44,8 +50,12 @@ class MainActivity : ComponentActivity() {
         take(intent)
     }
 
-    /** A `galahad:` link carrying an invite, opened on this phone: it fills in the join. */
+    /** A tapped notification opens where it says; a `galahad:` link carrying an invite, opened on this phone, fills in the join. */
     private fun take(intent: Intent?) {
+        intent?.getStringExtra(Notices.OPEN)?.let { open ->
+            app.opening.value = open to intent.getStringExtra(Notices.CONVERSATION)
+            return
+        }
         val link = intent?.dataString ?: intent?.getStringExtra(Intent.EXTRA_TEXT) ?: return
         Joining.handed(link)?.let { app.handed.value = it }
     }

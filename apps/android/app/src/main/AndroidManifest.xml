@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Notifications (asked for only from More → Notifications), and collecting them again after a restart. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Android 14 and later ask it of a job that waits for a network. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="false"
@@ -29,5 +34,14 @@
                 <data android:scheme="galahad" />
             </intent-filter>
         </activity>
+        <!-- Collects what the node kept for this phone, on Android's schedule (app/Notices.kt). -->
+        <service
+            android:name=".app.CollectJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- Approve or Decline from an approval's notification, behind the phone's unlock. -->
+        <receiver
+            android:name=".app.NoticeAnswer"
+            android:exported="false" />
     </application>
 </manifest>

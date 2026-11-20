@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { NotifyPayload, QuestView } from "@galahad/core";
+import { GENERIC_NOTIFICATION, type NotifyPayload, type QuestView } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
+import { COLLECT_SERVICE, CollectSender, collectTarget } from "../src/collect-send.ts";
 import { type NotifyOptions, NotifyService, type NotifySources } from "../src/notify.ts";
 import { NotifyStore } from "../src/notify-store.ts";
-import type { PushOutcome, PushSender, PushTarget } from "../src/push-send.ts";
+import type { PushDelivery, PushOutcome, PushSender, PushTarget } from "../src/push-send.ts";
 
 /*
  * The notifier with stand-ins for everything around it: what happened on the node (a
@@ -23,8 +24,10 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
   db.put("c_phone", { endpoint: "https://web.push.apple.com/stand-in", p256dh: "p", auth: "a", service: "Apple" });
   const sender = {
     publicKey: async () => "key",
-    send: async (target: PushTarget, payload: NotifyPayload) => {
+    send: async (target: PushTarget, payload: NotifyPayload, delivery: PushDelivery) => {
       sent.push({ to: target.endpoint, payload });
+      // A device that collects is kept for on the node, as the daemon's own sender does it.
+      if (collectTarget(target.endpoint)) return new CollectSender({ db, now: () => now }).send(target, payload, delivery);
       return over.answer?.(target) ?? { ok: true, gone: false, status: 201, error: null, attempts: 1 };
     },
   } as unknown as PushSender;
@@ -167,5 +170,78 @@ describe("the iPhone app", () => {
     h.advance(60_000);
     await h.service.test("c_iphone");
     expect(h.sent.at(-1)?.to).toBe(`apns:production:${TOKEN}`);
+  });
+});
+
+describe("the Android app: kept on the node, collected by the app", () => {
+  const scopes = ["mind:read", "chat", "vault:read"];
+  const devices = [
+    { id: "c_phone", name: "phone", kind: "client" as const, scopes },
+    { id: "c_android", name: "Pixel", kind: "client" as const, scopes },
+    { id: "n_ultra", name: "ultra", kind: "node" as const, scopes: [] },
+  ];
+  const told = (tag: string, title = "Galahad: this needs you"): NotifyPayload => ({ v: 1, kind: "needs-you", title, body: "Open the Inbox.", open: "inbox", tag });
+
+  test("turns notifications on for itself, and collects what was kept for it once: never a node, never another's", async () => {
+    const h = harness({ devices });
+    expect(h.service.subscribeCollect("c_android")).toMatchObject({ device: "c_android", name: "Pixel", service: COLLECT_SERVICE });
+    expect(() => h.service.subscribeCollect("n_ultra")).toThrow(/only a paired device/);
+    expect(() => h.service.collect("n_ultra")).toThrow(/only a paired device/);
+    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [] });
+    // Told as every device is, through the one door: nothing is sent anywhere for it.
+    h.quest({ quest: "q-1", state: "working" });
+    h.quest({ quest: "q-1", state: "done" });
+    await h.look();
+    expect(h.sent.map((s) => s.to).sort()).toEqual(["collect:c_android", "https://web.push.apple.com/stand-in"]);
+    expect(h.service.collect("c_android")).toMatchObject({ on: true, notifications: [{ kind: "finished", title: "Quest done", body: "“Tidy the repo's README”" }] });
+    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [] });
+    // What's kept for one device is its own: a phone that's told through a push service collects nothing.
+    expect(h.service.collect("c_phone")).toEqual({ on: false, notifications: [] });
+  });
+
+  test("a newer one about the same thing replaces one not yet collected; one kept past its time is dropped untold", async () => {
+    const h = harness({ devices });
+    h.service.subscribeCollect("c_android");
+    const target = { endpoint: "collect:c_android", p256dh: "", auth: "" };
+    const sender = new CollectSender({ db: h.db, now: h.now });
+    await sender.send(target, told("t-a", "Galahad: first"), { ttlSeconds: 60, urgency: "normal" });
+    await sender.send(target, told("t-a", "Galahad: again"), { ttlSeconds: 60, urgency: "normal" });
+    await sender.send(target, told("t-b"), { ttlSeconds: 60, urgency: "normal" });
+    expect(h.service.collect("c_android").notifications.map((n) => n.title)).toEqual(["Galahad: again", "Galahad: this needs you"]);
+    await sender.send(target, told("t-c"), { ttlSeconds: 60, urgency: "normal" });
+    h.advance(61_000);
+    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [] });
+  });
+
+  test("gets the same last look as a push service's: anything that reads as a secret goes as the general one", async () => {
+    const h = harness({ devices });
+    h.service.subscribeCollect("c_android");
+    // Token-shaped, made here so no file holds one.
+    const token = ["ghp", "_", "A1b2C3d4".repeat(4), "E5f6"].join("");
+    await new CollectSender({ db: h.db, now: h.now }).send({ endpoint: "collect:c_android", p256dh: "", auth: "" }, told("t-s", `Galahad: ${token}`), { ttlSeconds: 60, urgency: "high" });
+    expect(h.service.collect("c_android").notifications).toEqual([GENERIC_NOTIFICATION]);
+  });
+
+  test("turned off (here or anywhere), what was kept for it goes, and it collects nothing until it's on again", async () => {
+    const h = harness({ devices });
+    h.service.subscribeCollect("c_android");
+    await h.service.test("c_android");
+    expect(h.service.unsubscribe("c_android")).toBe(true);
+    expect(h.service.collect("c_android")).toEqual({ on: false, notifications: [] });
+    h.service.subscribeCollect("c_android");
+    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [] });
+  });
+
+  test("at most sixty are kept for a device: the oldest go first", async () => {
+    const h = harness({ devices });
+    for (let i = 0; i < 61; i++) {
+      h.advance(1);
+      h.db.keepFor("c_android", told(`t-${i}`), h.now() + 60_000);
+    }
+    h.service.subscribeCollect("c_android");
+    const kept = h.service.collect("c_android").notifications.map((n) => n.tag);
+    expect(kept).toHaveLength(60);
+    expect(kept[0]).toBe("t-1");
+    expect(kept.at(-1)).toBe("t-60");
   });
 });

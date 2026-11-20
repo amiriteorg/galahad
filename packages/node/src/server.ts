@@ -4079,6 +4079,15 @@ export function createApp(ctx: AppContext) {
       if (p.kind !== "client") throw new HttpError(403, "only a paired device turns notifications on, for itself");
       return notifyErrors(async () => ({ device: ctx.notify.subscribeApple(p.device, input) }));
     },
+    collectSubscribe: (_input, p) => {
+      // The Android app's own act, for itself: never a terminal's, an agent's or a node's.
+      if (p.kind !== "client") throw new HttpError(403, "only a paired device turns notifications on, for itself");
+      return notifyErrors(async () => ({ device: ctx.notify.subscribeCollect(p.device) }));
+    },
+    notifyCollect: (_input, p) => {
+      if (p.kind !== "client") throw new HttpError(403, "only a paired device collects its notifications, its own");
+      return notifyErrors(async () => ctx.notify.collect(p.device));
+    },
     setApplePushKey: async (input) => {
       // A key that can't sign is said so now, not at the first notification.
       try {

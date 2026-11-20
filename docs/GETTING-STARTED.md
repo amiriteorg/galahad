@@ -80,7 +80,7 @@ The device gets every scope except `gateway:mint`: it's your console, the bank, 
 
 **On an Android phone**, install it from Chrome's menu (**Add to Home screen**, then **Install**). Galahad is then in the share sheet of every app: share a page, a post or some text to him and a new chat opens with it in the message box, unsent, for you to add what you want done with it. (iOS has no share sheet for a web app.)
 
-**Or the Android app** (`apps/android`, Android 10 or later): download the APK from [galahad.sh](https://galahad.sh/#download) or the repository's releases, open it to install it, then paste the invite link (or open it on the phone) and compare the code on both screens. Its key is made in the phone's secure hardware and never leaves it. It says when a newer build is out, and each installs over the last. It has no notifications yet: for those, use the installed web app above.
+**Or the Android app** (`apps/android`, Android 10 or later): download the APK from [galahad.sh](https://galahad.sh/#download) or the repository's releases, open it to install it, then paste the invite link (or open it on the phone) and compare the code on both screens. Its key is made in the phone's secure hardware and never leaves it. It says when a newer build is out, and each installs over the last. **More → Notifications** turns its notifications on: no push service carries them; your node keeps them and the phone collects them about every fifteen minutes (later while it sleeps), and an approval can be answered from the notification itself, behind the phone's unlock.
 
 ### Let him reach you: notifications
 

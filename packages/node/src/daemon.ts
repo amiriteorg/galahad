@@ -60,6 +60,7 @@ import { NotifyService } from "./notify.ts";
 import { Terminals } from "./terminals.ts";
 import { NotifyStore } from "./notify-store.ts";
 import { APPLE_PUSH, APPLE_PUSH_SECRET, ApplePushSender, appleTarget, readApplePushKey } from "./apns-send.ts";
+import { CollectSender, collectTarget } from "./collect-send.ts";
 import { MacScreen, screenHelper, spawnHelper } from "./mac-screen.ts";
 import { DEFAULT_PUSH_CONTACT, PushSender } from "./push-send.ts";
 
@@ -527,13 +528,15 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     ...(opts.push?.sleep ? { sleep: opts.push.sleep } : {}),
     ...(opts.push?.apple ? { origins: opts.push.apple } : {}),
   });
+  // The Android app's: kept on this node for the app to collect (no push service at all).
+  const collected = new CollectSender({ db: notifyDb, ...(opts.push?.now ? { now: opts.push.now } : {}) });
   const notify = new NotifyService({
     mind: store,
     nodeName: config.name,
     db: notifyDb,
     sender: {
       publicKey: () => webPush.publicKey(),
-      send: (target, payload, delivery, signal) => (appleTarget(target.endpoint) ? applePush : webPush).send(target, payload, delivery, signal),
+      send: (target, payload, delivery, signal) => (collectTarget(target.endpoint) ? collected : appleTarget(target.endpoint) ? applePush : webPush).send(target, payload, delivery, signal),
       close: () => applePush.close(),
     },
     allowed: [...(env.GALAHAD_PUSH_HOSTS?.split(",") ?? []), ...(opts.push?.allow ?? [])],

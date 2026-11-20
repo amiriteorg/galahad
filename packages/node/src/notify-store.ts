@@ -15,6 +15,8 @@ import { type NotifyItem, type NotifyPayload, type NotifyPrefs, readNotifyPrefs 
  *                  it stands.
  *   pending        things that happened and wait to be told (a turn that ended at night).
  *   sent           what was sent, by kind and device: never a title or a line.
+ *   collect        what's kept for a device that collects its notifications (the Android app,
+ *                  collect-send.ts), until it takes them or they expire.
  *
  * `secure_delete` overwrites what a removed subscription held.
  */
@@ -63,6 +65,8 @@ interface SubscriptionRecord {
 /** Sends that don't count against the day's limit: your own test, and the message that says the limit was reached. */
 const UNCOUNTED = "('test', 'limit')";
 const KEEP_SENT_MS = 30 * 24 * 60 * 60_000;
+/** At most this many notifications are kept for one device that collects (the day's limit is 50 at most). */
+const COLLECT_KEPT = 60;
 
 export class NotifyStore {
   private readonly db: Database;
@@ -83,7 +87,8 @@ export class NotifyStore {
       CREATE TABLE IF NOT EXISTS told (key TEXT PRIMARY KEY, alert INTEGER NOT NULL, at INTEGER NOT NULL, gone_at INTEGER);
       CREATE TABLE IF NOT EXISTS pending (key TEXT PRIMARY KEY, item TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS sent (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, devices TEXT NOT NULL, ok INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS sent_by_day ON sent (day, id);`);
+      CREATE INDEX IF NOT EXISTS sent_by_day ON sent (day, id);
+      CREATE TABLE IF NOT EXISTS collect (device TEXT NOT NULL, tag TEXT NOT NULL, payload TEXT NOT NULL, at INTEGER NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY (device, tag));`);
   }
 
   close(): void {
@@ -130,6 +135,7 @@ export class NotifyStore {
   }
 
   remove(device: string): boolean {
+    this.db.query("DELETE FROM collect WHERE device = ?").run(device);
     return this.db.query("DELETE FROM subscriptions WHERE device = ?").run(device).changes > 0;
   }
 
@@ -137,6 +143,35 @@ export class NotifyStore {
   mark(device: string, outcome: { ok: true } | { ok: false; error: string }): void {
     if (outcome.ok) this.db.query("UPDATE subscriptions SET last_ok = ?, last_error = NULL, failures = 0 WHERE device = ?").run(this.now(), device);
     else this.db.query("UPDATE subscriptions SET last_error = ?, failures = failures + 1 WHERE device = ?").run(outcome.error.slice(0, 200), device);
+  }
+
+  /* ---------- kept for a device that collects ---------- */
+
+  /** Kept for that device until it collects it or `expires`; a newer one about the same thing (its tag) replaces it. At
+   * most COLLECT_KEPT a device: the oldest go first. What expired, anyone's, goes now. */
+  keepFor(device: string, payload: NotifyPayload, expires: number): void {
+    this.db.transaction(() => {
+      this.db.query("DELETE FROM collect WHERE expires <= ?").run(this.now());
+      this.db
+        .query("INSERT INTO collect (device, tag, payload, at, expires) VALUES (?, ?, ?, ?, ?) ON CONFLICT (device, tag) DO UPDATE SET payload = excluded.payload, at = excluded.at, expires = excluded.expires")
+        .run(device, payload.tag, JSON.stringify(payload), this.now(), expires);
+      this.db.query("DELETE FROM collect WHERE device = ? AND rowid NOT IN (SELECT rowid FROM collect WHERE device = ? ORDER BY at DESC, rowid DESC LIMIT ?)").run(device, device, COLLECT_KEPT);
+    })();
+  }
+
+  /** What's kept for that device and hasn't expired, the oldest first: handed over once, and forgotten. */
+  collect(device: string): NotifyPayload[] {
+    return this.db.transaction(() => {
+      const rows = this.db.query<{ payload: string }, [string, number]>("SELECT payload FROM collect WHERE device = ? AND expires > ? ORDER BY at, rowid").all(device, this.now());
+      this.db.query("DELETE FROM collect WHERE device = ?").run(device);
+      return rows.flatMap((r) => {
+        try {
+          return [JSON.parse(r.payload) as NotifyPayload];
+        } catch {
+          return [];
+        }
+      });
+    })();
   }
 
   /* ---------- settings ---------- */

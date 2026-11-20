@@ -195,7 +195,7 @@ describe("turning it on is the owner's act on that device", () => {
     const { token } = await json<{ token: string }>(admin("mintArm", { label: "claude-code" }));
     const agent = withToken(() => token);
     const sub = (await push.browser("agent")).subscription;
-    for (const [name, input] of [["notify", undefined], ["setNotify", { perDay: 50 }], ["pushSubscribe", sub], ["pushUnsubscribe", { device: phone.id }], ["notifyTest", {}]] as [RouteName, unknown][]) {
+    for (const [name, input] of [["notify", undefined], ["setNotify", { perDay: 50 }], ["pushSubscribe", sub], ["pushUnsubscribe", { device: phone.id }], ["notifyTest", {}], ["collectSubscribe", {}], ["notifyCollect", {}]] as [RouteName, unknown][]) {
       const refused = await agent(name, input);
       expect(`${name} ${refused.status}`).toBe(`${name} 403`);
     }
@@ -209,6 +209,9 @@ describe("turning it on is the owner's act on that device", () => {
 
   test("a terminal can't subscribe (there's no browser there), and nothing unsigned gets in", async () => {
     expect((await admin("pushSubscribe", phone.browser.subscription)).status).toBe(403);
+    // Nor turn on, or collect, what the Android app collects: a terminal isn't a device.
+    expect((await admin("collectSubscribe", {})).status).toBe(403);
+    expect((await admin("notifyCollect", {})).status).toBe(403);
     const unsigned = await fetch(`http://127.0.0.1:${port}/api/notify/subscribe`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(phone.browser.subscription) });
     expect(unsigned.status).toBe(401);
   });
@@ -727,5 +730,27 @@ describe("a test, when you ask for one", () => {
     await look();
     expect(phone.browser.requests).toBe(requests);
     clearNotice("meanwhile:1");
+  });
+});
+
+describe("the Android app: kept on the node, collected by the app", () => {
+  test("turned on by the app for itself, told through the one door, collected once over its own signed connection; no push service called", async () => {
+    await tomorrow();
+    const android = await pair("android", ["mind:read"]);
+    const pushed = push.paths.length;
+    expect(await json(android.call("collectSubscribe", {}))).toMatchObject({ device: { device: android.id, name: "android", service: "the node itself (the app collects them)" } });
+    expect(await json(android.call("notifyCollect", {}))).toEqual({ on: true, notifications: [] });
+    raise("collect:disk", "warn", "ultra is low on disk");
+    await look();
+    const first = await json<{ on: boolean; notifications: Record<string, unknown>[] }>(android.call("notifyCollect", {}));
+    expect(first.notifications).toMatchObject([{ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "ultra is low on disk", open: "inbox" }]);
+    expect(await json(android.call("notifyCollect", {}))).toEqual({ on: true, notifications: [] });
+    // The phone with a browser subscription was told through its push service, as before; the Android app through none.
+    expect(push.paths.length).toBe(pushed + 1);
+    expect((await view()).devices.find((d) => d.device === android.id)).toMatchObject({ service: "the node itself (the app collects them)" });
+    // Off (from the app, or anywhere): nothing is kept, and the app learns it's off.
+    expect(await json(android.call("pushUnsubscribe", {}))).toEqual({ removed: true });
+    expect(await json(android.call("notifyCollect", {}))).toEqual({ on: false, notifications: [] });
+    clearNotice("collect:disk");
   });
 });

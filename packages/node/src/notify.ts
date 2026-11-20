@@ -36,6 +36,7 @@ import type { LedgerEntryInput } from "@galahad/sandbox";
 import type { KeptSummary } from "./chats.ts";
 import type { NotifyStore, Subscription } from "./notify-store.ts";
 import { appleEndpoint, type ApplePushEnvironment, appleTarget } from "./apns-send.ts";
+import { COLLECT_SERVICE, collectEndpoint } from "./collect-send.ts";
 import type { PushDelivery, PushOutcome, PushTarget } from "./push-send.ts";
 import type { LiveTurn } from "./turns.ts";
 
@@ -428,6 +429,29 @@ export class NotifyService {
     const kept = this.o.db.put(device, { endpoint, p256dh: "", auth: "", service: appleService(input.environment) });
     this.nudge();
     return this.deviceView(kept, paired.name);
+  }
+
+  /**
+   * The Android app turns notifications on for itself: nothing is sent anywhere for it; the node keeps what it would
+   * have sent, and the app collects it (below). Kept under the device's own id, so no other device can claim it.
+   */
+  subscribeCollect(device: string): NotifyDeviceView {
+    const paired = this.o.mind.activeDevice(device);
+    if (!paired || paired.kind !== "client") throw new NotifyError(403, "only a paired device turns notifications on, for itself");
+    const kept = this.o.db.put(device, { endpoint: collectEndpoint(device), p256dh: "", auth: "", service: COLLECT_SERVICE });
+    this.nudge();
+    return this.deviceView(kept, paired.name);
+  }
+
+  /**
+   * What the node kept for a device that collects its notifications, handed over once and forgotten. `on` false: its
+   * notifications are off (turned off here or elsewhere, or never on), and nothing is kept for it.
+   */
+  collect(device: string): { on: boolean; notifications: NotifyPayload[] } {
+    const paired = this.o.mind.activeDevice(device);
+    if (!paired || paired.kind !== "client") throw new NotifyError(403, "only a paired device collects its notifications, its own");
+    const on = this.o.db.subscription(device)?.endpoint === collectEndpoint(device);
+    return { on, notifications: on ? this.o.db.collect(device) : [] };
   }
 
   unsubscribe(device: string): boolean {

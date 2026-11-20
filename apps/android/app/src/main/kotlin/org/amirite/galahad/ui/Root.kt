@@ -2,6 +2,10 @@ package org.amirite.galahad.ui
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
@@ -39,6 +43,7 @@ import androidx.compose.material3.WideNavigationRailDefaults
 import androidx.compose.material3.WideNavigationRailItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,8 +60,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
+import org.amirite.galahad.app.Notices
 import org.amirite.galahad.app.Updates
+import org.amirite.galahad.core.Json
+import org.amirite.galahad.core.NodeClient
+import org.amirite.galahad.core.NodeError
 
 /** Where you are: one of the three places, or a page opened from one (Galahad's chat, a knight's page). */
 private enum class Place(val label: String) { ROUNDTABLE("Roundtable"), INBOX("Inbox"), MORE("More") }
@@ -81,6 +91,18 @@ fun Root(app: AppModel) {
     val screen = Screen(place, chat, knight, room)
     // A tablet, or a foldable open (the window's width, as Android's own size classes read it).
     val wide = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() } >= 600.dp
+
+    // A tapped notification: its place, or the chat it was about.
+    val opening by app.opening.collectAsState()
+    LaunchedEffect(opening) {
+        val (open, conversation) = opening ?: return@LaunchedEffect
+        knight = null
+        room = null
+        chat = open == "chat"
+        if (chat) conversation?.let(app.chat::open)
+        place = when (open) { "inbox" -> Place.INBOX; "settings" -> Place.MORE; else -> Place.ROUNDTABLE }
+        app.opening.value = null
+    }
 
     BackHandler(enabled = screen.opened || place != Place.ROUNDTABLE) {
         when {
@@ -168,6 +190,7 @@ private fun MoreScreen(app: AppModel) {
                 Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.url))) }) { Text("Download") }
             }
         }
+        NotificationsPanel(app)
         paired?.let { p ->
             Panel {
                 Text("Your node", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -198,6 +221,70 @@ private fun MoreScreen(app: AppModel) {
             confirmButton = { TextButton(onClick = { forgetting = false; app.forget() }) { Text("Forget it", color = LocalBrand.current.failed) } },
             dismissButton = { TextButton(onClick = { forgetting = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/**
+ * Notifications on this phone: on and off, a test, and what Android allows. No push service carries them: the node
+ * keeps them and this phone collects them (Notices). What he sends and when he stays quiet are the node's settings.
+ */
+@Composable
+private fun NotificationsPanel(app: AppModel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var on by remember { mutableStateOf(Notices.on(context)) }
+    var allowed by remember { mutableStateOf(Notices.allowed(context)) }
+    var said by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val brand = LocalBrand.current
+    fun act(work: suspend (NodeClient) -> Unit) {
+        val client = app.client ?: return
+        busy = true
+        scope.launch {
+            try {
+                work(client)
+                said = null
+            } catch (e: NodeError) {
+                said = e.message
+            } finally {
+                busy = false
+                on = Notices.on(context)
+                allowed = Notices.allowed(context)
+            }
+        }
+    }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        allowed = Notices.allowed(context)
+        if (granted) act { Notices.turnOn(context, it) } else said = "Android won't show them until notifications are allowed for Galahad."
+    }
+    Panel {
+        Text("Notifications", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            if (on) "On. Your node keeps what it would tell you, and this phone collects it about every 15 minutes (Android may wait longer while the phone sleeps). No push service carries them."
+            else "Off. Galahad can tell you here when something needs you: an approval, a question, a finding, work that ended. No push service carries them: this phone collects them from your node.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (on && !allowed) {
+            Text("Android isn't showing them: notifications are off for Galahad.", style = MaterialTheme.typography.bodyMedium, color = brand.needs)
+            TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)) }) { Text("Open Android's settings") }
+        }
+        said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = brand.failed) }
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+            if (on) {
+                Button(enabled = !busy, onClick = {
+                    act { client ->
+                        client.post("/api/notify/test", Json.obj())
+                        Notices.collect(context, client)
+                    }
+                }) { Text("Send a test") }
+                TextButton(enabled = !busy, onClick = { act { Notices.turnOff(context, it) } }) { Text("Turn off") }
+            } else {
+                Button(enabled = !busy, onClick = {
+                    if (Build.VERSION.SDK_INT >= 33 && !Notices.allowed(context)) ask.launch(android.Manifest.permission.POST_NOTIFICATIONS) else act { Notices.turnOn(context, it) }
+                }) { Text("Turn on") }
+            }
+        }
+        Text("What he sends, and the hours he stays quiet, are your node's settings: Settings in the web app, or galahad notify.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
