@@ -368,6 +368,11 @@ describe("where a notification may be sent", () => {
     expect(pushService("https://updates.push.services.mozilla.com/wpush/v2/gAAAA")).toMatchObject({ ok: true, service: "Mozilla" });
     expect(pushService("https://wns2-by3p.notify.windows.com/w/?token=abc")).toMatchObject({ ok: true, service: "Microsoft" });
     expect(pushService("https://fcm.googleapis.com:443/fcm/send/abc")).toMatchObject({ ok: true });
+    // UnifiedPush's public server, for the Android app: its own host only.
+    expect(pushService("https://ntfy.sh/upAbCdEf0123?up=1")).toMatchObject({ ok: true, service: "ntfy (UnifiedPush)", href: "https://ntfy.sh/upAbCdEf0123?up=1" });
+    expect(pushService("https://ntfy.sh.evil.example/upX?up=1").ok).toBe(false);
+    expect(pushService("https://evil.ntfy.sh/upX?up=1").ok).toBe(false);
+    expect(pushService("http://ntfy.sh/upX?up=1").ok).toBe(false);
   });
 
   test("anything else is refused: another host, a look-alike, plain http, a port, credentials, this machine, a tailnet address", () => {

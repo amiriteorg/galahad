@@ -59,9 +59,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.app.Notices
+import org.amirite.galahad.app.UnifiedPush
 import org.amirite.galahad.app.Updates
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.NodeClient
@@ -235,18 +237,31 @@ private fun MoreScreen(app: AppModel) {
 }
 
 /**
- * Notifications on this phone: on and off, a test, and what Android allows. No push service carries them: the node
- * keeps them and this phone collects them (Notices). What he sends and when he stays quiet are the node's settings.
+ * Notifications on this phone: on and off, instant or collected, a test, and what Android allows. Collected, the node
+ * keeps them and this phone asks for them; instant, they come through a UnifiedPush distributor (ntfy, or another),
+ * encrypted to this phone's own key. What he sends and when he stays quiet are the node's settings.
  */
 @Composable
 private fun NotificationsPanel(app: AppModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var on by remember { mutableStateOf(Notices.on(context)) }
+    var instant by remember { mutableStateOf(Notices.instant(context)) }
+    var trouble by remember { mutableStateOf(Notices.trouble(context)) }
     var allowed by remember { mutableStateOf(Notices.allowed(context)) }
     var said by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    val distributor = remember { UnifiedPush.distributors(context).firstOrNull() }
     val brand = LocalBrand.current
+    // A distributor answers by broadcast: what it said is read again while this is on screen.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            on = Notices.on(context)
+            instant = Notices.instant(context)
+            trouble = Notices.trouble(context)
+        }
+    }
     fun act(work: suspend (NodeClient) -> Unit) {
         val client = app.client ?: return
         busy = true
@@ -259,21 +274,38 @@ private fun NotificationsPanel(app: AppModel) {
             } finally {
                 busy = false
                 on = Notices.on(context)
+                instant = Notices.instant(context)
                 allowed = Notices.allowed(context)
             }
         }
     }
+    // Collected at once; instant as soon as the distributor gives an endpoint, if there is one.
+    suspend fun start(client: NodeClient) {
+        Notices.turnOn(context, client)
+        distributor?.let { Notices.makeInstant(context, client, it) }
+    }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         allowed = Notices.allowed(context)
-        if (granted) act { Notices.turnOn(context, it) } else said = "Android won't show them until notifications are allowed for Galahad."
+        if (granted) act { start(it) } else said = "Android won't show them until notifications are allowed for Galahad."
     }
     Panel {
         Text("Notifications", style = MaterialTheme.typography.titleMediumEmphasized)
         Text(
-            if (on) "On. Your node keeps what it would tell you, and this phone collects it about every 15 minutes (Android may wait longer while the phone sleeps). No push service carries them."
-            else "Off. Galahad can tell you here when something needs you: an approval, a question, a finding, work that ended. No push service carries them: this phone collects them from your node.",
+            when {
+                !on -> "Off. Galahad can tell you here when something needs you: an approval, a question, a finding, work that ended."
+                instant != null -> "On, and instant: they come through $instant (UnifiedPush), encrypted to this phone, so its push server can't read them."
+                else -> "On. This phone collects them from your node about every 15 minutes (Android may wait longer while it sleeps)."
+            },
             style = MaterialTheme.typography.bodyMedium,
         )
+        if (on && instant == null) {
+            if (distributor == null) {
+                Text("For them to arrive at once, install a UnifiedPush distributor such as ntfy, then come back here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                TextButton(enabled = !busy, onClick = { act { Notices.makeInstant(context, it, distributor) } }) { Text("Make them instant, through ${UnifiedPush.label(context, distributor)}") }
+            }
+        }
+        trouble?.let { Text("Not instant: $it", style = MaterialTheme.typography.bodySmall, color = brand.needs) }
         if (on && !allowed) {
             Text("Android isn't showing them: notifications are off for Galahad.", style = MaterialTheme.typography.bodyMedium, color = brand.needs)
             TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)) }) { Text("Open Android's settings") }
@@ -284,13 +316,14 @@ private fun NotificationsPanel(app: AppModel) {
                 Button(enabled = !busy, onClick = {
                     act { client ->
                         client.post("/api/notify/test", Json.obj())
-                        Notices.collect(context, client)
+                        // Collected ones are shown now; an instant one arrives on its own.
+                        if (instant == null) Notices.collect(context, client)
                     }
                 }) { Text("Send a test") }
                 TextButton(enabled = !busy, onClick = { act { Notices.turnOff(context, it) } }) { Text("Turn off") }
             } else {
                 Button(enabled = !busy, onClick = {
-                    if (Build.VERSION.SDK_INT >= 33 && !Notices.allowed(context)) ask.launch(android.Manifest.permission.POST_NOTIFICATIONS) else act { Notices.turnOn(context, it) }
+                    if (Build.VERSION.SDK_INT >= 33 && !Notices.allowed(context)) ask.launch(android.Manifest.permission.POST_NOTIFICATIONS) else act { start(it) }
                 }) { Text("Turn on") }
             }
         }

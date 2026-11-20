@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Notifications (asked for only from More → Notifications), and collecting them again after a restart. -->
@@ -7,6 +8,13 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Android 14 and later ask it of a job that waits for a network. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- The UnifiedPush distributors on this phone (ntfy and the like), for instant notifications. -->
+    <queries>
+        <intent>
+            <action android:name="org.unifiedpush.android.distributor.REGISTER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="false"
@@ -51,6 +59,20 @@
             android:name=".app.CollectJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- What a UnifiedPush distributor says (app/UnifiedPush.kt). Exported with no permission, as the spec has none:
+             distributors are other apps. The gate is the registration's random token, and a message that isn't encrypted
+             to this phone's own key doesn't decrypt. -->
+        <receiver
+            android:name=".app.PushReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.NEW_ENDPOINT" />
+                <action android:name="org.unifiedpush.android.connector.REGISTRATION_FAILED" />
+                <action android:name="org.unifiedpush.android.connector.UNREGISTERED" />
+                <action android:name="org.unifiedpush.android.connector.MESSAGE" />
+            </intent-filter>
+        </receiver>
         <!-- Approve or Decline from an approval's notification, behind the phone's unlock. -->
         <receiver
             android:name=".app.NoticeAnswer"

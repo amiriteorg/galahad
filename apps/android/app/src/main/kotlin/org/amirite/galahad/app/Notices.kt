@@ -26,6 +26,7 @@ import org.amirite.galahad.core.NodeClient
 import org.amirite.galahad.core.NodeError
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
+import org.amirite.galahad.core.int
 import org.amirite.galahad.core.list
 import org.amirite.galahad.core.string
 
@@ -51,8 +52,18 @@ object Notices {
 
     private fun jobs(context: Context) = context.getSystemService(JobScheduler::class.java)
 
-    /** On here: Android asks for them on its schedule. */
-    fun on(context: Context): Boolean = jobs(context).getPendingJob(JOB) != null
+    /** On here: Android collects them on its schedule, or they come at once through UnifiedPush. */
+    fun on(context: Context): Boolean = jobs(context).getPendingJob(JOB) != null || instant(context) != null
+
+    /** The distributor they come through at once (UnifiedPush), by its name; null while they're collected. */
+    fun instant(context: Context): String? = UnifiedPush.registration(context)?.takeIf { it.endpoint != null }?.let { UnifiedPush.label(context, it.distributor) }
+
+    private fun prefs(context: Context) = context.getSharedPreferences("notices", Context.MODE_PRIVATE)
+
+    /** What went wrong making them instant, for More → Notifications to say (null: nothing). */
+    fun trouble(context: Context): String? = prefs(context).getString("trouble", null)
+
+    internal fun trouble(context: Context, why: String?) = prefs(context).edit().putString("trouble", why).apply()
 
     /** Shown at all: Android's permission (13 and later) and the app's switch in Settings. */
     fun allowed(context: Context): Boolean =
@@ -71,9 +82,20 @@ object Notices {
         jobs(context).schedule(job)
     }
 
-    /** Off here, and on the node: it keeps nothing more for this phone. */
+    /**
+     * Instant from now on, through [distributor] (UnifiedPush): it gives an endpoint, which the node is told of (the
+     * receiver's work); until then, and if that fails, they are collected.
+     */
+    suspend fun makeInstant(context: Context, client: NodeClient, distributor: String) {
+        val vapid = client.get("/api/notify")["key"].string ?: throw NodeError(0, "Your node has no notification key.")
+        trouble(context, null)
+        UnifiedPush.register(context, distributor, vapid)
+    }
+
+    /** Off here, and on the node: it keeps and sends nothing more for this phone. */
     suspend fun turnOff(context: Context, client: NodeClient?) {
         stop(context)
+        UnifiedPush.unregister(context)
         client?.post("/api/notify/unsubscribe", Json.obj())
     }
 
@@ -95,6 +117,23 @@ object Notices {
         if (show && allowed(context)) for (n in answer["notifications"].list) show(context, n)
         return answer["on"].bool == true
     }
+
+    /**
+     * One that came through UnifiedPush, read as strictly as the web app's service worker reads one (core's
+     * readNotifyPayload): one that isn't a payload of ours is shown only as "something needs you", never as what it says.
+     */
+    fun showPushed(context: Context, payload: Json?) {
+        if (allowed(context)) show(context, payload?.takeIf(::ours) ?: GENERIC)
+    }
+
+    private val KINDS = setOf("needs-you", "approval", "finished", "question", "told", "summary", "limit", "test")
+    private val OPENS = setOf("inbox", "chat", "overview", "settings")
+    private val TAG_FORM = Regex("^[A-Za-z0-9._:-]{1,64}$")
+    private val GENERIC = Json.obj("v" to 1, "kind" to "needs-you", "title" to "Galahad", "body" to "Something needs you. Open the app to see it.", "open" to "inbox", "tag" to "galahad")
+
+    private fun ours(p: Json): Boolean =
+        p["v"].int == 1 && p["kind"].string in KINDS && (p["title"].string?.length ?: 0) in 1..60 && (p["body"].string?.length ?: -1) in 0..140 &&
+            p["open"].string in OPENS && p["tag"].string?.let(TAG_FORM::matches) == true
 
     private fun show(context: Context, n: Json) {
         val title = n["title"].string ?: return

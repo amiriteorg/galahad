@@ -439,7 +439,7 @@ Options: --home <dir> (or GALAHAD_HOME); init and join also take --keystore os|f
 Environment: GALAHAD_PORT, GALAHAD_KEYSTORE=os|file, GALAHAD_ADVERTISE=<tailnet ip>, GALAHAD_ARCHIVE_DIR=<absolute path>, GALAHAD_ARCHIVE=off,
   GALAHAD_BACKUP_DIR=<absolute path> (where the node keeps its daily backups, and the doctor looks), GALAHAD_BACKUPS=off,
   GALAHAD_PUSH_CONTACT=mailto:…|https://… (who operates this node, as push services are told; default names nobody),
-  GALAHAD_PUSH_HOSTS=host,*.host (push services to allow beyond Apple, Google, Mozilla and Microsoft)`;
+  GALAHAD_PUSH_HOSTS=host,*.host (push services to allow beyond Apple, Google, Mozilla, Microsoft and ntfy.sh)`;
 
 const dim = (s: string) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s);
 const bold = (s: string) => (process.stdout.isTTY ? `\x1b[1m${s}\x1b[0m` : s);

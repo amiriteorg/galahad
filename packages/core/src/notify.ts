@@ -418,6 +418,9 @@ const PUSH_SERVICES: { name: string; hosts: string[]; suffixes: string[] }[] = [
   { name: "Google", hosts: ["fcm.googleapis.com", "jmt17.google.com"], suffixes: [] },
   { name: "Mozilla", hosts: ["updates.push.services.mozilla.com"], suffixes: [".push.services.mozilla.com"] },
   { name: "Microsoft", hosts: [], suffixes: [".notify.windows.com"] },
+  // UnifiedPush's public server (the ntfy app's), for the Android app on the owner's word (21 Nov): it carries bytes it
+  // can't read, as the others do. A self-hosted one is allowed with GALAHAD_PUSH_HOSTS.
+  { name: "ntfy (UnifiedPush)", hosts: ["ntfy.sh"], suffixes: [] },
 ];
 
 /** `href`: the address as it was read here, which is the one to call (never the text it was read from). */
@@ -425,7 +428,7 @@ export type PushServiceVerdict = { ok: true; service: string; origin: string; hr
 
 /**
  * Whether an endpoint is a push service a node may call: https, no credentials in it, the default port,
- * and a host that is one of the known services' (Apple, Google, Mozilla, Microsoft) or one the owner
+ * and a host that is one of the known services' (Apple, Google, Mozilla, Microsoft, ntfy) or one the owner
  * allowed (`allowed`: a host name, "*.suffix", or a whole origin, which is how a test names a stand-in
  * on this machine). The answer names the service, never the endpoint.
  */
@@ -450,7 +453,7 @@ export function pushService(endpoint: string, allowed: readonly string[] = []): 
     const pattern = entry.toLowerCase();
     if (pattern === host || (pattern.startsWith("*.") && host.endsWith(pattern.slice(1)) && host.length > pattern.length - 1)) return { ok: true, service: "a push service you allowed", origin: url.origin, href: url.href };
   }
-  return { ok: false, why: `${host} isn't a push service this node knows (Apple, Google, Mozilla, Microsoft); allow another with GALAHAD_PUSH_HOSTS on the node` };
+  return { ok: false, why: `${host} isn't a push service this node knows (Apple, Google, Mozilla, Microsoft, ntfy); allow another with GALAHAD_PUSH_HOSTS on the node` };
 }
 
 /* ---------- what the app and the terminal read ---------- */

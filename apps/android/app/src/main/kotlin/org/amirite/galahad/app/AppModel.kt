@@ -127,6 +127,7 @@ class AppModel(context: Context) {
     /** Forget the node here: the key goes too, so this phone's old id is no longer anyone's. */
     fun forget() {
         Notices.stop(appContext)
+        UnifiedPush.unregister(appContext)
         prefs.edit().remove("paired-node").apply()
         runCatching { DeviceKey.forget() }
         _paired.value = null

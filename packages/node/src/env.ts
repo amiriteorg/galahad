@@ -29,7 +29,7 @@ const Env = z.object({
   GALAHAD_BACKUPS: z.enum(["on", "off"]).optional(),
   /**
    * Notifications. Who operates this node, as push services are told (RFC 8292's contact: a mailto: or https: address;
-   * default: one that names nobody). And push services to allow beyond Apple, Google, Mozilla and Microsoft: host
+   * default: one that names nobody). And push services to allow beyond Apple, Google, Mozilla, Microsoft and ntfy.sh: host
    * names, comma-separated ("push.example.org,*.push.example.org"); always https.
    */
   GALAHAD_PUSH_CONTACT: z
