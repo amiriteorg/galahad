@@ -25,9 +25,10 @@ import {
   type UsageLine,
   type UsageMeter,
   type UsageView,
+  type UsageWindow,
   usdLabel,
 } from "@galahad/core";
-import { AGENTS } from "@galahad/brain";
+import { AGENTS, clockUtc, spanWords } from "@galahad/brain";
 import type { NodeClient } from "./quest-cli.ts";
 import { budgetLabel, describeCost, describeDone, describeEffort, describeIndex, describeTrial, estimateLabel, estimateRun, type RunResult, type TrialBudget, trialRunFromCli } from "./trial-cli.ts";
 import { loadSuite, suiteNamed, TRIAL_SUITES } from "./trial-suites.ts";
@@ -433,6 +434,11 @@ export async function priceCommand(node: NodeClient, sub: string | undefined, re
   return 0;
 }
 
+/** A provider whose allowance is spent now, in the words `galahad usage` says it, as SpentWindows.why puts it. */
+export function spentWindowLine(window: UsageWindow, now: number): string {
+  return `${window.provider}: its allowance is spent until ${clockUtc(window.until)} UTC (${spanWords(window.until - now)} from now), as its provider said`;
+}
+
 /** The meter in a line: what this period's calls came to at your prices, against your budget and what is left. */
 export function meterLine(m: UsageMeter): string {
   const period = m.per === "day" ? "Today" : "This month";
@@ -466,7 +472,10 @@ export async function usageCommand(node: NodeClient, flags: Readonly<Record<stri
   console.log(`${bold(`Model calls on ${view.node}`)} ${dim(`since ${view.since} (UTC) · tokens as the providers reported them · money at your prices`)}`);
   // The meter first: this period against your budget (a node from before it has none to say).
   const meter = await node.call<UsageMeter>("usageMeter").catch(() => null);
-  if (meter) console.log(`  ${meterLine(meter)}`);
+  if (meter) {
+    console.log(`  ${meterLine(meter)}`);
+    for (const window of meter.windows ?? []) console.log(`    ${spentWindowLine(window, Date.now())}`);
+  }
   console.log(`  ${spendLabel(mergeSpend(lines(view.rows)), view.prices)}`);
   const group = (title: string, key: (r: (typeof view.rows)[number]) => string): void => {
     console.log(`\n${bold(title)}`);

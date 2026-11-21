@@ -69,6 +69,15 @@ export interface UsageRow extends UsageLine {
 export const UsageBudgetInput = z.strictObject({ usd: z.number().positive().max(100_000).nullable(), per: z.enum(["day", "month"]).default("month") });
 export type UsageBudgetInput = z.infer<typeof UsageBudgetInput>;
 
+/** A provider whose allowance is spent now: until when (ms), and what it said (cut short, as the node keeps it). */
+export interface UsageWindow {
+  provider: string;
+  /** When it resets (ms). */
+  until: number;
+  /** What its provider said, as it said it (cut short). */
+  said: string;
+}
+
 /** What a meter shows: this period's model calls on this node at your prices, against the budget (`GET /api/usage/meter`). */
 export interface UsageMeter {
   node: string;
@@ -87,6 +96,8 @@ export interface UsageMeter {
   leftUsd: number | null;
   /** What cost most in it, most first (tokens for one with no price): at most five. */
   top: { model: string; usd: number | null; tokens: number }[];
+  /** Providers whose allowance is spent now, until when and as their provider said it. Absent when there are none. */
+  windows?: UsageWindow[];
 }
 
 /** What `GET /api/usage` answers: this node's calls (never another node's), and the owner's prices. */

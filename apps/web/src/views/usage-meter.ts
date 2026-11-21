@@ -1,6 +1,7 @@
 import type { UsageMeter } from "@galahad/core";
 import { tokensLabel, usdLabel } from "@galahad/core/spend";
 import { type Ctx, errorMessage } from "../context.ts";
+import { spentWindowLines } from "../lib/usage-windows.ts";
 import { button, callout, meter, segmented, statTile } from "../ui/controls.ts";
 import { openSheet } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
@@ -29,7 +30,7 @@ export function usageTile(ctx: Ctx, m: UsageMeter, changed: (m: UsageMeter) => v
     label: `${period(m)}'s usage`,
     icon: "gauge",
     value: spentWords(m),
-    note: [meterWords(m), m.budgetUsd ? meter(m.spentUsd / m.budgetUsd, spent ? "var(--danger)" : undefined, `${Math.round((m.spentUsd / m.budgetUsd) * 100)}% of the budget`) : null],
+    note: [meterWords(m), m.budgetUsd ? meter(m.spentUsd / m.budgetUsd, spent ? "var(--danger)" : undefined, `${Math.round((m.spentUsd / m.budgetUsd) * 100)}% of the budget`) : null, ...spentWindowLines(m.windows)],
   });
   tile.classList.add("usage-tile");
   tile.setAttribute("role", "button");
@@ -81,6 +82,9 @@ export function openUsage(ctx: Ctx, m: UsageMeter, changed: (m: UsageMeter) => v
         m.budgetUsd ? meter(m.spentUsd / m.budgetUsd, m.leftUsd ? undefined : "var(--danger)") : null,
       ),
       top ? h("div", { class: "stack" }, h("strong", { class: "small" }, "What cost most"), top) : null,
+      m.windows?.length
+        ? h("div", { class: "stack" }, h("strong", { class: "small" }, "Passed over until their allowance resets"), h("div", { class: "stack" }, ...spentWindowLines(m.windows).map((line) => h("p", { class: "small muted" }, line))))
+        : null,
       m.unpriced.length ? h("p", { class: "tiny subtle" }, `No price for ${m.unpriced.join(", ")}: ${m.unpriced.length === 1 ? "its" : "their"} tokens aren't in this. Set one under Models.`) : null,
       canSet
         ? h(

@@ -3379,12 +3379,12 @@ export function createApp(ctx: AppContext) {
       return { prices: pricesOf(ctx.store) };
     },
     usage: (input): UsageView => ({ node: ctx.nodeName, ...ctx.usage.rows(input.days ?? 30), prices: pricesOf(ctx.store) }),
-    usageMeter: (): UsageMeter => ctx.usage.meter(ctx.nodeName, pricesOf(ctx.store)),
+    usageMeter: (): UsageMeter => ctx.usage.meter(ctx.nodeName, pricesOf(ctx.store), windowsOf(ctx.store).list()),
     setUsageBudget: (input, p) => {
       // Yours to set: an agent watches its own task's budget, never yours.
       if (!isOwner(p)) throw new HttpError(403, "only you set your budget");
       ctx.usage.setBudget(input);
-      return ctx.usage.meter(ctx.nodeName, pricesOf(ctx.store));
+      return ctx.usage.meter(ctx.nodeName, pricesOf(ctx.store), windowsOf(ctx.store).list());
     },
 
     // ---------- compute: what the fleet can carry, and how he spends it ----------

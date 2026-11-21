@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { costOf, mergeSpend, type Price, spendTotal, type Usage, type UsageBudgetInput, type UsageLine, type UsageMeter, type UsageRow } from "@galahad/core";
+import { costOf, mergeSpend, type Price, spendTotal, type Usage, type UsageBudgetInput, type UsageLine, type UsageMeter, type UsageRow, type UsageWindow } from "@galahad/core";
 
 /*
  * This node's own count of its model calls: for each day, who asked, the role and the
@@ -43,8 +43,9 @@ export class UsageStore {
     return this.budget();
   }
 
-  /** This period's calls (today, or this month so far, UTC) at your prices, against the budget. */
-  meter(node: string, prices: Record<string, Price>): UsageMeter {
+  /** This period's calls (today, or this month so far, UTC) at your prices, against the budget, with the providers whose
+   * allowance is spent now (absent when there are none, so a client from before the windows reads the meter as it did). */
+  meter(node: string, prices: Record<string, Price>, windows: readonly UsageWindow[] = []): UsageMeter {
     const { usd: budgetUsd, per } = this.budget();
     const today = dayOf(this.now());
     const since = per === "day" ? today : `${today.slice(0, 8)}01`;
@@ -60,7 +61,7 @@ export class UsageStore {
       return { model, usd: priced.unpriced.length ? null : priced.usd, tokens: spendTotal(of).tokens };
     });
     byModel.sort((a, b) => (b.usd ?? -1) - (a.usd ?? -1) || b.tokens - a.tokens);
-    return {
+    const meter: UsageMeter = {
       node,
       per,
       since,
@@ -73,6 +74,8 @@ export class UsageStore {
       leftUsd: budgetUsd === null ? null : Math.max(0, budgetUsd - cost.usd),
       top: byModel.slice(0, 5),
     };
+    if (windows.length) meter.windows = windows.map(({ provider, until, said }) => ({ provider, until, said }));
+    return meter;
   }
 
   /** One model call that ended: its tokens as the provider reported them, or null when it reported nothing. */
