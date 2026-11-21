@@ -30,12 +30,19 @@ import org.amirite.galahad.core.KnightState
  * once each and kept. The @2x drawing for a face of 120 dp or more, as the Apple app does.
  */
 object Drawings {
-    private val kept = HashMap<String, ImageBitmap>()
+    private val kept = java.util.concurrent.ConcurrentHashMap<String, ImageBitmap>()
 
-    fun of(context: Context, name: String): ImageBitmap? = synchronized(kept) {
-        kept[name] ?: runCatching {
-            context.assets.open("$name.webp").use { BitmapFactory.decodeStream(it) }?.asImageBitmap()
-        }.getOrNull()?.also { kept[name] = it }
+    // (Read without a lock: a face being drawn never waits on another being read. Two that read the same one keep one.)
+    fun of(context: Context, name: String): ImageBitmap? = kept[name] ?: runCatching {
+        context.assets.open("$name.webp").use { BitmapFactory.decodeStream(it) }?.asImageBitmap()
+    }.getOrNull()?.let { kept.putIfAbsent(name, it) ?: it }
+
+    /**
+     * Every face the Roundtable draws, read before it's drawn: off the main thread as the app starts (about 330 KB each
+     * once read). The large drawings, for a face of 120 dp or more, are read when one is drawn.
+     */
+    fun prewarm(context: Context) {
+        for (file in context.assets.list("").orEmpty()) if (file.endsWith(".webp") && "@2x" !in file) of(context, file.removeSuffix(".webp"))
     }
 }
 

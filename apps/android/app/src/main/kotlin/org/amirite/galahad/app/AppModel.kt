@@ -77,6 +77,9 @@ class AppModel(context: Context) {
     private val prefs = context.getSharedPreferences("galahad", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    /** This phone's key as the Keystore gave it when the app started: each read is a call to the Keystore's service. */
+    private var key: DeviceKey? = null
+
     private val _paired = MutableStateFlow(load())
     val paired: StateFlow<PairedNode?> = _paired.asStateFlow()
 
@@ -117,12 +120,13 @@ class AppModel(context: Context) {
     private fun load(): PairedNode? {
         val stored = prefs.getString("paired-node", null)?.let { runCatching { PairedNode.of(Json.parse(it)) }.getOrNull() } ?: return null
         val key = runCatching { DeviceKey.load() }.getOrNull() ?: return null
+        this.key = key
         return stored.takeIf { it.device == key.device }
     }
 
     private fun connect() {
         val node = _paired.value
-        client = if (node != null) runCatching { DeviceKey.load() }.getOrNull()?.let { NodeClient(node.origin, it) } else null
+        client = if (node != null) (key ?: runCatching { DeviceKey.load() }.getOrNull())?.let { NodeClient(node.origin, it) } else null
     }
 
     fun paired(node: PairedNode) {
@@ -138,6 +142,7 @@ class AppModel(context: Context) {
         UnifiedPush.unregister(appContext)
         prefs.edit().remove("paired-node").apply()
         runCatching { DeviceKey.forget() }
+        key = null
         _paired.value = null
         client = null
         _table.value = Table()
