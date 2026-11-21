@@ -341,6 +341,7 @@ export function readBridge(line: string): AgentEvent[] {
     return [{ type: "tool", tool: redact(e.tool), input: redact(e.input), output: redact(e.output), ok: e.ok }];
   }
   if (e.type === "tokens" && [e.input, e.output].every((v) => Number.isSafeInteger(v) && v >= 0)) return [{ type: "tokens", input: e.input, output: e.output }];
+  if (e.type === "retry" && Number.isSafeInteger(e.attempt) && e.attempt > 0 && typeof e.error === "string") return [{ type: "retry", attempt: e.attempt, error: redact(e.error), waitMs: Number.isSafeInteger(e.waitMs) && e.waitMs >= 0 ? e.waitMs : 0 }];
   return [];
 }
 

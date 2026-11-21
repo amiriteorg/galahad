@@ -179,6 +179,8 @@ elif prompt == "an error and nothing after it":
 elif prompt == "reconnects":
     out(started); out(turn)
     out({"type": "error", "message": "Reconnecting... 1/5"})
+    # As 0.169.0 says one with its reason (21 Nov 2026, against a stand-in).
+    out({"type": "error", "message": "Reconnecting... 2/5 (exceeded retry limit, last status: 429 Too Many Requests)"})
     out(hello); out(running); out(ran); out(said); out(completed)
 elif prompt == "edits and a failing command":
     out(started); out(turn)
@@ -519,6 +521,11 @@ describe("Codex, on its own sign-in", () => {
     const recovered = await vm("codex").run(OWN, "reconnects");
     expect(recovered.exit).toBe(0);
     expect(recovered.events.at(-1)).toEqual({ type: "tokens", input: 45951, output: 49 });
+    // Each reconnection is a retry on the trail (its reason where it gives one), so a run that waits isn't taken for one that hangs.
+    expect(recovered.events.filter((event) => event.type === "retry")).toEqual([
+      { type: "retry", attempt: 1, error: "reconnecting", waitMs: 0 },
+      { type: "retry", attempt: 2, error: "exceeded retry limit, last status: 429 Too Many Requests", waitMs: 0 },
+    ]);
   });
 
   test("not signed in, or missing: said plainly, and the tool is never started or fetched", async () => {

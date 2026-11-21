@@ -356,6 +356,7 @@ def through_gateway(env, base, token, model):
 # You’ve, and the day too when it isn't today: "at Nov 23rd, 2026 8:11 PM", by this VM's clock). Said as Claude Code's
 # is, without the offers around it, and when it resets in UTC where it gave a time.
 LIMIT = re.compile("You['’]ve hit your usage limit")
+RECONNECT = re.compile(r"Reconnecting\.\.\. (\d{1,3})/\d{1,3}(?: \((.*)\))?$", re.S)
 AGAIN = re.compile(r"try again at (?:([A-Z][a-z]{2}) (\d{1,2})(?:st|nd|rd|th), (\d{4}) )?(\d{1,2}):(\d{2}) ([AP]M)")
 
 def spent(message):
@@ -420,6 +421,10 @@ class Reader:
         elif kind == "error" and isinstance(e.get("message"), str):
             # Not always the end (a reconnection is told this way too): it is, if no turn completes after it.
             self.trouble = e["message"]
+            # A reconnection is a retry on the trail, its reason where it gives one: a run that waits isn't one that hangs.
+            again = RECONNECT.match(e["message"])
+            if again:
+                emit("retry", attempt=int(again.group(1)), error=clip(again.group(2) or "reconnecting", 300), waitMs=0)
 
     def verdict(self):
         return self.failed or (spent(self.trouble) or NAME + " stopped: " + clip(self.trouble, 600) if self.trouble else "")
