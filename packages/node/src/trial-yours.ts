@@ -5,10 +5,14 @@ import { quote } from "./team-runtime.ts";
 import { harnessOptions, heldToEffort, nothingAnswered, tellPassedOver, type TrialJob, type TrialUnit } from "./trial-cli.ts";
 
 /**
- * The commands a trial of a knight's task has: what the knight's own task had until it was audited instead of counted
- * (17 November 2026). A trial stays bounded, so its runs can be compared.
+ * The commands a trial of a knight's task has: never fewer than 150, and three times what its knight's run used when
+ * that is more. A trial stays bounded, so its runs can be compared, and the bound is the case's own, the same in every
+ * run of it. It was 40, what a knight's task had until it was audited instead of counted (17 November 2026); on
+ * 21 November both cases graded in the first run with real models used all 40 and were stopped, one that had taken its
+ * knight 52: a knight's task has no such bound now, and the default loop calls its tools one at a time, so the same work
+ * is more commands.
  */
-const TRIAL_COMMANDS = 40;
+export const commandsFor = (c: Pick<YourCase, "record">): number => Math.max(150, 3 * c.record.commands);
 
 /*
  * Trials from your own work (PLAN #9). A case is a knight's task that passed review, in a repository, with the commit
@@ -314,7 +318,7 @@ export async function attemptCase(node: CaseClient, c: YourCase, job: TrialJob):
         network: job.network,
         ...(job.isolation ? { isolation: job.isolation } : {}),
         ...(job.on ? { on: job.on } : {}),
-        maxSteps: TRIAL_COMMANDS,
+        maxSteps: commandsFor(c),
         instructions: instructions(c),
         evidence,
         workdir: root,

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { TrialRecord, trialProblem } from "@galahad/core";
 import type { TrialJob } from "../src/trial-cli.ts";
 import { trialCommand, UsageError } from "../src/trial-commands.ts";
-import { attemptCase, chooseCases, type GateRun, hardestFirst, judgeGates, rootOf, yourCases } from "../src/trial-yours.ts";
+import { attemptCase, chooseCases, commandsFor, type GateRun, hardestFirst, judgeGates, rootOf, yourCases } from "../src/trial-yours.ts";
 import { FIX, GATES, KNIGHT_ARTIFACT, knightOf, runOf, taskOf, teamOf, widgets, widgetsCase, WIDGETS, YoursStandIn } from "./yours-standin.ts";
 
 /*
@@ -164,6 +164,14 @@ describe("a trial of a case", () => {
     // What it left is kept with its work, as a patch against the commit it began from.
     const kept = node.artifacts.get(record.artifact!)!.get("changes.patch")!;
     expect(new TextDecoder().decode(kept)).toContain("-awk '{ s += $1 } END { print s + 1 }' \"$1\"\n+awk '{ s += $1 } END { print s }' \"$1\"");
+  });
+
+  test("a trial has the commands a real task needs: three times what its knight's run used, never fewer than 150", async () => {
+    expect(commandsFor({ record: runOf({ commands: 13 }) })).toBe(150);
+    expect(commandsFor({ record: runOf({ commands: 52 }) })).toBe(156);
+    const node = standIn(FIX);
+    await attemptCase(node, widgetsCase(repo.base), job());
+    expect(JSON.stringify(node.chats)).toContain("You have 150 commands in all.");
   });
 
   test("work that doesn't do it scores nothing, beside how its quest ended", async () => {
