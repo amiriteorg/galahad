@@ -19,7 +19,7 @@ import {
   treeCommand,
 } from "@galahad/brain";
 import { type NodeClient, questId, runNodeQuest } from "./quest-cli.ts";
-import { harnessOptions, heldToEffort, tellPassedOver, type TrialJob, type TrialUnit } from "./trial-cli.ts";
+import { harnessOptions, heldToEffort, nothingAnswered, tellPassedOver, type TrialJob, type TrialUnit } from "./trial-cli.ts";
 
 /*
  * One agentic trial: a small repository and a task, posed from a seed, put in a fresh
@@ -153,6 +153,9 @@ export async function attemptTask(node: NodeClient, task: AgenticTask, level: nu
     );
     // Your Ctrl-C says nothing about ability; running out of commands does, and is graded.
     if (job.signal?.aborted) return null;
+    // Nor does work no model ever answered (every call refused: a plan's allowance spent, a key gone): a crash, not a 0.
+    const unanswered = nothingAnswered(outcome, models);
+    if (unanswered) throw new Error(unanswered);
     if (!left) throw new Error("what he left in the repository couldn't be read out of the sandbox");
     const grading = Date.now();
     const verdicts = await gradeApart(node, posed, left, said, outcome.status, job);

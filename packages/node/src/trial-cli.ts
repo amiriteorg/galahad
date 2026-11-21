@@ -29,7 +29,7 @@ import {
   type UsageLine,
   usdLabel,
 } from "@galahad/core";
-import { grade, pose, SUITES, TRIAL_EVIDENCE, TRIAL_INSTRUCTIONS, type TrialProblem } from "@galahad/brain";
+import { grade, pose, type QuestOutcome, SUITES, TRIAL_EVIDENCE, TRIAL_INSTRUCTIONS, type TrialProblem } from "@galahad/brain";
 import { type DoOptions, type NodeClient, runNodeQuest } from "./quest-cli.ts";
 
 /*
@@ -203,6 +203,16 @@ export function freshRunId(): string {
   }
 }
 
+/**
+ * Why a trial's quest measured nothing, when no model of it ever answered: it gave up before a single step, and no
+ * model said a word (a coding tool whose every call its gateway refused, a plan's allowance spent). Null otherwise.
+ * On 21 November 2026 four OpenCode trials were scored 0 so, in fifteen seconds each, the plan's allowance spent.
+ */
+export function nothingAnswered(outcome: Pick<QuestOutcome, "status" | "steps" | "summary">, models: ReadonlySet<string>): string | null {
+  if (outcome.status !== "gave-up" || outcome.steps > 0 || models.size > 0) return null;
+  return `no model answered, so nothing was measured: ${outcome.summary.split("\n").find((line) => line.trim())?.trim().slice(0, 400) ?? "(no reason given)"}`;
+}
+
 /** The harness switches as a quest's options (a task's own gates are the caller's to add). */
 export function harnessOptions(job: Pick<TrialJob, "harness" | "pins" | "effort">): Partial<DoOptions> {
   const h = job.harness;
@@ -277,6 +287,9 @@ async function solveProblem(node: NodeClient, problem: TrialProblem, job: TrialJ
     );
     // Your Ctrl-C says nothing about ability; running out of commands does, and is scored.
     if (job.signal?.aborted) return null;
+    // Nor does work no model ever answered: a crash, not a 0 (trial-agentic nothingAnswered).
+    const unanswered = nothingAnswered(outcome, models);
+    if (unanswered) throw new Error(unanswered);
     const graded = grade(posed.expected, answer);
     return {
       ...base,

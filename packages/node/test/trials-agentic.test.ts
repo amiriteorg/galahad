@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, type RouteName, routes, TrialRecord, trialProblem, type TrialView, VARIANTS } from "@galahad/core";
 import { AGENTIC_SUITE, GRADE, poseTask, REPO, type Solution } from "@galahad/brain";
 import { attemptTask, timeNote } from "../src/trial-agentic.ts";
-import { describeTrial, runTrials, type TrialJob } from "../src/trial-cli.ts";
+import { describeTrial, nothingAnswered, runTrials, type TrialJob } from "../src/trial-cli.ts";
 import { suiteNamed } from "../src/trial-suites.ts";
 import { type Box, StandInSandboxes } from "./agentic-standin.ts";
 
@@ -418,4 +418,13 @@ test("a trial keeps where its time went: the quest's stages, the grading, and th
   );
   expect(timeNote({ plan: 30_000, model: 1_000, commands: 0, gates: 0, review: 0 }, 2_000, 1_000)).toBe("time: plan 30s, model calls 1s, commands 0s, grading 2s, the rest 0s");
   expect(timeNote(undefined, 1, 1)).toBe("");
+});
+
+test("a trial no model ever answered measured nothing: it is a crash, never a 0", () => {
+  const refused = { status: "gave-up" as const, steps: 0, summary: "opencode failed: every model it may use is refused\n(its allowance is spent until 23:05 UTC)" };
+  expect(nothingAnswered(refused, new Set())).toBe("no model answered, so nothing was measured: opencode failed: every model it may use is refused");
+  // A model that said anything, a step taken, or any other ending is the work's own, and is graded.
+  expect(nothingAnswered(refused, new Set(["opencode · deepseek-v4-pro"]))).toBeNull();
+  expect(nothingAnswered({ ...refused, steps: 1 }, new Set())).toBeNull();
+  expect(nothingAnswered({ ...refused, status: "stopped" }, new Set())).toBeNull();
 });

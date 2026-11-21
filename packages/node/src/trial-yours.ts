@@ -2,7 +2,7 @@ import { costOf, type ExecResult, type Prices, type SandboxView, spendTotal, typ
 import { QUEST_DEFAULTS, testFilesOf } from "@galahad/brain";
 import { inWorkdir, type NodeClient, questId, runNodeQuest } from "./quest-cli.ts";
 import { quote } from "./team-runtime.ts";
-import { harnessOptions, heldToEffort, tellPassedOver, type TrialJob, type TrialUnit } from "./trial-cli.ts";
+import { harnessOptions, heldToEffort, nothingAnswered, tellPassedOver, type TrialJob, type TrialUnit } from "./trial-cli.ts";
 
 /**
  * The commands a trial of a knight's task has: what the knight's own task had until it was audited instead of counted
@@ -350,6 +350,9 @@ export async function attemptCase(node: CaseClient, c: YourCase, job: TrialJob):
     );
     // Your Ctrl-C says nothing about ability; running out of commands does, and is graded.
     if (job.signal?.aborted) return null;
+    // Nor does work no model ever answered: a crash, not a 0 (trial-agentic nothingAnswered).
+    const unanswered = nothingAnswered(outcome, models);
+    if (unanswered) throw new Error(unanswered);
     quest = { status: outcome.status, steps: outcome.steps, revisions: outcome.revisions };
     if (!artifact) throw new Error("what was left in the repository wasn't kept");
     const after = await gatesOn(node, c, await keptPatch(node, artifact.id, "what was left"), job);
