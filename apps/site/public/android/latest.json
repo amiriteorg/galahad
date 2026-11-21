@@ -1,10 +1,10 @@
 {
   "version": "0.1.0",
-  "build": "202611210608",
-  "url": "https://github.com/amiriteorg/galahad/releases/download/android-202611210608/Galahad-202611210608.apk",
+  "build": "202611211148",
+  "url": "https://github.com/amiriteorg/galahad/releases/download/android-202611211148/Galahad-202611211148.apk",
   "size": 3106543,
-  "sha256": "b81479b3b8a8107042620b44981fba4a74b4d3ec84b91233151751ae51e4bc4f",
+  "sha256": "9676f8dcaa3f9e5dfcf0fa80c874cb88e3581478b5ce8aeb321d17c9d4204ada",
   "certificate": "af19912a84d19cd44706cba7288649f0201061dc238c3a8bf8ce02514ba6d6d4",
   "minSdk": 29,
-  "date": "2026-11-21T06:09:34Z"
+  "date": "2026-11-21T11:56:31Z"
 }
