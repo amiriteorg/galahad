@@ -45,7 +45,9 @@ export type AgentEvent =
   | { type: "text"; text: string }
   | { type: "tool"; tool: string; input: string; output: string; ok: boolean }
   | { type: "tokens"; input: number; output: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /** The tool asking a provider again by itself after a refusal: which try this is, why, and how long it waits first. */
+  | { type: "retry"; attempt: number; error: string; waitMs: number };
 
 export interface AgentDriver {
   name: string;
@@ -157,8 +159,12 @@ export const OPENCODE: AgentDriver = {
       });
     }
     if (event.type === "step_finish" && part.tokens) out.push({ type: "tokens", input: Number(part.tokens.input) || 0, output: Number(part.tokens.output) || 0 });
+    // What a failure or a retry says: its message, which 2.3.0 puts inside its error.
+    const said = typeof event.message === "string" ? event.message : typeof event.error?.message === "string" ? event.error.message : (event.error ?? event);
     // Failures come as their own event types: "error", "provider.content-filter", …
-    if (/error|filter|fail|denied|refus/i.test(String(event.type))) out.push({ type: "error", message: brief(event.message ?? event.error ?? event, 1000) });
+    if (/error|filter|fail|denied|refus/i.test(String(event.type))) out.push({ type: "error", message: brief(said, 1000) });
+    // Its own retry of a refusal, with when it asks again: on the trail, so a run that waits isn't taken for one that hangs.
+    if (event.type === "retry") out.push({ type: "retry", attempt: Number(event.attempt) || 1, error: brief(said, 300), waitMs: Math.max(0, (Number(event.nextRetryAt) || 0) - (Number(event.timestamp) || 0)) });
     return out;
   },
 };

@@ -1472,6 +1472,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           sleep: pause,
           event: (event) => {
             if (event.type === "text") emit({ type: "thought", step: steps, text: event.text, model: `${agent.driver.name} · ${agentModelName(model)}` });
+            if (event.type === "retry") emit({ type: "retry", role: "engineer", attempt: event.attempt, error: redact(event.error), waitMs: event.waitMs });
             if (event.type === "tool") {
               steps += 1;
               const command = `${event.tool}: ${event.input}`;

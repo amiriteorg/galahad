@@ -407,7 +407,48 @@ describe("a quest with the notes store", () => {
   });
 });
 
+/*
+ * As OpenCode 2.3.0 printed them on 21 November 2026 (against a stand-in plan; trimmed): its own retry of a refusal,
+ * with when it asks again, and a refusal it takes as final, its message inside the error.
+ */
+const RETRY = JSON.stringify({ type: "retry", timestamp: 1795277081670, sessionID: SESSION, messageID: "msg_1", attempt: 2, nextRetryAt: 1795277083839, error: { type: "provider.rate-limit", message: "Rate limit reached; try again in 2s", status: 429, response: { body: '{"error":{"message":"Rate limit reached; try again in 2s"}}' } } });
+const SPENT = "opencode-go's allowance is spent until 23:01 UTC (33h 55m from now), as its provider said: Galahad's gateway passes it over until then.";
+const QUOTA = JSON.stringify({ type: "error", timestamp: 1795277633426, sessionID: SESSION, error: { type: "provider.quota", message: SPENT, status: 402, response: { body: JSON.stringify({ error: { type: "galahad_gateway", message: SPENT } }) } } });
+
 describe("an agent's model fails", () => {
+  test("OpenCode's own retries are said on the trail, and a refusal it takes as final is said in its own words to the next model", async () => {
+    expect(OPENCODE.read(RETRY)).toEqual([{ type: "session", id: SESSION }, { type: "retry", attempt: 2, error: "Rate limit reached; try again in 2s", waitMs: 2169 }]);
+    expect(OPENCODE.read(QUOTA)).toEqual([{ type: "session", id: SESSION }, { type: "error", message: SPENT }]);
+    const replies: Record<QuestRole, string[]> = { planner: ["1. Count files."], engineer: [], reviewer: ["PASS"] };
+    let runs = 0;
+    const launches: string[] = [];
+    const exec = async (command: string): Promise<ExecResult> => {
+      const ok = (stdout = "") => ({ exitCode: 0, stdout, stderr: "", durationMs: 1, truncated: false });
+      if (command.startsWith("mkdir -p /work/.agent")) {
+        runs += 1;
+        launches.push(command);
+        return ok();
+      }
+      if (command.startsWith("python3 -c") && command.includes("d, off =")) {
+        return ok(JSON.stringify(runs === 1 ? { alive: false, exit: 1, next: 10, lines: [LINES.start, RETRY, LINES.shell, QUOTA] } : { alive: false, exit: 0, next: 20, lines: [LINES.edit, LINES.text] }));
+      }
+      return ok(command.startsWith("stat") ? "0" : "");
+    };
+    const events: QuestEvent[] = [];
+    const outcome = await runQuest(
+      { goal: "inventory", environment: "a sandbox", agent: { driver: OPENCODE, models: [model, { provider: "deepseek", model: "deepseek-v4-pro" }], minutes: 30, workdir: "/work/repo" } },
+      { ask: async (role) => ({ text: replies[role].shift()!, model: `test/${role}` }), exec, emit: (e) => events.push(e), sleep: noSleep },
+    );
+    expect(outcome.status).toBe("done");
+    const retries = events.filter((e) => e.type === "retry");
+    // Its own wait, as it said it; then the next model taking over, told why in the plan's own words.
+    expect(retries[0]).toEqual({ type: "retry", role: "engineer", attempt: 2, error: "Rate limit reached; try again in 2s", waitMs: 2169 });
+    expect(retries[1]).toMatchObject({ role: "engineer", attempt: 1, error: expect.stringContaining(`orcarouter/anthropic/claude-opus-5.5: ${SPENT.slice(0, 60)}`) });
+    const second = Buffer.from(launches[1]!.match(/printf %s '([A-Za-z0-9+/=]+)'/)![1]!, "base64").toString("utf8");
+    expect(second).toContain(`Your last run stopped with an error (${SPENT}`);
+    expect(second).not.toContain("provider.quota");
+  });
+
   test("the next model carries on the same session (seen live: a provider's content filter ended the quest)", async () => {
     const replies: Record<QuestRole, string[]> = { planner: ["1. Count files."], engineer: [], reviewer: ["PASS"] };
     const filtered = JSON.stringify({ type: "provider.content-filter", message: "Provider blocked the response" });
