@@ -73,8 +73,8 @@ import org.amirite.galahad.core.NodeError
 private enum class Place(val label: String) { ROUNDTABLE("Roundtable"), INBOX("Inbox"), MORE("More") }
 
 /** What's on screen, for the way it comes in: a page opened over a place comes in from the side and goes back there. */
-private data class Screen(val place: Place, val chat: Boolean, val knight: String?, val room: String?) {
-    val opened: Boolean get() = chat || knight != null || room != null
+private data class Screen(val place: Place, val chat: Boolean, val knight: String?, val room: String?, val keys: Boolean) {
+    val opened: Boolean get() = chat || knight != null || room != null || keys
 }
 
 /**
@@ -88,8 +88,9 @@ fun Root(app: AppModel) {
     var chat by rememberSaveable { mutableStateOf(false) }
     var knight by rememberSaveable { mutableStateOf<String?>(null) }
     var room by rememberSaveable { mutableStateOf<String?>(null) }
+    var keys by rememberSaveable { mutableStateOf(false) }
     val inbox by app.inbox.collectAsState()
-    val screen = Screen(place, chat, knight, room)
+    val screen = Screen(place, chat, knight, room, keys)
     // A tablet, or a foldable open (the window's width, as Android's own size classes read it).
     val wide = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() } >= 600.dp
     val motion = MaterialTheme.motionScheme
@@ -100,6 +101,7 @@ fun Root(app: AppModel) {
         val (open, conversation) = opening ?: return@LaunchedEffect
         knight = null
         room = null
+        keys = false
         chat = open == "chat"
         if (chat) conversation?.let(app.chat::open)
         place = when (open) { "inbox" -> Place.INBOX; "settings" -> Place.MORE; else -> Place.ROUNDTABLE }
@@ -112,6 +114,7 @@ fun Root(app: AppModel) {
         if (shared == null) return@LaunchedEffect
         knight = null
         room = null
+        keys = false
         app.chat.fresh()
         chat = true
     }
@@ -121,6 +124,7 @@ fun Root(app: AppModel) {
             chat -> chat = false
             knight != null -> knight = null
             room != null -> room = null
+            keys -> keys = false
             else -> place = Place.ROUNDTABLE
         }
     }
@@ -128,6 +132,7 @@ fun Root(app: AppModel) {
         chat = false
         knight = null
         room = null
+        keys = false
         place = to
     }
     val icon: @Composable (Place) -> Unit = { p ->
@@ -174,9 +179,10 @@ fun Root(app: AppModel) {
                         s.chat -> ChatScreen(app) { chat = false }
                         s.knight != null -> KnightScreen(app, s.knight) { knight = null }
                         s.room != null -> RoomScreen(app, s.room) { room = null }
+                        s.keys -> KeysScreen(app) { keys = false }
                         s.place == Place.ROUNDTABLE -> RoundtableScreen(app, openChat = { chat = true }, openKnight = { knight = it }, openRoom = { room = it })
                         s.place == Place.INBOX -> InboxScreen(app)
-                        else -> MoreScreen(app)
+                        else -> MoreScreen(app, openKeys = { keys = true })
                     }
                 }
             }
@@ -184,9 +190,9 @@ fun Root(app: AppModel) {
     }
 }
 
-/** This phone, its node, and the way out: forgetting the node here. */
+/** This phone, its node, its keys, and the way out: forgetting the node here. */
 @Composable
-private fun MoreScreen(app: AppModel) {
+private fun MoreScreen(app: AppModel, openKeys: () -> Unit) {
     val paired by app.paired.collectAsState()
     var forgetting by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
@@ -203,6 +209,11 @@ private fun MoreScreen(app: AppModel) {
             }
         }
         NotificationsPanel(app)
+        Panel {
+            Text("Keys", style = MaterialTheme.typography.titleMediumEmphasized)
+            Text("Your providers' and services' keys, sealed for your full nodes: add, replace or delete one. Never shown again, never seen by a model.", style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = openKeys) { Text("Open Keys") }
+        }
         paired?.let { p ->
             Panel {
                 Text("Your node", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)

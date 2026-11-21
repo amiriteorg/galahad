@@ -79,3 +79,8 @@ val MoreIcon: ImageVector = icon("More") {
         moveTo(x - 1.8f, 12f); arcToRelative(1.8f, 1.8f, 0f, true, true, 3.6f, 0f); arcToRelative(1.8f, 1.8f, 0f, true, true, -3.6f, 0f); close()
     }
 }
+
+/** Add one: a plus. */
+val PlusIcon: ImageVector = icon("Add") {
+    line { moveTo(12f, 5f); lineTo(12f, 19f); moveTo(5f, 12f); lineTo(19f, 12f) }
+}
