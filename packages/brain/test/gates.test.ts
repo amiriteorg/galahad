@@ -449,6 +449,15 @@ describe("the test files a gate names are the contract (locked)", () => {
     await h.run;
     const briefing = h.seen.find((s) => s.role === "engineer")!.messages[0]!.content;
     expect(briefing).toContain("The test files they run are the contract: src/sum.test.ts.");
+    expect(briefing).toContain("New tests the quest asks for go in a new file beside them (say which, and run it): these stay as they are.");
+  });
+
+  test("the reviewer is told which test files were the contract, so new tests the quest asks for are judged where they could be", async () => {
+    const h = harness({ engineer: [sh("printf 'x' > src/sum.more.test.ts"), "DONE\nThe new tests are in src/sum.more.test.ts."], exec: (command) => (command.includes("sha256sum") ? digest("a") : {}) }, { gates: ["bun test src/sum.test.ts"] });
+    expect((await h.run).status).toBe("done");
+    expect(reviews(h)[0]!.messages.at(-1)!.content).toContain(
+      "The test files these gates run were the contract, which the work could not change: src/sum.test.ts. New tests the quest asks for may be in a new file beside them: judge them there.",
+    );
   });
 
   test("a gate that names no test file locks nothing, and nothing is read for it", async () => {

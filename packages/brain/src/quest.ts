@@ -524,7 +524,7 @@ function gateNotes(results: readonly GateResult[]): string {
 }
 
 /** The gates as the reviewer sees them: each one's run that passed, and the runs that failed before it. */
-export function gatesEvidence(rounds: readonly (readonly GateResult[])[], before?: readonly GateResult[]): string {
+export function gatesEvidence(rounds: readonly (readonly GateResult[])[], before?: readonly GateResult[], locked: readonly string[] = []): string {
   const last = rounds.at(-1);
   if (!last?.length) return "";
   const lines = [
@@ -539,6 +539,9 @@ export function gatesEvidence(rounds: readonly (readonly GateResult[])[], before
       ...before.map((g, i) => `${i + 1}. $ ${g.command} → exit ${g.exitCode}${g.exitCode === 0 ? " (it passed before any work: its passing now shows nothing about this work)" : ""}`),
     );
   }
+  // (A quest that asks for tests in one of these would otherwise be sent back for keeping it as it was: on 21 November
+  // 2026 a knight's held them back, as it was told to, and the reviewer, told nothing of it, sent the work back.)
+  if (locked.length) lines.push(`The test files these gates run were the contract, which the work could not change: ${locked.join(", ")}. New tests the quest asks for may be in a new file beside them: judge them there.`);
   return lines.join("\n");
 }
 
@@ -568,7 +571,7 @@ const printed = (g: GateResult): string => {
 /** What the engineer (or the coding agent) is told about the gates before it starts (`locked`: the test files they name). */
 const gatesBriefing = (gates: readonly Gate[], before?: readonly GateResult[], locked: readonly string[] = [], unreviewed = false): string =>
   gates.length
-    ? `\n\nGates: when you say you are done, ${gates.length === 1 ? "this command is" : "these commands are"} run in your workspace, and each must exit 0 before your work ${unreviewed ? "is done" : "goes to the reviewer"}. You can't change them; make the work pass them.\n${gates.map((g, i) => `${i + 1}. $ ${g.command} (${gateBy(g.by)})`).join("\n")}${before?.length ? gatesBefore(before) : ""}${locked.length ? `\nThe test files they run are the contract: ${locked.join(", ")}. Change the work, never these: a submission that changed one goes back before any gate runs.` : ""}`
+    ? `\n\nGates: when you say you are done, ${gates.length === 1 ? "this command is" : "these commands are"} run in your workspace, and each must exit 0 before your work ${unreviewed ? "is done" : "goes to the reviewer"}. You can't change them; make the work pass them.\n${gates.map((g, i) => `${i + 1}. $ ${g.command} (${gateBy(g.by)})`).join("\n")}${before?.length ? gatesBefore(before) : ""}${locked.length ? `\nThe test files they run are the contract: ${locked.join(", ")}. Change the work, never these: a submission that changed one goes back before any gate runs. New tests the quest asks for go in a new file beside them (say which, and run it): these stay as they are.` : ""}`
     : "";
 
 /** The test files a gate names, read as they are: one line per file there (`<sha256>  <path>`), nothing for one that isn't. */
@@ -1311,7 +1314,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   const judge = (summary: string, trail: Step[]): Promise<{ verdict: "pass" | "revise"; notes: string; conclusion?: string }> => within("review", () => judgeNow(summary, trail));
   const judgeNow = async (summary: string, trail: Step[]): Promise<{ verdict: "pass" | "revise"; notes: string; conclusion?: string }> => {
     // The gates are evidence too: that each passes now, and every run that didn't.
-    const gated = gatesEvidence(gateRounds, before);
+    const gated = gatesEvidence(gateRounds, before, [...locked.keys()]);
     let evidence = "";
     for (const command of o.evidence) {
       check();
