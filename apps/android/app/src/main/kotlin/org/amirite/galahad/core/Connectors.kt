@@ -84,3 +84,53 @@ object Connectors {
     /** The class of a tool, as a person reads it. */
     fun classLine(tool: Connector.Tool): String = if (tool.asks) "${tool.kind} · asks you first" else tool.kind
 }
+
+/** A server of the MCP library, as the node lists it (core McpLibraryView). */
+data class LibraryEntry(
+    val id: String,
+    val label: String,
+    val description: String,
+    val url: String,
+    val site: String,
+    val category: String,
+    /** oauth · key · none */
+    val auth: String,
+    val reviewed: Boolean,
+    val installed: Boolean,
+) {
+    companion object {
+        fun of(j: Json) = LibraryEntry(
+            j["id"].string ?: "", j["label"].string ?: "", j["description"].string ?: "", j["url"].string ?: "", j["site"].string ?: "",
+            j["category"].string ?: "", j["auth"].string ?: "", j["reviewed"].bool ?: false, j["installed"].bool ?: false,
+        )
+    }
+}
+
+/** A page of the library (core ConnectorLibraryView): its entries, how many in all, its shelves, and where its index stands. */
+data class LibraryPage(val entries: List<LibraryEntry>, val total: Int, val shelves: List<Pair<String, Int>>, val index: Index) {
+    data class Index(val url: String?, val fetched: Double?, val count: Int, val problem: String?)
+
+    companion object {
+        fun of(j: Json) = LibraryPage(
+            j["entries"].list.map(LibraryEntry::of),
+            j["total"].int ?: 0,
+            j["categories"].list.mapNotNull { c -> c["name"].string?.let { it to (c["count"].int ?: 0) } },
+            j["index"].let { Index(it["url"].string, it["fetched"].double, it["count"].int ?: 0, it["problem"].string) },
+        )
+    }
+}
+
+/** How a library server lets Galahad in, in words (the PWA's views/mcp-library.ts HOW). */
+fun libraryHow(auth: String): String = when (auth) {
+    "oauth" -> "Signs in"
+    "key" -> "Takes a key"
+    else -> "Open"
+}
+
+/** Under the library's list: how many, and where they come from (the Apple app's `libraryLine`). */
+fun libraryLine(page: LibraryPage, shown: Int): String {
+    val head = "${"%,d".format(page.total)} ${if (page.total == 1) "server" else "servers"}${if (page.total > shown) ", $shown shown" else ""}."
+    page.index.problem?.let { return "$head The index couldn't be read ($it): Galahad's reviewed servers are here." }
+    if (page.index.fetched != null) return "$head Galahad's reviewed servers, and ${"%,d".format(page.index.count)} more the index found in the official MCP Registry, each the service's own."
+    return if (page.index.url == null) "$head Galahad's reviewed servers (this node reads no index)." else "$head Reading the index for the first time…"
+}

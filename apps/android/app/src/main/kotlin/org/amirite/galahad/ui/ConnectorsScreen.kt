@@ -49,7 +49,11 @@ import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.core.Connector
 import org.amirite.galahad.core.Connectors
 import org.amirite.galahad.core.Json
+import org.amirite.galahad.core.LibraryEntry
+import org.amirite.galahad.core.LibraryPage
 import org.amirite.galahad.core.NodeError
+import org.amirite.galahad.core.libraryHow
+import org.amirite.galahad.core.libraryLine
 import org.amirite.galahad.core.get
 import org.amirite.galahad.core.list
 import org.amirite.galahad.core.string
@@ -65,6 +69,7 @@ fun ConnectorsScreen(app: AppModel, back: () -> Unit) {
     var connectors by remember { mutableStateOf<List<Connector>?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
+    var library by rememberSaveable { mutableStateOf(false) }
 
     suspend fun load() {
         val client = app.client ?: return
@@ -75,11 +80,16 @@ fun ConnectorsScreen(app: AppModel, back: () -> Unit) {
             problem = "The connectors couldn't be read: ${e.message}"
         }
     }
-    LaunchedEffect(open) { if (open == null) load() }
+    LaunchedEffect(open, library) { if (open == null && !library) load() }
 
     open?.let { id ->
         BackHandler { open = null }
         ConnectorPage(app, id) { open = null }
+        return
+    }
+    if (library) {
+        BackHandler { library = false }
+        LibraryScreen(app, back = { library = false }, opened = { open = it })
         return
     }
     Column(Modifier.fillMaxSize()) {
@@ -104,6 +114,130 @@ fun ConnectorsScreen(app: AppModel, back: () -> Unit) {
                     modifier = Modifier.padding(horizontal = Space.margin, vertical = Space.s2),
                 )
             }
+            if (all != null) {
+                Panel {
+                    Text("MCP library", style = MaterialTheme.typography.titleMediumEmphasized)
+                    Text("Hosted MCP servers, each the service's own: search, sort and add. One that signs in needs no key and no app of yours: add it, and sign in as yourself.", style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = { library = true }) { Text("Open the library") }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The library of hosted MCP servers (the iPhone's and the PWA's): Galahad's reviewed list and the index at mcp.galahad.sh,
+ * asked of the node a page at a time. Searched by words, narrowed by how it lets Galahad in, its shelf and an order; Add
+ * puts one in, and its page (its sign-in or its key) opens next.
+ */
+@Composable
+private fun LibraryScreen(app: AppModel, back: () -> Unit, opened: (String) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var kind by rememberSaveable { mutableStateOf("") }
+    var shelf by rememberSaveable { mutableStateOf("") }
+    var order by rememberSaveable { mutableStateOf("popular") }
+    var page by remember { mutableStateOf<LibraryPage?>(null) }
+    var entries by remember { mutableStateOf<List<LibraryEntry>>(emptyList()) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    var adding by remember { mutableStateOf<String?>(null) }
+    var picking by remember { mutableStateOf<String?>(null) }
+    /** The latest ask: an older, slower answer is dropped. */
+    var asked by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
+
+    suspend fun load(more: Boolean) {
+        val mine = ++asked
+        val words = query.trim()
+        try {
+            val answer = LibraryPage.of(
+                app.client!!.post(
+                    "/api/connectors/library",
+                    Json.obj("q" to words.ifEmpty { null }, "auth" to kind.ifEmpty { null }, "category" to shelf.ifEmpty { null }, "sort" to order, "offset" to if (more) entries.size else 0, "limit" to 30),
+                ),
+            )
+            if (mine != asked) return
+            page = answer
+            entries = if (more) entries + answer.entries else answer.entries
+            problem = null
+        } catch (e: NodeError) {
+            if (mine == asked) problem = "The library couldn't be read: ${e.message}"
+        }
+    }
+    LaunchedEffect(query, kind, shelf, order) {
+        // Typing settles a moment before the node is asked.
+        if (page != null) delay(250)
+        load(more = false)
+        // The index's first read on this node is under way: asked again in a moment, once.
+        val index = page?.index
+        if (index != null && index.url != null && index.fetched == null && index.problem == null) {
+            delay(2_500)
+            load(more = false)
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        PageBar("MCP library", back)
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text("Search the library") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s1),
+        )
+        Row(Modifier.padding(horizontal = Space.margin), horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+            Filter("how", picking, { picking = it }, when (kind) { "oauth" -> "Signs in"; "key" -> "Takes a key"; "none" -> "Open"; else -> "Any way in" }, listOf("" to "Any way in", "oauth" to "Signs in", "key" to "Takes a key", "none" to "Open")) { kind = it }
+            Filter("shelf", picking, { picking = it }, shelf.ifEmpty { "Every shelf" }, listOf("" to "Every shelf") + (page?.shelves ?: emptyList()).map { (name, count) -> name to "$name ($count)" }) { shelf = it }
+            Filter("order", picking, { picking = it }, when (order) { "name" -> "A–Z"; "updated" -> "Recently updated"; else -> "Popular" }, listOf("popular" to "Popular", "name" to "A–Z", "updated" to "Recently updated")) { order = it }
+        }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = Space.s4)) {
+            problem?.let { Problem(it) }
+            if (page == null && problem == null) Text("Reading the library…", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(Space.margin))
+            for (entry in entries) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s2), horizontalArrangement = Arrangement.spacedBy(Space.s2), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Space.s1), verticalAlignment = Alignment.CenterVertically) {
+                            Text(entry.label, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1)
+                            if (entry.reviewed) ToneBadge(Connectors.State("Reviewed", "accent"))
+                            if (entry.installed) ToneBadge(Connectors.State("Installed", "ok"))
+                        }
+                        Text("${libraryHow(entry.auth)} · ${entry.category} · ${Uri.parse(entry.url).host ?: entry.site}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        if (entry.description.isNotEmpty()) Text(entry.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    }
+                    if (!entry.installed) {
+                        OutlinedButton(enabled = adding == null, onClick = {
+                            adding = entry.id
+                            scope.launch {
+                                try {
+                                    app.client!!.post("/api/connectors", Json.obj("id" to entry.id))
+                                    // Its page next: the sign-in, or the key, or its tools.
+                                    opened(entry.id)
+                                } catch (e: NodeError) {
+                                    problem = "${entry.label} couldn't be added: ${e.message}"
+                                } finally {
+                                    adding = null
+                                }
+                            }
+                        }) { Text(if (adding == entry.id) "Adding…" else "Add") }
+                    }
+                }
+                HorizontalDivider(Modifier.padding(start = Space.margin))
+            }
+            page?.let { p ->
+                if (entries.size < p.total) TextButton(onClick = { scope.launch { load(more = true) } }, modifier = Modifier.padding(horizontal = Space.margin)) { Text("Show more") }
+                Text(libraryLine(p, entries.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = Space.margin, vertical = Space.s2))
+            }
+        }
+    }
+}
+
+/** One of the library's filters: what it is set to, and its choices in a menu. */
+@Composable
+private fun Filter(name: String, picking: String?, pick: (String?) -> Unit, shown: String, choices: List<Pair<String, String>>, chose: (String) -> Unit) {
+    androidx.compose.foundation.layout.Box {
+        OutlinedButton(onClick = { pick(name) }) { Text(shown, maxLines = 1) }
+        androidx.compose.material3.DropdownMenu(expanded = picking == name, onDismissRequest = { pick(null) }) {
+            for ((value, label) in choices) androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = { pick(null); chose(value) })
         }
     }
 }
@@ -133,6 +267,7 @@ private fun ToneBadge(state: Connectors.State) {
         "ok" -> brand.done
         "warn" -> brand.needs
         "danger" -> brand.siege
+        "accent" -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Text(

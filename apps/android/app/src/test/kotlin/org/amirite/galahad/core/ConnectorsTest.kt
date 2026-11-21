@@ -28,4 +28,14 @@ class ConnectorsTest {
         assertEquals(Connectors.State("signed in", "ok"), Connectors.state(c.key, c.signIn))
         assertEquals("https://node.example/oauth/callback", Connectors.callback("https://node.example/"))
     }
+
+    @Test
+    fun theLibrarySaysHowManyAndWhereTheyComeFrom() {
+        val page = LibraryPage.of(Json.parse("""{"entries":[{"id":"mcp-linear","label":"Linear","description":"Issues","url":"https://mcp.linear.app/mcp","site":"linear.app","category":"Work","auth":"oauth","reviewed":true,"installed":false}],"total":1540,"categories":[{"name":"Work","count":200}],"index":{"url":"https://mcp.galahad.sh","fetched":1795000000000,"count":1500,"problem":null}}"""))
+        assertEquals("Signs in", libraryHow(page.entries.single().auth))
+        assertEquals("1,540 servers, 30 shown. Galahad's reviewed servers, and 1,500 more the index found in the official MCP Registry, each the service's own.", libraryLine(page, 30))
+        assertEquals("1 server. Galahad's reviewed servers (this node reads no index).", libraryLine(page.copy(total = 1, index = LibraryPage.Index(null, null, 0, null)), 1))
+        assertEquals("1 server. The index couldn't be read (timeout): Galahad's reviewed servers are here.", libraryLine(page.copy(total = 1, index = LibraryPage.Index("https://mcp.galahad.sh", null, 0, "timeout")), 1))
+        assertEquals(listOf("Work" to 200), page.shelves)
+    }
 }
