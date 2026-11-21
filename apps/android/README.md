@@ -23,6 +23,14 @@ your keys, your connectors and the library of services' own MCP servers. More al
 asks galahad.sh's `android/latest.json` at most once a day, sending nothing of yours) and downloads it from GitHub's
 releases; it installs over the last because every build is signed with the same key. Not yet: Google Play.
 
+What it keeps on the phone: its pairing, its device key (in the Keystore, never readable), your notification choices,
+and, so it opens on your Roundtable at once however slow the connection (your word, 21 November 2026), the last
+Roundtable it saw: the team in the fields its roster reads (no knight's instructions or notes, no task's brief), the
+chats' titles, which approvals wait (who asks and for which tool, never what a request holds) and how many things wait
+for you (`app/KeptTable.kt`). It is in the app's own storage, never backed up, drawn only for the node and key it came
+from, and replaced by the node's first answer; if that answer is slow, a still line says what you're looking at.
+Forgetting the node deletes it. The iPhone app keeps none of it.
+
 Needs JDK 17 and the Android SDK (platform 37, build tools); Gradle comes with the wrapper (its checksum pinned).
 
 ```sh

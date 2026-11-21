@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +61,16 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
     val problem by app.problem.collectAsState()
     val paired by app.paired.collectAsState()
     var giving by remember { mutableStateOf(false) }
+    // The last Roundtable this phone saw is drawn at once (app/KeptTable.kt). If the node hasn't answered in a moment,
+    // a still line says what you're looking at; on a quick answer it never shows, so nothing comes and goes.
+    var waited by remember { mutableStateOf(false) }
+    LaunchedEffect(table.asOf) {
+        waited = false
+        if (table.asOf != null) {
+            kotlinx.coroutines.delay(1_500)
+            waited = true
+        }
+    }
     val knights = table.rows.filter { it.kind == "knight" }
     val rooms = table.rows.filter { it.kind == "room" }
 
@@ -71,6 +82,13 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
             }
         }
         problem?.let { p -> item { Refused(app, p) } }
+        table.asOf?.takeIf { waited && problem == null }?.let { at ->
+            item {
+                val now = System.currentTimeMillis()
+                val ago = if (now - at < 60_000) "just now" else android.text.format.DateUtils.getRelativeTimeSpanString(at, now, android.text.format.DateUtils.MINUTE_IN_MILLIS)
+                Text("As your node last said it, $ago. Asking it again.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = Space.margin))
+            }
+        }
         if (table.snapshot == null && problem == null) item {
             Text("Asking your node…", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(Space.margin))
         }

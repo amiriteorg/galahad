@@ -86,6 +86,8 @@ data class Table(
     val unread: List<Json> = emptyList(),
     /** Which writing of the chats the node said last (`chats` on GET /api/turns): when it moves, an open chat is read again. */
     val chats: String? = null,
+    /** The last Roundtable this phone kept, as the node said it then (KeptTable): until the node answers. Null: the node's answer. */
+    val asOf: Long? = null,
 )
 
 /**
@@ -133,8 +135,53 @@ class AppModel(context: Context) {
     var client: NodeClient? = null
         private set
 
+    /** The last Roundtable this phone saw (KeptTable): in the app's own storage, never backed up. */
+    private val keptFile = java.io.File(appContext.noBackupFilesDir, "roundtable.json")
+    /** What was last written there (without its time), and when: written again when it changes, or ten minutes on. */
+    private var keptWords: String? = null
+    private var keptAt = 0L
+    /** One at a time, in order: a write still under way never brings back what forgetting the node took away. */
+    private val keeper = Dispatchers.IO.limitedParallelism(1)
+
     init {
         connect()
+        restore()
+    }
+
+    /** The kept Roundtable, if it is this node's and this key's: drawn until the node answers. */
+    private fun restore() {
+        val node = _paired.value ?: return
+        val kept = runCatching { KeptTable.read(Json.parse(keptFile.readText()), node) }.getOrNull() ?: return
+        val snapshot = runCatching { Snapshot.of(kept.team) }.getOrNull() ?: return
+        val needs = Roster.galahadNeeds(kept.waiting, kept.asks, snapshot.teammates.map { it.id })
+        val galahad = Roster.galahadNow(turns = kept.turns, quests = emptyList(), needs = needs, unread = kept.unread.map { it["title"].string })
+        _table.value = Table(snapshot, Roster.rows(snapshot, kept.asks, System.currentTimeMillis()), galahad, kept.unread, asOf = kept.at)
+    }
+
+    /** What the node just said of the Roundtable, kept for the next time the app opens (off the main thread). */
+    private fun keep(team: Json, turns: Json?, asks: List<Ask>, waiting: Int) {
+        val node = _paired.value ?: return
+        scope.launch(keeper) {
+            val now = System.currentTimeMillis()
+            val words = KeptTable.of(node, team, turns, asks, waiting, at = 0).text()
+            if (words == keptWords && now - keptAt < 10 * 60_000L) return@launch
+            runCatching {
+                val next = java.io.File(keptFile.parentFile, "roundtable.json.next")
+                next.writeText(KeptTable.of(node, team, turns, asks, waiting, at = now).text())
+                if (!next.renameTo(keptFile)) error("not kept")
+                keptWords = words
+                keptAt = now
+            }
+        }
+    }
+
+    /** The kept Roundtable goes (another node, or none), after any write still under way. */
+    private fun unkeep() {
+        scope.launch(keeper) {
+            runCatching { keptFile.delete() }
+            keptWords = null
+            keptAt = 0
+        }
     }
 
     /** Paired only while the key that paired is still this phone's (a reinstall forgets the Keystore's key). */
@@ -151,6 +198,7 @@ class AppModel(context: Context) {
     }
 
     fun paired(node: PairedNode) {
+        unkeep()
         prefs.edit().putString("paired-node", node.json().text()).apply()
         _paired.value = node
         connect()
@@ -164,6 +212,7 @@ class AppModel(context: Context) {
         prefs.edit().remove("paired-node").apply()
         runCatching { DeviceKey.forget() }
         key = null
+        unkeep()
         _paired.value = null
         client = null
         _table.value = Table()
@@ -232,6 +281,8 @@ class AppModel(context: Context) {
                 unread = unread.map { it["title"].string },
             )
             _table.value = Table(snapshot, rows, galahad, unread, turnsJson?.get("chats")?.text() ?: _table.value.chats)
+            // (What the node said of the team just now is kept for the next time the app opens: KeptTable.)
+            got[0].getOrNull()?.let { team -> keep(team, turnsJson, asks, inbox.count) }
         }
         chat.follow(_table.value.chats)
     }
