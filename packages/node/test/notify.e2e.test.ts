@@ -143,13 +143,15 @@ const tomorrow = async () => {
 };
 const last = (b: StandInBrowser) => b.received.at(-1)!;
 /**
- * What a notification says, its tag left out. A tag is a salted digest of the item's key (core's `tagOf`), so it never
- * carries a word, but its letters are random and may spell "42" or "oath": a check of what is said must not trip on
- * them (one did, on "t-bm3jtD42gHElmGWqBulkI4"). That the tag is only a digest is checked here instead.
+ * What a notification says, its tag and the id of the action it answers left out. A tag is a salted digest of the
+ * item's key (core's `tagOf`) and an action's id is random, so neither carries a word, but their letters may spell "42"
+ * or "oath": a check of what is said must not trip on them (one did, on "t-bm3jtD42gHElmGWqBulkI4", and another on
+ * "a_4vp42pNoK36k78vLbmBiKQ"). That each is only a digest or an id is checked here instead.
  */
 const said = (delivery: { text: string }): string => {
-  const { tag, ...words } = JSON.parse(delivery.text) as Record<string, unknown>;
+  const { tag, action, ...words } = JSON.parse(delivery.text) as Record<string, unknown>;
   expect(String(tag)).toMatch(/^(t-[A-Za-z0-9_-]{22}|summary|limit)$/);
+  if (action !== undefined) expect(String(action)).toMatch(/^a_[A-Za-z0-9_-]{22}$/);
   return JSON.stringify(words);
 };
 
