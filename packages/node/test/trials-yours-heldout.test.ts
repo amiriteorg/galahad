@@ -162,7 +162,7 @@ describe("held-out tests", () => {
     valid(record);
     expect(record).toMatchObject({ status: "scored", score: 0, answers: [{ key: "gate_1", got: 0, ok: false }] });
     // The knight's test, not the engineer's weakened one, decides; touching a held-out test doesn't fail the gate as altering it.
-    expect(record.note).toBe("counted: gate 1 of 1; gate 1 failed (exit 1)");
+    expect(record.note).toBe("counted: gate 1 of 1; gate 1 failed (exit 1): expected 2, got 4");
   });
 
   test("a held-out test whose name holds a glob's characters is put in place as it is named (a route's [id].test.ts)", async () => {

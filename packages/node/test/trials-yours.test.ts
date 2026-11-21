@@ -180,7 +180,7 @@ describe("a trial of a case", () => {
     valid(record);
     expect(record).toMatchObject({ status: "scored", score: 0, answers: [{ key: "gate_1", got: 0, ok: false }] });
     expect(record.quest?.status).not.toBe("done");
-    expect(record.note).toBe("counted: gate 1 of 2; gate 2 passes before any work; gate 1 failed (exit 1)");
+    expect(record.note).toBe("counted: gate 1 of 2; gate 2 passes before any work; gate 1 failed (exit 1): expected 6, got 7");
   });
 
   test("a change that alters the test its gate runs fails that gate, whatever the gate then printed", async () => {

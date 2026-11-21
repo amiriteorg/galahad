@@ -193,10 +193,12 @@ const instructions = (c: YourCase): string =>
     "What counts is what you leave in it: it is taken out as a patch against that commit (new files included; nothing git ignores, and nothing outside the repository), put on a fresh checkout of it, and the gates are run there.",
   ].join(" ");
 
-/** Each gate's exit code, and the test files it names that the patch altered (PLAN #7: those may not change). */
+/** Each gate's exit code, the test files it names that the patch altered (PLAN #7: those may not change), and its tail. */
 export interface GateRun {
   exits: number[];
   altered: string[][];
+  /** The end of what each gate printed when it failed (where a test runner says what failed); empty for a gate that passed. */
+  tails?: string[];
 }
 
 /** A patch put on a grading checkout, whole, or only some of its files (a held-out test put back, or left out). */
@@ -328,11 +330,14 @@ async function gatesOn(node: CaseClient, c: YourCase, job: TrialJob, layers: Pat
     const exemptSet = new Set(exempt);
     const altered = c.gates.map((gate) => testFilesOf(gate).filter((file) => changed.has(file) && !exemptSet.has(file)));
     const exits: number[] = [];
+    const tails: string[] = [];
     for (const gate of c.gates) {
       if (job.signal?.aborted) throw new Error("stopped");
-      exits.push((await exec(inWorkdir(root, gate), GATE_TIMEOUT_SEC)).exitCode);
+      const run = await exec(inWorkdir(root, gate), GATE_TIMEOUT_SEC);
+      exits.push(run.exitCode);
+      tails.push(gateTail(run));
     }
-    return { exits, altered };
+    return { exits, altered, tails };
   } finally {
     await node.call("destroySandbox", { id: sandbox.id, on: sandbox.node }).catch(() => {});
   }
@@ -342,19 +347,71 @@ const passes = (run: GateRun, i: number): boolean => run.exits[i] === 0 && !run.
 /** Why a gate didn't pass, in words. */
 const failed = (run: GateRun, i: number): string => (run.altered[i]!.length ? `alters ${run.altered[i]!.join(", ")}, which it runs` : `exit ${run.exits[i]}`);
 
+/** How many of a failing gate's last printed characters its note keeps: where a test runner says what failed. */
+export const TAIL_CHARS = 300;
+
+/**
+ * The end of what a failing gate printed, where it says what failed: its stderr (bun's and jest's test runners report
+ * there), or with nothing there its stdout (pytest's, go test's, cargo's and a shell script's). A gate that passed keeps
+ * nothing.
+ */
+export const gateTail = (result: Pick<ExecResult, "exitCode" | "stderr" | "stdout">): string =>
+  result.exitCode === 0 ? "" : (result.stderr.trim() || result.stdout.trim()).slice(-TAIL_CHARS);
+
+/** The record's note is at most this many characters (TrialRecord). */
+const NOTE_LIMIT = 1000;
+
+/** A note's fixed words, and the tail of a failing gate's output that is cut first when the note must fit its limit. */
+interface GateNote {
+  words: string;
+  tail: string;
+}
+
+/** A note's words with its gate's printed tail, if any. */
+const noteText = (note: GateNote): string => (note.tail ? `${note.words}: ${note.tail}` : note.words);
+
+/** Which gates prove something, and the note for each that doesn't (a failing gate's printed tail with it). */
+function judgeNotes(gates: readonly string[], before: GateRun, withOwn: GateRun): { counted: number[]; uncounted: GateNote[] } {
+  const counted: number[] = [];
+  const uncounted: GateNote[] = [];
+  for (const i of gates.keys()) {
+    if (before.exits[i] === 0) uncounted.push({ words: `gate ${i + 1} passes before any work`, tail: "" });
+    else if (!passes(withOwn, i)) uncounted.push({ words: `gate ${i + 1} fails with the task's own change too (${failed(withOwn, i)})`, tail: withOwn.tails?.[i] ?? "" });
+    else counted.push(i);
+  }
+  return { counted, uncounted };
+}
+
+/**
+ * The note, within the record's limit: its words stay whole, and a failing gate's printed tail is cut (keeping its
+ * own end, every tail equally) before anything else when the whole note wouldn't fit.
+ */
+function fitNote(prefix: string, parts: GateNote[], suffix: string): string {
+  const sep = "; ";
+  const fixed = prefix.length + suffix.length + parts.reduce((n, p) => n + p.words.length, 0) + sep.length * Math.max(0, parts.length - 1);
+  const tails = parts.map((p) => p.tail);
+  const labels = tails.reduce((n, t) => n + (t ? 2 : 0), 0);
+  const budget = Math.max(0, NOTE_LIMIT - fixed - labels);
+  let cap = Math.max(0, ...tails.map((t) => t.length));
+  while (cap > 0 && tails.reduce((n, t) => n + Math.min(t.length, cap), 0) > budget) cap--;
+  const body = parts
+    .map((p) => {
+      const tail = p.tail;
+      if (!tail) return p.words;
+      const keep = Math.min(tail.length, cap);
+      return keep ? `${p.words}: ${tail.slice(tail.length - keep)}` : p.words;
+    })
+    .join(sep);
+  return `${prefix}${body}${suffix}`.slice(0, NOTE_LIMIT);
+}
+
 /**
  * Which gates prove something here: each that fails on the commit as it was and passes with the task's own change.
  * The rest, each with why it doesn't count.
  */
 export function judgeGates(gates: readonly string[], before: GateRun, withOwn: GateRun): { counted: number[]; uncounted: string[] } {
-  const counted: number[] = [];
-  const uncounted: string[] = [];
-  for (const i of gates.keys()) {
-    if (before.exits[i] === 0) uncounted.push(`gate ${i + 1} passes before any work`);
-    else if (!passes(withOwn, i)) uncounted.push(`gate ${i + 1} fails with the task's own change too (${failed(withOwn, i)})`);
-    else counted.push(i);
-  }
-  return { counted, uncounted };
+  const { counted, uncounted } = judgeNotes(gates, before, withOwn);
+  return { counted, uncounted: uncounted.map(noteText) };
 }
 
 /** A counted gate as an answer a replica can re-check: expected 1, got 1 (passed), 0 (failed) or nothing (not run). */
@@ -388,9 +445,9 @@ export async function attemptCase(node: CaseClient, c: YourCase, job: TrialJob):
     const before = await gatesOn(node, c, job, heldOut.length ? [{ patch: ownPatch, only: heldOut }] : [], heldOut);
     const withOwn = before.exits.some((exit) => exit !== 0) ? await gatesOn(node, c, job, ownPatch.length ? [{ patch: ownPatch }] : [], heldOut) : before;
     if (job.signal?.aborted) return null;
-    const judged = judgeGates(c.gates, before, withOwn);
+    const judged = judgeNotes(c.gates, before, withOwn);
     counted = judged.counted;
-    if (!counted.length) return unscored(`not graded: no gate proves anything here (${judged.uncounted.join("; ")})`);
+    if (!counted.length) return unscored(fitNote("not graded: no gate proves anything here (", judged.uncounted, ")"));
 
     // A task's own gates run in the quest unless the run's variant turns gates off; they grade it either way.
     const gates = (job.harness ? job.harness.gates : true) ? c.gates : [];
@@ -458,11 +515,11 @@ export async function attemptCase(node: CaseClient, c: YourCase, job: TrialJob):
     );
     if (job.signal?.aborted) return null;
     const answers = counted.map((i) => answer(i, passes(after, i) ? 1 : 0));
-    const note = [
-      `counted: ${counted.map((i) => `gate ${i + 1}`).join(", ")} of ${c.gates.length}`,
+    const note = fitNote("", [
+      { words: `counted: ${counted.map((i) => `gate ${i + 1}`).join(", ")} of ${c.gates.length}`, tail: "" },
       ...judged.uncounted,
-      ...counted.filter((i) => !passes(after, i)).map((i) => `gate ${i + 1} failed (${failed(after, i)})`),
-    ].join("; ");
+      ...counted.filter((i) => !passes(after, i)).map((i) => ({ words: `gate ${i + 1} failed (${failed(after, i)})`, tail: after.tails?.[i] ?? "" })),
+    ], "");
     return {
       ...base,
       status: "scored",
@@ -472,7 +529,7 @@ export async function attemptCase(node: CaseClient, c: YourCase, job: TrialJob):
       models: [...models].slice(0, 8),
       seconds: Math.round((Date.now() - started) / 1000),
       artifact: artifact.id,
-      note: note.slice(0, 1000),
+      note,
     };
   } catch (error) {
     if (job.signal?.aborted) return null;
