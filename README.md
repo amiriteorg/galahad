@@ -48,6 +48,9 @@ one: `bash -s -- --join <invite>`), publishes the app on your tailnet when Tails
 your phone. Run it again to update. Nothing runs as root. What it does, step by step: `scripts/install.sh`, or the same
 line with `bash -s -- --plan`.
 
+Then give him a key: `galahad key add` (a hidden prompt). A key for Anthropic, OpenAI, OpenRouter, OrcaRouter, xAI,
+DeepSeek, Z.ai or Mistral is enough: his roles answer on it at once. `galahad doctor` says what else to do.
+
 From a checkout instead (**[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** has the whole of it):
 
 ```sh
