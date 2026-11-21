@@ -427,8 +427,7 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
   const effort = options.variant ? options.variant.options.effort : options.effort;
   // Across the slots there are: with effort (or "auto"), the node says what it carries; otherwise as asked.
   const census = effort !== undefined || options.parallel === "auto" ? await node.call<ComputeView>("compute").catch(() => null) : null;
-  const plan = effort !== undefined || options.parallel === "auto" ? planParallel(census, options.parallel, effort ?? 1, jobs.length, options.on) : { parallel: options.parallel as number, why: "as asked" };
-  options.progress?.({ type: "plan", parallel: Math.max(1, Math.min(plan.parallel, jobs.length)), effort: effort ?? null, why: plan.why });
+  const asked = effort !== undefined || options.parallel === "auto" ? planParallel(census, options.parallel, effort ?? 1, jobs.length, options.on) : { parallel: options.parallel as number, why: "as asked" };
 
   // The budget: yours, or an allowance for every attempt the run would make. And roughly what it will cost.
   const prices = options.prices ?? {};
@@ -437,6 +436,13 @@ export async function runTrials(node: NodeClient, options: TrialRunOptions): Pro
   const past = await node.call<{ trials: TrialView[]; runs?: TrialRunsView }>("trials").catch(() => null);
   const pastEfforts = Object.fromEntries(Object.entries(past?.runs ?? {}).map(([r, s]) => [r, s.effort]));
   const estimate = estimateRun(past?.trials ?? [], options.problems, options.repeat, effort ?? 1, pastEfforts, prices);
+  // Trials no past run has priced, under a budget short of twice what the run is expected to cost, run one at a time: a
+  // stop at the budget then cuts one short and keeps those before it, never every one under way. (21 November 2026: four
+  // at once, two of them never tried and dearer than the rest, spent $2.03 of a $2 budget, and none was recorded.)
+  const tight = (limit: number | undefined, expected: number | null): boolean => limit !== undefined && (expected === null || expected * 2 > limit);
+  const guessing = !byDefault && estimate.known < estimate.of && (tight(budget.usd, estimate.usd) || tight(budget.tokens, estimate.tokens));
+  const plan = guessing && asked.parallel > 1 ? { parallel: 1, why: "some have never been tried, and the budget is close to what they're expected to cost: a stop at it cuts one short, not all" } : asked;
+  options.progress?.({ type: "plan", parallel: Math.max(1, Math.min(plan.parallel, jobs.length)), effort: effort ?? null, why: plan.why });
   options.progress?.({ type: "budget", budget, byDefault, estimate });
 
   // The run's settings are on record before its first trial, so its trials can be told apart by them.

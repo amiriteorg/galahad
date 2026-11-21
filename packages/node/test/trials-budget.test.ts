@@ -22,6 +22,8 @@ interface FakeOptions {
   past?: { trials: TrialView[]; runs?: TrialRunsView };
   /** A role's first model that can't answer (the next one does): the role, the model and why. */
   refused?: { role: string; model: string; error: string };
+  /** What a call reports by its role and its problem (the first message's words), in place of `usage`. */
+  usageOf?: (role: string, first: string) => Usage | null;
 }
 
 function fakeNode(options: FakeOptions = {}) {
@@ -85,7 +87,7 @@ function fakeNode(options: FakeOptions = {}) {
         text = turn % 2 === 1 ? "Solving.\n```sh\npython3 /work/out/solve.py\n```" : "DONE\nWrote /work/out/answer.json.";
       } else text = "PASS\nThe answer file is there.";
       yield { type: "text", text };
-      const usage = options.usage ? options.usage(role, ref) : { input: 1000, output: 100 };
+      const usage = options.usageOf ? options.usageOf(role, input.messages[0].content) : options.usage ? options.usage(role, ref) : { input: 1000, output: 100 };
       yield { type: "usage", ref, usage };
       yield { type: "done", ref };
     },
@@ -268,6 +270,34 @@ describe("what a run will cost, going by the past", () => {
     // No budget of yours: the default allowance is a guard, not a forecast, and every trial runs.
     const plain = fakeNode({ past: known });
     expect((await runTrials(plain.node, { suite: "engineering", problems: [cantilever], repeat: 5, parallel: 5, network: "gateway", seed: 11 })).trials).toHaveLength(5);
+  });
+
+  test("trials never priced under a budget close to their cost run one at a time: a stop cuts one short, and those before it count", async () => {
+    // The cantilever is known (4,400 tokens a trial); the RLC step was never tried, and costs five times that.
+    const dear = (role: string, first: string): Usage => (first.includes("A series RLC circuit") ? { input: 4900, output: 100 } : { input: 1000, output: 100 });
+    const known = { trials: [past("cantilever-beam", "r-a", 4400)] };
+    const plans: string[] = [];
+    const { node, recorded } = fakeNode({ past: known, usageOf: dear });
+    const result = await runTrials(node, {
+      suite: "engineering",
+      problems: [cantilever, rlc],
+      repeat: 1,
+      parallel: 2,
+      network: "gateway",
+      seed: 11,
+      budget: { tokens: 12_000 },
+      progress: (e) => void (e.type === "plan" && plans.push(`${e.parallel} · ${e.why}`)),
+    });
+    expect(plans).toEqual(["1 · some have never been tried, and the budget is close to what they're expected to cost: a stop at it cuts one short, not all"]);
+    // The cantilever finished and counts; the RLC step was stopped by the budget. Two at once, both would have been.
+    expect(recorded.map((t) => t.problem)).toEqual(["cantilever-beam"]);
+    expect(result.budgetEnded).toMatchObject({ stopped: 1, notStarted: 0 });
+
+    // Every one known: the budget's own admission decides, as many at once as asked.
+    const plain = fakeNode({ past: known });
+    const asked: number[] = [];
+    await runTrials(plain.node, { suite: "engineering", problems: [cantilever], repeat: 2, parallel: 2, network: "gateway", seed: 11, budget: { tokens: 9_000 }, progress: (e) => void (e.type === "plan" && asked.push(e.parallel)) });
+    expect(asked).toEqual([2]);
   });
 
   test("nothing known: it says so rather than guess", async () => {
