@@ -265,6 +265,9 @@ class AppModel(context: Context) {
                 screens = got[8].getOrNull()?.let { Inbox.live(it["sessions"].list) } ?: _inbox.value.screens,
             )
             _inbox.value = inbox
+            // Until the node has answered for the team, the kept Roundtable stays as it was kept, never redrawn with
+            // what else came back (an empty Inbox while the node is away), so it is never taken for the node's word.
+            if (got[0].isFailure && _table.value.asOf != null) return@coroutineScope
             val turnsJson = got[5].getOrNull()
             val snapshot = got[0].getOrNull()?.let(Snapshot::of) ?: _table.value.snapshot
             val asks = inbox.actions.map { Ask(it["by"].string ?: "", it["connector"].string, it["tool"].string) }
