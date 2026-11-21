@@ -518,7 +518,7 @@ try {
     hostname: "127.0.0.1",
     idleTimeout: 255,
     fetch: async (request) => {
-      const body = (await request.json()) as { model: string; messages: { role: string; content: unknown }[] };
+      const body = (await request.json()) as { model: string; tools?: unknown[]; messages: { role: string; content: unknown }[] };
       const turns = body.messages.filter((message) => message.role !== "system");
       if (JSON.stringify(turns).includes("Take your time")) await hold;
       let text = "Understood. I will take the part that is mine and say when it is done.";
@@ -529,7 +529,12 @@ try {
         if (body.model === "engineer") {
           if (goal.includes("TASK_FAIL")) text = "GIVE UP\nThe gate needs a Postgres this VM does not have: `bun test db/` exits 1 before any work, with ECONNREFUSED on 127.0.0.1:5432. Nothing in the workspace can start one; a task that brings the database up first would.";
           else if (goal.includes("TASK_KEEP") && turns.some((message) => message.role === "assistant")) text = "DONE\nThe importer reads ISO 8601 dates and the old day-first form; four new tests cover both, and the gate passes.";
-          else text = turns.some((message) => message.role === "assistant") ? "DONE\nVerified." : `\`\`\`sh\nprintf done > result.txt # ${write}\n\`\`\``;
+          else if (turns.some((message) => message.role === "assistant")) text = "DONE\nVerified.";
+          // Offered its own tools (a knight on the roster's models: quest.ts tools), it calls bash, as a real one does.
+          else if (body.tools?.length) {
+            const call = { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_stand_in", function: { name: "bash", arguments: JSON.stringify({ command: `printf done > result.txt # ${write}` }) } }] } }] };
+            return new Response(`data: ${JSON.stringify(call)}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+          } else text = `\`\`\`sh\nprintf done > result.txt # ${write}\n\`\`\``;
         } else if (body.model === "reviewer") text = "PASS\nThe required gate passed and execution evidence supports the result.";
       }
       return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });

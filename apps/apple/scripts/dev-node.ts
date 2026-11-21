@@ -162,6 +162,10 @@ const SHOWN = [
   JSON.stringify(["Ship it", "Hold until Monday"]),
   "```",
 ].join("\n");
+/** A stand-in engineer's call to its bash tool, streamed as an OpenAI-compatible tool call. */
+const bashCall = (command: string): Response =>
+  new Response(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_stand_in", function: { name: "bash", arguments: JSON.stringify({ command }) } }] } }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+
 const stream = (text: string, delayMs: number): Response => {
   const encoder = new TextEncoder();
   const words = text.split(/(?<= )/);
@@ -204,7 +208,10 @@ const model = Bun.serve({
       const write = goal.includes("TASK_KEEP") ? "write-keep" : "write-sync";
       if (body.model === "engineer") {
         if (goal.includes("TASK_FAIL")) text = "GIVE UP\nThe gate needs a Postgres this VM does not have: `bun test db/` exits 1 before any work, with ECONNREFUSED on 127.0.0.1:5432.";
-        else text = turns.some((message) => message.role === "assistant") ? "DONE\nVerified." : `\`\`\`sh\nprintf done > result.txt # ${write}\n\`\`\``;
+        else if (turns.some((message) => message.role === "assistant")) text = "DONE\nVerified.";
+        // Offered its own tools (a knight on the roster's models: quest.ts tools), it calls bash, as a real one does.
+        else if (body.tools?.length) return bashCall(`printf done > result.txt # ${write}`);
+        else text = `\`\`\`sh\nprintf done > result.txt # ${write}\n\`\`\``;
       } else if (body.model === "reviewer") text = "PASS\nThe required gate passed and execution evidence supports the result.";
       return stream(text, 0);
     }
