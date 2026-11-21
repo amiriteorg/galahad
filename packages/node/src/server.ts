@@ -3248,8 +3248,9 @@ export function createApp(ctx: AppContext) {
       return longRunning(
         onNode<{ sandbox: { id: string; node: string } }>(p, on, routes.createSandbox.path, scoped, async () => ({ sandbox: await ctx.sandbox!.create(scoped, { signal: req.signal }) }), {
           create: true,
-          // (What it asks of its host: a Mac makes no isolated sandbox, no desktop, no Lab, no Gazebo.)
-          needs: { network: scoped.network, kept: scoped.persistent, ...(scoped.desktop ? { desktop: true } : {}), ...(scoped.lab ? { lab: true } : {}), ...(scoped.gazebo ? { gazebo: true } : {}) },
+          // (What it asks of its host: a Mac makes no isolated sandbox, no desktop, no Lab, no Gazebo; an image of his own
+          // is made where its release knows it.)
+          needs: { network: scoped.network, kept: scoped.persistent, ...(scoped.desktop ? { desktop: true } : {}), ...(scoped.lab ? { lab: true } : {}), ...(scoped.gazebo ? { gazebo: true } : {}), ...(scoped.image ? { image: scoped.image } : {}) },
         }).then((made) => {
           remember(made.sandbox.id, made.sandbox.node);
           if (attempt) ctx.compute.attemptSandbox(attempt, made.sandbox.id, ctx.store.device(made.sandbox.node)?.name ?? made.sandbox.node);

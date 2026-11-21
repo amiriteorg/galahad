@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type Calibration, bodyFingerprint, computeBody, type ComputeNodeView, deriveCapacity, KERNEL, type PeerStatus, REFERENCE_SINGLE } from "@galahad/core";
 import type { Capabilities } from "../src/capabilities.ts";
-import { CONTAINER_CANNOT, CONTAINER_UNMADE } from "@galahad/sandbox";
+import { CLAUDE_CODE_IMAGE, CONTAINER_CANNOT, CONTAINER_IMAGES, CONTAINER_UNMADE, DEFAULT_IMAGE, OWN_IMAGES } from "@galahad/sandbox";
 import { type Candidate, Dispatched, fleetCandidates, place, sandboxHost, sandboxRefusals, withDispatched } from "../src/placement.ts";
 
 /*
@@ -232,5 +232,39 @@ describe("a Mac with Apple's container", () => {
     expect(onMac.reasons).toContain("its VMs pause to grow (a Mac's can't grow while they run)");
     // Work that comes and goes isn't told either.
     expect(sandboxHost([mini, ultra], { network: "online" })!.reasons.join(" ")).not.toMatch(/grow/);
+  });
+});
+
+describe("a sandbox in an image of Galahad's own", () => {
+  // (A host's release says which of his images it makes. One from before hosts said is taken to make the four every release had.)
+  const linux = (images?: string[]) => caps({ cores: 16, sandbox: { image: true, networks: true, vm: true, ...(images ? { images } : {}) } });
+
+  test("goes to a host whose release makes it, past one older than that image, however it ranks; with none, the reason says why", () => {
+    const older = node("older", linux(), { delivered: 40 }, { free: 4 });
+    const ultra = node("ultra", linux(Object.keys(OWN_IMAGES)), { delivered: 8 }, { free: 1 });
+    expect(sandboxHost([older, ultra], { network: "gateway", image: CLAUDE_CODE_IMAGE })?.name).toBe("ultra");
+    expect(sandboxHost([older], { network: "gateway", image: CLAUDE_CODE_IMAGE })).toBeNull();
+    expect(sandboxRefusals([older, ultra], { network: "gateway", image: CLAUDE_CODE_IMAGE })).toEqual([
+      { name: "older", reason: `it doesn't make ${CLAUDE_CODE_IMAGE}: its release is older than that image` },
+    ]);
+  });
+
+  test("an image every release has made, or one that isn't his (pulled where it is made, as ever), goes where it ranks", () => {
+    const older = node("older", linux(), { delivered: 40 }, { free: 4 });
+    const ultra = node("ultra", linux(Object.keys(OWN_IMAGES)), { delivered: 8 }, { free: 1 });
+    for (const image of [DEFAULT_IMAGE, "debian:trixie-slim"]) expect(sandboxHost([older, ultra], { network: "gateway", image })?.name).toBe("older");
+    expect(sandboxRefusals([older, ultra], { network: "gateway", image: DEFAULT_IMAGE })).toEqual([]);
+  });
+
+  test("a Mac makes the workshop's alone, whether its release says so or is older than saying", () => {
+    const said = node("mini", caps({ os: "darwin", arch: "arm64", cores: 14, memoryGb: 48, docker: false, vm: { kvm: false, tools: [] }, sandbox: { image: true, networks: true, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false, images: [...CONTAINER_IMAGES] } }), { delivered: 40 }, { free: 4 });
+    const unsaid = node("mini", caps({ os: "darwin", arch: "arm64", cores: 14, memoryGb: 48, docker: false, vm: { kvm: false, tools: [] }, sandbox: { image: true, networks: true, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false } }), { delivered: 40 }, { free: 4 });
+    const ultra = node("ultra", linux(Object.keys(OWN_IMAGES)), { delivered: 8 }, { free: 1 });
+    expect(CONTAINER_IMAGES).toEqual([DEFAULT_IMAGE]);
+    for (const mini of [said, unsaid]) {
+      expect(sandboxHost([mini, ultra], { network: "gateway", image: DEFAULT_IMAGE })?.name).toBe("mini");
+      expect(sandboxHost([mini, ultra], { network: "gateway", image: CLAUDE_CODE_IMAGE })?.name).toBe("ultra");
+    }
+    expect(sandboxRefusals([said], { network: "gateway", image: CLAUDE_CODE_IMAGE })).toEqual([{ name: "mini", reason: `it doesn't make ${CLAUDE_CODE_IMAGE}` }]);
   });
 });

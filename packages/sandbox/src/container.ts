@@ -1,5 +1,5 @@
 import type { SandboxNetwork } from "@galahad/core";
-import { containerName, LABEL, labels, NETWORKS, type SandboxSpec, volumeName } from "./spec.ts";
+import { containerName, DEFAULT_IMAGE, LABEL, labels, NETWORKS, type SandboxSpec, volumeName } from "./spec.ts";
 
 /*
  * Apple's `container` (github.com/apple/container, 1.x): Linux containers on a Mac, each in a lightweight VM of its
@@ -66,13 +66,16 @@ export const CONTAINER_CANNOT = {
 } as const;
 export type Unmade = keyof typeof CONTAINER_CANNOT;
 export const CONTAINER_UNMADE = Object.keys(CONTAINER_CANNOT) as Unmade[];
+/** The images of his own a Mac makes: the workshop's (the others aren't built or proven for Apple silicon yet). */
+export const CONTAINER_IMAGES: readonly string[] = [DEFAULT_IMAGE];
 
-/** A sandbox as asked for, as far as what a host can't make goes. */
+/** A sandbox as asked for, as far as what a host can't make goes. `image`: one named (Galahad's own, or any to pull). */
 export interface SandboxAsk {
   network?: SandboxNetwork;
   desktop?: boolean;
   lab?: boolean;
   gazebo?: boolean;
+  image?: string;
 }
 
 /** Why a host that can't make `cannot` can't make this sandbox (its first reason), or null when it can. */

@@ -23,6 +23,7 @@ import {
   containerVersionArgs,
   containerVolumeDeleteArgs,
   parseContainers,
+  CONTAINER_IMAGES,
   CONTAINER_UNMADE,
   DEFAULT_NETWORK,
   helperRestartArgs,
@@ -1360,7 +1361,7 @@ export function microVMsAvailable(exists: (path: string) => boolean = existsSync
 }
 
 /** Cheap readiness probe for capability reporting (no side effects). */
-export async function probeSandbox(bin = "docker"): Promise<{ image: boolean; networks: boolean; vm: boolean } | null> {
+export async function probeSandbox(bin = "docker"): Promise<{ image: boolean; networks: boolean; vm: boolean; images: string[] } | null> {
   if (!Bun.which(bin)) return null;
   const check = async (args: string[]) => {
     try {
@@ -1378,7 +1379,8 @@ export async function probeSandbox(bin = "docker"): Promise<{ image: boolean; ne
     check(["image", "inspect", DEFAULT_IMAGE, "--format", "{{.Id}}"]),
     check(["network", "inspect", NETWORKS.gateway.name, "--format", "{{.Id}}"]),
   ]);
-  return { image, networks: gw, vm: microVMsAvailable() };
+  // (Which of his images it makes: every one its release knows, built when a sandbox first needs it.)
+  return { image, networks: gw, vm: microVMsAvailable(), images: Object.keys(OWN_IMAGES) };
 }
 
 /** What a Mac's sandbox host is, as its capabilities say it: every sandbox a VM, what it won't make, and its VMs don't grow live. */
@@ -1389,6 +1391,7 @@ export interface ContainerHostCaps {
   engine: "container";
   cannot: Unmade[];
   grows: false;
+  images: string[];
 }
 
 /**
@@ -1408,7 +1411,7 @@ export async function probeContainer(runner?: DockerRunner, bin = "container"): 
   const container = { version: version?.version ?? null, running: !!version?.running };
   if (!version?.running || version.major !== CONTAINER_MAJOR) return { container, sandbox: null };
   const [image, gw, net] = await Promise.all([run(containerImageInspectArgs(DEFAULT_IMAGE), 8000), run(containerNetworkInspectArgs("gateway"), 8000), run(containerNetworkInspectArgs("online"), 8000)]);
-  return { container, sandbox: { image: image.code === 0, networks: gw.code === 0 && net.code === 0, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false } };
+  return { container, sandbox: { image: image.code === 0, networks: gw.code === 0 && net.code === 0, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false, images: [...CONTAINER_IMAGES] } };
 }
 
 /** The binary's commands, spawned: what each prints, and its exit code. */

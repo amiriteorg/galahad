@@ -36,11 +36,11 @@ function answering(over: { version?: string; image?: boolean; network?: boolean 
 }
 
 describe("finding Apple's container on a Mac", () => {
-  test("its service answering, at 1.x: a sandbox host whose every sandbox is a VM, that can't grow one live, and says what it won't make", async () => {
+  test("its service answering, at 1.x: a sandbox host whose every sandbox is a VM, that can't grow one live, and says what it won't make and which of his images it makes", async () => {
     const { runner, asked } = answering();
     expect(await probeContainer(runner)).toEqual({
       container: { version: "1.2.3", running: true },
-      sandbox: { image: true, networks: true, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false },
+      sandbox: { image: true, networks: true, vm: true, engine: "container", cannot: [...CONTAINER_UNMADE], grows: false, images: ["galahad/sandbox:1"] },
     });
     // Only looked: nothing made, nothing started.
     expect(asked).toEqual([["system", "version", "--format", "json"], ["image", "inspect", "galahad/sandbox:1"], ["network", "inspect", "galahad-gw"], ["network", "inspect", "galahad-net"]]);

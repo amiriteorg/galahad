@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { preset } from "@galahad/brain";
-import { CONTAINER_UNMADE } from "@galahad/sandbox";
+import { CONTAINER_IMAGES, CONTAINER_UNMADE } from "@galahad/sandbox";
 import { type Capabilities, isAlwaysOn, RUNTIME_PROBES, sandboxHostOf, servedOriginFrom } from "../src/capabilities.ts";
 import { refreshCapabilities } from "../src/daemon.ts";
 
@@ -104,7 +104,7 @@ describe("where the PWA is published on the tailnet", () => {
 
 describe("which sandbox host a body is", () => {
   const docker = { image: true, networks: true, vm: true };
-  const container = (running: boolean) => ({ container: { version: "1.7.1", running }, sandbox: running ? { image: true, networks: true, vm: true as const, engine: "container" as const, cannot: [...CONTAINER_UNMADE], grows: false as const } : null });
+  const container = (running: boolean) => ({ container: { version: "1.7.1", running }, sandbox: running ? { image: true, networks: true, vm: true as const, engine: "container" as const, cannot: [...CONTAINER_UNMADE], grows: false as const, images: [...CONTAINER_IMAGES] } : null });
 
   test("a Mac with Apple's container hosts through it, and says it found it", () => {
     expect(sandboxHostOf("darwin", container(true), null)).toEqual({ sandbox: container(true).sandbox, container: { version: "1.7.1", running: true } });

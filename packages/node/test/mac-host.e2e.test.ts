@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type LedgerEntry, routes, type RouteName, type SandboxView } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
-import { CONTAINER_CANNOT, CONTAINER_UNMADE, KEEPERS, type MacFirewallState, NETWORKS } from "@galahad/sandbox";
+import { CLAUDE_CODE_IMAGE, CONTAINER_CANNOT, CONTAINER_UNMADE, KEEPERS, type MacFirewallState, NETWORKS } from "@galahad/sandbox";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
@@ -124,6 +124,8 @@ describe("a node on a Mac with Apple's container", () => {
     await api("destroySandbox", { id: sandbox.id });
     await expect(api("createSandbox", { network: "isolated", cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 no sandbox host in this fleet can make it: mini: ${CONTAINER_CANNOT.isolated}`);
     await expect(api("createSandbox", { network: "online", desktop: true, cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 no sandbox host in this fleet can make it: mini: ${CONTAINER_CANNOT.desktop}`);
+    // Nor an image of his own that a Mac doesn't make: never looked for in a registry.
+    await expect(api("createSandbox", { network: "online", image: CLAUDE_CODE_IMAGE, cpus: 1, memoryGb: 1 })).rejects.toThrow(`createSandbox: 424 no sandbox host in this fleet can make it: mini: it doesn't make ${CLAUDE_CODE_IMAGE}`);
   });
 
   test("a knight's VM is made on the Mac, and grown by pausing: the answer says it paused, and the ledger why", async () => {

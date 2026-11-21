@@ -1,5 +1,5 @@
 import type { ComputeNodeView, NodeCapacity, PeerStatus, PlacementNeeds, Presence } from "@galahad/core";
-import { cannotMake, type SandboxAsk } from "@galahad/sandbox";
+import { cannotMake, CONTAINER_IMAGES, FIRST_IMAGES, OWN_IMAGES, type SandboxAsk } from "@galahad/sandbox";
 import { type Capabilities, isAlwaysOn } from "./capabilities.ts";
 
 /*
@@ -132,9 +132,22 @@ export function fleetCandidates(fleet: {
  * each measured; when every host is full, the one with the shortest queue. A knight's own VM leans a little to a host
  * whose VMs grow while they run (a Mac's pause to), and its reasons say which. Null: none online can.
  */
+/**
+ * Why a host doesn't make the image of Galahad's own a sandbox names, or null: what it said it makes, or, its release
+ * older than saying, what every release made (a Mac's, the workshop's). An image not his is pulled where it's made.
+ */
+function unmadeImage(needs: SandboxNeeds, sandbox: NonNullable<Capabilities["sandbox"]>): string | null {
+  if (!needs.image || !OWN_IMAGES[needs.image]) return null;
+  const made = sandbox.images ?? (sandbox.engine === "container" ? CONTAINER_IMAGES : FIRST_IMAGES);
+  return made.includes(needs.image) ? null : `it doesn't make ${needs.image}${sandbox.images ? "" : ": its release is older than that image"}`;
+}
+
+/** Why a host can't make this sandbox (what it can't give, or an image it doesn't make), or null. */
+const cannotHost = (needs: SandboxNeeds, sandbox: NonNullable<Capabilities["sandbox"]>): string | null => cannotMake(needs, sandbox.cannot ?? []) ?? unmadeImage(needs, sandbox);
+
 export function sandboxHost(candidates: readonly Candidate[], needs: SandboxNeeds = {}): Placement | null {
   const { ranked } = place({ docker: true, untrusted: true }, [...candidates]);
-  const hosts = new Map(candidates.filter((c) => !!c.caps?.sandbox && !cannotMake(needs, c.caps.sandbox.cannot ?? [])).map((c) => [c.device, c.caps!.sandbox!]));
+  const hosts = new Map(candidates.filter((c) => !!c.caps?.sandbox && !cannotHost(needs, c.caps.sandbox)).map((c) => [c.device, c.caps!.sandbox!]));
   const able = ranked.filter((p) => hosts.has(p.device));
   if (!needs.kept) return able[0] ?? null;
   const leaning = able.map((p) => {
@@ -147,7 +160,7 @@ export function sandboxHost(candidates: readonly Candidate[], needs: SandboxNeed
 /** The sandbox hosts online that can't make this sandbox, each with why (what placement says when none can). */
 export function sandboxRefusals(candidates: readonly Candidate[], needs: SandboxNeeds): { name: string; reason: string }[] {
   return candidates.flatMap((c) => {
-    const why = (c.online || c.self) && c.caps?.sandbox ? cannotMake(needs, c.caps.sandbox.cannot ?? []) : null;
+    const why = (c.online || c.self) && c.caps?.sandbox ? cannotHost(needs, c.caps.sandbox) : null;
     return why ? [{ name: c.name, reason: why }] : [];
   });
 }

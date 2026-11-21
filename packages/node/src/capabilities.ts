@@ -26,7 +26,7 @@ export interface Capabilities {
   /** Present when this node can host sandboxes (Docker reachable, or on a Mac Apple's container answering). */
   /** vm: it can also run sandboxes as KVM microVMs (Kata); on a Mac every one is a VM. A Mac's says more (ContainerHostCaps):
    *  engine "container", what it won't make (`cannot`: placement sends that elsewhere), and `grows: false` (its VMs pause to). */
-  sandbox?: { image: boolean; networks: boolean; vm?: boolean; engine?: ContainerHostCaps["engine"]; cannot?: string[]; grows?: false } | null;
+  sandbox?: { image: boolean; networks: boolean; vm?: boolean; engine?: ContainerHostCaps["engine"]; cannot?: string[]; grows?: false; images?: string[] } | null;
   /** Apple's container, where this Mac has its binary: its version, and whether its service answers. Absent: not found. */
   container?: { version: string | null; running: boolean };
   /** This node keeps its Mac from sleeping while it runs (`galahad awake on`: keep-awake.ts). Absent: it doesn't. */

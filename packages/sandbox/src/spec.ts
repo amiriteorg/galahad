@@ -81,6 +81,12 @@ export const OWN_IMAGES: Readonly<Record<string, { context: string; keeper: stri
   [CLAUDE_CODE_IMAGE]: { context: "claude-code", keeper: "galahad-claude-code-image", base: DEFAULT_IMAGE },
 };
 
+/**
+ * The images of his own every release has made: what a host is taken to make when its release says nothing of its
+ * images (it is older than saying), so a sandbox in an image newer than that host goes where it is made.
+ */
+export const FIRST_IMAGES: readonly string[] = [DEFAULT_IMAGE, LAB_IMAGE, GAZEBO_IMAGE, DESKTOP_IMAGE];
+
 export const containerName = (id: string) => `galahad-sbx-${id}`;
 export const volumeName = (id: string) => `galahad-sbx-${id}-work`;
 
