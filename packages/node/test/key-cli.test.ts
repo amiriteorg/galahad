@@ -35,10 +35,24 @@ test("a key whose form says whose it is is sealed for that provider and the prov
   expect(calls).toEqual([
     { name: "setSecret", input: { name: "anthropic", value: API_KEY, provider: "anthropic" } },
     { name: "setProvider", input: { id: "anthropic", baseUrl: "https://api.anthropic.com", kind: "anthropic", secret: "anthropic" } },
+    { name: "roster", input: undefined },
   ]);
   expect(lines).toContain('Key stored and provider "anthropic" configured. Every full node can now use it.');
   expect(lines).toContain("It will only ever be sent to https://pinned.example.test.");
   expect(lines).not.toContain("coding plan");
+  // His roles name its model: nothing more to do.
+  expect(lines).not.toContain("None of his roles");
+});
+
+test("a key his roles name no model of says how to hire one; one they name says nothing more", async () => {
+  // OpenAI's form is told, and pinned to its own address; the roster named here has none of its models.
+  const openai = await run("sk-proj-FAKE-key-for-tests-0000000000");
+  expect(openai.calls[1]!.input).toEqual({ id: "openai", baseUrl: "https://api.openai.com/v1", kind: "openai", secret: "openai" });
+  expect(openai.lines).toContain("None of his roles has a model of openai's yet: hire one with galahad roster set planner openai/<model>");
+  expect(openai.lines).toContain("galahad provider models openai lists what it serves");
+  // A role's defaults on a provider you set up are what it runs on (roster.ts): the node says DeepSeek's model is named.
+  const deepseek = await run("sk-FAKE0000000000000000000000000000", { provider: "deepseek" }, ["deepseek/deepseek-v4-pro"]);
+  expect(deepseek.lines).not.toContain("None of his roles");
 });
 
 test("a subscription's sign-in is told from a key before anything is sent anywhere, whatever provider was named", async () => {

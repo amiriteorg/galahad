@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync, statfsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type DoctorReport, freeSlots, type NodeCapacity, type NodeIdentity, nextRun, type PeerStatus, redact, type Teammate } from "@galahad/core";
-import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, planOf, resolveProvider, roster, windowsOf } from "@galahad/brain";
+import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, planOf, providerRecord, providerRecords, resolveProvider, ROLES, roster, windowsOf } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
 import { containerKernel, macFirewallInstalled, type SandboxHost } from "@galahad/sandbox";
 import type { ArchiveService } from "./archive/service.ts";
@@ -304,6 +304,7 @@ async function rolesOf(deps: DoctorDeps, ask: boolean, signal?: AbortSignal): Pr
       const kept = TOOL_ROLES.has(role) && onPlan(ref) && planOf(ref.slice(0, ref.indexOf("/")))?.allows.tools !== "unattended";
       return { ref, problem: kept ? VM_TOOLS_CANT : modelProblem(deps, ref), ...(onPlan(ref) ? { plan: true } : {}) };
     }),
+    ...(!spec.configured && spec.models.every((ref) => providerRecord(deps.store, ref.slice(0, ref.indexOf("/"))) === null) ? { unset: true } : {}),
     probe: null,
   }));
   if (!ask) return roles;
@@ -525,6 +526,7 @@ export async function gatherFacts(deps: DoctorDeps, opts: DoctorOptions = {}): P
     },
     mind: { events: store.eventCount(), integrity, head: store.head(self), forks: store.forks().map((id) => ({ id, name: store.device(id)?.name ?? id.slice(0, 12) })), newestEventAt: newest || null, timeSynced, peers, backup },
     vault: { unlocked: deps.vault.unlocked(), secrets: deps.vault.list().length, requests: deps.vault.requests().map((r) => r.name) },
+    providers: { setUp: providerRecords(store).length, byDefault: [...new Set(ROLES.planner!.defaults.map((ref) => ref.slice(0, ref.indexOf("/"))))] },
     roles,
     archive,
     sandbox,

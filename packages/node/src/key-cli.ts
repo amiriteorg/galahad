@@ -54,7 +54,13 @@ export async function keyAddCommand(api: Api, value: string, flags: Flags, write
   await api.call("setProvider", { id: providerId, baseUrl, kind: str("kind") ?? known?.kind, secret: secretName });
   write(`Key stored and provider "${providerId}" configured. Every full node can now use it.\n${dim(`It will only ever be sent to ${secret.origin ?? "(unpinned: re-add with --base-url)"}.`)}`);
   const plan = planOf(providerId);
-  if (!plan) return;
   const { roster } = await api.call<{ roster: Record<string, { models: string[] }> }>("roster");
-  for (const line of planAdvice(providerId, plan, roster.engineer?.models ?? [])) write(line);
+  if (plan) {
+    for (const line of planAdvice(providerId, plan, roster.engineer?.models ?? [])) write(line);
+    return;
+  }
+  // His roles' defaults name some providers' models (roster.ts), so a key for one of them is enough; another's needs a
+  // model of its hired.
+  const named = ["planner", "engineer", "reviewer"].some((role) => roster[role]?.models.some((ref) => ref.startsWith(`${providerId}/`)));
+  if (!named) write(`None of his roles has a model of ${providerId}'s yet: hire one with galahad roster set planner ${providerId}/<model> (and the engineer and reviewer as you like; galahad provider models ${providerId} lists what it serves).`);
 }

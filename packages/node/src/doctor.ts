@@ -32,6 +32,8 @@ export interface RoleFact {
    * so it does his coding and the knights' coding tools use it, and it answers nothing else.
    */
   models: { ref: string; problem: string | null; plan?: boolean }[];
+  /** On its defaults, none of whose providers is set up here (roster.ts): what it lacks is a key for one of them. */
+  unset?: boolean;
   /** The one-word call to the first model that can be used (null: nobody was asked). */
   probe: { ref: string; ok: boolean; ms: number; error: string | null } | null;
 }
@@ -58,6 +60,8 @@ export interface DoctorFacts {
     backup: { dir: string; exists: boolean; newestAt: number | null; files: number } | null;
   };
   vault: { unlocked: boolean; secrets: number; requests: string[] };
+  /** The providers this fleet has set up (a key added, or one added by hand), and those his roles' defaults name, whose key alone is enough. */
+  providers?: { setUp: number; byDefault: string[] };
   roles: RoleFact[];
   /** null: this node keeps no archive. */
   archive: {
@@ -152,6 +156,8 @@ export const CLOCK_GUARD_MS = 5 * MINUTE;
 /** Signed requests are accepted within a minute; well inside it, a difference is worth saying. */
 export const CLOCK_STEP_MS = 30_000;
 export const BACKUP_OLD_MS = 7 * DAY;
+/** A node's first backup comes ten minutes after it starts (backups.ts): before this, none yet is no fault. */
+export const FIRST_BACKUP_MS = 15 * MINUTE;
 export const CALIBRATION_OLD_MS = 30 * DAY;
 export const INTEGRITY_OLD_MS = 3 * DAY;
 export const OFFLINE_AFTER_MS = 10 * MINUTE;
@@ -269,7 +275,10 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
 
   if (f.mind.backup) {
     const b = f.mind.backup;
-    if (!b.exists || b.newestAt === null) {
+    // (Its first is kept ten minutes after it starts: backups.ts. A node younger than that hasn't missed one.)
+    if ((!b.exists || b.newestAt === null) && f.now - f.self.startedAt < FIRST_BACKUP_MS) {
+      add("mind", "mind.backup", "ok", `no backup of the mind yet: the node keeps its first ten minutes after it starts, in ${b.dir}`);
+    } else if (!b.exists || b.newestAt === null) {
       add("mind", "mind.backup", "needs-you", `no backup of the mind in ${b.dir}`, "The node keeps its own each day, the first a few minutes after it starts (backups.ts), unless GALAHAD_BACKUPS=off: its log says if one couldn't be kept. Set GALAHAD_BACKUP_DIR to keep them elsewhere. A second full node is a living copy too.");
     } else if (f.now - b.newestAt > BACKUP_OLD_MS) {
       add("mind", "mind.backup", "needs-you", `the newest backup of the mind is ${span(f.now - b.newestAt)} old (${b.dir})`, "The node keeps one itself each day: its log says why one wasn't kept (backups: …), unless GALAHAD_BACKUPS=off.", {
@@ -288,7 +297,13 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
 
   /* ---------- models: each role on the roster ---------- */
 
-  for (const role of f.roles) {
+  // A node with no provider set up yet has one thing to do, said once rather than once a role.
+  const none = f.providers?.setUp === 0;
+  if (none) {
+    const named = f.providers!.byDefault;
+    add("models", "models.none", "broken", "no provider is set up here yet, so no model can answer", `Add a key: galahad key add. A key for ${named.slice(0, -1).join(", ")} or ${named.at(-1)} is enough, since his roles' defaults name their models; for another provider, hire one of its models too (galahad roster set <role> <provider/model>).`);
+  }
+  for (const role of none ? [] : f.roles) {
     if (!role.models.length) continue; // nobody hired for it: a choice, not a problem
     const id = `role.${role.role}`;
     // A coding plan's models do his coding, and the knights' coding tools use them (brain/providers.ts); they
@@ -320,6 +335,11 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     // which only knights work on (their conversations and tasks are coding work).
     if (!own.length && lent.length && (CODING_ROLES.has(role.role) || role.custom)) {
       add("models", id, "ok", `${role.role}: ${lent[0]!.ref} ${role.custom ? "does the work of the knights on it" : "does his coding"} (a coding plan: it is asked nothing else, so not a word)`);
+      continue;
+    }
+    if (role.unset && !usable.length) {
+      const named = [...new Set(role.models.map((m) => m.ref.slice(0, m.ref.indexOf("/"))))];
+      add("models", id, CORE_ROLES.has(role.role) ? "broken" : "needs-you", `no model can play ${role.role}: its defaults name ${named.slice(0, -1).join(", ")}${named.length > 1 ? " and " : ""}${named.at(-1)}, none of them set up here`, `Add a key for one of them (galahad key add), or hire a model you have a key for: galahad roster set ${role.role} <provider/model>.`);
       continue;
     }
     if (!usable.length || !first) {

@@ -207,14 +207,14 @@ Add an API key once, and every full node can use it. The key never appears in th
 
 ## 6. The Brain ✅
 
-**Roles, not vendors.** Each role is an ordered list of `<provider>/<model>` refs. The first one that answers wins.
+**Roles, not vendors.** Each role is an ordered list of `<provider>/<model>` refs. The first one that answers wins. A role you haven't set runs on its defaults whose provider you've set up (all of them while none is, so what can't answer says what to add). So the first key you add for any of those providers is the one that answers, with no roster to set, and the rest aren't passed over in every answer (since 21 November 2026: a fresh node on its first OpenAI, DeepSeek or OpenRouter key had answered nothing until each role was set by hand). Each vendor's default is the model its own pages named that day (OpenAI's guide calls `gpt-6.2-astra` a strong default, xAI's examples use `grok-4.7`, Mistral's its `-latest` aliases): a name a vendor retires is a line in `roster.ts`. OpenAI's keys (`sk-proj-`, `sk-svcacct-`) and xAI's (`xai-`) are recognised by their form. For any other provider's key, `galahad key add` says how to hire one of its models.
 
 | Role | Default | Effort for a call that names no step |
 |---|---|---|
-| `planner` | `anthropic/claude-opus-5-5` | high |
-| `engineer` | `anthropic/claude-opus-5-5` | xhigh |
-| `reviewer` | `anthropic/claude-opus-5-5` (set a different model family, e.g. DeepSeek) | high |
-| `swift` | `ollama/*` → `llamacpp/*` → `anthropic/claude-haiku-5-5` | low |
+| `planner` | `anthropic/claude-opus-5-5` → `openrouter/anthropic/claude-opus-5.5` → `orcarouter/anthropic/claude-opus-5.5` → `openai/gpt-6.2-astra` → `xai/grok-4.7` → `deepseek/deepseek-v4-pro` → `zai/glm-5.3` → `mistral/mistral-large-latest` | high |
+| `engineer` | the same | xhigh |
+| `reviewer` | the same (set a different model family, e.g. DeepSeek) | high |
+| `swift` | `ollama/*` → `llamacpp/*` → `anthropic/claude-haiku-5-5` → `openai/gpt-6.1-terra` → `deepseek/deepseek-flash` → `zai/glm-5.3-flash` → `mistral/mistral-small-latest` | low |
 | `decider` | *none until you hire one*, e.g. `cloudflare-ai/typesafe/jev` | low |
 | `embedder` | *none until you hire one*; `deploy.sh --embedder` hires `ollama/qwen3-embedding:0.6b` on the server (§10⅔) | n/a |
 

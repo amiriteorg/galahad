@@ -194,9 +194,10 @@ Keys go into a **hidden prompt**, never on the command line and never into chat.
 
 ```sh
 bun galahad key add                       # auto-detects sk-ant- (Anthropic), sk-orca- (OrcaRouter), sk-or- (OpenRouter),
-                                       # sk-kimi- (Kimi Code), tp- (Xiaomi MiMo Token Plan), sk-cp- (MiniMax M Plan)
-                                       # and sk-nano- (NanoGPT)
+                                       # sk-proj- and sk-svcacct- (OpenAI), xai- (xAI), sk-kimi- (Kimi Code),
+                                       # tp- (Xiaomi MiMo Token Plan), sk-cp- (MiniMax M Plan) and sk-nano- (NanoGPT)
 bun galahad key add --provider deepseek
+bun galahad key add --provider mistral
 bun galahad key add --provider abliteration
 bun galahad key add --provider heabsy     # Heabsy; and nearai, NEAR AI Cloud (for knights in sensitive mode: ROUNDTABLE.md)
 bun galahad key add --provider nearai
@@ -208,6 +209,8 @@ bun galahad secret list                   # names + …last4 hints only, never v
 ```
 
 A key added on any full node is sealed into the vault and usable by every full node. Clients and tools never receive it.
+
+His roles answer on the first key you add for Anthropic, OpenRouter, OrcaRouter, OpenAI, xAI, DeepSeek, Z.ai or Mistral, with no roster to set: their defaults name those providers' models, and a role you haven't set runs on the ones you've set up (§6). For any other provider, `key add` says how to hire one: `bun galahad roster set planner <provider>/<model>` (and the engineer and reviewer as you like).
 
 **Coding plans** (a flat-rate subscription with a key of its own) are added the same way, each as its own provider:
 

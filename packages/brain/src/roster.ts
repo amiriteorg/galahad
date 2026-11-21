@@ -1,5 +1,6 @@
 import { TeammateRole, type ThinkingEffort } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
+import { providerRecord } from "./providers.ts";
 
 /*
  * Models are hired by role, not by vendor. Each role is an ordered list of
@@ -26,21 +27,30 @@ export interface RoleSpec {
   effort: Effort;
 }
 
+/*
+ * The work's defaults, the strongest first: Anthropic's, then Claude through the two routers, then each other
+ * vendor's as its own pages name it (read 21 November 2026: OpenAI's guide calls gpt-6.2-astra "a strong default",
+ * xAI's examples use grok-4.7, Mistral's its -latest aliases). Whichever of these providers your first key is for
+ * answers at once, with no roster to set (roleModels leaves out the defaults on a provider you haven't set up); a
+ * name a vendor retires is a line here. Any other provider's key: `key add` says how to hire one of its models.
+ */
+const WORK = ["anthropic/claude-opus-5-5", "openrouter/anthropic/claude-opus-5.5", "orcarouter/anthropic/claude-opus-5.5", "openai/gpt-6.2-astra", "xai/grok-4.7", "deepseek/deepseek-v4-pro", "zai/glm-5.3", "mistral/mistral-large-latest"];
+
 export const ROLES: Record<string, RoleSpec> = {
   planner: {
     description: "decomposes quests, makes judgment calls, talks to you",
-    defaults: ["anthropic/claude-opus-5-5"],
+    defaults: WORK,
     effort: "high",
   },
-  engineer: { description: "writes and changes code", defaults: ["anthropic/claude-opus-5-5"], effort: "xhigh" },
+  engineer: { description: "writes and changes code", defaults: WORK, effort: "xhigh" },
   reviewer: {
     description: "independent check, ideally a different model family than the author",
-    defaults: ["anthropic/claude-opus-5-5"],
+    defaults: WORK,
     effort: "high",
   },
   swift: {
     description: "cheap and fast: routing, classification, summaries; local first",
-    defaults: ["ollama/*", "llamacpp/*", "anthropic/claude-haiku-5-5"],
+    defaults: ["ollama/*", "llamacpp/*", "anthropic/claude-haiku-5-5", "openai/gpt-6.1-terra", "deepseek/deepseek-flash", "zai/glm-5.3-flash", "mistral/mistral-small-latest"],
     effort: "low",
   },
   decider: {
@@ -91,10 +101,19 @@ export function choreRole(store: MindStore, chore: string): string {
 export function roleModels(store: MindStore, role: string): string[] {
   const configured = store.lww<string[]>(`roster:${role}`)?.value;
   if (configured?.length) return configured;
-  if (ROLES[role]) return ROLES[role].defaults;
+  if (ROLES[role]) return setUp(store, ROLES[role].defaults);
   // A role nobody hired (a knight made with a role of its own, or one you since removed): the engineer's models as
   // you set them. (Its built-in default would be a model you may hold no key for.)
   return roleModels(store, "engineer");
+}
+
+/**
+ * A role's defaults as it runs on them: the ones on a provider this fleet has set up, so the key you added answers and
+ * the rest aren't passed over in every answer; with none set up, every one, so what can't answer says what to add.
+ */
+function setUp(store: MindStore, defaults: string[]): string[] {
+  const usable = defaults.filter((ref) => ref.indexOf("/") > 0 && providerRecord(store, ref.slice(0, ref.indexOf("/"))) !== null);
+  return usable.length ? usable : defaults;
 }
 
 export interface RosterRole {
@@ -122,7 +141,7 @@ export function roster(store: MindStore): Record<string, RosterRole> {
         [
           role,
           {
-            models: configured?.length ? configured : (ROLES[role]?.defaults ?? []),
+            models: configured?.length ? configured : ROLES[role] ? setUp(store, ROLES[role].defaults) : [],
             configured: !!configured?.length,
             description: ROLES[role]?.description ?? chore ?? "a role you made",
             effort: pinnedEffort(store, role) ?? "auto",

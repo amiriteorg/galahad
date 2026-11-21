@@ -37,6 +37,11 @@ const ROWS: Row[] = [
   // The SDK sends Authorization: Bearer for its messages; the models list goes with x-api-key, "still supported".
   { id: "anthropic", docs: "https://platform.claude.com/docs/en/api/overview", model: "claude-opus-5-5", chat: "https://api.anthropic.com/v1/messages", auth: bearer, models: { asks: "https://api.anthropic.com/v1/models?limit=100", auth: (key) => ({ "x-api-key": key, "anthropic-version": "2023-06-01" }) } },
   { id: "deepseek", docs: "https://api-docs.deepseek.com/", model: "deepseek-v4-pro", chat: "https://api.deepseek.com/chat/completions", auth: bearer, models: { asks: "https://api.deepseek.com/models" } },
+  // Read 21 November 2026, as their presets were added: OpenAI's guide names gpt-6.2-astra its strong default; xAI keeps
+  // chat completions, which it calls legacy, beside its Responses API; Mistral's -latest aliases are its own.
+  { id: "openai", docs: "https://developers.openai.com/api/docs/guides/completions", model: "gpt-6.2-astra", chat: "https://api.openai.com/v1/chat/completions", auth: bearer, models: { asks: "https://api.openai.com/v1/models" } },
+  { id: "xai", docs: "https://docs.x.ai/developers/model-capabilities/legacy/chat-completions", model: "grok-4.7", chat: "https://api.x.ai/v1/chat/completions", auth: bearer, models: { asks: "https://api.x.ai/v1/models" } },
+  { id: "mistral", docs: "https://docs.mistral.ai/api/endpoint/chat", model: "mistral-large-latest", chat: "https://api.mistral.ai/v1/chat/completions", auth: bearer, models: { asks: "https://api.mistral.ai/v1/models" } },
   { id: "abliteration", docs: "https://docs.abliteration.ai/api/openai-compatibility", model: "abliterated-model", chat: "https://api.abliteration.ai/v1/chat/completions", auth: bearer, models: { asks: "https://api.abliteration.ai/v1/models" } },
   // (Read 19 November 2026.)
   { id: "heabsy", docs: "https://api.heabsy.com/docs", model: "qwen3-coder", chat: "https://api.heabsy.com/v1/chat/completions", auth: bearer, models: { asks: "https://api.heabsy.com/v1/models" } },

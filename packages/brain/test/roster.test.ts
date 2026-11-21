@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore } from "@galahad/mind";
-import { pinnedEffort, roleModels, roster, workRole } from "../src/index.ts";
+import { pinnedEffort, roleModels, ROLES, roster, workRole } from "../src/index.ts";
 
 function mind() {
   const identity = newNodeIdentity();
@@ -9,8 +9,36 @@ function mind() {
   foundFleet(store, identity, { fleetName: "camelot", nodeName: "n" });
   const hire = (role: string, models: string[]) => store.emit(identity, "roster.set", { role, models });
   const pin = (role: string, effort: "auto" | "low" | "medium" | "high" | "xhigh" | "max") => store.emit(identity, "roster.effort", { role, effort });
-  return { store, hire, pin };
+  /** A provider set up, as `galahad key add` (or the app) leaves it: a record naming where it is and its key. */
+  const setUp = (id: string, baseUrl: string) => store.emit(identity, "provider.set", { id, kind: "openai", baseUrl, secret: id });
+  return { store, hire, pin, setUp };
 }
+
+describe("a role you haven't set", () => {
+  test("runs on its defaults whose provider you set up: the first key you add answers, whoever it is for", () => {
+    const { store, setUp } = mind();
+    // Nothing set up: every default, so what can't answer says what to add.
+    expect(roleModels(store, "planner")).toEqual(ROLES.planner!.defaults);
+    expect(roleModels(store, "planner")[0]).toBe("anthropic/claude-opus-5-5");
+    // DeepSeek's key alone: its models play the roles, and no other default is passed over in every answer.
+    setUp("deepseek", "https://api.deepseek.com");
+    for (const role of ["planner", "engineer", "reviewer"]) expect([role, roleModels(store, role)]).toEqual([role, ["deepseek/deepseek-v4-pro"]]);
+    expect(roleModels(store, "swift")).toEqual(["deepseek/deepseek-flash"]);
+    expect(roster(store).planner).toMatchObject({ models: ["deepseek/deepseek-v4-pro"], configured: false });
+    // An Anthropic key too: the stronger answers first, the other after it.
+    setUp("anthropic", "https://api.anthropic.com");
+    expect(roleModels(store, "planner")).toEqual(["anthropic/claude-opus-5-5", "deepseek/deepseek-v4-pro"]);
+    // A role nobody hired goes on the engineer's.
+    expect(roleModels(store, "researcher")).toEqual(["anthropic/claude-opus-5-5", "deepseek/deepseek-v4-pro"]);
+  });
+
+  test("a role you set runs on what you set, whatever is set up", () => {
+    const { store, hire, setUp } = mind();
+    setUp("deepseek", "https://api.deepseek.com");
+    hire("planner", ["anthropic/claude-opus-5-5"]);
+    expect(roleModels(store, "planner")).toEqual(["anthropic/claude-opus-5-5"]);
+  });
+});
 
 describe("the role a knight's work runs on", () => {
   test("its own, unless that is the reviewer's or a tool's: then the engineer's", () => {

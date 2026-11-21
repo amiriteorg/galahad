@@ -256,6 +256,15 @@ describe("a plan whose allowance is spent says so", () => {
     const error = events.find((e) => e.type === "error") as { type: "error"; error: string };
     expect(error.error).toBe('no model in the roster could answer; add a key or adjust the roster (nowhere/a: provider "nowhere" is not configured; elsewhere/b: provider "elsewhere" is not configured)');
   });
+
+  test("a node with no provider set up at all says what to do once, not once a model", async () => {
+    const identity = newNodeIdentity();
+    const store = new MindStore(":memory:");
+    foundFleet(store, identity, { fleetName: "camelot", nodeName: "fresh" });
+    const events = await all(chat({ store, vault: new Vault(store, identity), fetch: spentFetch }, { messages: ask }));
+    const error = events.find((e) => e.type === "error") as { type: "error"; error: string };
+    expect(error.error).toBe("no model can answer yet: none of anthropic, openrouter, orcarouter, openai, xai, deepseek, zai, mistral is set up here. Add a key for one of them (galahad key add), or hire a model you have a key for (galahad roster set <role> <provider/model>)");
+  });
 });
 
 describe("outside coding he never answers with a coding plan", () => {
@@ -359,6 +368,11 @@ describe("a plan's key is recognised where its form says whose it is", () => {
     // (Fakes, in the vendors' documented forms.)
     expect(detectProvider("sk-kimi-FAKE-membership-key-0000")).toBe("kimi-coding");
     expect(detectProvider("tp-FAKE-token-plan-key-0000")).toBe("mimo-token");
+    // OpenAI's project and service-account keys, and xAI's, by their form; a bare sk- says nothing of whose it is.
+    expect(detectProvider("sk-proj-FAKE-key-for-tests-0000")).toBe("openai");
+    expect(detectProvider("sk-svcacct-FAKE-key-for-tests-0000")).toBe("openai");
+    expect(detectProvider("xai-FAKE-key-for-tests-0000")).toBe("xai");
+    expect(detectProvider("sk-FAKE0000000000000000000000000000")).toBeNull();
     expect(detectProvider("ttp-FAKE-team-token-plan-key-0000")).toBe("mimo-token");
     expect(detectProvider("sk-cp-FAKE-m-plan-key-0000")).toBe("minimax-mplan");
     expect(detectProvider("sk-nano-00000000-0000-0000-0000-000000000000")).toBe("nanogpt");

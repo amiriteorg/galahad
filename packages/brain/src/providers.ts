@@ -67,6 +67,11 @@ export const PRESETS: ProviderPreset[] = [
   { id: "nearai", kind: "openai", baseUrl: "https://cloud-api.near.ai/v1", note: "NEAR AI Cloud's OpenAI-compatible API: open models run privately, abliterated ones among them (Qwen/Qwen3.8-27B-abliterated, deepseek-ai/DeepSeek-V4.1-Flash-1017-abliterated). It serves other vendors' models too, so sensitive mode holds a knight to the models you name, never to the provider." },
   { id: "orcarouter", kind: "openai", baseUrl: "https://api.orcarouter.ai/v1", keyPrefixes: ["sk-orca-"] },
   { id: "openrouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", keyPrefixes: ["sk-or-"] },
+  // OpenAI's own API, xAI's and Mistral's (a project's or a service account's OpenAI key, an xAI key, is told by its form;
+  // a Mistral key has none of its own: --provider mistral). xAI calls its chat completions "legacy", served still.
+  { id: "openai", kind: "openai", baseUrl: "https://api.openai.com/v1", keyPrefixes: ["sk-proj-", "sk-svcacct-"] },
+  { id: "xai", kind: "openai", baseUrl: "https://api.x.ai/v1", keyPrefixes: ["xai-"] },
+  { id: "mistral", kind: "openai", baseUrl: "https://api.mistral.ai/v1" },
   { id: "moonshot", kind: "openai", baseUrl: "https://api.moonshot.ai/v1" },
   // (Z.ai's API lists no models: its docs name them.)
   { id: "zai", kind: "openai", baseUrl: "https://api.z.ai/api/paas/v4", models: ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.2"] },

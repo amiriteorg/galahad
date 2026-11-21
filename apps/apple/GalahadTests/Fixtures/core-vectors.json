@@ -3920,6 +3920,28 @@
         ]
       },
       {
+        "id": "openai",
+        "kind": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "keyPrefixes": [
+          "sk-proj-",
+          "sk-svcacct-"
+        ]
+      },
+      {
+        "id": "xai",
+        "kind": "openai",
+        "baseUrl": "https://api.x.ai/v1",
+        "keyPrefixes": [
+          "xai-"
+        ]
+      },
+      {
+        "id": "mistral",
+        "kind": "openai",
+        "baseUrl": "https://api.mistral.ai/v1"
+      },
+      {
         "id": "moonshot",
         "kind": "openai",
         "baseUrl": "https://api.moonshot.ai/v1"
@@ -4373,6 +4395,18 @@
       },
       {
         "id": "openrouter",
+        "line": null
+      },
+      {
+        "id": "openai",
+        "line": null
+      },
+      {
+        "id": "xai",
+        "line": null
+      },
+      {
+        "id": "mistral",
         "line": null
       },
       {

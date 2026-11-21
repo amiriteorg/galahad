@@ -6,7 +6,7 @@ import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./persona.ts";
 import { windowsOf } from "./windows.ts";
 import { followsFormat, readModelCheck, readsScreens, type ModelCheck } from "@galahad/core";
-import { offeredModels, onPlan, planOf, QUIET_MS, quietly, resolveProvider, whyNoKey } from "./providers.ts";
+import { offeredModels, onPlan, planOf, providerRecords, QUIET_MS, quietly, resolveProvider, whyNoKey } from "./providers.ts";
 import { effortFor, parseRef, pinnedEffort, roleModels } from "./roster.ts";
 
 export interface BrainContext {
@@ -235,6 +235,9 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
   let apart = false;
   /** Why each model that was asked couldn't answer, for the error if none could (a plan's spent window says when it resets). */
   const whyNot: string[] = [];
+  /** The providers passed over because they aren't set up here, and how many models that was: when it was all, one thing to say. */
+  const unset = new Set<string>();
+  let unsetRefs = 0;
   const passOver = (ref: string, error: string): ChatStreamEvent => {
     whyNot.push(`${ref}: ${error.replace(/\s+/g, " ").slice(0, 240)}`);
     return { type: "fallback", from: ref, error };
@@ -276,6 +279,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
     }
     const provider = resolveProvider(ctx.store, ctx.vault, parsed.provider, req.coding ? "coding" : "own");
     if (!provider) {
+      unset.add(parsed.provider);
+      unsetRefs += 1;
       yield passOver(ref, `provider "${parsed.provider}" is not configured`);
       continue;
     }
@@ -462,6 +467,11 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       windowsOf(ctx.store).note(parsed.provider, message);
       yield passOver(ref, message);
     }
+  }
+  // A node with no provider set up at all (a fresh one): what to do, said once.
+  if (!declined && unsetRefs === candidates.length && candidates.length && !providerRecords(ctx.store).length) {
+    yield { type: "error", error: `no model can answer yet: none of ${[...unset].join(", ")} is set up here. Add a key for one of them (galahad key add), or hire a model you have a key for (galahad roster set <role> <provider/model>)` };
+    return;
   }
   // (Each model's own reason goes with it: "no model could answer" alone doesn't say whether to add a key or wait an hour.)
   const reasons = whyNot.length ? ` (${whyNot.join("; ").slice(0, 700)})` : "";

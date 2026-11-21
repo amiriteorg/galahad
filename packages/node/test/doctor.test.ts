@@ -186,6 +186,36 @@ describe("each fault gives its own line and advice", () => {
     const old = fault((f) => (f.mind.backup!.newestAt = NOW - 12 * DAY), "mind.backup");
     expect(old.line).toContain("12 days old");
     expect(old.finding?.severity).toBe("info");
+    // A node that started minutes ago hasn't missed its first (it's kept ten minutes after the start): not asked for yet.
+    const young = healthy();
+    young.self.startedAt = NOW - 2 * MIN;
+    young.mind.backup = { dir: "/var/lib/galahad/backups", exists: false, newestAt: null, files: 0 };
+    expect(byId(diagnose(young), "mind.backup")).toMatchObject({ state: "ok", line: "no backup of the mind yet: the node keeps its first ten minutes after it starts, in /var/lib/galahad/backups" });
+    young.self.startedAt = NOW - 20 * MIN;
+    expect(byId(diagnose(young), "mind.backup").state).toBe("needs-you");
+  });
+
+  test("a node with no provider set up yet says so once, with what to add, rather than once a role", () => {
+    const fresh = healthy();
+    fresh.providers = { setUp: 0, byDefault: ["anthropic", "openrouter", "deepseek"] };
+    for (const role of fresh.roles) {
+      role.models = role.models.map((m) => ({ ref: m.ref, problem: `provider "${m.ref.slice(0, m.ref.indexOf("/"))}" is not configured` }));
+      role.probe = null;
+    }
+    const checks = diagnose(fresh);
+    const models = checks.filter((c) => c.area === "models");
+    expect(models.map((c) => c.id)).toEqual(["models.none"]);
+    expect(models[0]).toMatchObject({ state: "broken", line: "no provider is set up here yet, so no model can answer" });
+    expect(models[0]!.fix).toContain("A key for anthropic, openrouter or deepseek is enough");
+    expect(models[0]!.fix).toContain("galahad key add");
+    // One provider set up, and the roles are judged one by one, as ever.
+    fresh.providers = { setUp: 1, byDefault: ["anthropic"] };
+    expect(diagnose(fresh).filter((c) => c.area === "models").map((c) => c.id)).toEqual(["role.planner", "role.engineer", "role.reviewer", "role.embedder"]);
+    // One on its defaults, none of whose providers is the one set up (an OpenAI key, say): its providers, said once.
+    fresh.roles[0]!.models = ["anthropic/claude-opus-5-5", "openrouter/anthropic/claude-opus-5.5", "deepseek/deepseek-v4-pro"].map((ref) => ({ ref, problem: `provider "${ref.slice(0, ref.indexOf("/"))}" is not configured` }));
+    fresh.roles[0]!.unset = true;
+    expect(byId(diagnose(fresh), "role.planner")).toMatchObject({ state: "broken", line: "no model can play planner: its defaults name anthropic, openrouter and deepseek, none of them set up here" });
+    expect(byId(diagnose(fresh), "role.planner").fix).toBe("Add a key for one of them (galahad key add), or hire a model you have a key for: galahad roster set planner <provider/model>.");
   });
 
   test("the vault: locked, and keys he's waiting for", () => {
