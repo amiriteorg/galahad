@@ -67,12 +67,15 @@ export const GAZEBO_IMAGE = "galahad/gazebo:1";
 /** The knights' desktop: the workshop with a display, a window manager and a browser (sandbox/desktop/Dockerfile). Built after the workshop image, which it is made from. */
 export const DESKTOP_IMAGE = "galahad/desktop:1";
 
-/** Galahad's own images: where each is built from (under the sandbox directory) and the keeper that holds it. */
-export const OWN_IMAGES: Readonly<Record<string, { context: string; keeper: string }>> = {
+/**
+ * Galahad's own images: where each is built from (under the sandbox directory) and the keeper that holds it. `base`:
+ * the one of his own it is made from, which is in no registry, so it is never pulled, and is made first when it's gone.
+ */
+export const OWN_IMAGES: Readonly<Record<string, { context: string; keeper: string; base?: string }>> = {
   [DEFAULT_IMAGE]: { context: ".", keeper: KEEPER },
   [LAB_IMAGE]: { context: "lab", keeper: "galahad-lab-image" },
   [GAZEBO_IMAGE]: { context: "gazebo", keeper: "galahad-gazebo-image" },
-  [DESKTOP_IMAGE]: { context: "desktop", keeper: "galahad-desktop-image" },
+  [DESKTOP_IMAGE]: { context: "desktop", keeper: "galahad-desktop-image", base: DEFAULT_IMAGE },
 };
 
 export const containerName = (id: string) => `galahad-sbx-${id}`;

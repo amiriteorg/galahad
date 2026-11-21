@@ -302,8 +302,8 @@ export const containerNetworkInspectArgs = (kind: "gateway" | "online"): string[
  */
 export const networkHelper = (network: string): string => `com.apple.container.container-network-vmnet.${network}`;
 export const helperRestartArgs = (domain: string, network: string): string[] => ["kickstart", "-k", `${domain}/${networkHelper(network)}`];
-/** Galahad's images on a Mac: Apple silicon's, their base pulled afresh. */
-export const containerBuildArgs = (image: string, contextDir: string): string[] => ["build", "--pull", "--platform", "linux/arm64", "--tag", image, contextDir];
+/** Galahad's images on a Mac: Apple silicon's, their base pulled afresh (`pull` false: a base of his own, in no registry). */
+export const containerBuildArgs = (image: string, contextDir: string, pull = true): string[] => ["build", ...(pull ? ["--pull"] : []), "--platform", "linux/arm64", "--tag", image, contextDir];
 /**
  * container's builder (its BuildKit, a VM of 2 CPUs and 2 GB) stopped: a build starts it and leaves it running, which
  * held 2 GB of the Mac mini's memory, outside the governor's count, after a single build (17 November 2026). The next

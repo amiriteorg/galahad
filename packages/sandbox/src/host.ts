@@ -526,7 +526,9 @@ export class SandboxHost {
     let pending = this.building.get(image);
     if (!pending) {
       pending = (async () => {
-        const result = await this.docker(this.apple ? containerBuildArgs(image, contextDir) : ["build", "--pull", "-t", image, contextDir], 60 * 60_000);
+        // (A base of his own is in no registry: pulled, it would be looked for on Docker Hub, and the build fail.)
+        const pull = !OWN_IMAGES[image]?.base;
+        const result = await this.docker(this.apple ? containerBuildArgs(image, contextDir, pull) : ["build", ...(pull ? ["--pull"] : []), "-t", image, contextDir], 60 * 60_000);
         // On a Mac its builder is a VM of its own, left running by the build: stopped once no other build needs it.
         if (this.apple && [...this.building.keys()].every((other) => other === image)) await this.docker(containerBuilderStopArgs(), 60_000);
         this.opts.ledger({
@@ -593,8 +595,12 @@ export class SandboxHost {
     if (own && !(await this.hasImage(image))) {
       // Gone (pruned) or never built: building it is Galahad's to do (create), rather than failing the quest.
       if (!this.opts.imageContext) throw new SandboxError(`${image} is not built on this node yet: run \`galahad sandbox build${input.lab ? " --lab" : input.gazebo ? " --gazebo" : input.desktop ? " --desktop" : ""}\``, 424);
-      const built = await this.build(join(this.opts.imageContext, own.context), "rebuilt: the image was missing when a sandbox was needed", image);
-      if (!built.ok) throw new SandboxError(`${image} was missing and rebuilding it failed: ${built.output.slice(-300)}`, 424);
+      // Made from another of his own (the desktop from the workshop's): that one first, when it's gone too.
+      const base = own.base && !(await this.hasImage(own.base)) ? own.base : null;
+      for (const tag of base ? [base, image] : [image]) {
+        const built = await this.build(join(this.opts.imageContext, OWN_IMAGES[tag]!.context), "rebuilt: the image was missing when a sandbox was needed", tag);
+        if (!built.ok) throw new SandboxError(`${tag} was missing and rebuilding it failed: ${built.output.slice(-300)}`, 424);
+      }
     }
     const diskGb = input.diskGb ?? DEFAULT_DISK_GB;
     const maxDiskGb = this.opts.maxDiskGb ?? 200;

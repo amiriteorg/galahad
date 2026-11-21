@@ -139,6 +139,7 @@ describe("the desktop image", () => {
     // Root only to install: the image is left as the knight's user, like the one it is made from.
     expect(dockerfile.trimEnd().split("\n").filter((line) => line.startsWith("USER ")).at(-1)).toBe("USER 1000:1000");
     expect(DESKTOP_IMAGE).toBe("galahad/desktop:1");
-    expect(OWN_IMAGES[DESKTOP_IMAGE]).toEqual({ context: "desktop", keeper: "galahad-desktop-image" });
+    // (Made from the knights' image, which is in no registry: never pulled, and made first when it's gone. own-images.test.ts)
+    expect(OWN_IMAGES[DESKTOP_IMAGE]).toEqual({ context: "desktop", keeper: "galahad-desktop-image", base: "galahad/sandbox:1" });
   });
 });
