@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { avatarExpression, bodyFingerprint, ceilingThreads, clientIdFromKey, KERNEL, type LedgerEntry, type NoticeView, REFERENCE_SINGLE, routes, type Scope, signRequest, teamArmLabel, type RouteName, type SandboxView, type TeamEngramStatus, type TeamSnapshot, type TeamTask, utf8 } from "@galahad/core";
+import { windowsOf } from "@galahad/brain";
 import { requestPairing, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { NETWORKS } from "@galahad/sandbox";
@@ -274,6 +275,32 @@ test("harness readiness says what each would run on: a vendor's tool on its own 
     expect((await readiness()).codex!.reason).toBe("Sign Codex in in this knight's VM (codex login --device-auth), or put an OpenAI-compatible model that speaks the Responses API on the engineer's roster");
   } finally {
     toolStatus.clear();
+    await api("setRoster", { role: "engineer", models: ["stand-in/engineer"] });
+  }
+}, 15000);
+
+test("a plan whose allowance is spent goes last on a harness's list: its task starts on a model that can answer (#31)", async () => {
+  type Harness = { id: string; ready: boolean; on?: string; reason?: string };
+  const claude = async () => (await api<{ harnesses: Harness[] }>("teamWorkspace", { id: "ada" })).harnesses.find((harness) => harness.id === "claude")!;
+  try {
+    for (const id of ["claude-plan", "claude-api"]) {
+      await api("setSecret", { name: id, value: `fake-${id}-key-for-tests-0000`, provider: id, baseUrl: `https://${id}.example.test` });
+      await api("setProvider", { id, kind: "anthropic", baseUrl: `https://${id}.example.test`, secret: id });
+    }
+    await api("setRoster", { role: "engineer", models: ["claude-plan/claude-opus-5-5", "claude-api/claude-opus-5-5"] });
+    toolStatus.set("claude", { code: 0, stdout: JSON.stringify({ type: "status", installed: true, signedIn: false }) });
+    expect((await claude()).on).toBe("claude-plan/claude-opus-5-5 through the gateway");
+    // Its provider said its allowance is spent for a day: the next on the list goes first until then, the spent one after it.
+    windowsOf(daemon.store).note("claude-plan", 'claude-plan → 429 {"error":{"message":"weekly usage limit reached, resets in 1 day"}}');
+    expect((await claude()).on).toBe("claude-api/claude-opus-5-5 through the gateway");
+  } finally {
+    toolStatus.clear();
+    // (Its window let go of, as it would be a day on.)
+    const windows = windowsOf(daemon.store);
+    const now = windows.now;
+    windows.now = () => now() + 2 * 86_400_000;
+    windows.list();
+    windows.now = now;
     await api("setRoster", { role: "engineer", models: ["stand-in/engineer"] });
   }
 }, 15000);

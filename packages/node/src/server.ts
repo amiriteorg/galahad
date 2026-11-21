@@ -2144,8 +2144,11 @@ export function createApp(ctx: AppContext) {
    * none of them, the ones it doesn't. */
   const harnessModels = (harness: string, role: string, vm?: readonly string[], own?: readonly string[]) => {
     const views = providerViews(ctx.store, ctx.vault);
-    // (A knight's own models, when you chose them, in place of its role's.)
-    const choose = (providers: typeof views) => chooseAgentModels(own?.length ? [...own] : roleModels(ctx.store, role), providers, 3, AGENTS[harness]?.kind);
+    // (A knight's own models, when you chose them, in place of its role's.) A plan whose allowance is spent (windows.ts)
+    // goes after the rest: a task starts on a model that can answer, and the gateway would refuse the spent one at once.
+    const refs = own?.length ? [...own] : roleModels(ctx.store, role);
+    const spent = (ref: string) => ref.indexOf("/") > 0 && windowsOf(ctx.store).spent(ref.slice(0, ref.indexOf("/"))) !== null;
+    const choose = (providers: typeof views) => chooseAgentModels([...refs.filter((ref) => !spent(ref)), ...refs.filter(spent)], providers, 3, AGENTS[harness]?.kind);
     const models = choose(views.filter((p) => !vm || vm.includes(p.id)));
     return { models, outside: models.length ? [] : choose(views) };
   };
