@@ -3,6 +3,7 @@ import { randomId, redact, sha256B64u, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { usageReader } from "./gateway-usage.ts";
 import { gatewaySession, keyHeaders, planOf, resolveProvider } from "./providers.ts";
+import { clockUtc, retryAfterAt, spanWords, windowsOf, type SpentWindow, type SpentWindows } from "./windows.ts";
 
 /*
  * The model gateway: how arms (OpenCode, Claude Code, Codex, Hermes, sandboxes)
@@ -165,6 +166,18 @@ function modelOf(body: ArrayBuffer | undefined): string {
 const json = (status: number, error: string) =>
   Response.json({ error: { type: "galahad_gateway", message: error } }, { status });
 
+/*
+ * A plan's allowance spent, as a tool hears it. Told by its provider to try again in a day and a half, OpenCode 2.3.0
+ * waits fifteen minutes and asks again, for as long as that lasts, and Codex 0.169.0 waits all of it; told 402, each ends
+ * within seconds, as Claude Code does either way, and the next model on a knight's list takes over (measured 21 Nov
+ * 2026). So a window that ends later than WAIT_OUT_MS is said as a spent quota, with no time to wait for, in words that
+ * Hermes too takes as final (it reads "usage limit" or "quota" beside "resets in" as a wait). A shorter one stays the
+ * provider's 429 and retry-after, for the tool's own retry on the same model.
+ */
+const WAIT_OUT_MS = 60_000;
+const spent = (provider: string, window: SpentWindow, windows: SpentWindows) =>
+  json(402, `${provider}'s allowance is spent until ${clockUtc(window.until)} UTC (${spanWords(window.until - windows.now())} from now), as its provider said: Galahad's gateway passes it over until then.`);
+
 /** Handles `/gw/<provider>/<rest>` by forwarding to the provider with the real key. */
 export async function handleGateway(request: Request, ctx: GatewayContext): Promise<Response> {
   const url = new URL(request.url);
@@ -206,6 +219,10 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
   // before a byte of the call leaves (a provider that serves others' models too, as NEAR AI's does, serves only those).
   const held = ctx.tokens.modelsOf(token);
   if (held && body && !held.includes(`${providerId}/${modelOf(body)}`)) return json(403, `this lease is for work in sensitive mode, on ${held.join(", ")} alone`);
+  // A plan whose allowance is spent past the next minute (windows.ts) isn't asked a model call again until it resets.
+  const windows = windowsOf(ctx.store);
+  const open = request.method === "POST" ? windows.spent(providerId) : null;
+  if (open && open.until - windows.now() > WAIT_OUT_MS) return spent(providerId, open, windows);
   const upstream = await (ctx.fetch ?? fetch)(target, {
     method: request.method,
     headers,
@@ -222,6 +239,10 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
   if (!upstream.ok) {
     // Error bodies are small; scrub them in case the provider echoes the key back.
     const text = redact(await upstream.text(), [provider.apiKey]);
+    // A refusal that says the allowance is spent, and until when (in its words, or a 429's retry-after), is remembered
+    // as chat's are: the node's other calls pass it over, and its usage meter says it.
+    const window = windows.note(providerId, `${providerId} → ${upstream.status} ${text}`, upstream.status === 429 ? retryAfterAt(upstream.headers.get("retry-after"), windows.now()) : null);
+    if (window && window.until - windows.now() > WAIT_OUT_MS) return spent(providerId, window, windows);
     return new Response(text, { status: upstream.status, headers: responseHeaders });
   }
   // A model call (a POST) is counted as its answer goes by; a listing or a lookup isn't one.

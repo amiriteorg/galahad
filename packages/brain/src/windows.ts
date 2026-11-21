@@ -2,8 +2,9 @@
  * A plan's allowance runs in windows (OpenCode Go: five hours, then a week, then a month). Once its provider has
  * said the window is spent and when it resets, asking it again before then only fails again, slowly, before the
  * next model is tried: on 14 November 2026 every call of a sweep did. So a node remembers each window it is told
- * of, chat passes that provider's models over without asking until the window ends (and says until when), and
- * then asks again. A node's own, kept in memory and in its own database (node/usage.ts), so a restart remembers it: on
+ * of, by chat or by a tool's call through the gateway, chat passes that provider's models over without asking until
+ * the window ends (and says until when), the gateway refuses a tool's calls to them as spent (gateway.ts), and then
+ * each asks again. A node's own, kept in memory and in its own database (node/usage.ts), so a restart remembers it: on
  * 21 November 2026 a deploy forgot OpenCode Go's window, and the usage meter stopped saying it until the next refusal.
  */
 
@@ -38,6 +39,13 @@ export function spentUntil(error: string, now: number): number | null {
   return ms > 0 && ms <= 31 * 86_400_000 ? now + ms : null;
 }
 
+/** When a refusal's `retry-after` says to try again (seconds, or an HTTP date): that time (ms), else null; nothing more than a month away. */
+export function retryAfterAt(value: string | null, now: number): number | null {
+  if (!value) return null;
+  const ms = /^\s*\d+(?:\.\d+)?\s*$/.test(value) ? Number(value) * 1000 : Date.parse(value) - now;
+  return Number.isFinite(ms) && ms > 0 && ms <= 31 * 86_400_000 ? now + Math.ceil(ms) : null;
+}
+
 /** HH:MM in UTC, and a span in hours and minutes: how a window is said. */
 export const clockUtc = (at: number): string => new Date(at).toISOString().slice(11, 16);
 export const spanWords = (ms: number): string => {
@@ -54,10 +62,13 @@ export class SpentWindows {
   kept: ((window: SpentWindow) => void) | null = null;
   private readonly windows = new Map<string, SpentWindow>();
 
-  /** Read a provider's refusal: when it says its allowance is spent and when it resets, remember that. */
-  note(provider: string, error: string): SpentWindow | null {
+  /**
+   * Read a provider's refusal: when it says its allowance is spent and when it resets (in its words, else when it said
+   * to try again: `retryAt`, from a 429's retry-after), remember that.
+   */
+  note(provider: string, error: string, retryAt: number | null = null): SpentWindow | null {
     const noted = this.now();
-    const until = spentUntil(error, noted);
+    const until = spentUntil(error, noted) ?? retryAt;
     if (until === null) return null;
     const window: SpentWindow = { provider, until, noted, said: error.replace(/\s+/g, " ").slice(0, 300) };
     this.windows.set(provider, window);
