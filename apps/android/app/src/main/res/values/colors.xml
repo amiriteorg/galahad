@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="icon_background">#FFFFFF</color>
-    <!-- What shows before the first frame: the app's own ground, so it never flashes white in the dark. -->
+    <!-- What shows before the first frame: the app's own ground (Theme.kt's paper), so nothing changes when it's drawn. -->
     <color name="window">#FFFFFF</color>
+    <!-- The splash screen's mark: ink, and the Siege Perilous red (Theme.kt's ink and siege). -->
+    <color name="mark">#0A0A0B</color>
+    <color name="siege">#C4141B</color>
 </resources>
