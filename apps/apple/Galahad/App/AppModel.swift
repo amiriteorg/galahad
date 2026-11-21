@@ -27,7 +27,8 @@ struct PairedNode: Codable, Equatable, Sendable {
     }
 }
 
-/// Whether this device is paired, and with what: the app's one piece of state that outlives a launch.
+/// Whether this device is paired, and with what: the app's one piece of state that outlives a launch (with, on an iPhone
+/// or an iPad, the last Roundtable it saw: KeptTable).
 @MainActor @Observable final class AppModel {
     enum Phase {
         case loading
@@ -47,10 +48,13 @@ struct PairedNode: Codable, Equatable, Sendable {
         if case .paired = phase { return }
         do {
             guard let key = try DeviceKey.load(), let node = PairedNode.load(), node.device == key.device else {
+                // (A Roundtable kept for a pairing that's gone goes with it.)
+                KeptTable.Store.here?.forget()
                 phase = .unpaired
                 return
             }
-            phase = .paired(Session(key: key, node: node))
+            let kept = KeptTable.Store.here
+            phase = .paired(Session(key: key, node: node, kept: kept?.load(for: node), keeping: kept))
         } catch {
             phase = .broken(error.localizedDescription)
         }
@@ -58,7 +62,9 @@ struct PairedNode: Codable, Equatable, Sendable {
 
     func paired(key: DeviceKey, node: PairedNode) {
         node.save()
-        phase = .paired(Session(key: key, node: node))
+        // Another pairing's kept Roundtable goes: what is kept from now is this one's.
+        KeptTable.Store.here?.forget()
+        phase = .paired(Session(key: key, node: node, keeping: KeptTable.Store.here))
     }
 
     /// Asks the node again every few seconds while the window that called it is in front, in one loop for every window
@@ -86,6 +92,9 @@ struct PairedNode: Codable, Equatable, Sendable {
     func forget() throws {
         try DeviceKey.delete()
         PairedNode.forget()
+        // The Roundtable this device kept goes with the node, after any write still under way, and none is kept after.
+        if case .paired(let session) = phase { session.stopKeeping() }
+        KeptTable.Store.here?.forget()
         phase = .unpaired
     }
 }

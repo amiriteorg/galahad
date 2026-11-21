@@ -30,8 +30,9 @@ struct KnightView: View {
 
     private var knight: Teammate? { session.teammate(id) }
     private var row: RosterRow? { session.rows.first { $0.id == id } }
-    private var look: String { AvatarLook.of(id: id, name: knight?.name ?? id, profile: knight?.avatar) }
-    private var name: String { knight?.name ?? "Knight" }
+    /// Its face and name as the Roundtable draws them, the kept one's until the node has answered.
+    private var look: String { AvatarLook.of(id: id, name: session.drawn(id)?.name ?? id, profile: session.drawn(id)?.avatar) }
+    private var name: String { session.drawn(id)?.name ?? "Knight" }
 
     private var items: [Timeline.Item] {
         guard let view = room.view else { return [] }
@@ -44,7 +45,8 @@ struct KnightView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Metrics.margin) {
-                if knight == nil {
+                // (Not there only once the node has said who is: opened from the Roundtable this device kept, it waits.)
+                if knight == nil, session.team != nil {
                     ContentUnavailableView("Not at the table", systemImage: "person.slash", description: Text("This knight isn't on the Roundtable any more."))
                 } else if room.view == nil, room.problem == nil {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, Space.s10)
@@ -170,7 +172,7 @@ struct KnightView: View {
 
     private var welcome: some View {
         TimelineWelcome(title: name, words: "Say something to \(name), or give it a task: it works in its own workspace, and its commands and an independent review say whether the work is done.") {
-            Portrait(drawing: look, size: Metrics.welcomeFace, expression: row?.expression ?? "idle", id: id, temper: AvatarLook.temperament(id: id, profile: knight?.avatar))
+            Portrait(drawing: look, size: Metrics.welcomeFace, expression: row?.expression ?? "idle", id: id, temper: AvatarLook.temperament(id: id, profile: session.drawn(id)?.avatar))
         }
     }
 

@@ -70,6 +70,11 @@ struct RoundtableView: View {
             if let trouble = session.trouble {
                 Section { TroubleRow(trouble: trouble) }
             }
+            if let since = session.keptSince {
+                // A still line over what it speaks of, not a row of its own.
+                Section { KeptLine(since: since) }
+                    .listRowBackground(Color.clear)
+            }
             #if os(iOS)
             // What the model calls came to, against your budget (an iPad has it at its sidebar's foot).
             if width == .compact, session.usage != nil {
@@ -108,7 +113,7 @@ struct RoundtableView: View {
         .searchable(text: $query, prompt: "Knights")
         .refreshable { await session.refresh() }
         .overlay {
-            if session.team == nil, session.teamProblem == nil, session.trouble == nil { ProgressView() }
+            if session.team == nil, session.kept == nil, session.teamProblem == nil, session.trouble == nil { ProgressView() }
         }
     }
 
@@ -174,8 +179,9 @@ struct RoundtableView: View {
     @ToolbarContentBuilder private var actions: some ToolbarContent {
         // The Roundtable's own work: given to it, the knight best suited takes it.
         ToolbarItem(placement: .barTrailing) {
+            // (Given once the node has answered: never from the Roundtable this device kept.)
             Button { giving = true } label: { Label("Give the Roundtable a task", systemImage: "hammer") }
-                .disabled(!session.can("fleet:admin") || session.rows.isEmpty)
+                .disabled(!session.can("fleet:admin") || session.team == nil || session.rows.isEmpty)
         }
         ToolbarItem(placement: .barTrailing) {
             Menu {
@@ -274,15 +280,15 @@ struct RoundtableView: View {
     private func chosen(_ route: Route) -> Bool { selection?.wrappedValue == route }
 
     private func look(of row: RosterRow) -> String {
-        let knight = session.teammate(row.id)
+        let knight = session.drawn(row.id)
         return AvatarLook.of(id: row.id, name: row.name, profile: knight?.avatar)
     }
 
-    private func temper(of id: String) -> String { AvatarLook.temperament(id: id, profile: session.teammate(id)?.avatar) }
+    private func temper(of id: String) -> String { AvatarLook.temperament(id: id, profile: session.drawn(id)?.avatar) }
 
     private func looks(of row: RoomRow) -> [String] {
         row.members.map { id in
-            let knight = session.teammate(id)
+            let knight = session.drawn(id)
             return AvatarLook.of(id: id, name: knight?.name ?? id, profile: knight?.avatar)
         }
     }
@@ -513,6 +519,32 @@ struct LeadsMark: View {
 }
 
 /// The node is away, or won't take this device's requests: said plainly, with what to do.
+/// While the node is a moment answering, the Roundtable drawn is the one this device last saw (KeptTable): said in a
+/// still line, so it is never taken for what the node says now.
+struct KeptLine: View {
+    let since: Date
+
+    var body: some View {
+        // (Said again each minute, so how long ago stays true while the node is away.)
+        TimelineView(.everyMinute) { moment in
+            Label {
+                Text("As your node last said it, \(ago(moment.date)). Asking it again.")
+            } icon: {
+                Image(systemName: "clock.arrow.circlepath")
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+    }
+
+    private func ago(_ now: Date) -> String {
+        guard now.timeIntervalSince(since) >= 60 else { return "just now" }
+        let words = RelativeDateTimeFormatter()
+        words.unitsStyle = .full
+        return words.localizedString(for: since, relativeTo: now)
+    }
+}
+
 struct TroubleRow: View {
     let trouble: NodeError
 

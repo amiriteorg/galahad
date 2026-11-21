@@ -29,7 +29,7 @@ Roundtable it saw: the team in the fields its roster reads (no knight's instruct
 chats' titles, which approvals wait (who asks and for which tool, never what a request holds) and how many things wait
 for you (`app/KeptTable.kt`). It is in the app's own storage, never backed up, drawn only for the node and key it came
 from, and replaced by the node's first answer; if that answer is slow, a still line says what you're looking at.
-Forgetting the node deletes it. The iPhone app keeps none of it.
+Forgetting the node deletes it. The iPhone and iPad app keeps the same.
 
 Needs JDK 17 and the Android SDK (platform 37, build tools); Gradle comes with the wrapper (its checksum pinned).
 

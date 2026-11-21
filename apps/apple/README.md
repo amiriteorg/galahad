@@ -4,6 +4,15 @@ A SwiftUI client for a Galahad node: Apple's own components, with Galahad's acce
 and signs every request the way `packages/core` verifies it. The Mac's app is the same sources built for macOS
 (`GalahadMac`; [docs/MAC.md](../../docs/MAC.md)).
 
+On an iPhone or an iPad it keeps, besides its pairing, its key and your choices, the last Roundtable it saw, so it opens
+on your Roundtable at once however slow the connection (your word, 21 November 2026). It is the record Galahad for
+Android keeps (`Galahad/App/KeptTable.swift`): the team in the fields its roster reads (no knight's instructions or
+notes, no task's brief), the chats' titles, which approvals wait (who asks and for which tool, never what a request
+holds) and how many things wait for you. It is in the app's caches (never backed up; the system may clear them),
+readable only while the device is unlocked, drawn only for the node and key it came from, and only looked at: giving,
+adding, arranging and editing wait for the node's first answer, which replaces it. If that answer is slow, a still line
+says what you're looking at. Forgetting the node deletes it. The Mac keeps none of it.
+
 Needs Xcode 27 (Swift 6, the iOS 27 and macOS 27 SDKs) and [XcodeGen](https://github.com/yonaskolb/XcodeGen). It runs on
 iOS 26 and later, and on macOS 27.
 

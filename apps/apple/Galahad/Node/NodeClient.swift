@@ -46,6 +46,12 @@ struct NodeClient: Sendable {
         try decode(T.self, from: await send(request("GET", path, body: nil)))
     }
 
+    /// A GET answered as `T`, and the bytes it came in (to keep a part of them: KeptTable).
+    func read<T: Decodable>(_ path: String, as type: T.Type = T.self) async throws -> (value: T, bytes: Data) {
+        let data = try await send(request("GET", path, body: nil))
+        return (try decode(T.self, from: data), data)
+    }
+
     func post<T: Decodable>(_ path: String, _ body: some Encodable, as type: T.Type = T.self) async throws -> T {
         let data = try await send(request("POST", path, body: JSONEncoder().encode(body)))
         if let late = NodeError.late(in: data) { throw late }

@@ -2,7 +2,8 @@ import Foundation
 import Observation
 
 /// A paired device's view of its node: who it is there, the Roundtable, what waits for you, and Galahad's chat. It asks
-/// the node again on every refresh; each part keeps what it last had when an ask fails.
+/// the node again on every refresh; each part keeps what it last had when an ask fails. Until the node first answers,
+/// the Roundtable is the one this device last saw, where it keeps one (KeptTable).
 @MainActor @Observable final class Session {
     let key: DeviceKey
     let node: PairedNode
@@ -39,14 +40,40 @@ import Observation
     private(set) var arranging: Arrangement?
     /// Your changes to the arrangement so far: a snapshot asked for before the latest of them is stale, and isn't shown.
     private var arrangements = 0
+    /// The last Roundtable this device saw (KeptTable), drawn until the node first answers, and only ever looked at:
+    /// whatever you change starts from the node's word (`team`).
+    private(set) var kept: KeptTable.Kept?
+    /// The node has been a moment answering while the kept Roundtable is drawn.
+    private var slow = false
+    /// Where what the node says of the Roundtable is kept for the next time the app opens; nil: nowhere (a Mac, or a
+    /// device forgetting its node).
+    @ObservationIgnored private var keeping: KeptTable.Store?
 
-    init(key: DeviceKey, node: PairedNode) {
+    init(key: DeviceKey, node: PairedNode, kept: KeptTable.Kept? = nil, keeping: KeptTable.Store? = nil) {
         self.key = key
         self.node = node
         self.client = NodeClient(origin: node.origin, signer: key)
+        self.kept = kept
+        self.keeping = keeping
         // The chat on screen read: his answers in it stop being new here at once, not at the next look.
         chat.read = { [weak self] id in self?.noteRead(id) }
+        if kept != nil {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1.5))
+                self?.slow = true
+            }
+        }
     }
+
+    /// When the kept Roundtable is from, once the node has been a moment answering: said beside it, so it is never taken
+    /// for what the node says now. On a quick answer it never shows, so nothing comes and goes.
+    var keptSince: Date? {
+        guard team == nil, slow, let kept else { return nil }
+        return Date(timeIntervalSince1970: kept.at / 1000)
+    }
+
+    /// This device is forgetting its node: nothing more of the Roundtable is kept.
+    func stopKeeping() { keeping = nil }
 
     /// A chat of his read on this device (in any window): it is no longer counted new here.
     func noteRead(_ id: String) { unreadChats.removeAll { $0.id == id } }
@@ -57,10 +84,25 @@ import Observation
     var waiting: [ActionView] { actions.filter { $0.waiting() } }
     var inboxCount: Int { waiting.count + requests.count + pairings.count + facts.count + notices.count + screenSessions.count + questions.count }
     var asks: [Ask] { waiting.map { Ask(by: $0.by, connector: $0.connector, tool: $0.tool) } }
-    var rows: [RosterRow] { team.map { Roster.rows(snapshot: $0, asks: asks) } ?? [] }
+    var rows: [RosterRow] {
+        if let team { return Roster.rows(snapshot: team, asks: asks) }
+        return kept.map { Roster.rows(snapshot: $0.team, asks: $0.asks) } ?? []
+    }
+
+    /// The Roundtable as it is drawn: the node's word, or until it has answered, the kept one.
+    private var drawnTeam: TeamSnapshot? { team ?? kept?.team }
+
+    /// A knight as the Roundtable draws it (its name, its face): the node's word, or the kept Roundtable's until the node
+    /// has answered. For drawing alone: a knight's page, and anything you change, take `teammate`, the node's word.
+    func drawn(_ id: String) -> Teammate? { drawnTeam?.teammates.first { $0.id == id } }
 
     /// Galahad's own line: what he's answering here, the turns the node runs, the quests in hand, what waits on you.
     var galahad: GalahadNow {
+        // Until the node has answered, as it was kept: the chats under way, what waited for you.
+        if team == nil, let kept {
+            let needs = Roster.galahadNeeds(inbox: kept.waiting, asks: kept.asks, knights: kept.team.teammates.map(\.id))
+            return GalahadNow(GalahadWork(answering: chat.answering, step: chat.step, turns: kept.turns, quests: [], needs: needs, unread: kept.unread))
+        }
         let knights = team?.teammates.map(\.id) ?? []
         return GalahadNow(GalahadWork(
             answering: chat.answering,
@@ -80,18 +122,18 @@ import Observation
     /// Your knights' handles in your order: as you just arranged them while the node is told (less any knight removed
     /// since, and with any seated since after them), else as it lists them.
     var order: [String] {
-        let here = team?.teammates.map(\.id) ?? []
+        let here = drawnTeam?.teammates.map(\.id) ?? []
         guard let mine = arranging?.order else { return here }
         return mine.filter(here.contains) + here.filter { !mine.contains($0) }
     }
     /// Who leads the Roundtable: `galahad`, or the knight you made primary.
-    var primary: String { Roster.leader(of: order, primary: arranging?.primary ?? team?.primary) ?? "galahad" }
+    var primary: String { Roster.leader(of: order, primary: arranging?.primary ?? drawnTeam?.primary) ?? "galahad" }
     /// Who sits where, top to bottom: the one who leads, Galahad next when a knight leads, then the rest in your order.
     var seats: [String] { Roster.seats(knights: order, primary: primary) }
 
     func teammate(_ id: String) -> Teammate? { team?.teammates.first { $0.id == id } }
     func room(_ id: String) -> TeamRoom? { team?.rooms.first { $0.id == id } }
-    var roomRows: [RoomRow] { team.map { Roster.roomRows(snapshot: $0) } ?? [] }
+    var roomRows: [RoomRow] { drawnTeam.map { Roster.roomRows(snapshot: $0) } ?? [] }
 
     /// A node, by name where this device knows it: its own node's, else the start of its id.
     func nodeName(of id: String) -> String {
@@ -102,7 +144,7 @@ import Observation
         let client = self.client
         let arranged = arrangements
         async let me = attempt { try await client.get("/api/whoami", as: WhoAmI.self) }
-        async let team = attempt { try await client.get("/api/team", as: TeamSnapshot.self) }
+        async let team = attempt { try await client.read("/api/team", as: TeamSnapshot.self) }
         async let actions = attempt { try await client.get("/api/actions", as: Listed.self).actions ?? [] }
         async let requests = attempt { try await client.get("/api/secret-requests", as: Listed.self).requests ?? [] }
         async let pairings = attempt { try await client.get("/api/pairings", as: Listed.self).pairings ?? [] }
@@ -119,8 +161,12 @@ import Observation
         case .failure(let error as NodeError): trouble = error
         case .failure: break
         }
+        // What the node said of the Roundtable, as it came: kept for the next time the app opens.
+        var said: Data?
         switch await team {
-        case .success(let team) where arranged == arrangements: (self.team, teamProblem) = (team, nil)
+        case .success(let team) where arranged == arrangements:
+            (self.team, teamProblem, kept) = (team.value, nil, nil)
+            said = team.bytes
         // Asked for before your latest change to the arrangement: the refresh after it brings what the node keeps.
         case .success: break
         case .failure(let error as NodeError) where [404, 424, 501].contains(error.status): teamProblem = "This node seats no other knights yet."
@@ -143,6 +189,9 @@ import Observation
         }
         if case .success(let list) = await quests { self.quests = list }
         if case .success(let meter) = await usage { self.usage = meter }
+        if let said, let keeping {
+            keeping.keep(team: said, for: node, turns: self.turns.map(\.title), unread: unreadChats.map(\.title), asks: asks, waiting: inboxLoaded ? inboxCount : 0)
+        }
     }
 
     /// Your budget for the node's model calls (a line to watch, never a stop): a day's or a month's, or none.

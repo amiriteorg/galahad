@@ -138,6 +138,12 @@ struct PlacesSidebar<Foot: View>: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.bar)
                 }
+                if let since = session.keptSince {
+                    KeptLine(since: since)
+                        .padding(Space.s3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.bar)
+                }
                 foot
             }
         }
@@ -155,7 +161,7 @@ struct PlacesSidebar<Foot: View>: View {
                         drawing: "galahad", expression: session.galahadExpression, id: id, leads: session.primary == id)
                 .tag(Place.galahad)
         } else if let row = rows[id] {
-            let knight = session.teammate(id)
+            let knight = session.drawn(id)
             SidebarSeat(name: row.name, line: row.line, needs: row.needs, standing: row.standing,
                         drawing: AvatarLook.of(id: id, name: row.name, profile: knight?.avatar), expression: row.expression, id: id,
                         temper: AvatarLook.temperament(id: id, profile: knight?.avatar), leads: session.primary == id)
@@ -209,7 +215,7 @@ struct PlacesSidebar<Foot: View>: View {
 
     private func looks(of row: RoomRow) -> [String] {
         row.members.map { id in
-            let knight = session.teammate(id)
+            let knight = session.drawn(id)
             return AvatarLook.of(id: id, name: knight?.name ?? id, profile: knight?.avatar)
         }
     }

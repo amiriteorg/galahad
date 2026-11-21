@@ -157,8 +157,9 @@ struct SplitPlaces: View {
         Binding(get: { nil }, set: { route in if let route { place = Place(route) } })
     }
 
-    /// The Roundtable is given a task from a device that may (as its board's own button asks), with knights to take it.
-    private var mayGive: Bool { session.can("fleet:admin") && !session.rows.isEmpty }
+    /// The Roundtable is given a task from a device that may (as its board's own button asks), with knights to take it,
+    /// once the node has answered (never from the Roundtable this device kept).
+    private var mayGive: Bool { session.can("fleet:admin") && session.team != nil && !session.rows.isEmpty }
 
     /// A new chat with Galahad, its message box taking the keys; none while he is answering.
     private var newChat: (() -> Void)? {

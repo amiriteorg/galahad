@@ -25,7 +25,7 @@ struct RoomView: View {
 
     private var info: TeamRoom? { session.room(id) }
     private var row: RoomRow? { session.roomRows.first { $0.id == id } }
-    private var name: String { room.view?.name ?? info?.name ?? "Room" }
+    private var name: String { room.view?.name ?? info?.name ?? row?.name ?? "Room" }
     private var paused: Bool { info?.paused ?? room.view?.paused ?? false }
     private var members: [Teammate] { (room.view?.members ?? info?.members ?? []).compactMap { session.teammate($0) } }
 
