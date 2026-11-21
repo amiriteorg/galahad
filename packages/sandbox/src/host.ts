@@ -757,7 +757,10 @@ export class SandboxHost {
       .filter(Boolean);
     if (!ids.length) return [];
     const inspected = await this.docker(["inspect", ...ids]);
-    if (inspected.code !== 0) return null;
+    // One removed since the listing (another quest's, ending) makes Docker exit 1, and it still prints every other: they
+    // are the listing. Any other failure is Docker not saying (listing-race.test.ts).
+    const ended = inspected.code !== 0 && inspected.stderr.trim().split("\n").every((line) => /no such object/i.test(line));
+    if (inspected.code !== 0 && !ended) return null;
     const containers = JSON.parse(inspected.stdout) as { Config: { Labels: Record<string, string>; Image: string }; State: { Status: string }; HostConfig?: { NanoCpus?: number; Memory?: number } }[];
     const usage = await this.workspaceStats();
     return containers
