@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, type RouteName, routes, TrialRecord, trialProblem, type TrialView, VARIANTS } from "@galahad/core";
 import { AGENTIC_SUITE, GRADE, poseTask, REPO, type Solution } from "@galahad/brain";
-import { attemptTask } from "../src/trial-agentic.ts";
+import { attemptTask, timeNote } from "../src/trial-agentic.ts";
 import { describeTrial, runTrials, type TrialJob } from "../src/trial-cli.ts";
 import { suiteNamed } from "../src/trial-suites.ts";
 import { type Box, StandInSandboxes } from "./agentic-standin.ts";
@@ -410,4 +410,12 @@ describe("a run of the agentic suite", () => {
       expect(without.chats.filter((chat) => chat.role === "engineer")).toEqual([]);
     }
   });
+});
+
+test("a trial keeps where its time went: the quest's stages, the grading, and the rest", () => {
+  expect(timeNote({ plan: 0, model: 252_000, commands: 41_400, gates: 9_000, review: 164_000 }, 65_000, 600_000)).toBe(
+    "time: model calls 4m12s, commands 41s, gates 9s, review 2m44s, grading 1m05s, the rest 1m09s",
+  );
+  expect(timeNote({ plan: 30_000, model: 1_000, commands: 0, gates: 0, review: 0 }, 2_000, 1_000)).toBe("time: plan 30s, model calls 1s, commands 0s, grading 2s, the rest 0s");
+  expect(timeNote(undefined, 1, 1)).toBe("");
 });

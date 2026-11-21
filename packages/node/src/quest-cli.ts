@@ -60,6 +60,7 @@ import {
   runQuest,
   standingAfter,
   type Trip,
+  timingLine,
 } from "@galahad/brain";
 
 /*
@@ -1033,6 +1034,8 @@ export async function questFromCli(node: NodeClient, options: DoOptions): Promis
   const gatesFailed = outcome.gates?.some((g) => g.exitCode !== 0) ?? false;
   if (outcome.status !== "done" && outcome.review) console.log(`\n${gatesFailed ? "Never reviewed:" : "Reviewer:"}\n${indent(outcome.review.trim())}`);
   if (outcome.gates?.length) console.log(dim(`\n${gatesLine(outcome.gates)}`));
+  // Where its time went, by stage (brain QuestTiming): what to make faster first.
+  if (outcome.timing) console.log(dim(`\nTime: ${timingLine(outcome.timing)}.`));
   if (artifact) {
     const kb = Math.max(1, Math.round(artifact.bytes / 1024));
     console.log(dim(`\nKept ${artifact.count} file(s), ${kb} KB, from /work/out: galahad artifact ${artifact.id}`));

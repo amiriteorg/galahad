@@ -178,6 +178,32 @@ describe("the engineer with tools", () => {
     expect(sent).toContain("[redacted");
   });
 
+  test("a quest says where its time went: the plan, the work's model calls and its commands, the gates, the review", async () => {
+    let now = 0;
+    const replies: Record<QuestRole, (string | { text: string; calls: ClientCall[] })[]> = {
+      planner: ["1. Do it.\nDone when: it is done."],
+      engineer: [{ text: "", calls: [{ id: "c1", name: "bash", input: { command: "echo hi" } }] }, "DONE\nDid it."],
+      reviewer: ["PASS\nFine."],
+    };
+    const outcome = await runQuest(
+      { goal: "make it so", environment: "a test sandbox", tools: true, gates: ["true"] },
+      {
+        now: () => now,
+        ask: async (role) => {
+          now += role === "planner" ? 1_000 : role === "reviewer" ? 3_000 : 2_000;
+          const next = replies[role].shift()!;
+          return typeof next === "string" ? { text: next, model: `test/${role}` } : { ...next, model: `test/${role}` };
+        },
+        exec: async (command) => {
+          now += command === "true" ? 50 : 100;
+          return { exitCode: 0, stdout: "ok\n", stderr: "", durationMs: 1, truncated: false };
+        },
+      },
+    );
+    expect(outcome.status).toBe("done");
+    expect(outcome.timing).toEqual({ plan: 1_000, model: 4_000, commands: 100, gates: 50, review: 3_000 });
+  });
+
   test("a read that a later edit made stale is said to be, once the conversation is cut short", async () => {
     const lines = Array.from({ length: 2_000 }, (_, i) => `line ${i} ${"x".repeat(60)}`).join("\n");
     const h = harness([

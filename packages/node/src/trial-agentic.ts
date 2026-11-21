@@ -1,4 +1,5 @@
 import type { ExecResult, SandboxView, TrialRecord } from "@galahad/core";
+import { type QuestTiming, span, timingLine } from "@galahad/brain";
 import {
   AGENTIC_DIFF,
   AGENTIC_EVIDENCE,
@@ -90,6 +91,16 @@ async function gradeApart(node: NodeClient, posed: PosedTask, left: Record<strin
   }
 }
 
+/**
+ * Where a trial's time went, kept with its record (its note): the quest's own stages (brain QuestTiming; a coding
+ * tool's whole run is its commands), the grading, and the rest (sandboxes made and waited for, files put in and out).
+ */
+export function timeNote(timing: QuestTiming | undefined, gradingMs: number, wholeMs: number): string {
+  if (!timing) return "";
+  const quest = timing.plan + timing.model + timing.commands + timing.gates + timing.review;
+  return `time: ${timingLine(timing)}, grading ${span(gradingMs)}, the rest ${span(Math.max(0, wholeMs - quest - gradingMs))}`;
+}
+
 /** One trial of a task at a level. The record, or null when you stopped it. */
 export async function attemptTask(node: NodeClient, task: AgenticTask, level: number, job: TrialJob): Promise<TrialRecord | null> {
   const posed = poseTask(task, job.seed, level);
@@ -143,10 +154,11 @@ export async function attemptTask(node: NodeClient, task: AgenticTask, level: nu
     // Your Ctrl-C says nothing about ability; running out of commands does, and is graded.
     if (job.signal?.aborted) return null;
     if (!left) throw new Error("what he left in the repository couldn't be read out of the sandbox");
+    const grading = Date.now();
     const verdicts = await gradeApart(node, posed, left, said, outcome.status, job);
     if (job.signal?.aborted) return null;
     const graded = gradeChecks(posed.checks, (key) => verdicts.get(key) ?? null);
-    const notes = [graded.note, skipped.length ? `not taken out (too large, or not a file): ${skipped.slice(0, 5).join(", ")}` : ""].filter(Boolean).join("; ");
+    const notes = [graded.note, skipped.length ? `not taken out (too large, or not a file): ${skipped.slice(0, 5).join(", ")}` : "", timeNote(outcome.timing, Date.now() - grading, Date.now() - started)].filter(Boolean).join("; ");
     return {
       ...base,
       status: "scored",

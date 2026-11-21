@@ -238,7 +238,32 @@ export interface QuestOutcome {
   malformed?: number;
   /** How many of `steps` were commands a tripwire of yours stopped (refused, or a batch it halted): none of them ran. Absent: none. */
   tripped?: number;
+  /** Where its time went (QuestTiming). */
+  timing?: QuestTiming;
 }
+
+/**
+ * Where a quest's time went, in milliseconds, each model call and command counted to the stage it was made in: the
+ * plan (and a contract), the work's model calls and its commands, the gates, and the review (with any audits). What
+ * is left of its whole time is the transport's: a sandbox made, files put in and out.
+ */
+export interface QuestTiming {
+  plan: number;
+  model: number;
+  commands: number;
+  gates: number;
+  review: number;
+}
+
+/** A while in minutes and seconds ("4m12s"), or seconds alone under a minute ("41s"). */
+export const span = (ms: number): string => {
+  const seconds = Math.round(ms / 1000);
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, "0")}s`;
+};
+
+/** A quest's time by stage, in a line ("model calls 4m12s, commands 41s, gates 9s, review 2m44s"): a stage it never reached is left out, the work's never. */
+export const timingLine = (t: QuestTiming): string =>
+  [t.plan ? `plan ${span(t.plan)}` : "", `model calls ${span(t.model)}`, `commands ${span(t.commands)}`, t.gates ? `gates ${span(t.gates)}` : "", t.review ? `review ${span(t.review)}` : ""].filter(Boolean).join(", ");
 
 /** The commands a quest ran: its turns, less the replies that had no command to run and the commands a tripwire stopped. */
 export const commandsRun = (outcome: Pick<QuestOutcome, "steps" | "malformed" | "tripped">): number => outcome.steps - (outcome.malformed ?? 0) - (outcome.tripped ?? 0);
@@ -1042,6 +1067,38 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   };
   const emit = (event: QuestEvent): void => deps.emit?.(event);
   const clock = deps.now ?? (() => Date.now());
+  // Where the time goes (QuestOutcome.timing): every model call and command is timed, and counted to its stage.
+  const timing: QuestTiming = { plan: 0, model: 0, commands: 0, gates: 0, review: 0 };
+  let stage: "plan" | "work" | "gates" | "review" = "plan";
+  const timed = async <T>(model: boolean, reviewer: boolean, run: () => Promise<T>): Promise<T> => {
+    const from = clock();
+    try {
+      return await run();
+    } finally {
+      const ms = clock() - from;
+      if (reviewer || stage === "review") timing.review += ms;
+      else if (stage === "plan") timing.plan += ms;
+      else if (stage === "gates") timing.gates += ms;
+      else if (model) timing.model += ms;
+      else timing.commands += ms;
+    }
+  };
+  /** In the gates' or the review's stage while `run` runs, back to the one before after. */
+  const within = async <T>(at: "gates" | "review", run: () => Promise<T>): Promise<T> => {
+    const before = stage;
+    stage = at;
+    try {
+      return await run();
+    } finally {
+      stage = before;
+    }
+  };
+  const given = deps;
+  deps = {
+    ...given,
+    ask: (role, messages, turn) => timed(true, role === "reviewer", () => given.ask(role, messages, turn)),
+    exec: (command, timeoutSec) => timed(false, false, () => given.exec(command, timeoutSec)),
+  };
   const check = (): void => {
     if (deps.signal?.aborted) throw new Stopped();
   };
@@ -1106,7 +1163,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   let tripped = 0;
   const finish = (outcome: Omit<QuestOutcome, "steps" | "revisions" | "plan" | "gates">): QuestOutcome => {
     const last = gateRounds.at(-1);
-    const done = { ...outcome, steps, revisions, plan, ...(last ? { gates: last } : {}), ...(before ? { gatesBefore: before } : {}), ...(malformed ? { malformed } : {}), ...(tripped ? { tripped } : {}) };
+    const done = { ...outcome, steps, revisions, plan, ...(last ? { gates: last } : {}), ...(before ? { gatesBefore: before } : {}), ...(malformed ? { malformed } : {}), ...(tripped ? { tripped } : {}), timing: { ...timing } };
     emit({ type: "finished", outcome: done });
     return done;
   };
@@ -1167,7 +1224,9 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
    * One gate, in the quest's own sandbox: its result, and what it printed as an observation. One the sandbox can't run
    * has not passed, nor has one a tripwire of yours refuses (it isn't run); one a tripwire halts ends the quest.
    */
-  const runGate = async (gate: Gate, rules: readonly NamedRule[]): Promise<{ result: GateResult; seen: string }> => {
+  // (Timed as the gates' stage, wherever a gate runs: QuestTiming.)
+  const runGate = (gate: Gate, rules: readonly NamedRule[]): Promise<{ result: GateResult; seen: string }> => within("gates", () => gateNow(gate, rules));
+  const gateNow = async (gate: Gate, rules: readonly NamedRule[]): Promise<{ result: GateResult; seen: string }> => {
     check();
     let ran: ExecResult;
     const found = tripOf(rules, gate.command);
@@ -1247,7 +1306,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       : `An independent reviewer has not accepted this yet:\n${verdict.notes}\n\nKeep going: fix what they found, ${ending}`;
 
   /** The reviewer judges a submission from the evidence in the sandbox, not the engineer's say-so. */
-  const judge = async (summary: string, trail: Step[]): Promise<{ verdict: "pass" | "revise"; notes: string; conclusion?: string }> => {
+  const judge = (summary: string, trail: Step[]): Promise<{ verdict: "pass" | "revise"; notes: string; conclusion?: string }> => within("review", () => judgeNow(summary, trail));
+  const judgeNow = async (summary: string, trail: Step[]): Promise<{ verdict: "pass" | "revise"; notes: string; conclusion?: string }> => {
     // The gates are evidence too: that each passes now, and every run that didn't.
     const gated = gatesEvidence(gateRounds, before);
     let evidence = "";
@@ -1286,7 +1346,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
    * repository's lock from under it). It never ends the work: one that answers STOP, as audits once could, is heard as a
    * steer, its words said to whoever does the work. What it found is said, whatever it was.
    */
-  const audit = async (since: Step[], look = true, whole: Step[] = since): Promise<{ verdict: AuditVerdict; note: string }> => {
+  const audit = (since: Step[], look = true, whole: Step[] = since): Promise<{ verdict: AuditVerdict; note: string }> => within("review", () => auditNow(since, look, whole));
+  const auditNow = async (since: Step[], look = true, whole: Step[] = since): Promise<{ verdict: AuditVerdict; note: string }> => {
     audits.at = clock();
     audits.step = steps;
     let evidence = "";
@@ -1568,6 +1629,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
     }
 
+    // The work begins: its model calls and commands are the work's from here (QuestTiming).
+    stage = "work";
     if (o.agent) return await agentWork(o.agent);
 
     const messages: ChatMessage[] = [{ role: "user", content: (o.tools ? toolsBriefing : briefing)(o, plan, gates, before, [...locked.keys()]), effort: STEP_EFFORT.start }];
