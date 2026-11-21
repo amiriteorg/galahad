@@ -31,6 +31,20 @@ enum Usage {
     }
 
     static func period(_ m: UsageMeter) -> String { m.per == "day" ? "Today" : "This month" }
+
+    /// A plan whose allowance is spent, in a line: whose, and until when by this device's clock (`galahad usage` says it
+    /// in UTC; here it is the hour you'd read off your own phone).
+    static func window(_ w: UsageMeter.SpentWindow, now: Date = .now, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let until = Date(timeIntervalSince1970: w.until / 1000)
+        let time = until.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: calendar.timeZone))
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now).map { calendar.isDate(until, inSameDayAs: $0) } ?? false
+        let day = calendar.isDate(until, inSameDayAs: now) ? "" : tomorrow ? " tomorrow" : until.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).weekday(.wide)).prefixed(" on ")
+        return "\(w.provider): its allowance is spent until \(time)\(day)"
+    }
+}
+
+private extension String {
+    func prefixed(_ prefix: String) -> String { prefix + self }
 }
 
 /// The meter: this period's model calls at your prices against your budget, as a line and a thin bar that stand still;
@@ -70,6 +84,10 @@ struct UsageMeterLine: View {
             }
             if let share = Usage.share(meter) {
                 UsageBar(share: share, spent: spent)
+            }
+            // A plan passed over until its allowance resets: why a knight's work is on another model meanwhile.
+            ForEach(meter.windows ?? [], id: \.self) { window in
+                Text(Usage.window(window)).font(.caption).foregroundStyle(.secondary)
             }
         }
         .contentShape(.rect)
@@ -125,6 +143,20 @@ struct UsageSheet: View {
                         .padding(.vertical, Space.s2)
                     } footer: {
                         Text("Since \(meter.since) (UTC), on this node, at the prices you've set. \(Usage.tokens(meter.tokens)) tokens in \(meter.calls) call\(meter.calls == 1 ? "" : "s").")
+                    }
+                    if let windows = meter.windows, !windows.isEmpty {
+                        Section {
+                            ForEach(windows, id: \.self) { window in
+                                VStack(alignment: .leading, spacing: Space.s1) {
+                                    Text(Usage.window(window)).font(.callout)
+                                    Text(window.said).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                                }
+                            }
+                        } header: {
+                            Text("Passed over until their allowance resets")
+                        } footer: {
+                            Text("Their models are skipped without asking until then, and the next on each role's list answers.")
+                        }
                     }
                     if !meter.top.isEmpty {
                         Section("What cost most") {

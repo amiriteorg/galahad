@@ -429,4 +429,15 @@ struct UsageMeter: Decodable, Sendable, Equatable {
     let calls: Int
     let leftUsd: Double?
     let top: [Top]
+    /// Coding plans whose allowance is spent now, as their providers said and until when: their models are passed over
+    /// until then (absent when there are none, and from an older node).
+    var windows: [SpentWindow]? = nil
+
+    struct SpentWindow: Decodable, Sendable, Equatable, Hashable {
+        let provider: String
+        /// When it resets (ms since 1970).
+        let until: Double
+        /// What the provider said (cut short).
+        let said: String
+    }
 }
