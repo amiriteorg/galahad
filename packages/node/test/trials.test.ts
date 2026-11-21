@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { type ChatStreamEvent, type RouteName, TrialRecord, trialProblem, type TrialView, VARIANTS } from "@galahad/core";
+import { type ChatStreamEvent, parseVariant, type RouteName, TrialRecord, trialProblem, type TrialView, VARIANTS } from "@galahad/core";
 import { ENGINEERING_SUITE, pose, TRIAL_INSTRUCTIONS, type TrialProblem } from "@galahad/brain";
-import { chooseProblems, harnessOptions, runTrial, runTrials } from "../src/trial-cli.ts";
+import { CLAUDE_CODE_IMAGE } from "@galahad/sandbox";
+import { AGENT_TRIAL_MINUTES, chooseProblems, harnessOptions, runTrial, runTrials } from "../src/trial-cli.ts";
 
 /*
  * The trial runner against a fake node: fake models, a fake sandbox. What's checked
@@ -140,6 +141,13 @@ describe("a run's harness", () => {
     expect(harnessOptions({}).contract).toBeUndefined();
     expect(harnessOptions({ harness: VARIANTS.baseline! }).contract).toBeUndefined();
     expect(harnessOptions({ harness: VARIANTS.contract! })).toMatchObject({ contract: true, proposeGates: false });
+  });
+
+  test("a coding tool the workshop image has works there; Claude Code, in the image made for trials of it", () => {
+    expect(harnessOptions({ harness: VARIANTS.opencode! }).agent).toEqual({ name: "opencode", minutes: AGENT_TRIAL_MINUTES });
+    const claude = parseVariant("claude-code:agent=claude,gates=off,archive=off,revisions=0,planner=off,review=off");
+    expect(harnessOptions({ harness: claude.options }).agent).toEqual({ name: "claude", minutes: AGENT_TRIAL_MINUTES, image: CLAUDE_CODE_IMAGE });
+    expect(harnessOptions({ harness: VARIANTS.baseline! }).agent).toBeUndefined();
   });
 });
 

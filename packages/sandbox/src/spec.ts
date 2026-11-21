@@ -66,6 +66,8 @@ export const GAZEBO_IMAGE = "galahad/gazebo:1";
 
 /** The knights' desktop: the workshop with a display, a window manager and a browser (sandbox/desktop/Dockerfile). Built after the workshop image, which it is made from. */
 export const DESKTOP_IMAGE = "galahad/desktop:1";
+/** Claude Code in the workshop image, for trials alone (sandbox/claude-code): tagged by its pinned release. */
+export const CLAUDE_CODE_IMAGE = "galahad/claude-code:2.1.319";
 
 /**
  * Galahad's own images: where each is built from (under the sandbox directory) and the keeper that holds it. `base`:
@@ -76,6 +78,7 @@ export const OWN_IMAGES: Readonly<Record<string, { context: string; keeper: stri
   [LAB_IMAGE]: { context: "lab", keeper: "galahad-lab-image" },
   [GAZEBO_IMAGE]: { context: "gazebo", keeper: "galahad-gazebo-image" },
   [DESKTOP_IMAGE]: { context: "desktop", keeper: "galahad-desktop-image", base: DEFAULT_IMAGE },
+  [CLAUDE_CODE_IMAGE]: { context: "claude-code", keeper: "galahad-claude-code-image", base: DEFAULT_IMAGE },
 };
 
 export const containerName = (id: string) => `galahad-sbx-${id}`;

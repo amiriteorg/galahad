@@ -96,9 +96,10 @@ export interface DoOptions {
   remember?: boolean;
   /**
    * A coding agent (opencode) does the engineer's part, for up to `minutes`, in a clone of
-   * `repo` if given (which needs --net online). Its model calls go through the gateway.
+   * `repo` if given (which needs --net online). Its model calls go through the gateway. `image`:
+   * the sandbox image it works in, where the workshop's hasn't got it (a trial's Claude Code).
    */
-  agent?: { name: string; minutes: number; repo?: string };
+  agent?: { name: string; minutes: number; repo?: string; image?: string };
   /** With a GitHub repo: once the reviewer passes the work, ask you (or a standing order) to open a pull request. */
   ship?: { title?: string; base?: string; draft?: boolean; connector?: string };
   /**
@@ -555,6 +556,7 @@ async function openWorkshop(node: NodeClient, options: DoOptions, quest: string,
     network: options.network,
     ...(options.isolation ? { isolation: options.isolation } : {}),
     ...(options.lab ? { lab: true } : {}),
+    ...(options.agent?.image ? { image: options.agent.image } : {}),
     quest,
     ...(options.on ? { on: options.on } : {}),
     // Research: web search through the gateway, wherever there's a network.

@@ -30,6 +30,7 @@ import {
   usdLabel,
 } from "@galahad/core";
 import { grade, pose, type QuestOutcome, SUITES, TRIAL_EVIDENCE, TRIAL_INSTRUCTIONS, type TrialProblem } from "@galahad/brain";
+import { CLAUDE_CODE_IMAGE } from "@galahad/sandbox";
 import { type DoOptions, type NodeClient, runNodeQuest } from "./quest-cli.ts";
 
 /*
@@ -78,6 +79,12 @@ export const absorb = (into: UsageLine[], lines: readonly UsageLine[]): void => 
 
 /** How long a coding tool has for a trial's work: the time a run takes, not a limit that decides it. */
 export const AGENT_TRIAL_MINUTES = 60;
+
+/**
+ * A coding tool the workshop image hasn't got, in an image made for trials alone (sandbox/claude-code): a run puts it to
+ * the same tasks as his own loop, on the same model, through the gateway. A knight's VM never gets it from Galahad.
+ */
+export const TRIAL_IMAGES: Readonly<Record<string, string>> = { claude: CLAUDE_CODE_IMAGE };
 
 /** A model of a role's that couldn't answer, why, and which one answered instead. */
 export interface PassedOver {
@@ -229,7 +236,7 @@ export function harnessOptions(job: Pick<TrialJob, "harness" | "pins" | "effort"
     ...(h?.tools ? { tools: true } : {}),
     ...(h?.contract ? { contract: true } : {}),
     // A coding tool doing the work, and without the planner or the reviewer: a bare tool, as a person runs it.
-    ...(h?.agent ? { agent: { name: h.agent, minutes: AGENT_TRIAL_MINUTES } } : {}),
+    ...(h?.agent ? { agent: { name: h.agent, minutes: AGENT_TRIAL_MINUTES, ...(TRIAL_IMAGES[h.agent] ? { image: TRIAL_IMAGES[h.agent] } : {}) } } : {}),
     ...(h && !h.planner ? { plan: "" } : {}),
     ...(h && !h.review ? { unreviewed: true } : {}),
   };

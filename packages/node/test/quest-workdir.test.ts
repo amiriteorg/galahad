@@ -111,3 +111,27 @@ describe("a quest whose work is in a directory", () => {
     expect(fake.commands).toContain("bun test");
   });
 });
+
+describe("a quest whose coding tool works in an image of its own", () => {
+  test("its sandbox is asked for in that image (a trial's Claude Code); without one, in the workshop's", async () => {
+    const asked: any[] = [];
+    const node = {
+      async call<T>(name: RouteName, input?: any): Promise<T> {
+        if (name === "roster") return { roster: { engineer: { models: ["anthropic/claude-test-model"] } } } as T;
+        if (name === "providers") return { providers: [{ id: "anthropic", kind: "anthropic", hasKey: true }] } as T;
+        if (name === "rules") return { rules: [] } as T;
+        if (name === "createSandbox") {
+          asked.push(input);
+          throw new Error("stop here: only the request is looked at");
+        }
+        throw new Error(`unexpected call ${name}`);
+      },
+      async *stream(): AsyncGenerator<ChatStreamEvent> {},
+    };
+    const quest = (image?: string) =>
+      runNodeQuest(node, { goal: "Fix the parser.", network: "gateway", remember: false, trial: true, plan: "", agent: { name: "claude", minutes: 5, ...(image ? { image } : {}) } }).catch((error: Error) => error.message);
+    expect(await quest("galahad/claude-code:2.1.319")).toContain("stop here");
+    expect(await quest()).toContain("stop here");
+    expect(asked.map((input) => input.image ?? null)).toEqual(["galahad/claude-code:2.1.319", null]);
+  });
+});
