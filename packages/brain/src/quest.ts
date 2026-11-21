@@ -655,6 +655,9 @@ function toolAction(reply: string, calls: readonly ClientCall[] | undefined): Ac
 /** At most this many calls of one reply are run (the rest are said not to have been): a turn's calls are its commands. */
 export const MAX_CALLS = 16;
 
+/** How much of one call's result is kept: a little under what the chat route takes of one (core ClientResult, 200,000). */
+const RESULT_KEPT = { head: 140_000, tail: 50_000 } as const;
+
 /** What the coding agent is asked to do first. */
 const agentBriefing = (o: Resolved, plan: string, gates: readonly Gate[], before?: readonly GateResult[], locked: readonly string[] = []): string => `Quest: ${o.goal}${planSection(plan)}
 
@@ -1821,8 +1824,9 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           if (result.exitCode === 0) checks.push(...checksAfter(rules, r.said));
           nudge ||= gatesRun(r.said, result);
           told.push({ command: r.said, exit: result.exitCode });
-          // (A command's exit is in what it printed: only a tool that couldn't do what it was asked is an error.)
-          results.push({ id: c.id, content: `${seen}${same.note}`, ...(c.name !== "bash" && result.exitCode !== 0 ? { error: true } : {}) });
+          // (A command's exit is in what it printed: only a tool that couldn't do what it was asked is an error. A result is
+          // at most RESULT_KEPT, as the chat route takes one: a command whose output and errors both ran long is cut again.)
+          results.push({ id: c.id, content: clip(`${seen}${same.note}`, RESULT_KEPT.head, RESULT_KEPT.tail), ...(c.name !== "bash" && result.exitCode !== 0 ? { error: true } : {}) });
         }
         // Calls past the commands left get their results too; those past MAX_CALLS were never kept, and are only said.
         const outOf = action.calls.length - runs.length;

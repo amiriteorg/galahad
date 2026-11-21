@@ -146,6 +146,16 @@ describe("the engineer with tools", () => {
     expect(asks[2]!.messages.at(-1)!.results![0]!.content).toContain("The same command failed the same way 2 times in a row");
   });
 
+  test("a result is never longer than the chat route takes, however much a command printed", async () => {
+    const h = harness([{ calls: [bash("cat one.txt; cat two.txt >&2")] }, "GIVE UP\nToo much."]);
+    writeFileSync(join(h.dir, "one.txt"), "a".repeat(150_000));
+    writeFileSync(join(h.dir, "two.txt"), "b".repeat(150_000));
+    await h.run;
+    const result = engineerAsks(h)[1]!.messages.at(-1)!.results![0]!.content;
+    expect(result.length).toBeLessThan(200_000);
+    expect(result).toStartWith("exit 0 · ");
+  });
+
   test("what a tool came to and what it was called with are redacted before any model sees them", async () => {
     const h = harness([{ calls: [bash(`echo ${FAKE_KEY}`)] }, "GIVE UP\nDone looking."]);
     await h.run;
