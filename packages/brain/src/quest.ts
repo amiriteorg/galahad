@@ -713,6 +713,8 @@ ${steps.map((s, i) => `${i + 1}. $ ${s.command}\n   exit ${s.exitCode}\n${s.exce
 Their summary:
 ${summary}
 
+Judge it by what the quest asks: its own words, and what they point to (a specification, the tests, a README). Send it back for what that asks and the evidence shows is missing or wrong, or for a claim the work stands on that the evidence doesn't bear out. Don't send it back for a case nothing there asks about, for a way you'd have done it, or for more tests than it needs: say those after PASS, as notes.
+
 Reply with PASS on the first line if the quest is done and the evidence shows it works. Otherwise reply with REVISE on the first line, then exactly what is missing or wrong.`;
 
 /**
