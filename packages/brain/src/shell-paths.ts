@@ -270,7 +270,7 @@ function pythonChanges(command: string): "nothing" | "anything" | string[] | nul
 /** A run of a project's tests or its type check: it changes no file of the work (a check, not an edit). */
 const CHECKS = /^(bun (test|x tsc|run (check|test|typecheck|lint)\b)|bunx tsc|npx (--no-install )?(tsc|vitest|jest)|tsc|npm (test|run (test|check|typecheck|lint)\b)|pytest|python3? -m pytest|go (test|vet)|cargo (test|check|clippy))(\s|$)/;
 /** Programs that change only the files their words name (writesOf reads which), with `cd` and the folders a write needs. */
-const EDITS = new Set(["cd", "sed", "cat", "echo", "printf", "tee", "cp", "mv", "rm", "git", "mkdir", "touch"]);
+const EDITS = new Set(["cd", "sed", "cat", "echo", "printf", "tee", "cp", "mv", "rm", "git", "mkdir", "touch", "edit"]);
 
 /**
  * What a command may have changed, for what was read before it: nothing (it only shows, or it runs the project's checks),
@@ -326,7 +326,10 @@ export function checkOf(command: string): { program: string; targets: string[] }
   return { program, targets: line.slice(program.length).trim().split(/\s+/).filter((word) => word && !word.startsWith("-")) };
 }
 
-/** The files a command writes, moves, removes or restores, in the order it names them (none it can't read for certain). */
+/**
+ * The files a command writes, moves, removes or restores, in the order it names them (none it can't read for certain).
+ * `edit <file>` changes the file it names: the engineer's edit tool is said so (engineer-tools.ts).
+ */
 export function writesOf(command: string): string[] {
   const out: string[] = [];
   const add = (w: Word | undefined) => { if (w && !w.dynamic && !w.operator && w.text) out.push(clean(w.text)); };
@@ -352,7 +355,7 @@ export function writesOf(command: string): string[] {
         files.push(w);
       }
       files.forEach(add);
-    } else if (name === "tee" || name === "rm") operands.forEach(add);
+    } else if (name === "tee" || name === "rm" || name === "edit") operands.forEach(add);
     else if (name === "mv") operands.forEach(add);
     else if (name === "cp") add(operands.at(-1));
     else if (name === "git" && operands[0]?.text === "restore") operands.slice(1).forEach(add);

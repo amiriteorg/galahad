@@ -216,6 +216,7 @@ export function harnessOptions(job: Pick<TrialJob, "harness" | "pins" | "effort"
     // Nor are its constraints said again unless its variant says so, nor its file reads kept whole, nor a contract written first.
     ...(h?.remind ? { remind: true } : {}),
     ...(h?.keepReads ? { keepReads: true } : {}),
+    ...(h?.tools ? { tools: true } : {}),
     ...(h?.contract ? { contract: true } : {}),
     // A coding tool doing the work, and without the planner or the reviewer: a bare tool, as a person runs it.
     ...(h?.agent ? { agent: { name: h.agent, minutes: AGENT_TRIAL_MINUTES } } : {}),

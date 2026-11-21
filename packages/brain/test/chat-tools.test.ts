@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
+import { type ChatMessage, type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
+import { carriedFor, carryOf } from "../src/adapters.ts";
 import { chat, type ChatTools, CONTINUE, MAX_CONTINUATIONS, MAX_TOOL_ROUNDS, SAME_ANSWER_LIMIT, type ToolCall } from "../src/index.ts";
 
 /*
@@ -257,5 +258,130 @@ describe("chat with tools (Anthropic, through the official SDK)", () => {
     const events = await collect(chat({ ...brain(["claude/claude-opus-5-5"], true), fetch: model.fetch }, { messages: ask("hi"), tools }));
     expect(runs).toEqual([]);
     expect(events.some((e) => e.type === "tool")).toBe(false);
+  });
+});
+
+/** The caller's own tools, as a quest's engineer offers them: the node never runs one. */
+const SHELL = [
+  { name: "read", description: "Read a file.", inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+  { name: "bash", description: "Run a command.", inputSchema: { type: "object", properties: { command: { type: "string" } }, required: ["command"] } },
+];
+
+describe("the caller's own tools (a quest's engineer)", () => {
+  test("an answer that calls them ends with its calls and what to carry back; nothing runs here", async () => {
+    const model = scripted([
+      openai(
+        { choices: [{ delta: { reasoning_content: "Read it first." } }] },
+        { choices: [{ delta: { content: "Looking.", tool_calls: [{ index: 0, id: "call_1", function: { name: "read", arguments: '{"path":"a.ts"}' } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 1, id: "call_2", function: { name: "bash", arguments: '{"command":"ls"}' } }] } }] },
+      ),
+    ]);
+    const events = await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages: ask("Fix it."), clientTools: SHELL }));
+
+    expect(events.map((e) => e.type)).toEqual(["model", "text", "calls", "done"]);
+    const called = events.find((e) => e.type === "calls") as Extract<ChatStreamEvent, { type: "calls" }>;
+    expect(called.calls).toEqual([
+      { id: "call_1", name: "read", input: { path: "a.ts" } },
+      { id: "call_2", name: "bash", input: { command: "ls" } },
+    ]);
+    expect(carriedFor(called.carry, "local", "m")?.reasoning).toBe("Read it first.");
+    expect(model.bodies).toHaveLength(1);
+    expect(model.bodies[0].tools.map((t: { function: { name: string } }) => t.function.name)).toEqual(["read", "bash"]);
+  });
+
+  test("the next request gives back the calls, what they came to and the carry, as the provider takes them", async () => {
+    const model = scripted([say("DONE")]);
+    const messages: ChatMessage[] = [
+      { role: "user", content: "Fix it." },
+      { role: "assistant", content: "Looking.", calls: [{ id: "call_1", name: "read", input: { path: "a.ts" } }, { id: "call_2", name: "bash", input: { command: "false" } }], carry: carryOf("local", "m", { reasoning: "Read it first." }) },
+      { role: "user", content: "", results: [{ id: "call_1", content: "1\tconst a = 1;" }, { id: "call_2", content: "exit 1", error: true }] },
+    ];
+    await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages, clientTools: SHELL }));
+
+    const sent = model.bodies[0].messages;
+    expect(sent.slice(2)).toEqual([
+      {
+        role: "assistant",
+        content: "Looking.",
+        reasoning_content: "Read it first.",
+        tool_calls: [
+          { id: "call_1", type: "function", function: { name: "read", arguments: '{"path":"a.ts"}' } },
+          { id: "call_2", type: "function", function: { name: "bash", arguments: '{"command":"false"}' } },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_1", content: "1\tconst a = 1;" },
+      { role: "tool", tool_call_id: "call_2", content: "Error: exit 1" },
+    ]);
+  });
+
+  test("another model's carry is never given back", async () => {
+    const model = scripted([say("DONE")]);
+    const messages: ChatMessage[] = [
+      { role: "user", content: "Fix it." },
+      { role: "assistant", content: "", calls: [{ id: "c", name: "read", input: { path: "a.ts" } }], carry: carryOf("local", "other", { reasoning: "Its own thoughts." }) },
+      { role: "user", content: "", results: [{ id: "c", content: "x" }] },
+    ];
+    await collect(chat({ ...brain(["local/m"]), fetch: model.fetch }, { messages, clientTools: SHELL }));
+    expect(model.bodies[0].messages[2].reasoning_content).toBeUndefined();
+    expect(model.bodies[0].messages[2].content).toBeNull();
+    expect(carriedFor("not json", "local", "m")).toBeNull();
+  });
+
+  test("a runtime that can't take tools passes the turn to the next model, never answers without them", async () => {
+    const model = scripted([() => new Response('{"error":"registry.ollama.ai/library/x does not support tools"}', { status: 400 }), callTool("c", "read", '{"path":"a.ts"}')]);
+    const events = await collect(chat({ ...brain(["local/a", "local/b"]), fetch: model.fetch }, { messages: ask("Fix it."), clientTools: SHELL }));
+    expect(events.map((e) => e.type)).toEqual(["model", "fallback", "model", "calls", "done"]);
+    expect(model.bodies[1].tools).toHaveLength(2);
+  });
+
+  test("Claude's thinking comes back with its calls, signatures and all", async () => {
+    const model = scripted([
+      anthropicStream(
+        [
+          { type: "thinking", thinking: "", signature: "" },
+          { type: "tool_use", id: "toolu_1", name: "read", input: {} },
+        ],
+        [
+          [
+            { type: "thinking_delta", thinking: "Let me check." },
+            { type: "signature_delta", signature: "sig-abc" },
+          ],
+          [{ type: "input_json_delta", partial_json: '{"path":"a.ts"}' }],
+        ],
+        "tool_use",
+      ),
+    ]);
+    const events = await collect(chat({ ...brain(["claude/claude-opus-5-5"], true), fetch: model.fetch }, { messages: ask("Fix it."), clientTools: SHELL }));
+    const called = events.find((e) => e.type === "calls") as Extract<ChatStreamEvent, { type: "calls" }>;
+    expect(called.calls).toEqual([{ id: "toolu_1", name: "read", input: { path: "a.ts" } }]);
+    expect(carriedFor(called.carry, "claude", "claude-opus-5-5")?.blocks).toEqual([{ type: "thinking", thinking: "Let me check.", signature: "sig-abc" }]);
+    expect(model.bodies[0].tools.map((t: { name: string }) => t.name)).toEqual(["read", "bash"]);
+  });
+
+  test("Claude is given its own tool turn back as it was; one without its thinking goes as words", async () => {
+    const model = scripted([anthropicStream([{ type: "text", text: "" }], [[{ type: "text_delta", text: "DONE" }]], "end_turn"), anthropicStream([{ type: "text", text: "" }], [[{ type: "text_delta", text: "DONE" }]], "end_turn")]);
+    const thought = [{ type: "thinking", thinking: "Let me check.", signature: "sig-abc" }];
+    const turn = (carry: string | undefined): ChatMessage[] => [
+      { role: "user", content: "Fix it." },
+      { role: "assistant", content: "Looking.", calls: [{ id: "toolu_1", name: "read", input: { path: "a.ts" } }], ...(carry ? { carry } : {}) },
+      { role: "user", content: "", results: [{ id: "toolu_1", content: "1\tconst a = 1;" }] },
+    ];
+    await collect(chat({ ...brain(["claude/claude-opus-5-5"], true), fetch: model.fetch }, { messages: turn(carryOf("claude", "claude-opus-5-5", { blocks: thought })), clientTools: SHELL }));
+    await collect(chat({ ...brain(["claude/claude-opus-5-5"], true), fetch: model.fetch }, { messages: turn(undefined), clientTools: SHELL }));
+
+    const [, kept, results] = model.bodies[0].messages;
+    expect(kept).toEqual({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "Let me check.", signature: "sig-abc" },
+        { type: "text", text: "Looking." },
+        { type: "tool_use", id: "toolu_1", name: "read", input: { path: "a.ts" } },
+      ],
+    });
+    expect(results).toEqual({ role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "1\tconst a = 1;" }] });
+
+    const [, said, answered] = model.bodies[1].messages;
+    expect(said).toEqual({ role: "assistant", content: 'Looking.\n(I called read with {"path":"a.ts"}.)' });
+    expect(answered).toEqual({ role: "user", content: [{ type: "text", text: "(It answered: 1\tconst a = 1;)" }] });
   });
 });

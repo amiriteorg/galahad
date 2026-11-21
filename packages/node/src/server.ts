@@ -1374,8 +1374,9 @@ export function createApp(ctx: AppContext) {
    * kept history that leads, the project, the memories. Nothing here depends on who's listening.
    */
   function prepareAnswer(input: ChatInput, p: Principal, about?: string) {
-    // Every message goes to a provider, whoever "said" it, so all of them are scanned.
-    guardAgainstSecrets(...input.messages.map((m) => m.content));
+    // Every message goes to a provider, whoever "said" it, so all of them are scanned: what tools came to and how they
+    // were called among them.
+    guardAgainstSecrets(...input.messages.flatMap((m) => [m.content, ...(m.results ?? []).map((r) => r.content), ...(m.calls ?? []).map((c) => JSON.stringify(c.input))]));
     const { tools: wantTools, save, conversation: continued, project: projectId, retry, archive: wantArchive, memories: wantMemories, attempt, quest, ...request } = input;
     if (quest && !hisOwnQuest(p)) throw new HttpError(403, "only his own quests are given his skills");
     const asked = request.messages.at(-1)!;

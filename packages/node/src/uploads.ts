@@ -179,9 +179,11 @@ export function withAttachments(messages: readonly ChatMessage[], uploads: Pick<
   return messages.map((m): ModelMessage => {
     // (How hard its model thinks from it on, when it says: a quest's loop does, turn by turn.)
     const effort = m.effort ? { effort: m.effort } : {};
-    if (!m.attachments?.length) return { role: m.role, content: m.content, ...effort };
+    // (An answer's calls to the caller's own tools, what they came to, and what its provider needs back go as they are.)
+    const tooled = { ...(m.calls ? { calls: m.calls } : {}), ...(m.carry !== undefined ? { carry: m.carry } : {}), ...(m.results ? { results: m.results } : {}) };
+    if (!m.attachments?.length) return { role: m.role, content: m.content, ...effort, ...tooled };
     const { images, texts } = filesFor(m.attachments, uploads);
     const content = [m.content, ...texts].filter(Boolean).join("\n\n") || "(No words with it: only what is attached.)";
-    return { role: m.role, content, ...effort, ...(images.length ? { images } : {}) };
+    return { role: m.role, content, ...effort, ...tooled, ...(images.length ? { images } : {}) };
   });
 }

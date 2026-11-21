@@ -32,6 +32,11 @@ export interface ChatRequest {
   signal?: AbortSignal;
   /** What the model may call while it answers, and how each call runs. */
   tools?: ChatTools;
+  /**
+   * Tools the caller runs itself (a quest's engineer: its shell and its files): offered to the model, never run here.
+   * An answer that calls them ends with a `calls` event (and what the provider needs back to go on: its `carry`).
+   */
+  clientTools?: ToolSpec[];
   /** Start the role's models at this position (effort: each parallel attempt takes another one first). */
   rotate?: number;
   /**
@@ -235,7 +240,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
   // A turn of the quest loop (the engineer's, or another role's doing the work: coding, no tools, the role's own models):
   // a model that was checked and doesn't follow its format (one command a reply) is passed over while another can take
   // the turn (checks.ts; evidence, not a label).
-  const loopTurn = !!req.coding && (req.loop || (req.role ?? "planner") === "engineer") && !tools && !req.model;
+  const loopTurn = !!req.coding && (req.loop || (req.role ?? "planner") === "engineer") && !tools && !req.clientTools && !req.model;
   const offFormat = (ref: string) => (loopTurn ? checkOf(ctx.store, ref) : null);
   const someoneFits = candidates.some((ref) => followsFormat(offFormat(ref)) !== false);
   // Your prices, read once for an answer that spends a budget of yours (countable).
@@ -298,7 +303,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       return fresh;
     };
     let conversation = start();
-    let offered = tools?.specs ?? [];
+    let offered = tools?.specs ?? req.clientTools ?? [];
     let emitted = false;
     try {
       yield { type: "model", ref };
@@ -365,8 +370,9 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
             round--;
             continue;
           }
-          // A runtime that can't take tools (some local models): the same model, without them.
-          if (error instanceof ToolsUnsupportedError && !emitted) {
+          // A runtime that can't take tools (some local models): the same model, without them. (Not for the caller's own:
+          // an answer without them would be no turn of its work, so the next model is asked.)
+          if (error instanceof ToolsUnsupportedError && !emitted && !req.clientTools) {
             conversation = start();
             offered = [];
             round = -1;
@@ -399,6 +405,13 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
           break;
         }
         const calls: ToolCall[] = end.calls;
+        // The caller's own tools: the answer ends here, with its calls, for the caller to run (and what to carry back).
+        if (req.clientTools && !tools) {
+          const carry = conversation.carry?.();
+          yield { type: "calls", calls: calls.map((c) => ({ id: c.id, name: c.name, input: c.input && typeof c.input === "object" && !Array.isArray(c.input) ? (c.input as Record<string, unknown>) : {} })), ...(carry ? { carry } : {}) };
+          yield { type: "done", ref };
+          return;
+        }
         if (round > MAX_TOOL_ROUNDS) throw new Error(`stopped after ${MAX_TOOL_ROUNDS} rounds of tools without an answer`);
         emitted = true;
         const outcomes = [];

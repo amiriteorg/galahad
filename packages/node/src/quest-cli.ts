@@ -28,6 +28,7 @@ import {
   spendLabel,
   type Usage,
   type UsageLine,
+  type ClientCall,
 } from "@galahad/core";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import { learnedLines, learnFromQuest, type QuestTrail, questTrail } from "./skills-quest.ts";
@@ -136,6 +137,8 @@ export interface DoOptions {
   remind?: boolean;
   /** Current file reads among the outputs cut short stay whole, within a budget (a trial variant: brain quest.ts keepReads). */
   keepReads?: boolean;
+  /** The engineer works with tools of its own, several calls a turn (a trial variant: brain quest.ts tools). */
+  tools?: boolean;
   /** Where no gate fails before the work, the planner first writes a test that does (a trial variant: brain quest.ts contract). */
   contract?: boolean;
   /** A plan fixed in advance: no planner call. Empty: no plan at all, the goal the whole brief (a trial variant without the planner). */
@@ -647,6 +650,7 @@ async function workIn(
       ...((options.escalate ?? !options.pins?.engineer) ? { escalate: true } : {}),
       ...(options.remind ? { remind: true } : {}),
       ...(options.keepReads ? { keepReads: true } : {}),
+      ...(options.tools ? { tools: true } : {}),
       ...(options.contract ? { contract: true } : {}),
       ...(options.plan !== undefined ? { plan: options.plan } : {}),
       ...(options.unreviewed ? { unreviewed: true } : {}),
@@ -656,14 +660,17 @@ async function workIn(
       ask: async (role, messages, turn) => {
         let text = "";
         let model = "";
+        let called: { calls: ClientCall[]; carry?: string } | null = null;
         const input = {
           role,
           messages,
           tools: false,
           // A quest is coding work, whichever of its roles speaks: a coding plan on the role may answer it.
           coding: true,
-          // A turn of the work itself (the engineer's, or the planner's once a gate has failed twice): held to its format.
+          // A turn of the work itself (the engineer's, or the planner's once a gate has failed twice): held to its format,
+          // or offered the engineer's own tools (QuestOptions.tools), whose calls the quest runs here.
           ...(turn?.loop ? { loop: true } : {}),
+          ...(turn?.tools ? { clientTools: [...turn.tools] } : {}),
           // A budget of yours is spent only on models it can count: one you've priced, or one on the node's own machine.
           ...(options.budgetUsd !== undefined ? { budgeted: true } : {}),
           // A role held to one model asks exactly that one (no fallback: what's measured is that model).
@@ -684,9 +691,10 @@ async function workIn(
           else if (event.type === "model") model = event.ref;
           else if (event.type === "fallback") skipped.push({ model: event.from, error: event.error });
           else if (event.type === "usage") run.spent?.({ role, model: event.ref, usage: event.usage });
+          else if (event.type === "calls") called = { calls: event.calls, ...(event.carry ? { carry: event.carry } : {}) };
           else if (event.type === "error") throw new Error(`the ${role} could not answer: ${event.error}`);
         }
-        return { text, model, ...(skipped.length ? { skipped } : {}) };
+        return { text, model, ...(skipped.length ? { skipped } : {}), ...(called ?? {}) };
       },
       // (With the store, each of the quest's commands is told where it is and which project: the engineer has only a shell.)
       // Where its work is, each starts there (workdir).

@@ -53,7 +53,39 @@ export interface ToolImage {
  * A message as a model is given it: its words, and the pictures that go with it (yours, attached to it in your chat,
  * which the node reads from where it keeps them): data, never instructions. A model that can't see gets them in words.
  */
-export type ModelMessage = Pick<ChatMessage, "role" | "content" | "effort"> & { images?: ToolImage[] };
+export type ModelMessage = Pick<ChatMessage, "role" | "content" | "effort" | "calls" | "carry" | "results"> & { images?: ToolImage[] };
+
+/**
+ * What a provider needs back with an answer that called tools, for the work to go on elsewhere (another request, the
+ * caller's tools run in between): a model's reasoning, or its thinking blocks and their signatures. Stamped with the
+ * provider and model it came from, and given back to those alone: to any other it is no carry at all.
+ */
+interface Carried {
+  v: 1;
+  provider: string;
+  model: string;
+  reasoning?: string;
+  blocks?: unknown[];
+}
+
+export function carryOf(provider: string, model: string, kept: Omit<Carried, "v" | "provider" | "model">): string | undefined {
+  return kept.reasoning || kept.blocks?.length ? JSON.stringify({ v: 1, provider, model, ...kept } satisfies Carried) : undefined;
+}
+
+/** A carry, if it is this provider's and this model's and reads as one. */
+export function carriedFor(carry: string | undefined, provider: string, model: string): Carried | null {
+  if (!carry) return null;
+  try {
+    const c = JSON.parse(carry) as Carried;
+    return c && c.v === 1 && c.provider === provider && c.model === model ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A call and what it came to, said in words: how a tool turn goes to a model that can't take it as one. */
+const callInWords = (call: { name: string; input: unknown }): string => `(I called ${call.name} with ${JSON.stringify(call.input)}.)`;
+const resultInWords = (r: { content: string; error?: boolean }): string => `(${r.error ? "It failed" : "It answered"}: ${r.content})`;
 
 /** A message's pictures, for a model that can't see them: that each is there, and what it is, in words. */
 export function picturesInWords(content: string, images: ToolImage[]): string {
@@ -127,6 +159,8 @@ export interface Conversation {
    * (no key, a refused request), so there is nothing to count.
    */
   spent?(): Usage | null | undefined;
+  /** What the last turn, ended in calls, must carry for the work to go on in another request (see Carried). */
+  carry?(): string | undefined;
 }
 
 /** What stands for his side of the conversation when a message arrives and he hadn't said anything yet. */
@@ -158,9 +192,34 @@ export function anthropicConversation(input: CompletionInput): Conversation {
   const effort = input.messages.find((m) => m.role === "user")?.effort ?? input.effort;
   const inside = firstParty && EFFORT_INSIDE.test(input.model);
   let level = effort;
+  // An answer that called the caller's tools goes back with its thinking and signatures, to this model alone (Claude
+  // refuses a tool turn without the thinking it began with). One without them (another model's, or none) goes as words,
+  // and so do its results: a call and what it came to, said.
+  const inWords = new Set<string>();
+  const toolTurn = (m: ModelMessage): Anthropic.Beta.BetaContentBlockParam[] | string => {
+    const carried = carriedFor(m.carry, input.provider.id, input.model);
+    if (!carried?.blocks?.length) {
+      for (const c of m.calls!) inWords.add(c.id);
+      return [m.content, ...m.calls!.map(callInWords)].filter(Boolean).join("\n");
+    }
+    return [
+      ...(carried.blocks as Anthropic.Beta.BetaContentBlockParam[]),
+      ...words(m.content),
+      ...m.calls!.map((c) => ({ type: "tool_use" as const, id: c.id, name: c.name, input: c.input })),
+    ];
+  };
+  const resultsTurn = (m: ModelMessage): Anthropic.Beta.BetaContentBlockParam[] => [
+    ...(m.results ?? []).filter((r) => !inWords.has(r.id)).map((r) => ({ type: "tool_result" as const, tool_use_id: r.id, content: r.content, ...(r.error ? { is_error: true } : {}) })),
+    ...words((m.results ?? []).filter((r) => inWords.has(r.id)).map(resultInWords).join("\n")),
+    ...(m.images ?? []).map(picture),
+    ...words(m.content),
+  ];
   // A message's own pictures lead it, before its words (a message of yours may be pictures alone).
   const messages: Anthropic.Beta.BetaMessageParam[] = input.messages.flatMap((m): Anthropic.Beta.BetaMessageParam[] => {
-    const said = { role: m.role, content: m.images?.length ? [...m.images.map(picture), ...words(m.content)] : m.content };
+    const said = {
+      role: m.role,
+      content: m.role === "assistant" && m.calls?.length ? toolTurn(m) : m.results?.length ? resultsTurn(m) : m.images?.length ? [...m.images.map(picture), ...words(m.content)] : m.content,
+    };
     if (!inside || m.role !== "user" || !m.effort || m.effort === level) return [said];
     level = m.effort;
     return [{ role: "system", content: [], output_config: { effort: m.effort } }, said];
@@ -176,8 +235,11 @@ export function anthropicConversation(input: CompletionInput): Conversation {
   let finalPending = false;
   /** The last call's usage (see Conversation.spent). */
   let spent: Usage | null | undefined;
+  /** The thinking blocks of the last turn that ended in calls, signatures and all (see Conversation.carry). */
+  let thought: unknown[] = [];
   return {
     spent: () => spent,
+    carry: () => carryOf(input.provider.id, input.model, { blocks: thought }),
     async *turn(tools, signal) {
       finalPending = false;
       spent = undefined;
@@ -222,6 +284,7 @@ export function anthropicConversation(input: CompletionInput): Conversation {
         if (final.stop_reason === "max_tokens") throw new Error(`${input.model} ran out of room in the middle of a tool call`);
         // The whole turn goes back as it came, thinking blocks and signatures included.
         messages.push({ role: "assistant", content: final.content as Anthropic.Beta.BetaContentBlockParam[] });
+        thought = final.content.filter((b) => b.type === "thinking" || b.type === "redacted_thinking");
         return { calls: calls.map((b) => ({ id: b.id, name: b.name, input: b.input })), truncated: false };
       }
     },
@@ -300,9 +363,24 @@ export function openAIConversation(input: CompletionInput): Conversation {
   const parts = (text: string, images: ToolImage[]): OpenAIPart[] => [...(text ? [{ type: "text" as const, text }] : []), ...images.map(picture)];
   const messages: OpenAIMessage[] = [
     { role: "system", content: [input.system, input.context].filter(Boolean).join("\n\n") },
-    ...input.messages.map((m): OpenAIMessage =>
-      m.role === "assistant" ? { role: "assistant", content: m.content } : { role: "user", content: m.images?.length ? (vision ? parts(m.content, m.images) : picturesInWords(m.content, m.images)) : m.content },
-    ),
+    ...input.messages.flatMap((m): OpenAIMessage[] => {
+      if (m.role === "assistant") {
+        if (!m.calls?.length) return [{ role: "assistant", content: m.content }];
+        // An answer that called the caller's tools goes back as it came: its own reasoning with it, to this model alone.
+        const carried = carriedFor(m.carry, input.provider.id, input.model);
+        return [
+          {
+            role: "assistant",
+            content: m.content || null,
+            ...(carried?.reasoning ? { reasoning_content: carried.reasoning } : {}),
+            tool_calls: m.calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: JSON.stringify(c.input) } })),
+          },
+        ];
+      }
+      const results = (m.results ?? []).map((r): OpenAIMessage => ({ role: "tool", tool_call_id: r.id, content: r.error ? `Error: ${r.content}` : r.content }));
+      if (results.length && !m.content && !m.images?.length) return results;
+      return [...results, { role: "user", content: m.images?.length ? (vision ? parts(m.content, m.images) : picturesInWords(m.content, m.images)) : m.content }];
+    }),
   ];
   // Pictures given with the question go with the last user message, to a model that sees; else in words.
   const asked = messages.findLast((m): m is Extract<OpenAIMessage, { role: "system" | "user" }> => m.role === "user");
@@ -316,10 +394,13 @@ export function openAIConversation(input: CompletionInput): Conversation {
   let finalPending = false;
   /** The last call's usage (see Conversation.spent). */
   let spent: Usage | null | undefined;
+  /** The reasoning of the last turn that ended in calls (see Conversation.carry). */
+  let reasoned = "";
   // Which conversation this is, for a plan that routes by that: from how it began, so each of its turns says the same.
   const session = conversationSession(input.model, wordsOf(input.messages.find((m) => m.role === "user")?.content));
   return {
     spent: () => spent,
+    carry: () => carryOf(input.provider.id, input.model, { reasoning: reasoned }),
     async *turn(tools, signal) {
       finalPending = false;
       spent = undefined;
@@ -411,6 +492,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
       }
       if (finish === "length") throw new Error(`${input.provider.id}/${input.model} ran out of room in the middle of a tool call`);
       const list = [...calls.entries()].sort(([a], [b]) => a - b).map(([index, c]) => ({ ...c, id: c.id || `call_${index}`, args: c.args || "{}" }));
+      reasoned = reasoning;
       messages.push({
         role: "assistant",
         content: text || null,

@@ -49,10 +49,19 @@ export const ProviderId = Name.refine((name) => !isReservedGatewayScope(name), {
 
 const ModelRef = z.string().min(3).max(256);
 
+/** A tool the caller runs itself (a quest's engineer: its shell, its files), offered to the model by name. */
+export const ClientToolName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/, "a tool's name: lower case, digits and _");
+/** A call the model made to one of the caller's own tools (clientTools): its id, the tool, its input as the model gave it. */
+export const ClientCall = z.strictObject({ id: z.string().min(1).max(128), name: ClientToolName, input: z.record(z.string(), z.unknown()) });
+export type ClientCall = z.infer<typeof ClientCall>;
+/** What one such call came to, as the caller ran it. */
+export const ClientResult = z.strictObject({ id: z.string().min(1).max(128), content: z.string().max(200_000), error: z.boolean().optional() });
+export type ClientResult = z.infer<typeof ClientResult>;
+
 export const ChatMessage = z
   .strictObject({
     role: z.enum(["user", "assistant"]),
-    /** Its words: none only for a message of yours that carries attachments. */
+    /** Its words: none only for a message of yours that carries attachments, an answer that only calls tools, or results. */
     content: z.string().max(400_000),
     /** Your files with it, kept on the node (uploadAttachment). An answer carries none. */
     attachments: z.array(AttachmentRef).min(1).max(ATTACHMENT_LIMITS.perMessage).optional(),
@@ -61,9 +70,21 @@ export const ChatMessage = z
      * roster.ts STEP_EFFORT), and a role you pinned (setRosterEffort) thinks at your level instead. Absent: the role's.
      */
     effort: z.enum(THINKING_EFFORTS).optional(),
+    /** An answer's calls to the caller's own tools (clientTools), as the model made them: the caller ran them. */
+    calls: z.array(ClientCall).min(1).max(32).optional(),
+    /**
+     * What a provider needs back with an answer that called tools for the work to go on (a model's reasoning, its
+     * thinking and their signatures), as the chat route gave it: opaque to the caller, and only ever given back to the
+     * provider and model it came from.
+     */
+    carry: z.string().max(400_000).optional(),
+    /** What the calls of the answer before it came to, in their order (a message of the caller's). */
+    results: z.array(ClientResult).min(1).max(32).optional(),
   })
-  .refine((m) => m.content.length > 0 || (m.role === "user" && !!m.attachments), "a message has words, or files it carries")
-  .refine((m) => m.role === "user" || !m.attachments, "only your messages carry files");
+  .refine((m) => m.content.length > 0 || (m.role === "user" && (!!m.attachments || !!m.results)) || (m.role === "assistant" && !!m.calls), "a message has words, or files, calls or results it carries")
+  .refine((m) => m.role === "user" || !m.attachments, "only your messages carry files")
+  .refine((m) => m.role === "assistant" || (!m.calls && m.carry === undefined), "only an answer calls tools")
+  .refine((m) => m.role === "user" || !m.results, "only the caller's messages carry results");
 export type ChatMessage = z.infer<typeof ChatMessage>;
 
 export const PlacementNeeds = z.strictObject({
@@ -670,6 +691,16 @@ export const routes = {
       messages: z.array(ChatMessage).min(1).max(500),
       /** Galahad's tools, within the caller's scopes (default). Quests turn them off: their roles have their own. */
       tools: z.boolean().optional(),
+      /**
+       * Tools the caller runs itself (a quest's engineer: its shell and its files, in its own sandbox), offered to the
+       * model. The node never runs one: an answer that calls them ends with a `calls` event, and the next request
+       * carries what they came to. Only with Galahad's own tools off, and never in a kept chat.
+       */
+      clientTools: z
+        .array(z.strictObject({ name: ClientToolName, description: z.string().min(1).max(4000), inputSchema: z.record(z.string(), z.unknown()) }))
+        .min(1)
+        .max(16)
+        .optional(),
       /** Keep it in your chat history: a new conversation, or the one named by `conversation` (whose stored history then leads). */
       save: z.boolean().optional(),
       conversation: ConversationId.optional(),
@@ -713,7 +744,9 @@ export const routes = {
        * format is passed over for it, as for the engineer's own turns.
        */
       loop: z.boolean().optional(),
-    }),
+    })
+      .refine((c) => !c.clientTools || c.tools === false, "tools the caller runs go without Galahad's own (tools: false)")
+      .refine((c) => !c.clientTools || (!c.save && !c.conversation), "tools the caller runs are never in a kept chat"),
   },
   /**
    * A file for a message of yours (a picture, or text), kept on this node by the SHA-256 of its bytes: what you then
@@ -1993,5 +2026,10 @@ export type ChatStreamEvent =
   | { type: "undelivered"; texts: string[]; queued: boolean }
   /** First in a side question's stream: its id, to bring it back by. */
   | { type: "aside"; id: string }
+  /**
+   * The answer called tools the caller runs (clientTools), and ends here: the caller runs them and asks again with what
+   * they came to. `carry`: what the provider needs back with this answer for the work to go on (see ChatMessage).
+   */
+  | { type: "calls"; calls: ClientCall[]; carry?: string }
   | { type: "done"; ref: string }
   | { type: "error"; error: string };

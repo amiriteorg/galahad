@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { addUsage, type AttachmentRef, costOf, mergeSpend, type NamedRule, type QuestEvidence, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type TeamCheckpoint, type TeamKeyGrant, type Usage, type UsageLine, heldModels, randomId, redact, SENSITIVE_WORK } from "@galahad/core";
-import { driverFor, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type ToolImage, type Trip } from "@galahad/brain";
+import { addUsage, type AttachmentRef, type ClientCall, costOf, mergeSpend, type NamedRule, type QuestEvidence, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type TeamCheckpoint, type TeamKeyGrant, type Usage, type UsageLine, heldModels, randomId, redact, SENSITIVE_WORK } from "@galahad/core";
+import { driverFor, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type ToolImage, type ToolSpec, type Trip } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import { questEvidence, questTrail } from "./skills-quest.ts";
 import type { TeamRunContext } from "./team.ts";
@@ -340,9 +340,10 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
   };
   /**
    * A call of a knight's on a role's models (`own`: the knight's own, in their place, for its own work; `budgeted`: a task
-   * of a budget of yours, which only a model whose spend it can count may do).
+   * of a budget of yours, which only a model whose spend it can count may do; `turn`: a turn of its work loop, with the
+   * engineer's own tools when it works with them, whose calls it runs).
    */
-  const ask = async (teammate: Teammate, role: string, messages: ChatMessage[], signal: AbortSignal, context?: string, spent?: (model: string, usage: Usage | null) => void, loop?: boolean, own?: readonly string[], budgeted?: boolean) => {
+  const ask = async (teammate: Teammate, role: string, messages: ChatMessage[], signal: AbortSignal, context?: string, spent?: (model: string, usage: Usage | null) => void, turn?: { loop?: boolean; tools?: readonly ToolSpec[] }, own?: readonly string[], budgeted?: boolean) => {
     const leave = await deps.enter(signal);
     // A call that says nothing for so long is ended, and asked again as any failed call is: a task has no clock that would end it.
     const quietMs = deps.callQuietMs ?? TEAM_CALL_QUIET_MINUTES * 60_000;
@@ -351,17 +352,20 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
     const silent = () => new Error(`its model said nothing for ${quietMs % 60_000 === 0 ? `${quietMs / 60_000} minutes` : `${quietMs / 1000} seconds`}`);
     try {
       let text = "", model = "";
+      let called: { calls: ClientCall[]; carry?: string } | null = null;
       // The role's models that couldn't answer before one did: the task says so (once each), never passes it over.
       const skipped: { model: string; error: string }[] = [];
       try {
-        // (A knight's task is coding work: a coding plan on the role may do it. A turn of its work loop is held to its format.)
-        for await (const event of chat(deps.brain(teammate), { role, ...(own?.length ? { models: [...own] } : {}), messages, signal: AbortSignal.any([signal, quiet.signal]), context, coding: true, ...(loop ? { loop: true } : {}), ...(budgeted ? { budgeted: true } : {}) })) {
+        // (A knight's task is coding work: a coding plan on the role may do it. A turn of its work loop is held to its
+        // format, or offered the engineer's tools, whose calls end the answer for the loop to run.)
+        for await (const event of chat(deps.brain(teammate), { role, ...(own?.length ? { models: [...own] } : {}), messages, signal: AbortSignal.any([signal, quiet.signal]), context, coding: true, ...(turn?.loop ? { loop: true } : {}), ...(turn?.tools ? { clientTools: [...turn.tools] } : {}), ...(budgeted ? { budgeted: true } : {}) })) {
           clearTimeout(timer);
           timer = setTimeout(() => quiet.abort(), quietMs);
           if (event.type === "text") text += event.text;
           else if (event.type === "model") model = event.ref;
           else if (event.type === "fallback") skipped.push({ model: event.from, error: event.error });
           else if (event.type === "usage") spent?.(event.ref, event.usage);
+          else if (event.type === "calls") called = { calls: event.calls, ...(event.carry ? { carry: event.carry } : {}) };
           else if (event.type === "error") throw new Error(event.error);
         }
       } catch (error) {
@@ -369,7 +373,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       }
       if (signal.aborted) throw new Error("Stopped");
       if (quiet.signal.aborted) throw silent();
-      return { text, model, ...(skipped.length ? { skipped } : {}) };
+      return { text, model, ...(skipped.length ? { skipped } : {}), ...(called ?? {}) };
     } finally { clearTimeout(timer); leave(); }
   };
 
@@ -630,7 +634,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         // In sensitive mode every call is on its models alone, the plan's and the review's too.
         ask: async (role, messages, turn) => {
           const own = held ? (role === "reviewer" ? [...held.filter((m) => m !== worked), ...held.filter((m) => m === worked)] : held) : role === "engineer" ? teammate.models : undefined;
-          const answer = await ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : contextFor(role), (model, usage) => addUsage(spent, role, model, usage), turn?.loop, own, task.budgetUsd !== undefined);
+          const answer = await ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : contextFor(role), (model, usage) => addUsage(spent, role, model, usage), turn, own, task.budgetUsd !== undefined);
           if (role !== "reviewer") worked = answer.model;
           return answer;
         },
