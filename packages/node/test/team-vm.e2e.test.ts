@@ -25,7 +25,7 @@ const updates: string[][] = [];
 const events: { kind: "cleanup" | "lease" | "exec" | "model"; target: string; text: string }[] = [];
 const active = new Map<string, number>();
 const peak = new Map<string, number>();
-const prompts: { model: string; messages: { role: string; content: string }[] }[] = [];
+const prompts: { model: string; tools?: unknown[]; messages: { role: string; content: string }[] }[] = [];
 let daemon: Daemon;
 let alphaEntered = false;
 let releaseAlpha: (() => void) | undefined;
@@ -64,9 +64,13 @@ const model = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (request)
   events.push({ kind: "model", target: task, text: body.model });
   let text = "1. Make the change.\n2. Run the required gate.\nDone when: the gate and independent review pass.";
   if (body.model === "engineer") {
-    text = turns.some((message) => message.role === "assistant")
-      ? `DONE\n${summaries[task] ?? "Unexpected task."}`
-      : `\`\`\`sh\nprintf '%s' ${task} > result.txt # write-${task.toLowerCase()}\n\`\`\``;
+    const command = `printf '%s' ${task} > result.txt # write-${task.toLowerCase()}`;
+    // Offered its own tools (a knight on the roster's models: quest.ts tools), it calls bash, as a real one does.
+    if (body.tools?.length && !turns.some((message) => message.role === "assistant")) {
+      const call = { tool_calls: [{ index: 0, id: "call_work", function: { name: "bash", arguments: JSON.stringify({ command }) } }] };
+      return new Response(`data: ${JSON.stringify({ choices: [{ delta: call }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+    }
+    text = turns.some((message) => message.role === "assistant") ? `DONE\n${summaries[task] ?? "Unexpected task."}` : `\`\`\`sh\n${command}\n\`\`\``;
   } else if (body.model === "reviewer") text = "PASS\nThe required gate passed and execution evidence supports the result.";
   return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
 } });
@@ -186,13 +190,15 @@ test("first task provisions one persistent VM; same-worker tasks serialize and v
     expect(faceOf("ada", finished)).toBe("pleased");
     expect(faceOf("lin", finished)).toBe("pleased");
     for (const id of [alpha.id, beta.id, gamma.id]) expect(finished.tasks.find((item) => item.id === id)).toMatchObject({ status: "done", verified: true, error: null });
-    // What each did is kept as it happened, to read after it has ended: its plan, its command, the gate, the review.
+    // What each did is kept as it happened, to read after it has ended: its gates, its command, the gate's run, the review.
+    // (A knight on the roster's models works with its own tools and makes no plan first: team-runtime toolsLoop.)
     const trail = await api<{ task: { id: string; status: string }; entries: { n: number; at: number; text: string }[]; more: boolean }>("teamTrail", { task: alpha.id });
     expect(trail.task).toEqual({ id: alpha.id, status: "done" });
     expect(trail.more).toBe(false);
     const said = trail.entries.map((entry) => entry.text.split("\n")[0]!);
     // (With the notes store on, as it is unless turned off, a task first says whether its VM has Engram.)
-    expect(said.filter((line) => !line.startsWith("Notes · "))[0]).toStartWith("Plan · ");
+    expect(said.filter((line) => !line.startsWith("Notes · "))[0]).toStartWith("Gates · ");
+    expect(said.some((line) => line.startsWith("Plan · "))).toBe(false);
     expect(said.some((line) => line.startsWith("Running · ") && line.includes("write-alpha"))).toBe(true);
     expect(said.some((line) => line.startsWith("Gate 1/1 · exit 0"))).toBe(true);
     expect(said.some((line) => line.startsWith("Review · pass"))).toBe(true);
@@ -212,7 +218,7 @@ test("first task provisions one persistent VM; same-worker tasks serialize and v
       expect(lease).toBeGreaterThanOrEqual(0);
       expect(lease).toBeLessThan(activity.findIndex((event) => event.text.includes("mkdir -p")));
     }
-    const consumer = prompts.find((body) => body.model === "engineer" && body.messages.some((message) => message.content.startsWith("Quest: TASK_GAMMA")))!;
+    const consumer = prompts.find((body) => body.model === "engineer" && body.messages.some((message) => typeof message.content === "string" && message.content.startsWith("Quest: TASK_GAMMA")))!;
     expect(JSON.stringify(consumer)).toContain(summaries.ALPHA!);
     expect(JSON.stringify(consumer)).toContain("Verified predecessor results (file paths belong to their original VM)");
     for (const tag of ["ALPHA", "BETA", "GAMMA"]) {

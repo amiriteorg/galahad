@@ -713,6 +713,7 @@ async function main(): Promise<void> {
       // Quests: gates ("done means this command passes").
       gate: { type: "string", multiple: true },
       "no-planner-gates": { type: "boolean" },
+      fenced: { type: "boolean" },
       // Turns the node owns: what `ask` does while he's working in a chat, and leaving him to it.
       steer: { type: "boolean" },
       queue: { type: "boolean" },
