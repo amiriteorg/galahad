@@ -176,9 +176,10 @@ private fun ChatComposer(app: AppModel, live: Boolean) {
             }
         }
         said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = brand.failed) }
+        // As the iPhone's: a paperclip, a rounded field that grows to six lines, and a round send, or stop while he answers.
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Space.s1)) {
-            androidx.compose.foundation.layout.Box {
-                TextButton(onClick = { menu = true }, enabled = !live && !sending, modifier = Modifier.padding(bottom = 4.dp)) { Text("Attach") }
+            androidx.compose.foundation.layout.Box(Modifier.padding(bottom = 4.dp)) {
+                androidx.compose.material3.IconButton(onClick = { menu = true }, enabled = !live && !sending) { Icon(AttachIcon, contentDescription = "Attach") }
                 androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     androidx.compose.material3.DropdownMenuItem(text = { Text("A photo") }, onClick = {
                         menu = false
@@ -190,16 +191,30 @@ private fun ChatComposer(app: AppModel, live: Boolean) {
                     })
                 }
             }
-            androidx.compose.material3.OutlinedTextField(value = text, onValueChange = { text = it }, placeholder = { Text("Ask Galahad") }, maxLines = 6, modifier = Modifier.weight(1f))
+            androidx.compose.material3.TextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text("Message Galahad") },
+                maxLines = 6,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+                colors = androidx.compose.material3.TextFieldDefaults.colors(
+                    focusedContainerColor = brand.raised, unfocusedContainerColor = brand.raised, disabledContainerColor = brand.raised,
+                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                ),
+                modifier = Modifier.weight(1f),
+            )
             if (live) {
-                androidx.compose.material3.OutlinedButton(onClick = app.chat::stop, modifier = Modifier.padding(bottom = 4.dp)) { Text("Stop") }
+                androidx.compose.material3.FilledTonalIconButton(onClick = app.chat::stop, modifier = Modifier.padding(bottom = 4.dp)) {
+                    Icon(StopIcon, contentDescription = "Stop Galahad answering")
+                }
             } else {
-                androidx.compose.material3.Button(
+                androidx.compose.material3.FilledIconButton(
                     enabled = (text.isNotBlank() || files.isNotEmpty()) && !sending,
                     modifier = Modifier.padding(bottom = 4.dp),
-                    shapes = androidx.compose.material3.ButtonDefaults.shapes(),
                     onClick = {
-                        val client = app.client ?: return@Button
+                        val client = app.client ?: return@FilledIconButton
                         sending = true
                         scope.launch {
                             try {
@@ -217,7 +232,7 @@ private fun ChatComposer(app: AppModel, live: Boolean) {
                             }
                         }
                     },
-                ) { Text(if (sending) "Sending" else "Send") }
+                ) { Icon(SendIcon, contentDescription = if (sending) "Sending" else "Send") }
             }
         }
     }

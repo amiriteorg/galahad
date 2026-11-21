@@ -84,3 +84,19 @@ val MoreIcon: ImageVector = icon("More") {
 val PlusIcon: ImageVector = icon("Add") {
     line { moveTo(12f, 5f); lineTo(12f, 19f); moveTo(5f, 12f); lineTo(19f, 12f) }
 }
+
+/** Send: an arrow up, as the iPhone's message box has it. */
+val SendIcon: ImageVector = icon("Send") {
+    path(stroke = SolidColor(Color.Black), strokeLineWidth = 2.2f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) {
+        moveTo(12f, 19f); lineTo(12f, 5.5f); moveTo(6f, 11.5f); lineTo(12f, 5.5f); lineTo(18f, 11.5f)
+    }
+}
+
+/** Stop his answer: a filled square, a little rounded. */
+val StopIcon: ImageVector = icon("Stop") {
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(8.5f, 7f); lineTo(15.5f, 7f); arcToRelative(1.5f, 1.5f, 0f, false, true, 1.5f, 1.5f); lineTo(17f, 15.5f)
+        arcToRelative(1.5f, 1.5f, 0f, false, true, -1.5f, 1.5f); lineTo(8.5f, 17f); arcToRelative(1.5f, 1.5f, 0f, false, true, -1.5f, -1.5f)
+        lineTo(7f, 8.5f); arcToRelative(1.5f, 1.5f, 0f, false, true, 1.5f, -1.5f); close()
+    }
+}
