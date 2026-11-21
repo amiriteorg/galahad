@@ -43,6 +43,14 @@ const VERSION = "0.1.0";
 
 const HELP = `galahad — one mind, many bodies
 
+Start here (galahad.sh's installer founds the fleet and keeps the node running where it can; otherwise: serve)
+  key add                           a provider's key, typed into a hidden prompt: Anthropic's, OpenAI's, OpenRouter's,
+                                    DeepSeek's … his roles answer on it at once
+  ask "Good morning, Galahad."      a word with him
+  invite --client                   pair your phone or browser (the app does the rest)
+  roundtable add <id> --name <name> a knight of your own, with a lasting job and a VM of its own
+  doctor                            what's wrong here, and what to do about it
+
 The Roundtable (your knights beside Galahad, none beneath another: each with a lasting job, a room and verified work in a VM
 of its own; "roundtable", "squires" and "team" are the same command)
   roundtable                        knights, rooms and tasks (those Galahad seated say so:
