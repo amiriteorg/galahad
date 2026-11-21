@@ -471,6 +471,64 @@ export const withoutRedirects = (base: typeof fetch = fetch): typeof fetch =>
   ((input: Parameters<typeof fetch>[0], init?: RequestInit) => base(input, { ...init, redirect: "manual" })) as typeof fetch;
 
 /**
+ * How long a model's call may send nothing at all (no headers, then no byte of its stream) before it is ended as a
+ * failed call: the roster's next model is asked, or the same again. Measured on the bytes, so a model that streams
+ * its reasoning for minutes is never cut; one on your own machine (`local`), whose silence may be a long prompt being
+ * read, gets longer. A provider that stopped sending once held a trial's turn for over fifteen minutes (21 November
+ * 2026): nothing on `galahad do`'s path ended it.
+ */
+export const QUIET_MS = { remote: 5 * 60_000, local: 15 * 60_000 } as const;
+
+/**
+ * `base`, ending a call that sends nothing for `quietMs` (see QUIET_MS): its request, and its stream, which then fails
+ * (never ends as if the answer were whole). The stream is cancelled here, whatever `base` does with the abort.
+ */
+export const quietly = (base: typeof fetch, quietMs: number): typeof fetch =>
+  (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const silent = new AbortController();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    const stop = () => {
+      silent.abort(new Error(`the model sent nothing for ${quietMs >= 60_000 ? `${Math.round(quietMs / 60_000)} minutes` : `${Math.round(quietMs / 1000)} seconds`}`));
+      void reader?.cancel(silent.signal.reason).catch(() => {});
+    };
+    let timer = setTimeout(stop, quietMs);
+    const signal = init?.signal ? AbortSignal.any([init.signal, silent.signal]) : silent.signal;
+    let response: Response;
+    try {
+      response = await base(input, { ...init, signal });
+    } catch (error) {
+      clearTimeout(timer);
+      throw silent.signal.aborted ? silent.signal.reason : error;
+    }
+    if (!response.body) {
+      clearTimeout(timer);
+      return response;
+    }
+    const from = response.body.getReader();
+    reader = from;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const { done, value } = await from.read();
+          clearTimeout(timer);
+          if (silent.signal.aborted) return controller.error(silent.signal.reason);
+          if (done) return controller.close();
+          timer = setTimeout(stop, quietMs);
+          controller.enqueue(value);
+        } catch (error) {
+          clearTimeout(timer);
+          controller.error(silent.signal.aborted ? silent.signal.reason : error);
+        }
+      },
+      cancel(reason) {
+        clearTimeout(timer);
+        return from.cancel(reason);
+      },
+    });
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  }) as typeof fetch;
+
+/**
  * The models the roster is offered for a provider: a coding plan's are the ones its preset names (asking the plan would
  * be no coding), and so are those of a provider whose endpoint lists none; any other is asked (listModels).
  */

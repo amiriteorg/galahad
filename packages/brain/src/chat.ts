@@ -6,13 +6,15 @@ import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./persona.ts";
 import { windowsOf } from "./windows.ts";
 import { followsFormat, readModelCheck, readsScreens, type ModelCheck } from "@galahad/core";
-import { offeredModels, onPlan, planOf, resolveProvider, whyNoKey } from "./providers.ts";
+import { offeredModels, onPlan, planOf, QUIET_MS, quietly, resolveProvider, whyNoKey } from "./providers.ts";
 import { effortFor, parseRef, pinnedEffort, roleModels } from "./roster.ts";
 
 export interface BrainContext {
   store: MindStore;
   vault: Vault;
   fetch?: typeof fetch;
+  /** How long a model's call may send nothing before it is ended as failed (providers.ts QUIET_MS; tests pass less). */
+  quietMs?: number;
   /**
    * Told of every model call as it ends: the role, the model, and its tokens as the provider reported them
    * (null: it reported nothing). Counts only. Whoever holds the context keeps its own tally with it.
@@ -297,7 +299,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         messages,
         effort: pinned ?? effortFor(req.role),
         signal: req.signal,
-        fetch: ctx.fetch,
+        // A call that goes silent is ended as a failed one (QUIET_MS): no turn hangs on a provider that stopped sending.
+        fetch: quietly(ctx.fetch ?? fetch, ctx.quietMs ?? (provider.local ? QUIET_MS.local : QUIET_MS.remote)),
       });
       for (const texts of handed) fresh.interject(texts, "");
       return fresh;
