@@ -331,6 +331,29 @@ test("sensitive mode in a conversation: its turns and the story its room is told
   expect(delegate.function.parameters.properties.goal).toBeDefined();
 });
 
+test("a knight on the roster's models works with tools of its own, several calls a turn, its own reasoning in place of a plan", async () => {
+  const f = fixture([call("bash", { command: "echo built" }), say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")], { toolsLoop: true });
+  expect((await f.runtime.executeTask(member, task, f.context)).verified).toBe(true);
+  // No planner: the engineer's call, its DONE, the reviewer.
+  expect(f.bodies).toHaveLength(3);
+  expect(f.bodies[0].tools.map((t: any) => t.function.name)).toEqual(["bash", "read", "edit", "write"]);
+  expect(f.bodies[0].messages.at(-1).content).toContain("Work with your tools: bash runs a command");
+  expect(f.commands.some((command) => command.includes("echo built"))).toBe(true);
+  // Its next turn has its call back, and what it came to, matched by id.
+  const [assistant, result] = f.bodies[1].messages.slice(-2);
+  expect(assistant.tool_calls.map((c: any) => c.function.name)).toEqual(["bash"]);
+  expect(result).toMatchObject({ role: "tool", tool_call_id: assistant.tool_calls[0].id });
+  expect(f.bodies[2].tools).toBeUndefined();
+});
+
+test("a knight held to models of its own keeps the loop it had, with its plan", async () => {
+  const own: Teammate = { ...member, models: ["local/fake"] };
+  const f = fixture([say("1. Make the change."), say("```sh\necho built\n```"), say("DONE\nBuilt."), say("PASS\nFine.")], { toolsLoop: true, teammate: () => own });
+  expect((await f.runtime.executeTask(own, { ...task, assignee: own.id }, f.context)).verified).toBe(true);
+  expect(f.bodies).toHaveLength(4);
+  expect(f.bodies.some((body) => body.tools)).toBe(false);
+});
+
 test("every turn of a task is sent the same beginning: the knight's notes are fenced once for the task, not anew on each call", async () => {
   const f = fixture([say("1. Make the change and test it."), say("```sh\necho one\n```"), say("```sh\necho two\n```"), say("DONE\nBuilt and checked."), say("PASS\nThe evidence supports it.")]);
   expect((await f.runtime.executeTask(member, task, f.context)).verified).toBe(true);

@@ -20,6 +20,12 @@ export interface TeamRuntimeDeps {
   renew?(teammate: Teammate, signal: AbortSignal): Promise<boolean>;
   /** (Tests: how long a model call may say nothing before it is ended, in milliseconds; TEAM_CALL_QUIET_MINUTES otherwise.) */
   callQuietMs?: number;
+  /**
+   * A knight on the roster's engineer models works with tools of its own (brain quest.ts `tools`: bash, read, edit and
+   * write, several calls a turn), its own reasoning in place of a planner's plan, as was measured (PLAN #32, 21 November
+   * 2026). One held to models of its own, or working in a coding tool, keeps the loop it had. Absent: none does.
+   */
+  toolsLoop?: boolean;
   tools(teammate: Teammate, signal: AbortSignal): ChatTools;
   /** Your prices (models without one are counted, not priced): what a task's budget is measured in. */
   prices?(): Prices;
@@ -625,7 +631,9 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, started, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
       // The model that did the work last: in sensitive mode the review goes to another of its models first, where it has another.
       let worked = agent?.models[0] && !agent.models[0].own ? `${agent.models[0].provider}/${agent.models[0].model}` : undefined;
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}${keysLine(teammate.keys, deps.keyAddress)}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: TEAM_COMMAND_SECONDS, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
+      // Its own tools where they were measured: on the roster's engineer models, in Galahad's own loop (toolsLoop).
+      const tools = Boolean(deps.toolsLoop) && !agent && !held && !teammate.models?.length;
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}${keysLine(teammate.keys, deps.keyAddress)}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: TEAM_COMMAND_SECONDS, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(tools ? { tools: true, plan: "" } : {}), ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         // (keepReads: a knight sees whole what it reads, and it stays in view while it is current. The first real outcome's
         // knights, shown 8,000 characters of each, read one file in 26 then 34 commands, and three tasks ended with nothing
         // written: quest.ts keepReads. Each command has TEAM_COMMAND_SECONDS: at 120 s, the repository's own tests were cut off.)

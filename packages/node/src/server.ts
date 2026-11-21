@@ -2154,6 +2154,8 @@ export function createApp(ctx: AppContext) {
       brain: (member) => ({ ...brainFor(teammatePrincipal(member.id)), ...(ctx.fetch ? { fetch: overFleet(ctx.fetch) } : {}) }),
       enter: (signal) => ctx.governor.enterModel({ wait: true }, signal),
       exec: execTeam, prepare: prepareTeam, renew: renewTeam, teammate: teamMember,
+      // A knight on the roster's engineer models works with its own tools, as was measured (team-runtime toolsLoop).
+      toolsLoop: true,
       files: (refs) => filesFor(refs, ctx.uploads),
       dependencies: (task) => task.dependsOn.map((id) => ctx.team!.store.task(id)).filter((t): t is NonNullable<typeof t> => !!t && t.status === "done" && t.verified).map(({ id, title, output }) => ({ id, title, output })),
       stopWorker: stopTeamWorker,

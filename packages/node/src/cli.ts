@@ -257,6 +257,8 @@ Work
                                   --effort spends more compute for a better answer: that many attempts at once,
                                   each in its own sandbox and reviewed, the best taken by the independent
                                   reviewer on the evidence alone (auto: what the free slots and the budget allow)
+     … --fenced                    the engineer sends one shell command a reply, as before 21 November 2026, in place
+                                  of its own tools (bash, read, edit, write, several calls a turn)
      … --budget-usd 2              money its model calls may spend at your prices (galahad price), every
                                   attempt's together: past four fifths the work is told to wrap up, and once
                                   it is spent the work stops
@@ -1543,6 +1545,9 @@ Next:
         maxSteps: str("steps") ? Number(str("steps")) : undefined,
         commandTimeoutSec: str("timeout") ? Number(str("timeout")) : undefined,
         keep: Boolean(flags.keep),
+        // The engineer's own tools, several calls a turn (measured +7 over the fenced loop, level with OpenCode: TRIALS.md);
+        // --fenced keeps one shell command a reply.
+        ...(flags.fenced ? {} : { tools: true }),
         ...(budgetUsd !== undefined ? { budgetUsd } : {}),
         ...(effort !== undefined ? { effort } : {}),
         ...(agentName ? { agent: { name: agentName, minutes, ...(repo ? { repo } : {}) } } : {}),
