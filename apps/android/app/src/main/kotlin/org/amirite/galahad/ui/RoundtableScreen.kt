@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,13 +63,20 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
     val paired by app.paired.collectAsState()
     var giving by remember { mutableStateOf(false) }
     // The last Roundtable this phone saw is drawn at once (app/KeptTable.kt). If the node hasn't answered in a moment,
-    // a still line says what you're looking at; on a quick answer it never shows, so nothing comes and goes.
+    // a still line says what you're looking at, the node away or not; on a quick answer it never shows, so nothing comes
+    // and goes.
     var waited by remember { mutableStateOf(false) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(table.asOf) {
         waited = false
         if (table.asOf != null) {
             kotlinx.coroutines.delay(1_500)
             waited = true
+            // (Said again each minute, so how long ago stays true while the node is away.)
+            while (true) {
+                now = System.currentTimeMillis()
+                kotlinx.coroutines.delay(60_000)
+            }
         }
     }
     val knights = table.rows.filter { it.kind == "knight" }
@@ -78,13 +86,13 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
         item {
             Row(Modifier.fillMaxWidth().padding(start = Space.margin, end = Space.s2, top = Space.s4, bottom = Space.s2), verticalAlignment = Alignment.CenterVertically) {
                 Text(paired?.fleetName ?: "Roundtable", style = MaterialTheme.typography.headlineLargeEmphasized, modifier = Modifier.weight(1f))
-                if (table.snapshot != null) TextButton(onClick = { giving = true }) { Text("Give a task") }
+                // (Given once the node has answered: never from the Roundtable this phone kept.)
+                if (table.snapshot != null) TextButton(onClick = { giving = true }, enabled = table.asOf == null) { Text("Give a task") }
             }
         }
         problem?.let { p -> item { Refused(app, p) } }
-        table.asOf?.takeIf { waited && problem == null }?.let { at ->
+        table.asOf?.takeIf { waited }?.let { at ->
             item {
-                val now = System.currentTimeMillis()
                 val ago = if (now - at < 60_000) "just now" else android.text.format.DateUtils.getRelativeTimeSpanString(at, now, android.text.format.DateUtils.MINUTE_IN_MILLIS)
                 Text("As your node last said it, $ago. Asking it again.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = Space.margin))
             }

@@ -34,14 +34,15 @@ class KeptTableTest {
          "outcomes":[{"id":"o1","goal":"Something the Roundtable doesn't draw"}]}
         """.trimIndent(),
     )
-    private val turns = Json.parse("""{"turns":[{"id":"u1","title":"Release notes","text":"words of a chat"}],"unread":[{"id":"c1","title":"The importer","preview":"his answer"}],"chats":"7"}""")
+    private val turns = Json.parse("""{"turns":[{"id":"u1","title":"Release notes","text":"words of a chat"},{"id":"u2","text":"a temporary chat's words"}],"unread":[{"id":"c1","title":"The importer","preview":"his answer"}],"chats":"7"}""")
     private val asks = listOf(Ask("arm:team.ada", "forge", "post"))
 
     @Test fun drawsTheRoundtableAgainAsTheNodeDrewIt() {
         val kept = KeptTable.read(Json.parse(KeptTable.of(node, team, turns, asks, waiting = 3, at = 1_763_700_123_000).text()), node)!!
         val now = 1_763_700_200_000
         assertEquals(Roster.rows(Snapshot.of(team), asks, now), Roster.rows(Snapshot.of(kept.team), kept.asks, now))
-        assertEquals(listOf("Release notes"), kept.turns)
+        // (A temporary chat has no title, and is kept as one: his line still says he is working in it.)
+        assertEquals(listOf("Release notes", null), kept.turns)
         assertEquals(listOf("The importer"), kept.unread.map { it["title"].string })
         assertEquals(asks, kept.asks)
         assertEquals(3, kept.waiting)
@@ -54,11 +55,18 @@ class KeptTableTest {
         // A knight's instructions and working notes, the keys it may use, its agent's command, a task's brief and patch,
         // a message's words, what the team holds beyond the roster, a chat's words: none of it is kept.
         for (absent in listOf("instructions", "bank PIN", "memory", "staging password", "stripe-live", "goose acp", "the customer's address", "secret.env",
-            "a message's words", "outcomes", "Something the Roundtable", "words of a chat", "his answer")) assertFalse(absent, text.contains(absent))
+            "a message's words", "outcomes", "Something the Roundtable", "words of a chat", "a temporary chat's words", "his answer")) assertFalse(absent, text.contains(absent))
         val kept = KeptTable.read(Json.parse(text), node)!!
         assertEquals(listOf("teammates", "rooms", "tasks", "deliveries", "removed", "seen", "primary"), (kept.team as Json.Obj).fields.keys.toList())
         assertEquals(Snapshot.of(team), Snapshot.of(kept.team).copy(teammates = Snapshot.of(kept.team).teammates.map { it.copy(instructions = Snapshot.of(team).teammates.first { t -> t.id == it.id }.instructions) }))
         assertEquals(listOf("Ada", "Bors"), kept.team["teammates"].list.map { it["name"].string })
+    }
+
+    @Test fun aListThatIsntOneIsLeftOutNeverKeptWhole() {
+        val odd = Json.parse("""{"teammates":[],"rooms":[],"tasks":{"t1":{"goal":"a brief, not in a list"}},"deliveries":[]}""")
+        val text = KeptTable.of(node, odd, turns, asks, waiting = 0, at = 1).text()
+        assertFalse(text.contains("a brief, not in a list"))
+        assertEquals(listOf("teammates", "rooms", "deliveries"), (KeptTable.read(Json.parse(text), node)!!.team as Json.Obj).fields.keys.toList())
     }
 
     @Test fun isNeverDrawnForAnotherNodeAnotherKeyOrAnotherVersion() {

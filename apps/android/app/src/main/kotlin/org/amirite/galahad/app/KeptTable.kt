@@ -34,7 +34,7 @@ object KeptTable {
     )
 
     /** What is kept, as it was said: the node it came from, when, and what the Roundtable draws. */
-    data class Kept(val team: Json, val turns: List<String>, val unread: List<Json>, val asks: List<Ask>, val waiting: Int, val at: Long)
+    data class Kept(val team: Json, val turns: List<String?>, val unread: List<Json>, val asks: List<Ask>, val waiting: Int, val at: Long)
 
     /** The record kept for [node], from what the node last said. */
     fun of(node: PairedNode, team: Json, turns: Json?, asks: List<Ask>, waiting: Int, at: Long): Json = Json.obj(
@@ -43,7 +43,8 @@ object KeptTable {
         "device" to node.device,
         "at" to at,
         "team" to trimmed(team),
-        "turns" to (turns?.get("turns")?.list?.mapNotNull { it["title"].string } ?: emptyList<String>()),
+        // (A temporary chat has no title: kept as one, so his line still says he is working in it.)
+        "turns" to (turns?.get("turns")?.list?.map { it["title"].string } ?: emptyList<String?>()),
         "unread" to (turns?.get("unread")?.list?.mapNotNull { it["title"].string }?.map { Json.obj("title" to it) } ?: emptyList<Json>()),
         "asks" to asks.map { Json.obj("by" to it.by, "connector" to it.connector, "tool" to it.tool) },
         "waiting" to waiting,
@@ -55,7 +56,7 @@ object KeptTable {
         val team = kept["team"]?.takeIf { it is Json.Obj } ?: return null
         return Kept(
             team = team,
-            turns = kept["turns"].list.mapNotNull { it.string },
+            turns = kept["turns"].list.map { it.string },
             unread = kept["unread"].list,
             asks = kept["asks"].list.map { Ask(it["by"].string ?: "", it["connector"].string, it["tool"].string) },
             waiting = kept["waiting"].int ?: 0,
@@ -70,7 +71,9 @@ object KeptTable {
         for (name in TEAM) {
             val value = fields[name] ?: continue
             val allowed = FIELDS[name]
-            kept[name] = if (allowed == null || value !is Json.Arr) value else Json.Arr(value.items.mapNotNull { item -> (item as? Json.Obj)?.let { only(it, allowed) } })
+            // (A list that isn't one is left out, never kept whole.)
+            if (allowed == null) kept[name] = value
+            else if (value is Json.Arr) kept[name] = Json.Arr(value.items.mapNotNull { item -> (item as? Json.Obj)?.let { only(it, allowed) } })
         }
         return Json.Obj(kept)
     }
