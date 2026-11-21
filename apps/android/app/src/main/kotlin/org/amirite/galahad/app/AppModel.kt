@@ -88,7 +88,27 @@ data class Table(
     val chats: String? = null,
     /** The last Roundtable this phone kept, as the node said it then (KeptTable): until the node answers. Null: the node's answer. */
     val asOf: Long? = null,
-)
+) {
+    /**
+     * The Roundtable after a look at the node: `team` its answer for the team (null: it couldn't be read), `turns` its
+     * answer for the chats, `asks` the approvals waiting and `waiting` everything that waits for you, at `now`. Until the
+     * node has answered for the team, a kept Roundtable stays as it was kept, never redrawn with what else came back (an
+     * empty Inbox while the node is away), so it is never taken for the node's word; otherwise its last team is drawn
+     * again with what's new.
+     */
+    fun after(team: Snapshot?, turns: Json?, asks: List<Ask>, waiting: Int, now: Long): Table {
+        if (team == null && asOf != null) return this
+        val snapshot = team ?: this.snapshot
+        val unread = turns?.let { it["unread"].list } ?: this.unread
+        val galahad = Roster.galahadNow(
+            turns = (turns?.let { it["turns"].list } ?: emptyList()).map { it["title"].string },
+            quests = emptyList(),
+            needs = Roster.galahadNeeds(waiting, asks, snapshot?.teammates?.map { it.id } ?: emptyList()),
+            unread = unread.map { it["title"].string },
+        )
+        return Table(snapshot, snapshot?.let { Roster.rows(it, asks, now) } ?: emptyList(), galahad, unread, turns?.get("chats")?.text() ?: chats)
+    }
+}
 
 /**
  * The app's state, one for the process (a rotation or a new window keeps it): the pairing, the device key, and what the
@@ -265,25 +285,9 @@ class AppModel(context: Context) {
                 screens = got[8].getOrNull()?.let { Inbox.live(it["sessions"].list) } ?: _inbox.value.screens,
             )
             _inbox.value = inbox
-            // Until the node has answered for the team, the kept Roundtable stays as it was kept, never redrawn with
-            // what else came back (an empty Inbox while the node is away), so it is never taken for the node's word.
-            if (got[0].isFailure && _table.value.asOf != null) return@coroutineScope
             val turnsJson = got[5].getOrNull()
-            val snapshot = got[0].getOrNull()?.let(Snapshot::of) ?: _table.value.snapshot
             val asks = inbox.actions.map { Ask(it["by"].string ?: "", it["connector"].string, it["tool"].string) }
-            val now = System.currentTimeMillis()
-            val rows = snapshot?.let { Roster.rows(it, asks, now) } ?: emptyList()
-            val knights = snapshot?.teammates?.map { it.id } ?: emptyList()
-            val turnList = turnsJson?.let { it["turns"].list } ?: emptyList()
-            val unread = turnsJson?.let { it["unread"].list } ?: _table.value.unread
-            val needs = Roster.galahadNeeds(inbox.count, asks, knights)
-            val galahad = Roster.galahadNow(
-                turns = turnList.map { it["title"].string },
-                quests = emptyList(),
-                needs = needs,
-                unread = unread.map { it["title"].string },
-            )
-            _table.value = Table(snapshot, rows, galahad, unread, turnsJson?.get("chats")?.text() ?: _table.value.chats)
+            _table.value = _table.value.after(got[0].getOrNull()?.let(Snapshot::of), turnsJson, asks, inbox.count, System.currentTimeMillis())
             // (What the node said of the team just now is kept for the next time the app opens: KeptTable.)
             got[0].getOrNull()?.let { team -> keep(team, turnsJson, asks, inbox.count) }
         }
