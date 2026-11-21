@@ -260,8 +260,8 @@ private fun MoreScreen(app: AppModel, openKeys: () -> Unit, openConnectors: () -
 
 /**
  * Notifications on this phone: on and off, instant or collected, a test, and what Android allows. Collected, the node
- * keeps them and this phone asks for them; instant, they come through a UnifiedPush distributor (ntfy, or another),
- * encrypted to this phone's own key. What he sends and when he stays quiet are the node's settings.
+ * keeps them and this phone asks for them; instant, they come through a UnifiedPush distributor of your choice (Sunup,
+ * ntfy, or another), encrypted to this phone's own key. What he sends and when he stays quiet are the node's settings.
  */
 @Composable
 private fun NotificationsPanel(app: AppModel) {
@@ -273,15 +273,21 @@ private fun NotificationsPanel(app: AppModel) {
     var allowed by remember { mutableStateOf(Notices.allowed(context)) }
     var said by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    val distributor = remember { UnifiedPush.distributors(context).firstOrNull() }
+    // The distributors on this phone, read again while this is on screen (one installed meanwhile is offered at once).
+    var distributors by remember { mutableStateOf(UnifiedPush.distributors(context)) }
+    // The distributor this phone registered with (it may not have given its address yet): read again with the rest.
+    var current by remember { mutableStateOf(UnifiedPush.registration(context)?.distributor) }
     val brand = LocalBrand.current
     // A distributor answers by broadcast: what it said is read again while this is on screen.
     LaunchedEffect(Unit) {
+        var tick = 0
         while (true) {
             delay(1_000)
             on = Notices.on(context)
             instant = Notices.instant(context)
             trouble = Notices.trouble(context)
+            current = UnifiedPush.registration(context)?.distributor
+            if (++tick % 3 == 0) distributors = UnifiedPush.distributors(context)
         }
     }
     fun act(work: suspend (NodeClient) -> Unit) {
@@ -297,14 +303,16 @@ private fun NotificationsPanel(app: AppModel) {
                 busy = false
                 on = Notices.on(context)
                 instant = Notices.instant(context)
+                current = UnifiedPush.registration(context)?.distributor
                 allowed = Notices.allowed(context)
             }
         }
     }
     // Collected at once; instant as soon as the distributor gives an endpoint, if there is one.
+    // (With several distributors, none is chosen for you: you pick one below.)
     suspend fun start(client: NodeClient) {
         Notices.turnOn(context, client)
-        distributor?.let { Notices.makeInstant(context, client, it) }
+        distributors.singleOrNull()?.let { Notices.makeInstant(context, client, it) }
     }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         allowed = Notices.allowed(context)
@@ -320,11 +328,27 @@ private fun NotificationsPanel(app: AppModel) {
             },
             style = MaterialTheme.typography.bodyMedium,
         )
+        val asked = current
+        if (on && instant == null && asked != null && trouble == null) {
+            Text("Asking ${UnifiedPush.label(context, asked)} for this phone's address: they're collected until it gives one.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (on && instant == null) {
-            if (distributor == null) {
-                Text("For them to arrive at once, install a UnifiedPush distributor such as ntfy, then come back here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                TextButton(enabled = !busy, onClick = { act { Notices.makeInstant(context, it, distributor) } }) { Text("Make them instant, through ${UnifiedPush.label(context, distributor)}") }
+            when (distributors.size) {
+                0 -> {
+                    Text("For them to arrive at once, install a UnifiedPush distributor such as Sunup (it uses Mozilla's push service, nothing to set up) or ntfy, then come back here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://unifiedpush.org/users/distributors/"))) }) { Text("Find a distributor") }
+                }
+                1 -> TextButton(enabled = !busy, onClick = { act { Notices.makeInstant(context, it, distributors.single()) } }) { Text("Make them instant, through ${UnifiedPush.label(context, distributors.single())}") }
+                else -> {
+                    Text("Make them instant, through:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    for (d in distributors) TextButton(enabled = !busy, onClick = { act { Notices.makeInstant(context, it, d) } }) { Text(UnifiedPush.label(context, d)) }
+                }
+            }
+        }
+        // Instant through one of several: another may be chosen in its place.
+        if (on && instant != null && asked != null) {
+            for (d in distributors.filter { it != asked }) {
+                TextButton(enabled = !busy, onClick = { act { Notices.switchTo(context, it, d) } }) { Text("Switch to ${UnifiedPush.label(context, d)}") }
             }
         }
         trouble?.let { Text("Not instant: $it", style = MaterialTheme.typography.bodySmall, color = brand.needs) }

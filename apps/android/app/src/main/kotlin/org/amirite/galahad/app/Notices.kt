@@ -92,6 +92,16 @@ object Notices {
         UnifiedPush.register(context, distributor, vapid)
     }
 
+    /**
+     * Instant through another distributor than the one they come through now: collected meanwhile (so nothing is lost
+     * while the new one gives its endpoint), the old one told this phone is gone, the new one asked.
+     */
+    suspend fun switchTo(context: Context, client: NodeClient, distributor: String) {
+        turnOn(context, client)
+        UnifiedPush.unregister(context)
+        makeInstant(context, client, distributor)
+    }
+
     /** Off here, and on the node: it keeps and sends nothing more for this phone. */
     suspend fun turnOff(context: Context, client: NodeClient?) {
         stop(context)

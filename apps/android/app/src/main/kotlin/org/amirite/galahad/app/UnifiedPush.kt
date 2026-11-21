@@ -17,7 +17,8 @@ import org.amirite.galahad.core.WebPush
 
 /**
  * Instant notifications through UnifiedPush (the owner's word, 21 Nov; spec AND_3.1.0, unifiedpush.org): a distributor
- * app on this phone (ntfy, or another) keeps one connection to its push server for every app that uses it. This app
+ * app on this phone (Sunup, on Mozilla's push service; ntfy; or another) keeps one connection to its push server for
+ * every app that uses it. This app
  * registers with it and is given an endpoint, a URL on that server; the endpoint, with this phone's own Web Push key and
  * secret, is subscribed on the node as a browser's subscription is. The node encrypts each notification to that key (RFC
  * 8291), so the push server carries bytes it can't read; the distributor hands them here, and they're read and shown as
@@ -126,12 +127,15 @@ class PushReceiver : BroadcastReceiver() {
             }
             UnifiedPush.FAILED, UnifiedPush.UNREGISTERED -> {
                 UnifiedPush.ended(context)
-                // Back to collecting, if notifications are still on here.
+                // A distributor that hands this phone on to another (`useDistributor`, as the spec has it) is followed,
+                // if that one is here; otherwise back to collecting, if notifications are still on here.
+                val next = intent.getStringExtra("useDistributor")?.takeIf { intent.action == UnifiedPush.UNREGISTERED && it in UnifiedPush.distributors(context) }
                 val client = AppModel.of(context).client ?: return
                 val done = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         runCatching { Notices.turnOn(context, client) }
+                        if (next != null) runCatching { Notices.makeInstant(context, client, next) }
                     } finally {
                         done.finish()
                     }
