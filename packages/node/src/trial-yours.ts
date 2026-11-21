@@ -22,12 +22,14 @@ export const commandsFor = (c: Pick<YourCase, "record">): number => Math.max(150
  * engineer left is taken out as a patch against the commit and graded apart: the gates run in fresh sandboxes he never
  * had, and a program decides, gate by gate.
  *
- * A gate counts only when it proves something here: it fails on the commit as it was (one that passes before any
- * work proves nothing: PLAN #7), and it passes with the task's own verified change (one that change can't pass in a
- * fresh sandbox, for something its knight installed first, say, can't grade another's). Both are asked before any
- * model is paid; a case with no such gate isn't graded, and says why. A gate also fails when the change alters a test
- * file it names, as a quest's lock refuses one. The score is the share of counted gates passed, beside how the
- * trial's quest ended.
+ * A gate counts only when it proves something here: it fails on the commit with only the held-out tests put in place
+ * (the test files the task's own change adds or changes; one that passes before any work proves nothing: PLAN #7), and
+ * it passes with the task's own whole change (one that change can't pass in a fresh sandbox, for something its knight
+ * installed first, say, can't grade another's). Both are asked before any model is paid; a case with no such gate isn't
+ * graded, and says why. What the engineer left is graded with the held-out tests put back over whatever he left in
+ * them, so his version of those files doesn't count either way. A gate also fails when the change alters a test file it
+ * names that the task's own change didn't touch, as a quest's lock refuses one. The score is the share of counted gates
+ * passed, beside how the trial's quest ended.
  *
  * Nothing the mind learned goes with the quest (no archive, memories or skills): the archive keeps the task's own
  * change, and a memory or a skill may hold what the task taught. The checkout holds the commit and its history and
@@ -197,6 +199,15 @@ export interface GateRun {
   altered: string[][];
 }
 
+/** A patch put on a grading checkout, whole, or only some of its files (a held-out test put back, or left out). */
+interface PatchLayer {
+  patch: Uint8Array;
+  /** Apply only these files (none: the whole patch). */
+  only?: string[];
+  /** Leave these files out (none: nothing left out). */
+  except?: string[];
+}
+
 /** Commands that put bytes at a path in a sandbox, in pieces under the door's limit (base64 holds no quote). */
 function putBytes(bytes: Uint8Array, path: string): string[] {
   const text = Buffer.from(bytes).toString("base64");
@@ -218,12 +229,76 @@ async function keptPatch(node: CaseClient, artifact: string, what: string): Prom
   return bytes;
 }
 
+/** A path as git apply's --include and --exclude read it, a pattern: its `[`, `*`, `?` and `\\` stand for themselves. */
+const literally = (path: string): string => path.replace(/[\\*?[\]]/g, "\\$&");
+
+/** A path read as one shell word, so testFilesOf sees it whole (its spaces can't split it). */
+const oneWord = (path: string): string => `'${path.replace(/'/g, `'\\''`)}'`;
+
+/** Whether a path is a test file, by the same rule testFilesOf uses: the path read as one word after a program name. */
+const isTestFile = (path: string): boolean => testFilesOf(`cat ${oneWord(path)}`).includes(path);
+
+/** The new path of a `+++ ` line in a patch (`b/…`), unquoted; null for `/dev/null` and for lines that aren't one. */
+function patchNewPath(line: string): string | null {
+  if (!line.startsWith("+++ ")) return null;
+  const field = line.slice(4);
+  let path: string;
+  if (field.startsWith('"')) {
+    // Git's C-style quoting: a non-ASCII byte is octal, `"` and `\` are escaped; the bytes are UTF-8.
+    const end = field.lastIndexOf('"');
+    const body = field.slice(1, end < 0 ? field.length : end);
+    const bytes: number[] = [];
+    for (let i = 0; i < body.length; i++) {
+      const c = body[i]!;
+      if (c === "\\" && i + 1 < body.length) {
+        const next = body[i + 1]!;
+        if (/[0-7]/.test(next)) {
+          let oct = "";
+          let j = i + 1;
+          while (j < body.length && j < i + 4 && /[0-7]/.test(body[j]!)) {
+            oct += body[j]!;
+            j++;
+          }
+          bytes.push(parseInt(oct, 8));
+          i = j - 1;
+        } else {
+          bytes.push(next.charCodeAt(0));
+          i++;
+        }
+      } else {
+        bytes.push(c.charCodeAt(0));
+      }
+    }
+    path = Buffer.from(bytes).toString("utf8");
+  } else {
+    // A path may hold spaces: a tab ends it (the marker git puts after a path that could be misread).
+    const tab = field.indexOf("\t");
+    path = tab < 0 ? field : field.slice(0, tab);
+  }
+  if (path === "/dev/null") return null;
+  return path.startsWith("b/") ? path.slice(2) : path;
+}
+
 /**
- * The case's gates in a fresh sandbox of their own: the repository at the commit the task began from, with `patch`
- * put on it (null: as it was), and each gate run where its knight ran it. No model, and nothing of the engineer's but
- * the patch. Whatever keeps the gates from being run at all throws: a crash.
+ * The test files a patch adds or changes (its held-out tests), read from its `+++ b/…` headers and kept only when
+ * testFilesOf would name them. A deleted file (`+++ /dev/null`) holds nothing out.
  */
-async function gatesOn(node: CaseClient, c: YourCase, patch: Uint8Array | null, job: TrialJob): Promise<GateRun> {
+export function heldOutTestsOf(patch: Uint8Array): string[] {
+  const seen = new Set<string>();
+  for (const line of Buffer.from(patch).toString("utf8").split("\n")) {
+    const path = patchNewPath(line);
+    if (path && isTestFile(path)) seen.add(path);
+  }
+  return [...seen].sort();
+}
+
+/**
+ * The case's gates in a fresh sandbox of their own: the repository at the commit the task began from, with each layer
+ * of `layers` put on it in order, and each gate run where its knight ran it. No model, and nothing of the engineer's
+ * but the patches. `exempt` are the held-out test files: a gate that names one is not judged to have altered it.
+ * Whatever keeps the gates from being run at all throws: a crash.
+ */
+async function gatesOn(node: CaseClient, c: YourCase, job: TrialJob, layers: PatchLayer[], exempt: string[] = []): Promise<GateRun> {
   const { sandbox } = await node.call<{ sandbox: SandboxView }>("createSandbox", {
     network: job.network,
     quest: questId("g"),
@@ -234,18 +309,24 @@ async function gatesOn(node: CaseClient, c: YourCase, patch: Uint8Array | null, 
   const root = rootOf(c);
   try {
     await node.call("checkoutRepository", { id: sandbox.id, on: sandbox.node, repository: c.repository, commit: c.base, path: root });
-    let altered: string[][] = c.gates.map(() => []);
-    if (patch?.length) {
-      for (const command of putBytes(patch, PATCH)) {
+    for (let i = 0; i < layers.length; i++) {
+      const layer = layers[i]!;
+      if (!layer.patch.length) continue;
+      const patch = `${PATCH}.${i}`;
+      for (const command of putBytes(layer.patch, patch)) {
         const put = await exec(command, 120);
         if (put.exitCode !== 0) throw new Error(`the patch couldn't be put in the grading sandbox: ${(put.stderr || put.stdout).trim().slice(0, 300)}`);
       }
-      // What it changed of what was there (a test file it adds is new: one the work was to write).
-      const applied = await exec(`cd ${quote(root)} && git apply --whitespace=nowarn ${PATCH} && git diff --name-only`, 300);
+      const args = ["apply", "--whitespace=nowarn", ...(layer.only ?? []).map((f) => `--include=${quote(literally(f))}`), ...(layer.except ?? []).map((f) => `--exclude=${quote(literally(f))}`)];
+      const applied = await exec(`cd ${quote(root)} && git ${args.join(" ")} ${quote(patch)}`, 300);
       if (applied.exitCode !== 0) throw new Error(`the patch doesn't apply to ${c.base.slice(0, 12)}: ${(applied.stderr || applied.stdout).trim().slice(0, 300)}`);
-      const changed = new Set(applied.stdout.split("\n").map((line) => line.trim()).filter(Boolean));
-      altered = c.gates.map((gate) => testFilesOf(gate).filter((file) => changed.has(file)));
     }
+    // What the layers changed of what was there (a test file a patch adds is new: one the work was to write).
+    const changedRun = await exec(`cd ${quote(root)} && git add -A -N . && git diff --name-only`, 300);
+    if (changedRun.exitCode !== 0) throw new Error(`what the patch changed couldn't be listed: ${(changedRun.stderr || changedRun.stdout).trim().slice(0, 300)}`);
+    const changed = new Set(changedRun.stdout.split("\n").map((line) => line.trim()).filter(Boolean));
+    const exemptSet = new Set(exempt);
+    const altered = c.gates.map((gate) => testFilesOf(gate).filter((file) => changed.has(file) && !exemptSet.has(file)));
     const exits: number[] = [];
     for (const gate of c.gates) {
       if (job.signal?.aborted) throw new Error("stopped");
@@ -299,10 +380,13 @@ export async function attemptCase(node: CaseClient, c: YourCase, job: TrialJob):
     note: note.slice(0, 1000),
   });
   try {
-    // Which gates prove something here, asked before any model is paid. (When every one passes as it was, the
-    // task's own change can't make one count.)
-    const before = await gatesOn(node, c, null, job);
-    const withOwn = before.exits.some((exit) => exit !== 0) ? await gatesOn(node, c, await keptPatch(node, c.artifact, "the task's own change"), job) : before;
+    // Which gates prove something here, asked before any model is paid: each gate must fail on the commit with only
+    // the held-out tests (the test files the task's own change adds or changes) put in place, and pass with the whole
+    // change. (When every one passes as it was, the task's own change can't make one count.)
+    const ownPatch = await keptPatch(node, c.artifact, "the task's own change");
+    const heldOut = heldOutTestsOf(ownPatch);
+    const before = await gatesOn(node, c, job, heldOut.length ? [{ patch: ownPatch, only: heldOut }] : [], heldOut);
+    const withOwn = before.exits.some((exit) => exit !== 0) ? await gatesOn(node, c, job, ownPatch.length ? [{ patch: ownPatch }] : [], heldOut) : before;
     if (job.signal?.aborted) return null;
     const judged = judgeGates(c.gates, before, withOwn);
     counted = judged.counted;
@@ -359,7 +443,19 @@ export async function attemptCase(node: CaseClient, c: YourCase, job: TrialJob):
     if (unanswered) throw new Error(unanswered);
     quest = { status: outcome.status, steps: outcome.steps, revisions: outcome.revisions };
     if (!artifact) throw new Error("what was left in the repository wasn't kept");
-    const after = await gatesOn(node, c, await keptPatch(node, artifact.id, "what was left"), job);
+    const engineerPatch = await keptPatch(node, artifact.id, "what was left");
+    // What the engineer left, with the held-out tests put back over whatever it left in them (their version doesn't
+    // count either way); a test file it altered that the task's own change didn't touch still fails its gate.
+    const after = await gatesOn(
+      node,
+      c,
+      job,
+      [
+        ...(engineerPatch.length ? [{ patch: engineerPatch, except: heldOut }] : []),
+        ...(heldOut.length ? [{ patch: ownPatch, only: heldOut }] : []),
+      ],
+      heldOut,
+    );
     if (job.signal?.aborted) return null;
     const answers = counted.map((i) => answer(i, passes(after, i) ? 1 : 0));
     const note = [
