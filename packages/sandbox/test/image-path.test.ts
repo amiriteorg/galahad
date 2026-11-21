@@ -29,7 +29,12 @@ const afterScript = async (path: string, times = 1): Promise<string> => {
 };
 
 test("the image puts tools on the PATH (or there is nothing here to hold together)", () => {
-  expect(imagePath("BASE").split(":")).toEqual(["/opt/engram/bin", "/opt/opencode/bin", "/opt/bun/bin", "BASE", "/work/.local/bin"]);
+  expect(imagePath("BASE").split(":")).toEqual(["/opt/engram/bin", "/opt/opencode/bin", "/opt/node/bin", "/opt/bun/bin", "BASE", "/work/.local/bin"]);
+});
+
+test("what npm installs globally goes to the workspace, where the knight's PATH finds it: the image is read-only", () => {
+  expect(dockerfile).toContain("ENV NPM_CONFIG_PREFIX=/work/.local\n");
+  expect(imagePath("BASE").split(":")).toContain("/work/.local/bin");
 });
 
 test("what a knight's VM has installed for itself (~/.local/bin, kept with its workspace) is found, and last: it can't stand in for a tool the image or the system has", async () => {

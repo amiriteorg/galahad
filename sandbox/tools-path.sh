@@ -3,7 +3,7 @@
 # of `bun test` exits 127 in a knight's VM. Each directory the Dockerfile puts on the PATH is put back here,
 # in the Dockerfile's order, unless it is there already (a login shell started from another).
 # packages/sandbox/test/image-path.test.ts holds this and the Dockerfile together.
-for dir in /opt/bun/bin /opt/opencode/bin /opt/engram/bin; do
+for dir in /opt/bun/bin /opt/node/bin /opt/opencode/bin /opt/engram/bin; do
   case ":$PATH:" in
     *":$dir:"*) ;;
     *) PATH="$dir:$PATH" ;;

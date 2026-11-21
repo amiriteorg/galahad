@@ -16,6 +16,21 @@ RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.4" && chmod -R a+rX /o
 # The platform it is built for, as BuildKit says: amd64 on Ultra, arm64 on a Mac (container build
 # --platform linux/arm64). A builder that doesn't say builds for amd64, as before.
 ARG TARGETARCH
+# Node.js, its long-term-support release, for what a repository's own scripts and gates run with it (`npm test`,
+# `npx tsc`, `node build.js`): bun is no node. On 19 and 21 November 2026 real tasks' gates exited 127 for want of it
+# (a knight installed it in its VM itself; a trial of its task couldn't be graded). Pinned, and checked against the
+# SHA-256 in that release's SHASUMS256.txt, whose signature by a Node release key was checked when it was pinned
+# (26.13.1, the 10 November security release). Global installs go to the workspace: the image is read-only.
+ARG NODE_VERSION=26.13.1
+ARG NODE_SHA256=518674de2b621728a5e4486f5fb3b7d2900bb3cc4aa97969edaa463db99f9778
+ARG NODE_SHA256_ARM64=80a330b35415382878df18d41afbd106ea89bfb3be0087d6608e289a14c5cc7d
+RUN case "${TARGETARCH:-amd64}" in amd64) asset=x64 sum="${NODE_SHA256}" ;; arm64) asset=arm64 sum="${NODE_SHA256_ARM64}" ;; *) echo "no Node.js is pinned for ${TARGETARCH}" >&2; exit 1 ;; esac \
+ && curl -fsSL -o /tmp/node.tgz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${asset}.tar.gz" \
+ && echo "${sum}  /tmp/node.tgz" | sha256sum -c - \
+ && mkdir -p /opt/node && tar -xzf /tmp/node.tgz -C /opt/node --strip-components=1 \
+ && chmod -R a+rX /opt/node && rm /tmp/node.tgz
+ENV PATH=/opt/node/bin:$PATH
+ENV NPM_CONFIG_PREFIX=/work/.local
 
 # OpenCode, the coding agent for long quests (galahad do --agent opencode). Pinned, and
 # checked against its SHA-256 for the platform (each GitHub's own digest of the asset); it
