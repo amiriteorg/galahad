@@ -97,12 +97,15 @@ describe("a driver and the notes store", () => {
    * was made again on 19 November 2026, when its bridge came to share Galahad's ACP client (acp.ts): its text, not its
    * protocol or what it does (hermes.test.ts, and the real Hermes 0.21.1's check); and again that day, when its run lost
    * the tool budget and time limit of its own that a knight's never has (an asked-for one still holds: hermes.test.ts).
+   * Claude Code's and Codex's were made again on 21 November 2026, when Codex came to say its plan's spent allowance as
+   * Claude Code says one, both bridges sharing the words for when it resets: their text (vendor-cli.test.ts), not what
+   * either runs or writes.
    */
   const BEFORE: Record<string, string> = {
     opencode: "2a533082929650be330eb0ee7397582382a74884cb93250708e9b4688c884fe7",
     hermes: "999c1f0048099249e548e34b7ece5708db0bc8ae51fe7c528f67a3f3a621d98a",
-    claude: "c3ba99c9fc00e7bbc58d3f61b8ca366376feb8952821af6aafed7f54d4f22cc2",
-    codex: "8b06f3b9553ca2e6e59d08785f03106dfd40a9e3b83d9e4f2adca7bcbbbcc696",
+    claude: "21af2ea71dbfb2646ca1f0b0639d81a3fdd1bd6b796658fd85f50c0def23af43",
+    codex: "b624050817d480c239da45f63dedc9f0ba70cd354599fe5e54d02476d006dc28",
   };
 
   test("without a notes project, every driver writes and runs byte for byte what it did before there was a store", () => {

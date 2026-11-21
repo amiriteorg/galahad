@@ -73,6 +73,15 @@ def count(usage, *names):
     values = [usage.get(name) for name in names] if isinstance(usage, dict) else []
     return sum(v for v in values if type(v) is int and v > 0)
 
+# When a spent allowance resets (seconds or ms since the epoch), as both tools' are said.
+def resets(at):
+    if type(at) not in (int, float) or at <= 0:
+        return ""
+    try:
+        return "; it resets " + time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(at / 1000 if at > 100000000000 else at))
+    except (OverflowError, OSError, ValueError):
+        return ""
+
 def own_path(env):
     # (Where a vendor's installer puts its tool for one user, whatever the shell's profile says.)
     env["PATH"] = os.path.join(os.path.expanduser("~"), ".local", "bin") + os.pathsep + env.get("PATH", "")
@@ -252,14 +261,6 @@ def call_input(value):
         return value["command"]
     return as_text(value)
 
-def resets(at):
-    if type(at) not in (int, float) or at <= 0:
-        return ""
-    try:
-        return "; it resets " + time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(at / 1000 if at > 100000000000 else at))
-    except (OverflowError, OSError, ValueError):
-        return ""
-
 class Reader:
     def __init__(self):
         self.session, self.told, self.calls, self.said = None, False, {}, ""
@@ -351,6 +352,24 @@ def through_gateway(env, base, token, model):
         extra += ["-c", "model_providers.galahad." + key + "=" + json.dumps(value)]
     return extra
 
+# Its plan's allowance spent, in its own words: "You've hit your usage limit. … try again at 3:45 PM." (0.169.0 writes
+# You’ve, and the day too when it isn't today: "at Nov 23rd, 2026 8:11 PM", by this VM's clock). Said as Claude Code's
+# is, without the offers around it, and when it resets in UTC where it gave a time.
+LIMIT = re.compile("You['’]ve hit your usage limit")
+AGAIN = re.compile(r"try again at (?:([A-Z][a-z]{2}) (\d{1,2})(?:st|nd|rd|th), (\d{4}) )?(\d{1,2}):(\d{2}) ([AP]M)")
+
+def spent(message):
+    if not LIMIT.search(message):
+        return ""
+    at, when = AGAIN.search(message), ""
+    if at:
+        try:
+            day = " ".join(at.group(1, 2, 3)) if at.group(1) else time.strftime("%b %d %Y")
+            when = resets(time.mktime(time.strptime("%s %s:%s %s" % (day, at.group(4), at.group(5), at.group(6)), "%b %d %Y %I:%M %p")))
+        except (OverflowError, ValueError):
+            when = ""
+    return NAME + "'s allowance is spent" + when
+
 def arguments(args, extra):
     argv = [TOOL, "exec"] + (["resume"] if args.session else [])
     argv += ["--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check"] + extra
@@ -397,13 +416,13 @@ class Reader:
         elif kind == "turn.failed":
             error = e.get("error")
             message = error.get("message") if isinstance(error, dict) and isinstance(error.get("message"), str) else ""
-            self.failed = NAME + " stopped: " + clip(message or self.trouble or "its turn failed", 600)
+            self.failed = spent(message or self.trouble) or NAME + " stopped: " + clip(message or self.trouble or "its turn failed", 600)
         elif kind == "error" and isinstance(e.get("message"), str):
             # Not always the end (a reconnection is told this way too): it is, if no turn completes after it.
             self.trouble = e["message"]
 
     def verdict(self):
-        return self.failed or (NAME + " stopped: " + clip(self.trouble, 600) if self.trouble else "")
+        return self.failed or (spent(self.trouble) or NAME + " stopped: " + clip(self.trouble, 600) if self.trouble else "")
 `;
 
 export const CLAUDE_BRIDGE = `${SHARED}${CLAUDE_PART}${MAIN}`;

@@ -162,6 +162,13 @@ elif prompt == "spent":
     out({"type": "error", "message": LIMIT})
     out({"type": "turn.failed", "error": {"message": LIMIT}})
     sys.exit(1)
+elif prompt == "spent until another day":
+    # As 0.169.0 said it (21 Nov 2026, against a stand-in for its plan's endpoint).
+    again = "You\u2019ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at Nov 23rd, 2026 8:11 PM."
+    out(started); out(turn)
+    out({"type": "error", "message": again})
+    out({"type": "turn.failed", "error": {"message": again}})
+    sys.exit(1)
 elif prompt == "spent midway":
     out(started); out(turn); out(hello); out(ran)
     out({"type": "turn.failed", "error": {"message": LIMIT}})
@@ -486,13 +493,19 @@ describe("Codex, on its own sign-in", () => {
     expect(run.events.some((event) => event.type === "text" && event.text.startsWith("yyy"))).toBe(true);
   });
 
-  test("a spent allowance (turn.failed, error) ends the run as failed in the tool's own words, which say when to try again", async () => {
-    const atStart = await vm("codex").run(OWN, "spent");
+  test("a spent allowance (turn.failed, error) ends the run as failed, said as Claude Code's is, with when it resets in UTC", async () => {
+    // Its words give a time by the VM's clock: here an hour ahead of UTC (a POSIX zone, which needs no zone database).
+    const box = vm("codex");
+    box.env.TZ = "CET-1";
+    const atStart = await box.run(OWN, "spent");
     expect(atStart.exit).toBe(1);
     // Nothing was answered: there is no session to continue.
     expect(atStart.events.map((event) => event.type)).toEqual(["error"]);
     const said = atStart.events[0]!;
-    expect(said.type === "error" && said.message).toMatch(/^Codex stopped: You've hit your usage limit\..*try again at 3:45 PM\.$/);
+    expect(said.type === "error" && said.message).toMatch(/^Codex's allowance is spent; it resets \d{4}-\d{2}-\d{2} 14:45 UTC$/);
+    // Another day's reset, in 0.169.0's words (its apostrophe curly), and without the offers around it.
+    const later = await box.run(OWN, "spent until another day");
+    expect(later.events).toEqual([{ type: "error", message: "Codex's allowance is spent; it resets 2026-11-23 19:11 UTC" }]);
     const midway = await vm("codex").run(OWN, "spent midway");
     expect(midway.exit).toBe(1);
     expect(midway.events[0]).toEqual({ type: "session", id: SESSION });
