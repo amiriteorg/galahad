@@ -61,7 +61,9 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
     val table by app.table.collectAsState()
     val problem by app.problem.collectAsState()
     val paired by app.paired.collectAsState()
+    val usage by app.usage.collectAsState()
     var giving by remember { mutableStateOf(false) }
+    var usageOpen by remember { mutableStateOf(false) }
     // The last Roundtable this phone saw is drawn at once (app/KeptTable.kt). If the node hasn't answered in a moment,
     // a still line says what you're looking at, the node away or not; on a quick answer it never shows, so nothing comes
     // and goes.
@@ -97,6 +99,8 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
                 Text("As your node last said it, $ago. Asking it again.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = Space.margin))
             }
         }
+        // What the model calls came to, against your budget (the iPhone's meter, at the head of its Roundtable).
+        usage?.let { m -> item { UsageLine(m) { usageOpen = true } } }
         if (table.snapshot == null && problem == null) item {
             Text("Asking your node…", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(Space.margin))
         }
@@ -131,6 +135,7 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
         item { Spacer(Modifier.height(Space.s10)) }
     }
     if (giving) GiveDialog(app) { giving = false }
+    if (usageOpen) usage?.let { UsageDialog(app, it) { usageOpen = false } }
 }
 
 /**

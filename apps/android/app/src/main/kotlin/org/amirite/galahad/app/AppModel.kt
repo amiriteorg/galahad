@@ -19,6 +19,7 @@ import org.amirite.galahad.core.NodeError
 import org.amirite.galahad.core.Roster
 import org.amirite.galahad.core.RosterRow
 import org.amirite.galahad.core.Snapshot
+import org.amirite.galahad.core.UsageMeter
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
 import org.amirite.galahad.core.list
@@ -132,6 +133,10 @@ class AppModel(context: Context) {
     private val _inbox = MutableStateFlow(Inbox())
     val inbox: StateFlow<Inbox> = _inbox.asStateFlow()
 
+    /** This period's model calls at your prices, against your budget (null: not read yet, or a node from before the meter). */
+    private val _usage = MutableStateFlow<UsageMeter?>(null)
+    val usage: StateFlow<UsageMeter?> = _usage.asStateFlow()
+
     /** The last thing that went wrong asking the node (null: the last ask was answered). */
     private val _problem = MutableStateFlow<NodeError?>(null)
     val problem: StateFlow<NodeError?> = _problem.asStateFlow()
@@ -225,6 +230,15 @@ class AppModel(context: Context) {
         scope.launch { refresh() }
     }
 
+    /**
+     * Your budget for the node's model calls (a line to watch, never a stop): a day's or a month's, or none. None goes as
+     * null, never left out: the node takes null for no budget.
+     */
+    suspend fun setBudget(usd: Double?, per: String) {
+        val c = client ?: return
+        c.post("/api/usage/budget", Json.Obj(linkedMapOf("usd" to Json.of(usd), "per" to Json.of(per)))).let(UsageMeter::of)?.let { _usage.value = it }
+    }
+
     /** Forget the node here: the key goes too, so this phone's old id is no longer anyone's. */
     fun forget() {
         Notices.stop(appContext)
@@ -237,6 +251,7 @@ class AppModel(context: Context) {
         client = null
         _table.value = Table()
         _inbox.value = Inbox()
+        _usage.value = null
         chat.reset()
     }
 
@@ -271,7 +286,8 @@ class AppModel(context: Context) {
             val about = async { attempt { c.get("/api/about-you") } }
             val notices = async { attempt { c.get("/api/notices") } }
             val screens = async { attempt { c.get("/api/screen/sessions") } }
-            val got = listOf(team, actions, questions, keys, pairings, turns, about, notices, screens).map { it.await() }
+            val usage = async { attempt { c.get("/api/usage/meter") } }
+            val got = listOf(team, actions, questions, keys, pairings, turns, about, notices, screens, usage).map { it.await() }
             val failure = got.firstNotNullOfOrNull { it.exceptionOrNull() as? NodeError }
             _problem.value = if (got[0].isSuccess) null else failure
 
@@ -285,6 +301,7 @@ class AppModel(context: Context) {
                 screens = got[8].getOrNull()?.let { Inbox.live(it["sessions"].list) } ?: _inbox.value.screens,
             )
             _inbox.value = inbox
+            got[9].getOrNull()?.let(UsageMeter::of)?.let { _usage.value = it }
             val turnsJson = got[5].getOrNull()
             val asks = inbox.actions.map { Ask(it["by"].string ?: "", it["connector"].string, it["tool"].string) }
             _table.value = _table.value.after(got[0].getOrNull()?.let(Snapshot::of), turnsJson, asks, inbox.count, System.currentTimeMillis())
