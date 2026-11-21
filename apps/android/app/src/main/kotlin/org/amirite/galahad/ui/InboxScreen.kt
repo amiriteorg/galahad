@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.app.Inbox
@@ -52,12 +53,13 @@ import org.amirite.galahad.core.string
 import org.amirite.galahad.core.text
 
 /**
- * What only you can answer: approvals (read what it would do, then yes or no; no answer before it expires is no),
- * services' questions, keys a knight or Galahad asked for, and devices asking to join. Each answer goes to the node at
- * once, signed by this phone's key; nothing here is answered for you.
+ * What only you can answer, as the iPhone's Inbox has it and in its order: devices asking to join, services' questions,
+ * his use of a Mac itself, approvals (read what it would do, then yes or no; no answer before it expires is no), keys a
+ * knight or Galahad asked for, the facts he noticed about you, and what your node noticed. Each answer goes to the node
+ * at once, signed by this phone's key; nothing here is answered for you. [watch]: a Mac he is using, by its node.
  */
 @Composable
-fun InboxScreen(app: AppModel) {
+fun InboxScreen(app: AppModel, watch: (node: String) -> Unit) {
     val inbox by app.inbox.collectAsState()
     val table by app.table.collectAsState()
     var said by remember { mutableStateOf<String?>(null) }
@@ -80,14 +82,6 @@ fun InboxScreen(app: AppModel) {
         if (inbox.count == 0) {
             item { Text("Nothing needs you.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(Space.margin)) }
         }
-        if (inbox.actions.isNotEmpty()) item { SectionTitle("Approvals") }
-        items(inbox.actions, key = { "a:${it["id"].string}" }) { a -> Approval(a, asker(a["by"].string ?: "")) { approve -> act { app.decide(a["id"].string!!, approve) } } }
-        if (inbox.questions.isNotEmpty()) item { SectionTitle("Questions") }
-        items(inbox.questions, key = { "q:${it["id"].string}" }) { q -> Question(q) { accept, content -> act { app.answerQuestion(q["id"].string!!, accept, content) } } }
-        if (inbox.keys.isNotEmpty()) item { SectionTitle("Keys asked for") }
-        items(inbox.keys, key = { "k:${it["name"].string}" }) { k ->
-            KeyAsked(k, asker(k["requestedBy"].string ?: ""), seal = { value -> act { app.sealKey(k["name"].string!!, value, k["provider"].string) } }, dismiss = { act { app.dismissKey(k["name"].string!!) } })
-        }
         if (inbox.pairings.isNotEmpty()) item { SectionTitle("Devices asking to join") }
         items(inbox.pairings, key = Inbox::pairingKey) { p ->
             Panel {
@@ -106,6 +100,29 @@ fun InboxScreen(app: AppModel) {
                 )
             }
         }
+        if (inbox.questions.isNotEmpty()) item { SectionTitle("Services ask you") }
+        items(inbox.questions, key = { "q:${it["id"].string}" }) { q -> Question(q) { accept, content -> act { app.answerQuestion(q["id"].string!!, accept, content) } } }
+        if (inbox.screens.isNotEmpty()) item { SectionTitle("His use of a Mac itself") }
+        items(inbox.screens, key = { "s:${it["id"].string}" }) { s ->
+            MacSession(
+                s,
+                answer = { allow -> act { app.decideScreen(s["id"].string!!, allow) } },
+                end = { act { app.endScreen(s["id"].string!!) } },
+                watch = { s["node"].string?.let(watch) },
+            )
+        }
+        if (inbox.actions.isNotEmpty()) item { SectionTitle("Waiting for your approval") }
+        items(inbox.actions, key = { "a:${it["id"].string}" }) { a -> Approval(a, asker(a["by"].string ?: "")) { approve -> act { app.decide(a["id"].string!!, approve) } } }
+        if (inbox.keys.isNotEmpty()) item { SectionTitle("Keys Galahad asked for") }
+        items(inbox.keys, key = { "k:${it["name"].string}" }) { k ->
+            KeyAsked(k, asker(k["requestedBy"].string ?: ""), seal = { value -> act { app.sealKey(k["name"].string!!, value, k["provider"].string) } }, dismiss = { act { app.dismissKey(k["name"].string!!) } })
+        }
+        if (inbox.facts.isNotEmpty()) item { SectionTitle("Facts he noticed about you") }
+        items(inbox.facts, key = { "f:${it["id"].string}" }) { f ->
+            Fact(f, keep = { words -> act { app.keepFact(f["id"].string!!, words) } }, drop = { act { app.dropFact(f["id"].string!!) } })
+        }
+        if (inbox.notices.isNotEmpty()) item { SectionTitle("Noticed") }
+        items(inbox.notices, key = { "n:${it["key"].string}" }) { n -> Notice(n) { act { app.dismissNotice(n["key"].string!!) } } }
         item { Spacer(Modifier.height(Space.s10)) }
     }
 }
@@ -228,6 +245,96 @@ private fun KeyAsked(k: Json, who: String, seal: (String) -> Unit, dismiss: () -
             dismissButton = { TextButton(onClick = { value = ""; adding = false }) { Text("Cancel") } },
         )
     }
+}
+
+/**
+ * His ask to use a Mac itself, or his session on one now: what for, for how long, and your answer (the iPhone's words).
+ * Letting him asks once more, saying what it means: that account holds the node's keys.
+ */
+@Composable
+private fun MacSession(s: Json, answer: (Boolean) -> Unit, end: () -> Unit, watch: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    val name = s["nodeName"].string ?: "a Mac"
+    val minutes = s["minutes"].long ?: 0
+    val allowed = s["state"].string == "allowed"
+    Panel {
+        Text(if (allowed) "Galahad is using $name itself" else "Galahad asks to use $name itself", style = MaterialTheme.typography.titleMediumEmphasized)
+        s["why"].string?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        Text(
+            if (allowed) "Until ${clock(s["until"].long)}, or until you end it." else "For $minutes minutes, if you let him. Answer by ${clock(s["answerBy"].long)}.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (allowed) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                OutlinedButton(onClick = watch) { Text("Watch") }
+                TextButton(onClick = end) { Text("End now", color = LocalBrand.current.failed) }
+            }
+        } else {
+            Decision(no = "Not now", yes = "Let him…", onNo = { answer(false) }, onYes = { confirming = true })
+        }
+    }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Let Galahad use $name itself?") },
+            text = { Text("For $minutes minutes from now he sees its screen, uses its apps and runs commands as its user, held to your rules. That account holds the node's keys: let him only for work you want done that way.") },
+            confirmButton = { TextButton(onClick = { confirming = false; answer(true) }) { Text("Let him, for $minutes minutes") } },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+/** A fact he noticed about you: kept as he said it or in your words (then it goes with every answer of his), or dropped. */
+@Composable
+private fun Fact(f: Json, keep: (String?) -> Unit, drop: () -> Unit) {
+    var rewording by remember { mutableStateOf(false) }
+    Panel {
+        Text(f["text"].string ?: "", style = MaterialTheme.typography.bodyLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.s2), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = { keep(null) }) { Text("Keep") }
+            OutlinedButton(onClick = { rewording = true }) { Text("In my words") }
+            TextButton(onClick = drop) { Text("Drop", color = LocalBrand.current.failed) }
+        }
+    }
+    if (rewording) {
+        var words by remember { mutableStateOf(f["text"].string ?: "") }
+        AlertDialog(
+            onDismissRequest = { rewording = false },
+            title = { Text("In your words") },
+            text = { OutlinedTextField(value = words, onValueChange = { words = it }, label = { Text("About you") }, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = { TextButton(enabled = words.isNotBlank(), onClick = { rewording = false; keep(words.trim()) }) { Text("Keep") } },
+            dismissButton = { TextButton(onClick = { rewording = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+/** What the heartbeat, a loop or a rule of yours noticed: its words (a command it names in monospace), from where, when. */
+@Composable
+private fun Notice(n: Json, dismiss: () -> Unit) {
+    val brand = LocalBrand.current
+    val tone = when (n["severity"].string) { "alert" -> brand.failed; "warn" -> brand.needs; else -> MaterialTheme.colorScheme.onSurfaceVariant }
+    Panel {
+        // (The dot beside the title's first line, however many it takes.)
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+            androidx.compose.foundation.layout.Box(Modifier.padding(top = 8.dp)) { Dot(tone) }
+            Text(n["title"].string ?: "", style = MaterialTheme.typography.titleMediumEmphasized)
+        }
+        for (line in (n["body"].string ?: "").split("\n")) {
+            if (line.startsWith("$ ")) Text(line, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+            else if (line.isNotBlank()) Text(line, style = MaterialTheme.typography.bodyMedium)
+        }
+        val ago = (System.currentTimeMillis() - (n["at"].long ?: System.currentTimeMillis())).coerceAtLeast(0)
+        Text("${Inbox.from(n["source"].string ?: "")} · ${if (ago < 60_000) "just now" else "${within(ago)} ago"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = dismiss) { Text("Dismiss") }
+    }
+}
+
+/** A time of day, as this phone says them (its own clock: 24-hour or not). */
+@Composable
+private fun clock(ms: Long?): String {
+    if (ms == null) return "soon"
+    return android.text.format.DateFormat.getTimeFormat(androidx.compose.ui.platform.LocalContext.current).format(java.util.Date(ms))
 }
 
 /** A while, as it's said: minutes under an hour, hours under two days, else days. */

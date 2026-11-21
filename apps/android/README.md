@@ -5,20 +5,23 @@ the Apple app is Apple's. It pairs the way the PWA and the Apple app do and sign
 `packages/core` verifies it, with a device key made in the phone's secure hardware (the Keystore: StrongBox where the
 phone has one) that never leaves it.
 
-It's small on purpose: a signed release is about 2.6 MB, nearly all of it the code, the rest the knights as the owner
+It's small on purpose: a signed release is about 3 MB, nearly all of it the code, the rest the knights as the owner
 drew them, packaged straight from `apps/web/src/knights` (never copied or redrawn). It needs no Google services: HTTP,
 JSON and the cryptography are what Android ships, and the only libraries are AndroidX's Compose, activity-compose and
 profile installer, and Kotlin's coroutines. Nothing moves by itself: a knight's state is a still ring and a word.
 
-What it does today (first milestone, 20 November 2026): join your node with an invite and the six-digit code; the
-Roundtable, Galahad first, each knight in its state's ring with one line of what it's doing (the same line the PWA and
-the iPhone show: the roster is ported and held to the same parity vectors); Galahad's chat, his answer streamed as he
-writes it, with his answer blocks drawn (charts, figures, steps, choices to tap, pages in a sandboxed viewer); a
-knight's page, its timeline, and a box to write to it or give it a task; the Inbox (approvals, services' questions,
-keys asked for, devices asking to join); and while you were away. More says when a newer build is out (it asks
-galahad.sh's `android/latest.json` at most once a day, sending nothing of yours) and downloads it from GitHub's releases;
-it installs over the last because every build is signed with the same key. Not yet: notifications (Android has no route of the
-node's own yet), a knight's screen and terminal, connectors, the Keys page, files in chat.
+What it does (21 November 2026): join your node with an invite and the six-digit code; the Roundtable, Galahad first,
+each knight in its state's ring with one line of what it's doing (the same line the PWA and the iPhone show: the roster
+is ported and held to the same parity vectors), and your rooms; Galahad's chat, his answer streamed as he writes it, with
+his answer blocks drawn (charts, figures, steps, choices to tap, pages in a sandboxed viewer), photos and text files sent
+with a message, and anything shared to the app from another; a knight's page: its timeline, a box to write to it or
+give it a task, Stop, Resume and Ship, pausing it, its terminal and its desktop; the Inbox, as the iPhone's has it
+(devices asking to join, services' questions, his use of a Mac itself, approvals, keys asked for, facts he noticed about
+you, and what your node noticed); while you were away; and More: notifications (instant through a UnifiedPush
+distributor such as Sunup or ntfy, encrypted to the phone, or collected from the node every fifteen minutes or so),
+your keys, your connectors and the library of services' own MCP servers. More also says when a newer build is out (it
+asks galahad.sh's `android/latest.json` at most once a day, sending nothing of yours) and downloads it from GitHub's
+releases; it installs over the last because every build is signed with the same key. Not yet: Google Play.
 
 Needs JDK 17 and the Android SDK (platform 37, build tools); Gradle comes with the wrapper (its checksum pinned).
 

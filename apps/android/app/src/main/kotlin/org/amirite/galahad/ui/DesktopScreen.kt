@@ -60,10 +60,11 @@ import org.amirite.galahad.core.int
  * A knight's screen, watched and taken over (the PWA's desktop viewer, the Apple app's KnightScreenView): a picture of
  * its desktop, asked for about every two seconds while it is on screen and the app is in front, and what you do there.
  * A tap on the picture clicks at that place on the knight's screen; text is typed (and never written to the ledger); a
- * key, an address and scrolling are one press each. Each thing done brings back the screen as it then is.
+ * key, an address and scrolling are one press each. Each thing done brings back the screen as it then is. [onMac]: [id]
+ * is a Mac's node, and the screen is the Mac's own, while Galahad is let use it (the Inbox's session).
  */
 @Composable
-fun DesktopScreen(app: AppModel, id: String, name: String, back: () -> Unit) {
+fun DesktopScreen(app: AppModel, id: String, name: String, onMac: Boolean = false, back: () -> Unit) {
     val scope = rememberCoroutineScope()
     val front by app.front.collectAsState()
     var shot by remember { mutableStateOf<Json?>(null) }
@@ -84,7 +85,7 @@ fun DesktopScreen(app: AppModel, id: String, name: String, back: () -> Unit) {
         sending = true
         if (action != null) status = "Sending…"
         try {
-            val next = client.post("/api/team/desktop", Json.obj("id" to id, "action" to action))
+            val next = if (onMac) client.post("/api/screen/desktop", Json.obj("on" to id, "action" to action)) else client.post("/api/team/desktop", Json.obj("id" to id, "action" to action))
             val bytes = Desktop.picture(next)
             val image = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
             if (image == null) {
@@ -98,7 +99,8 @@ fun DesktopScreen(app: AppModel, id: String, name: String, back: () -> Unit) {
             }
         } catch (e: NodeError) {
             // Nothing more is asked until you ask: a refusal is said once, not every two seconds.
-            if (Desktop.saysNoDesktop(e)) noDesktop = true else problem = e.message
+            // (A Mac's refusal says what it is in its own words: it has no VM to make again.)
+            if (!onMac && Desktop.saysNoDesktop(e)) noDesktop = true else problem = e.message
             status = if (shot == null) "Not seen" else "As it was last seen"
         } finally {
             sending = false

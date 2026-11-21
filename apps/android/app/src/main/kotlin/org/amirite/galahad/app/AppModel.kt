@@ -19,6 +19,7 @@ import org.amirite.galahad.core.NodeError
 import org.amirite.galahad.core.Roster
 import org.amirite.galahad.core.RosterRow
 import org.amirite.galahad.core.Snapshot
+import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
 import org.amirite.galahad.core.list
 import org.amirite.galahad.core.string
@@ -38,16 +39,36 @@ data class PairedNode(val origin: String, val device: String, val name: String, 
     }
 }
 
-/** What the Inbox holds: what only you can answer. */
+/** What the Inbox holds: what only you can answer, and what your node told you. As the iPhone's Inbox holds it. */
 data class Inbox(
     val actions: List<Json> = emptyList(),
     val questions: List<Json> = emptyList(),
     val keys: List<Json> = emptyList(),
     val pairings: List<Json> = emptyList(),
+    /** Facts about you he proposed, waiting for you (what you keep goes with every answer of his). */
+    val facts: List<Json> = emptyList(),
+    /** What the heartbeat, a loop or a rule of yours told you, still open. */
+    val notices: List<Json> = emptyList(),
+    /** His asks to use a Mac itself, and his sessions on one now. */
+    val screens: List<Json> = emptyList(),
 ) {
-    val count: Int get() = actions.size + questions.size + keys.size + pairings.size
+    val count: Int get() = actions.size + questions.size + keys.size + pairings.size + facts.size + notices.size + screens.size
 
     companion object {
+        /** The notices still open: one you dismissed stays quiet until it changes. */
+        fun open(notices: List<Json>): List<Json> = notices.filter { it["dismissed"].bool != true }
+
+        /** His sessions on a Mac that are yours to answer or end: asked and waiting, or allowed and under way. */
+        fun live(screens: List<Json>): List<Json> = screens.filter { it["state"].string == "waiting" || it["state"].string == "allowed" }
+
+        /** Where a notice came from, as you'd say it: `rule:pushes` is "Your rule pushes" (the iPhone's words). */
+        fun from(source: String): String {
+            val kind = source.substringBefore(':', "")
+            val name = source.substringAfter(':', "")
+            if (name.isNotEmpty()) mapOf("rule" to "Your rule", "loop" to "The loop")[kind]?.let { return "$it $name" }
+            return mapOf("heartbeat" to "The heartbeat", "ci" to "CI", "compute" to "His compute")[source] ?: source
+        }
+
         /**
          * A device asking to join, as the Inbox's list tells one apart from another: by its invite and its key together,
          * since one device may ask again with a new invite while its first ask still waits.
@@ -178,7 +199,10 @@ class AppModel(context: Context) {
             val keys = async { attempt { c.get("/api/secret-requests") } }
             val pairings = async { attempt { c.get("/api/pairings") } }
             val turns = async { attempt { c.get("/api/turns") } }
-            val got = listOf(team, actions, questions, keys, pairings, turns).map { it.await() }
+            val about = async { attempt { c.get("/api/about-you") } }
+            val notices = async { attempt { c.get("/api/notices") } }
+            val screens = async { attempt { c.get("/api/screen/sessions") } }
+            val got = listOf(team, actions, questions, keys, pairings, turns, about, notices, screens).map { it.await() }
             val failure = got.firstNotNullOfOrNull { it.exceptionOrNull() as? NodeError }
             _problem.value = if (got[0].isSuccess) null else failure
 
@@ -187,6 +211,9 @@ class AppModel(context: Context) {
                 questions = got[2].getOrNull()?.let { it["questions"].list } ?: _inbox.value.questions,
                 keys = got[3].getOrNull()?.let { it["requests"].list } ?: _inbox.value.keys,
                 pairings = got[4].getOrNull()?.let { it["pairings"].list } ?: _inbox.value.pairings,
+                facts = got[6].getOrNull()?.let { it["proposed"].list } ?: _inbox.value.facts,
+                notices = got[7].getOrNull()?.let { Inbox.open(it["notices"].list) } ?: _inbox.value.notices,
+                screens = got[8].getOrNull()?.let { Inbox.live(it["sessions"].list) } ?: _inbox.value.screens,
             )
             _inbox.value = inbox
             val turnsJson = got[5].getOrNull()
@@ -240,6 +267,36 @@ class AppModel(context: Context) {
     /** Another device asking to join: yours to let in, once its code matches the one it shows. */
     suspend fun answerPairing(invite: String, device: String, approve: Boolean) {
         client?.post(if (approve) "/api/pairings/approve" else "/api/pairings/reject", Json.obj("invite" to invite, "device" to device))
+        refresh()
+    }
+
+    /** Keeps a fact he proposed, in your words if you give them: it goes with every answer of his from then on. */
+    suspend fun keepFact(id: String, text: String? = null) {
+        client?.post("/api/about-you/keep", Json.obj("id" to id, "text" to text?.trim()?.ifBlank { null }))
+        refresh()
+    }
+
+    /** Drops a fact he proposed: it was only his note, and it goes with no answer. */
+    suspend fun dropFact(id: String) {
+        client?.post("/api/memories/forget", Json.obj("id" to id))
+        refresh()
+    }
+
+    /** Your answer to his ask to use a Mac itself: his for its minutes from now, or not. */
+    suspend fun decideScreen(id: String, allow: Boolean) {
+        client?.post("/api/screen/decide", Json.obj("id" to id, "allow" to allow))
+        refresh()
+    }
+
+    /** Ends his session on a Mac now: nothing of it is his after this. */
+    suspend fun endScreen(id: String) {
+        client?.post("/api/screen/end", Json.obj("id" to id))
+        refresh()
+    }
+
+    /** Dismisses a notice: it stays quiet until it changes. */
+    suspend fun dismissNotice(key: String) {
+        client?.post("/api/notices/dismiss", Json.obj("key" to key))
         refresh()
     }
 

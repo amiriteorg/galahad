@@ -68,13 +68,15 @@ import org.amirite.galahad.app.Updates
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.NodeClient
 import org.amirite.galahad.core.NodeError
+import org.amirite.galahad.core.get
+import org.amirite.galahad.core.string
 
 /** Where you are: one of the three places, or a page opened from one (Galahad's chat, a knight's page). */
 private enum class Place(val label: String) { ROUNDTABLE("Roundtable"), INBOX("Inbox"), MORE("More") }
 
 /** What's on screen, for the way it comes in: a page opened over a place comes in from the side and goes back there. */
-private data class Screen(val place: Place, val chat: Boolean, val knight: String?, val room: String?, val keys: Boolean, val connectors: Boolean) {
-    val opened: Boolean get() = chat || knight != null || room != null || keys || connectors
+private data class Screen(val place: Place, val chat: Boolean, val knight: String?, val room: String?, val keys: Boolean, val connectors: Boolean, val mac: String?) {
+    val opened: Boolean get() = chat || knight != null || room != null || keys || connectors || mac != null
 }
 
 /**
@@ -90,8 +92,10 @@ fun Root(app: AppModel) {
     var room by rememberSaveable { mutableStateOf<String?>(null) }
     var keys by rememberSaveable { mutableStateOf(false) }
     var connectors by rememberSaveable { mutableStateOf(false) }
+    // A Mac he is using itself, watched from the Inbox (its node).
+    var mac by rememberSaveable { mutableStateOf<String?>(null) }
     val inbox by app.inbox.collectAsState()
-    val screen = Screen(place, chat, knight, room, keys, connectors)
+    val screen = Screen(place, chat, knight, room, keys, connectors, mac)
     // A tablet, or a foldable open (the window's width, as Android's own size classes read it).
     val wide = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() } >= 600.dp
     val motion = MaterialTheme.motionScheme
@@ -104,6 +108,7 @@ fun Root(app: AppModel) {
         room = null
         keys = false
         connectors = false
+        mac = null
         chat = open == "chat"
         if (chat) conversation?.let(app.chat::open)
         place = when (open) { "inbox" -> Place.INBOX; "settings" -> Place.MORE; else -> Place.ROUNDTABLE }
@@ -118,6 +123,7 @@ fun Root(app: AppModel) {
         room = null
         keys = false
         connectors = false
+        mac = null
         app.chat.fresh()
         chat = true
     }
@@ -129,6 +135,7 @@ fun Root(app: AppModel) {
             room != null -> room = null
             keys -> keys = false
             connectors -> connectors = false
+            mac != null -> mac = null
             else -> place = Place.ROUNDTABLE
         }
     }
@@ -138,6 +145,7 @@ fun Root(app: AppModel) {
         room = null
         keys = false
         connectors = false
+        mac = null
         place = to
     }
     val icon: @Composable (Place) -> Unit = { p ->
@@ -186,8 +194,9 @@ fun Root(app: AppModel) {
                         s.room != null -> RoomScreen(app, s.room) { room = null }
                         s.keys -> KeysScreen(app) { keys = false }
                         s.connectors -> ConnectorsScreen(app) { connectors = false }
+                        s.mac != null -> DesktopScreen(app, s.mac, inbox.screens.firstOrNull { it["node"].string == s.mac }?.let { it["nodeName"].string } ?: "The Mac", onMac = true) { mac = null }
                         s.place == Place.ROUNDTABLE -> RoundtableScreen(app, openChat = { chat = true }, openKnight = { knight = it }, openRoom = { room = it })
-                        s.place == Place.INBOX -> InboxScreen(app)
+                        s.place == Place.INBOX -> InboxScreen(app, watch = { mac = it })
                         else -> MoreScreen(app, openKeys = { keys = true }, openConnectors = { connectors = true })
                     }
                 }
