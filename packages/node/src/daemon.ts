@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonical, decodeHlc, type NodeIdentity, screenSessionView } from "@galahad/core";
-import { type BrainContext, CATALOG, GatewayTokens, installedConnectors, type OAuthEndpoints, pinLegacyKeys } from "@galahad/brain";
+import { type BrainContext, CATALOG, GatewayTokens, installedConnectors, type OAuthEndpoints, pinLegacyKeys, windowsOf } from "@galahad/brain";
 import { indexUrl, McpIndex } from "./mcp-index.ts";
 import { UsageStore } from "./usage.ts";
 import { cloudflareNatives } from "./cloudflare.ts";
@@ -231,6 +231,11 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const arms = new ArmTokens(local);
   // This node's own count of its model calls (usage.ts): node-local, counts only, never the mind's log.
   const usage = new UsageStore(local);
+  // A plan whose allowance a provider said is spent stays so through a restart: its models passed over, the meter saying
+  // it, until it resets.
+  const spentWindows = windowsOf(store);
+  spentWindows.restore(usage.spentWindows());
+  spentWindows.kept = (window) => usage.keepSpentWindow(window);
   /** His own upkeep's calls (the heartbeat's words, his skills, the archive), counted as his. */
   const upkeepSpent: NonNullable<BrainContext["spent"]> = (call) => usage.note("galahad", call.role, call.ref, call.usage);
 

@@ -30,6 +30,23 @@ export class UsageStore {
       cached INTEGER NOT NULL DEFAULT 0, reasoning INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (day, who, role, model))`);
     db.exec("CREATE TABLE IF NOT EXISTS usage_budget (k TEXT PRIMARY KEY, usd REAL, per TEXT NOT NULL)");
+    db.exec("CREATE TABLE IF NOT EXISTS spent_windows (provider TEXT PRIMARY KEY, until INTEGER NOT NULL, noted INTEGER NOT NULL, said TEXT NOT NULL)");
+  }
+
+  /**
+   * The plans a provider said are spent, and until when (brain windows.ts), kept through a restart: their models stay
+   * passed over, and the meter says so, until each resets. One that has ended is dropped.
+   */
+  spentWindows(): { provider: string; until: number; noted: number; said: string }[] {
+    this.db.query("DELETE FROM spent_windows WHERE until <= ?").run(this.now());
+    return this.db.query<{ provider: string; until: number; noted: number; said: string }, []>("SELECT provider, until, noted, said FROM spent_windows ORDER BY provider").all();
+  }
+
+  /** A plan's spent window, as its provider said it: kept until it ends (the latest told wins). */
+  keepSpentWindow(window: { provider: string; until: number; noted: number; said: string }): void {
+    this.db
+      .query("INSERT INTO spent_windows (provider, until, noted, said) VALUES (?, ?, ?, ?) ON CONFLICT (provider) DO UPDATE SET until = excluded.until, noted = excluded.noted, said = excluded.said")
+      .run(window.provider, window.until, window.noted, window.said);
   }
 
   /** Your budget for this node's calls: a day's or a month's, in US dollars at your prices (null: none). */

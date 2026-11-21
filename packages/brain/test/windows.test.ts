@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import { chat } from "../src/index.ts";
-import { spentUntil, windowsOf } from "../src/windows.ts";
+import { type SpentWindow, SpentWindows, spentUntil, windowsOf } from "../src/windows.ts";
 
 /*
  * A plan's allowance runs in windows (OpenCode Go: five hours). Once its provider has said the window is spent and
@@ -81,6 +81,23 @@ describe("a provider whose allowance is spent", () => {
     expect(asked).toEqual(["plan"]);
     expect(third.some((e) => e.type === "fallback")).toBe(false);
     expect(windowsOf(ctx.store).list()).toEqual([]);
+  });
+
+  test("each window is handed on to be kept, and those kept from before a restart are taken up while they last", () => {
+    const now = 1_795_262_400_000;
+    const told: SpentWindow[] = [];
+    const before = new SpentWindows();
+    before.now = () => now;
+    before.kept = (window) => void told.push(window);
+    const window = before.note("opencode-go", GO)!;
+    expect(told).toEqual([window]);
+    // A restart: a fresh record, given what was kept (one still open, one long over).
+    const after = new SpentWindows();
+    after.now = () => now + 10 * MIN;
+    after.restore([window, { provider: "old-plan", until: now - 1, noted: now - 90 * MIN, said: "spent" }]);
+    expect(after.spent("opencode-go")).toEqual(window);
+    expect(after.spent("old-plan")).toBeNull();
+    expect(after.list()).toEqual([window]);
   });
 
   test("each node keeps its own: another mind's windows are not this one's", () => {

@@ -3,7 +3,8 @@
  * said the window is spent and when it resets, asking it again before then only fails again, slowly, before the
  * next model is tried: on 14 November 2026 every call of a sweep did. So a node remembers each window it is told
  * of, chat passes that provider's models over without asking until the window ends (and says until when), and
- * then asks again. Kept in memory, a node's own: a restart forgets, and the next refusal teaches it again.
+ * then asks again. A node's own, kept in memory and in its own database (node/usage.ts), so a restart remembers it: on
+ * 21 November 2026 a deploy forgot OpenCode Go's window, and the usage meter stopped saying it until the next refusal.
  */
 
 /** One provider's allowance, spent until the time its provider gave. */
@@ -49,6 +50,8 @@ export const spanWords = (ms: number): string => {
 export class SpentWindows {
   /** The clock (tests set their own). */
   now: () => number = Date.now;
+  /** Told of each window as it is noted, to keep it through a restart (a node's database; none: memory alone). */
+  kept: ((window: SpentWindow) => void) | null = null;
   private readonly windows = new Map<string, SpentWindow>();
 
   /** Read a provider's refusal: when it says its allowance is spent and when it resets, remember that. */
@@ -58,7 +61,13 @@ export class SpentWindows {
     if (until === null) return null;
     const window: SpentWindow = { provider, until, noted, said: error.replace(/\s+/g, " ").slice(0, 300) };
     this.windows.set(provider, window);
+    this.kept?.(window);
     return window;
+  }
+
+  /** Windows kept from before a restart: each still open is as it was told; one that has ended is left out. */
+  restore(windows: readonly SpentWindow[]): void {
+    for (const window of windows) if (window.until > this.now()) this.windows.set(window.provider, window);
   }
 
   /** The window a provider is in now, or null (one that has ended is forgotten). */
