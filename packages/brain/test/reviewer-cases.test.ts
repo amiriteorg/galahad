@@ -91,6 +91,9 @@ describe("the cases", () => {
       expect({ id: c.id, question: upTo(asked) }).toEqual({ id: c.id, question: upTo(question) });
       expect(question.startsWith("You are reviewing another engineer's work, independently.")).toBe(true);
       expect(question).toContain("Reply with PASS on the first line");
+      // What it judges by: the quest's asks, and what nothing there asks for goes after a PASS (measured: TRIALS.md).
+      expect(question).toContain("Judge it by what the quest asks");
+      expect(question).toContain("say those after PASS, as notes");
     }
   });
 
