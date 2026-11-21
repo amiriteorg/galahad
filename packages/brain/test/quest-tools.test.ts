@@ -16,7 +16,7 @@ afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-type Reply = string | { text?: string; calls: Omit<ClientCall, "id">[] };
+type Reply = string | { text?: string; calls: Omit<ClientCall, "id">[] } | { error: string };
 let ids = 0;
 
 function harness(engineer: Reply[], options: { gates?: string[]; maxSteps?: number; rules?: NamedRule[]; reviewer?: string[] } = {}) {
@@ -35,6 +35,7 @@ function harness(engineer: Reply[], options: { gates?: string[]; maxSteps?: numb
         const next = script.shift();
         if (next === undefined) throw new Error("the engineer ran out of script");
         if (typeof next === "string") return { text: next, model: "test/engineer" };
+        if ("error" in next) throw new Error(next.error);
         return { text: next.text ?? "", model: "test/engineer", calls: next.calls.map((c) => ({ ...c, id: `call_${++ids}` })), carry: '{"v":1}' };
       },
       exec: async (command) => {
@@ -154,6 +155,19 @@ describe("the engineer with tools", () => {
     const result = engineerAsks(h)[1]!.messages.at(-1)!.results![0]!.content;
     expect(result.length).toBeLessThan(200_000);
     expect(result).toStartWith("exit 0 · ");
+  });
+
+  test("a tool call cut off by the model's output limit isn't asked again: he is told to write in parts", async () => {
+    const cut = { error: "the engineer could not answer: test/m ran out of room in the middle of a tool call" };
+    const h = harness([{ calls: [bash("true")] }, cut, "DONE\nWrote it in parts."], { gates: ["true"] });
+    const outcome = await h.run;
+    expect([outcome.status, outcome.malformed]).toEqual(["done", 1]);
+    const told = engineerAsks(h).at(-1)!.messages.at(-1)!;
+    expect(told.content).toEndWith("Write a long file in parts: write its beginning, then add the rest with bash (cat >> file <<'EOF'), and change files with edit rather than writing them whole again.");
+    // Three in a row stop the work, as three replies with nothing to run do.
+    const stuck = harness([cut, cut, cut]);
+    const stopped = await stuck.run;
+    expect([stopped.status, stopped.malformed]).toEqual(["stopped", 3]);
   });
 
   test("what a tool came to and what it was called with are redacted before any model sees them", async () => {

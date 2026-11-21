@@ -791,6 +791,15 @@ class Halted extends Error {
 /** Your rules could not be read: nothing more runs. */
 class Unread extends Error {}
 
+/**
+ * With tools: the reply ran out of its model's room for output while it called one (a file written whole, past the
+ * provider's limit), so nothing of it can be run or kept. Asking again would run out the same way: the engineer is told.
+ */
+class OutOfRoom extends Error {}
+const OUT_OF_ROOM = /ran out of room in the middle of a tool call/;
+const outOfRoomNote =
+  "Your last reply ran out of room while it was calling a tool, so none of it was kept or run. Write a long file in parts: write its beginning, then add the rest with bash (cat >> file <<'EOF'), and change files with edit rather than writing them whole again.";
+
 /** What the engineer is told of a command a tripwire of yours refused (a refused gate's excerpt too, and the reviewer's trail). */
 const refusal = (trip: Trip): string => `Not run: your liege's tripwire "${trip.rule}" refuses this command (${trip.why}). Do the work another way, without what it refuses.`;
 
@@ -1070,6 +1079,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         }
         return reply;
       } catch (error) {
+        // (A tool call cut off by the model's output limit would be cut off again: it is said, never asked again.)
+        if (turn?.tools && OUT_OF_ROOM.test(String((error as Error).message ?? error))) throw new OutOfRoom(redact(String((error as Error).message)).slice(0, 300));
         if (error instanceof Stopped || deps.signal?.aborted || attempt >= ASK_RETRY_DELAYS_MS.length) throw error;
         const waitMs = ASK_RETRY_DELAYS_MS[attempt]!;
         emit({ type: "retry", role, attempt: attempt + 1, error: redact(String((error as Error).message ?? error)).slice(0, 300), waitMs });
@@ -1675,9 +1686,24 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
       steps += 1;
       excerpted = o.tools ? excerptedBy(resultSizes(messages), excerpted, true) : excerptedNow(messages, excerpted, o.keepReads);
-      const reply = o.tools
-        ? await ask(worker, compactCalls(messages, excerpted, told), { loop: true, tools: ENGINEER_TOOLS })
-        : await ask(worker, compact(messages, excerpted, o.keepReads), { loop: true });
+      let reply: Awaited<ReturnType<typeof ask>>;
+      try {
+        reply = o.tools
+          ? await ask(worker, compactCalls(messages, excerpted, told), { loop: true, tools: ENGINEER_TOOLS })
+          : await ask(worker, compact(messages, excerpted, o.keepReads), { loop: true });
+      } catch (error) {
+        if (!(error instanceof OutOfRoom)) throw error;
+        // Like a reply with no command, it spent a turn and ran nothing; what he is told goes with what he was told last.
+        malformed += 1;
+        malformedRun += 1;
+        emit({ type: "format", step: steps, problem: outOfRoomNote, reply: error.message });
+        if (malformedRun >= MALFORMED_RUN) {
+          return finish({ status: "stopped", summary: `Stopped: ${malformedRun} replies in a row had nothing to run. He was told each time: ${outOfRoomNote}` });
+        }
+        const last = messages.at(-1)!;
+        if (!last.content.endsWith(outOfRoomNote)) Object.assign(last, { content: `${last.content}\n\n${outOfRoomNote}`.trim() });
+        continue;
+      }
       const kept = keptReply(reply.text);
       // (With tools: the calls it made, as many as are run, each long input kept short once it has run, with what its provider needs back.)
       const calls = o.tools ? reply.calls?.slice(0, MAX_CALLS) : undefined;
