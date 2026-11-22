@@ -42,6 +42,29 @@ describe("a provider that refused its key", () => {
     expect(refusals.list()).toEqual([]);
   });
 
+  test("the status is the answer's own, where a call's error says it: a 5xx whose words mention a 401 isn't a refused key", () => {
+    const refusals = new RefusedKeys();
+    refusals.now = () => NOW;
+    expect(refusals.note("orcarouter", 'orcarouter → 502 {"error":{"message":"the upstream provider answered 401"}}')).toBeNull();
+    expect(refusals.note("deepseek", "500 the engine said 403 to itself")).toBeNull();
+    expect(refusals.list()).toEqual([]);
+  });
+
+  test("a 403 is a refused key only when it speaks of the key: one about what was asked (a moderation flag, a region) isn't", () => {
+    const refusals = new RefusedKeys();
+    refusals.now = () => NOW;
+    // OpenRouter, when a model's moderation flags what was sent; OpenAI, from a country it doesn't serve: the key is fine.
+    expect(refusals.note("openrouter", 'openrouter → 403 {"error":{"message":"Your chosen model requires moderation and your input was flagged"}}')).toBeNull();
+    expect(refusals.note("openai", '403 {"error":{"code":"unsupported_country_region_territory","message":"Country, region, or territory not supported","type":"request_forbidden"}}')).toBeNull();
+    expect(refusals.list()).toEqual([]);
+    // Anthropic, of a key without the permission: the key's.
+    expect(refusals.note("anthropic", 'anthropic → 403 {"type":"error","error":{"type":"permission_error","message":"Your API key does not have permission to use the specified resource."}}')).toEqual({
+      provider: "anthropic",
+      at: NOW,
+      said: "403: Your API key does not have permission to use the specified resource.",
+    });
+  });
+
   test("what is kept holds nothing shaped like a key, whatever its caller scrubbed", () => {
     // (Its callers redact the key by its value; a key the provider echoes that isn't the one sent is caught here.)
     const refusals = new RefusedKeys();
@@ -100,7 +123,8 @@ function gateway(id = "mimo-token") {
       }),
       ctx,
     );
-  return { store, call, setAnswer: (next: (init: RequestInit) => Response) => (answer = next) };
+  const list = () => handleGateway(new Request(`http://127.0.0.1:7777/gw/${id}/models`, { headers: { authorization: `Bearer ${token}` } }), ctx);
+  return { store, call, list, setAnswer: (next: (init: RequestInit) => Response) => (answer = next) };
 }
 
 describe("through the gateway", () => {
@@ -114,6 +138,16 @@ describe("through the gateway", () => {
     g.setAnswer(() => Response.json({ choices: [{ message: { content: "aye" } }] }));
     const through = await g.call();
     expect(through.status).toBe(200);
+    expect(refusedKeysOf(g.store).list()).toEqual([]);
+  });
+
+  test("a listing that got through doesn't forget it: some providers list their models to anyone, so only a model call proves the key", async () => {
+    const g = gateway();
+    expect((await g.call()).status).toBe(401);
+    expect((await g.list()).status).toBe(200);
+    expect(refusedKeysOf(g.store).list()).toHaveLength(1);
+    g.setAnswer(() => Response.json({ choices: [{ message: { content: "aye" } }] }));
+    expect((await g.call()).status).toBe(200);
     expect(refusedKeysOf(g.store).list()).toEqual([]);
   });
 

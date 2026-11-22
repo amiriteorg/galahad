@@ -1,7 +1,7 @@
 /*
- * A provider that refuses its key (an answer of 401 or 403 to a model call) is remembered, as a spent allowance is:
- * which provider, when, and what it said. A later call to that provider that succeeds forgets it, whichever of chat or
- * a tool's call through the gateway got through. The doctor (node/doctor.ts) says each one still remembered, with what
+ * A provider that refuses its key (an answer of 401 to a model call, or a 403 that says it is the key's) is remembered,
+ * as a spent allowance is: which provider, when, and what it said. A later model call to that provider that succeeds
+ * forgets it, whichever of chat or a tool's call through the gateway got through. The doctor (node/doctor.ts) says each one still remembered, with what
  * to do, and the Inbox carries the same words; a refusal from before the provider's key was last set is not said (the
  * key was replaced since). Kept in memory and in the node's own database (node/usage.ts), so a restart remembers it.
  *
@@ -14,6 +14,19 @@ import { decodeHlc, redact } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { refusalWords } from "./adapters.ts";
 import { providerRecord } from "./providers.ts";
+
+/** The status a call's error begins with: "401 …" as the gateway says it, "mimo-token → 401 …" as chat does. */
+const statusOf = (error: string): number | null => {
+  const found = /^(?:[\w.:-]+(?: \/models)? → )?(\d{3})\b/.exec(error.trim());
+  return found ? Number(found[1]) : null;
+};
+
+/**
+ * A 403's words that speak of the key. A 403 refuses what was asked as often as the key that asked it (OpenRouter's,
+ * when a model's moderation flags what was sent; OpenAI's, from a country it doesn't serve), and replacing a key that
+ * works is no fix for either.
+ */
+const OF_THE_KEY = /\b(api[ _-]?key|key|credentials?|auth\w*|unauthori[sz]ed|token)\b/i;
 
 /** One provider whose key a call got refused: who, when, and what it said. */
 export interface RefusedKey {
@@ -34,21 +47,26 @@ export class RefusedKeys {
   private readonly refusals = new Map<string, RefusedKey>();
 
   /**
-   * Read a provider's refusal: a 401 or 403 (an answer that refused its key) is remembered, with what it said, for that
-   * provider. Anything else is not a refused key and is left alone. `error` may carry the provider's name before the
-   * status ("mimo-token → 401 …"), as a call's error says it; the words kept are the status and the message alone.
+   * Read a provider's refusal: a 401, or a 403 whose words speak of the key (an answer that refused its key), is
+   * remembered, with what it said, for that provider. Anything else is not a refused key and is left alone. `error` may
+   * carry the provider's name before the status ("mimo-token → 401 …"), as a call's error says it; the status is read
+   * where it stands there, never from the words after it, and the words kept are the status and the message alone.
    */
   note(provider: string, error: string): RefusedKey | null {
-    if (!/\b(401|403)\b/.test(error)) return null;
-    const said = refusalWords(redact(error), 200);
+    const status = statusOf(error);
+    if (status !== 401 && status !== 403) return null;
+    const words = refusalWords(redact(error), 200);
     const prefix = `${provider} → `;
-    const refusal: RefusedKey = { provider, at: this.now(), said: said.startsWith(prefix) ? said.slice(prefix.length) : said };
+    const said = words.startsWith(prefix) ? words.slice(prefix.length) : words;
+    // (The words alone: a provider's name may hold one of them, as mimo-token does.)
+    if (status === 403 && !OF_THE_KEY.test(said)) return null;
+    const refusal: RefusedKey = { provider, at: this.now(), said };
     this.refusals.set(provider, refusal);
     this.kept?.(refusal);
     return refusal;
   }
 
-  /** A later call that got through: the key works, so the refusal of it is forgotten. */
+  /** A later model call that got through: the key works, so the refusal of it is forgotten. */
   forget(provider: string): void {
     if (this.refusals.delete(provider)) this.forgot?.(provider);
   }
