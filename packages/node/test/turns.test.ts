@@ -651,6 +651,8 @@ describe("when the node stops, and comes back", () => {
     expect(starts).toEqual(["Two."]);
     await hub2.close();
     again.close();
+    // (Its file goes with it, as the next test's does: a run left it in the system's temporary directory.)
+    for (const file of [path, `${path}-wal`, `${path}-shm`]) rmSync(file, { force: true });
   });
 });
 
