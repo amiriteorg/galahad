@@ -674,6 +674,8 @@ async function workIn(
           // or offered the engineer's own tools (QuestOptions.tools), whose calls the quest runs here.
           ...(turn?.loop ? { loop: true } : {}),
           ...(turn?.tools ? { clientTools: [...turn.tools] } : {}),
+          // The reviewer is asked apart from the model the work's last answer came from: another model first.
+          ...(role === "reviewer" && turn?.apart ? { apart: turn.apart } : {}),
           // A budget of yours is spent only on models it can count: one you've priced, or one on the node's own machine.
           ...(options.budgetUsd !== undefined ? { budgeted: true } : {}),
           // A role held to one model asks exactly that one (no fallback: what's measured is that model).

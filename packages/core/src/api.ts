@@ -688,6 +688,8 @@ export const routes = {
     input: z.strictObject({
       role: Name.optional(),
       model: ModelRef.optional(),
+      /** The model this answer is to be independent of (a review, usually): its candidates that are the same model are asked last. */
+      apart: ModelRef.optional(),
       messages: z.array(ChatMessage).min(1).max(500),
       /** Galahad's tools, within the caller's scopes (default). Quests turn them off: their roles have their own. */
       tools: z.boolean().optional(),

@@ -7,7 +7,7 @@ import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./person
 import { windowScope, windowsOf } from "./windows.ts";
 import { followsFormat, readModelCheck, readsScreens, type ModelCheck } from "@galahad/core";
 import { offeredModels, onPlan, planOf, providerRecords, QUIET_MS, quietly, resolveProvider, whyNoKey } from "./providers.ts";
-import { effortFor, parseRef, pinnedEffort, roleModels } from "./roster.ts";
+import { effortFor, parseRef, pinnedEffort, roleModels, sameModel } from "./roster.ts";
 
 export interface BrainContext {
   store: MindStore;
@@ -56,6 +56,12 @@ export interface ChatRequest {
    * planner's once a gate has failed twice in a row. Held to the loop's format checks as the engineer's turns are.
    */
   loop?: boolean;
+  /**
+   * The model this answer is to be independent of (a review, usually): the role's candidates that are the same
+   * model as this are asked last, keeping their order, after every other. None is dropped, so a role with nothing
+   * else still answers.
+   */
+  apart?: string;
   /** Messages the owner sends while this answer is under way: each reaches the model at the next safe point. */
   steering?: Steering;
 }
@@ -220,7 +226,11 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
   }
   const listed = req.model ? own : await expand(ctx, own);
   // A parallel attempt starts at another of the role's models; the rest stay its fallbacks, in order.
-  const candidates = req.rotate ? rotated(listed, req.rotate) : listed;
+  let candidates = req.rotate ? rotated(listed, req.rotate) : listed;
+  // Asked to be independent of a model (`apart`, a review usually): its candidates that are the same model are
+  // asked last, keeping their order, after every other; none is dropped, so a role with nothing else still answers.
+  const apartFrom = req.apart;
+  if (apartFrom) candidates = [...candidates.filter((ref) => !sameModel(ref, apartFrom)), ...candidates.filter((ref) => sameModel(ref, apartFrom))];
   const tools = req.tools?.specs.length ? req.tools : undefined;
   const steering = req.steering;
   // Every message handed over so far: a model that takes over (or starts again without tools) is handed them too.

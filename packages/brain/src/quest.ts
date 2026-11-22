@@ -32,7 +32,7 @@ export interface QuestDeps {
   ask(
     role: QuestRole,
     messages: ChatMessage[],
-    turn?: { loop?: boolean; tools?: readonly ToolSpec[] },
+    turn?: { loop?: boolean; tools?: readonly ToolSpec[]; apart?: string },
   ): Promise<{ text: string; model: string; skipped?: { model: string; error: string }[]; calls?: ClientCall[]; carry?: string }>;
   /** Run one shell command in the quest's workspace. */
   exec(command: string, timeoutSec: number): Promise<ExecResult>;
@@ -1118,7 +1118,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   const toldSkipped = new Set<string>();
   // Every message is redacted before it goes to a model: command output can contain anything, and so can what a tool
   // was called with and what it came to. (A carry is the model's own, and its provider's to check: it goes as it came.)
-  const ask = async (role: QuestRole, messages: ChatMessage[], turn?: { loop: true; tools?: readonly ToolSpec[] }) => {
+  const ask = async (role: QuestRole, messages: ChatMessage[], turn?: { loop?: boolean; tools?: readonly ToolSpec[]; apart?: string }) => {
     const redacted = messages.map((m) => ({
       role: m.role,
       content: redact(m.content),
@@ -1154,6 +1154,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
   let plan = "";
   let steps = 0;
   let revisions = 0;
+  /** The model the work's last answer came from (the reviewer is asked apart from it: another model first). */
+  let worked = "";
   /** Replies that had no command to run: each spent a turn (it is one of `steps`) and ran nothing. */
   let malformed = 0;
   // The gates: yours as you gave them, then the planner's proposals (once the plan is known).
@@ -1333,7 +1335,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           ? o.review.prompt({ goal: o.goal, plan, steps: trail, summary, evidence: [evidence.trim(), gated].filter(Boolean).join("\n\n") })
           : reviewQuestion({ goal: o.goal, plan, steps: trail, summary, gated, evidence }),
       },
-    ]);
+    ], worked ? { apart: worked } : {});
     const verdict: { verdict: "pass" | "revise"; notes: string; conclusion?: string } = o.review ? o.review.read(reviewed.text) : parseVerdict(reviewed.text);
     emit({ type: "review", verdict: verdict.verdict, notes: verdict.notes, model: reviewed.model });
     return verdict;
@@ -1367,7 +1369,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     let found: { verdict: AuditVerdict; note: string };
     let model = "";
     try {
-      const reply = await ask("reviewer", [{ role: "user", effort: STEP_EFFORT.audit, content: auditQuestion({ goal: o.goal, plan, gates: gates.map((g) => g.command), steps: since.slice(-2 * AUDIT_EVERY.steps), evidence, last: audits.last, whole: { steps: whole, minutes: (clock() - began) / 60_000 } }) }]);
+      const reply = await ask("reviewer", [{ role: "user", effort: STEP_EFFORT.audit, content: auditQuestion({ goal: o.goal, plan, gates: gates.map((g) => g.command), steps: since.slice(-2 * AUDIT_EVERY.steps), evidence, last: audits.last, whole: { steps: whole, minutes: (clock() - began) / 60_000 } }) }], worked ? { apart: worked } : {});
       model = reply.model;
       found = readAudit(reply.text) ?? { verdict: "unread", note: `Its answer couldn't be read; it began: ${clip(redact(reply.text.trim()), 200, 0)}` };
     } catch (error) {
@@ -1458,6 +1460,9 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     for (;;) {
       check();
       const model = agent.models[current]!;
+      // The reviewer and the audit are asked apart from the model the work's last answer came from here too: the
+      // coding agent's own model, named as a ref (provider/model), so its same model is asked last, wherever it is.
+      worked = agentModelName(model);
       const run = await runAgent(
         agent.driver,
         { model, prompt, session, deadline, workdir: agent.workdir, spent: spentNow, audit: auditNow },
@@ -1773,6 +1778,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (!last.content.endsWith(outOfRoomNote)) Object.assign(last, { content: `${last.content}\n\n${outOfRoomNote}`.trim() });
         continue;
       }
+      worked = reply.model;
       const kept = keptReply(reply.text);
       // (With tools: the calls it made, as many as are run, each long input kept short once it has run, with what its provider needs back.)
       const calls = o.tools ? reply.calls?.slice(0, MAX_CALLS) : undefined;

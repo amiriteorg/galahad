@@ -21,6 +21,20 @@ export type Effort = ThinkingEffort;
  */
 export const STEP_EFFORT = { start: "high", routine: "medium", hard: "xhigh", plan: "high", review: "high", audit: "low" } as const satisfies Record<string, Effort>;
 
+/**
+ * Whether two model refs name one model: the part after the last "/", lowercased, with "." and "_" read as "-".
+ * So `deepseek/deepseek-v4-pro`, `opencode-go/deepseek-v4-pro` and `cloudflare-ai/deepseek/deepseek-v4-pro` are
+ * one model, and so are `anthropic/claude-opus-5-5` and `orcarouter/anthropic/claude-opus-5.5`;
+ * `anthropic/claude-opus-5-5` and `anthropic/claude-sonnet-5-5` are not.
+ */
+export function sameModel(a: string, b: string): boolean {
+  const modelOf = (ref: string): string => {
+    const slash = ref.lastIndexOf("/");
+    return ref.slice(slash + 1).toLowerCase().replace(/[._]/g, "-");
+  };
+  return modelOf(a) === modelOf(b);
+}
+
 export interface RoleSpec {
   description: string;
   defaults: string[];

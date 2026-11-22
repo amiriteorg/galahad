@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { addUsage, type AttachmentRef, type ClientCall, costOf, mergeSpend, type NamedRule, type QuestEvidence, type Prices, type ChatMessage, type ExecResult, TEAM_GALAHAD, TEAM_OWNER, type Teammate, type TeamMessage, type TeamOverview, TeamRecruitInput, type TeamRoom, type TeamTask, type TeamTaskChanges, TeamTaskInput, type TeamTaskRecord, type TeamCheckpoint, type TeamKeyGrant, type Usage, type UsageLine, heldModels, randomId, redact, SENSITIVE_WORK } from "@galahad/core";
-import { driverFor, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type ToolImage, type ToolSpec, type Trip } from "@galahad/brain";
+import { driverFor, ENGRAM_PROBE, ENGRAM_VERSION, OWN_SIGN_IN, agentModelName, chat, choreRole, commandsRun, engramFound, engramProjectFor, engramShell, runQuest, sameModel, workRole, type AgentDriver, type AgentModel, type BrainContext, type ChatTools, type QuestEvent, type ToolImage, type ToolSpec, type Trip } from "@galahad/brain";
 import { SHIPMENT_SCRIPT } from "./ship.ts";
 import { questEvidence, questTrail } from "./skills-quest.ts";
 import type { TeamRunContext } from "./team.ts";
@@ -349,7 +349,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
    * of a budget of yours, which only a model whose spend it can count may do; `turn`: a turn of its work loop, with the
    * engineer's own tools when it works with them, whose calls it runs).
    */
-  const ask = async (teammate: Teammate, role: string, messages: ChatMessage[], signal: AbortSignal, context?: string, spent?: (model: string, usage: Usage | null) => void, turn?: { loop?: boolean; tools?: readonly ToolSpec[] }, own?: readonly string[], budgeted?: boolean) => {
+  const ask = async (teammate: Teammate, role: string, messages: ChatMessage[], signal: AbortSignal, context?: string, spent?: (model: string, usage: Usage | null) => void, turn?: { loop?: boolean; tools?: readonly ToolSpec[]; apart?: string }, own?: readonly string[], budgeted?: boolean) => {
     const leave = await deps.enter(signal);
     // A call that says nothing for so long is ended, and asked again as any failed call is: a task has no clock that would end it.
     const quietMs = deps.callQuietMs ?? TEAM_CALL_QUIET_MINUTES * 60_000;
@@ -364,7 +364,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       try {
         // (A knight's task is coding work: a coding plan on the role may do it. A turn of its work loop is held to its
         // format, or offered the engineer's tools, whose calls end the answer for the loop to run.)
-        for await (const event of chat(deps.brain(teammate), { role, ...(own?.length ? { models: [...own] } : {}), messages, signal: AbortSignal.any([signal, quiet.signal]), context, coding: true, ...(turn?.loop ? { loop: true } : {}), ...(turn?.tools ? { clientTools: [...turn.tools] } : {}), ...(budgeted ? { budgeted: true } : {}) })) {
+        for await (const event of chat(deps.brain(teammate), { role, ...(own?.length ? { models: [...own] } : {}), messages, signal: AbortSignal.any([signal, quiet.signal]), context, coding: true, ...(turn?.loop ? { loop: true } : {}), ...(turn?.tools ? { clientTools: [...turn.tools] } : {}), ...(turn?.apart ? { apart: turn.apart } : {}), ...(budgeted ? { budgeted: true } : {}) })) {
           clearTimeout(timer);
           timer = setTimeout(() => quiet.abort(), quietMs);
           if (event.type === "text") text += event.text;
@@ -631,6 +631,8 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       const instructions = [`You are ${teammate.name} (${teammate.id}), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave: say plainly what you did, what you checked and what you could not do. This VM and coding harness are tools for your assigned work. Keep your contributions attributable to your own name.`, brief(teammate) ?? teammate.instructions, started, inherited, data("Your working notes", teammate.memory), deps.memories(task.goal)].filter(Boolean).join("\n\n");
       // The model that did the work last: in sensitive mode the review goes to another of its models first, where it has another.
       let worked = agent?.models[0] && !agent.models[0].own ? `${agent.models[0].provider}/${agent.models[0].model}` : undefined;
+      // A review answered by the same model as the work is said once, whatever it is answered by on later submissions.
+      let saidSameReview = false;
       // Its own tools where they were measured: on the roster's engineer models, in Galahad's own loop (toolsLoop).
       const tools = Boolean(deps.toolsLoop) && !agent && !held && !teammate.models?.length;
       const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.${screen}${keysLine(teammate.keys, deps.keyAddress)}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: TEAM_COMMAND_SECONDS, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(tools ? { tools: true, plan: "" } : {}), ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
@@ -641,14 +643,33 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
         // and the independent review stay the planner's and the reviewer's, whoever did the work.
         // In sensitive mode every call is on its models alone, the plan's and the review's too.
         ask: async (role, messages, turn) => {
-          const own = held ? (role === "reviewer" ? [...held.filter((m) => m !== worked), ...held.filter((m) => m === worked)] : held) : role === "engineer" ? teammate.models : undefined;
-          const answer = await ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : contextFor(role), (model, usage) => addUsage(spent, role, model, usage), turn, own, task.budgetUsd !== undefined);
+          // The model the work's latest answer came from, wherever the run knows it: runQuest says a coding agent's
+          // (turn.apart, correct across its fallbacks); otherwise the model that answered this task's own calls here.
+          // Outside sensitive mode the reviewer is asked apart from it; in sensitive mode its own models are put in
+          // that order directly (same model last, none dropped). `worked` is carried forward so the trail's
+          // same-model check below reads the same value.
+          const by = role === "reviewer" ? turn?.apart ?? worked : undefined;
+          if (role === "reviewer") worked = by;
+          const apart = role === "reviewer" && !held ? by : undefined;
+          const own = held
+            ? role === "reviewer"
+              ? by
+                ? [...held.filter((m) => !sameModel(m, by)), ...held.filter((m) => sameModel(m, by))]
+                : held
+              : held
+            : role === "engineer" ? teammate.models : undefined;
+          const answer = await ask(teammate, role === "engineer" ? workRole(teammate.role) : role, messages, ctx.signal, role === "reviewer" ? undefined : contextFor(role), (model, usage) => addUsage(spent, role, model, usage), { ...(turn?.loop ? { loop: turn.loop } : {}), ...(turn?.tools ? { tools: turn.tools } : {}), ...(apart ? { apart } : {}) }, own, task.budgetUsd !== undefined);
           if (role !== "reviewer") worked = answer.model;
           return answer;
         },
         exec, signal: ctx.signal,
         emit: (event) => {
           trail.on(event);
+          // A review answered by the same model that did the work after all is said, once, before its verdict.
+          if (event.type === "review" && !saidSameReview && worked !== undefined && sameModel(event.model, worked)) {
+            saidSameReview = true;
+            ctx.emit(`Review · by the same model that did the work (${event.model}): no other reviewer model could answer`);
+          }
           ctx.emit(progress(event));
           if (steps.on && event.type === "command") steps.command = event.command;
           else if (steps.on && event.type === "observation") keepStep(event.step);
