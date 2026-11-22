@@ -266,6 +266,16 @@ export const TEAM_LEASE_RENEW_MINUTES = 10;
 /** A knight's model call that says nothing for this long is ended, and asked again as any failed call is: its task has no clock that would. */
 export const TEAM_CALL_QUIET_MINUTES = 15;
 
+/**
+ * What a knight with no repository made, as its review is shown it: the files at the top of its task's workspace, which
+ * began empty, and what the text ones say. A reviewer judges what it is shown and can open nothing: on 22 November 2026
+ * one sent Percival's written review back three times, asking each time to read the file it couldn't see.
+ */
+export const TASK_FILES_EVIDENCE = [
+  "ls -la",
+  `find . -maxdepth 1 -type f -size -400k -exec grep -Il . {} + 2>/dev/null | sort | head -20 | while IFS= read -r f; do echo "=== $f"; head -c 12000 "$f"; echo; done | head -c 24000`,
+] as const;
+
 /** What a harness would run on in a knight's VM, or why it can't work there yet. */
 export interface HarnessReadiness {
   ready: boolean;
@@ -648,7 +658,7 @@ export function teamRuntime(deps: TeamRuntimeDeps) {
       let saidSameReview = false;
       // Its own tools where they were measured: on the roster's engineer models, in Galahad's own loop (toolsLoop).
       const tools = Boolean(deps.toolsLoop) && !agent && !held && !teammate.models?.length;
-      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can. /work/.galahad-gateway.json is your model access, written by Galahad for this task: never move, change or delete it.${screen}${keysLine(teammate.keys, deps.keyAddress)}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: TEAM_COMMAND_SECONDS, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(tools ? { tools: true, plan: "" } : {}), ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
+      const outcome = await runQuest({ goal: task.goal, environment: `Your persistent Linux VM; isolated task workspace ${root}. Other tasks' files must not be modified. Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can. /work/.galahad-gateway.json is your model access, written by Galahad for this task: never move, change or delete it.${screen}${keysLine(teammate.keys, deps.keyAddress)}`, instructions, gates: task.gates, evidence: teammate.repository ? ["git status --short", `git add -A -N . 2>/dev/null; git diff --no-ext-diff --no-textconv ${base} | head -c 24000`] : [...TASK_FILES_EVIDENCE], maxSteps: Infinity, audit: true, maxRevisions: 2, commandTimeoutSec: TEAM_COMMAND_SECONDS, gatesFirst: true, submitAtLimit: true, escalate: true, keepReads: true, ...(tools ? { tools: true, plan: "" } : {}), ...(task.budgetUsd !== undefined ? { budgetUsd: task.budgetUsd } : {}), ...(agent ? { agent } : {}), ...(engram ? { engram } : {}) }, {
         // (keepReads: a knight sees whole what it reads, and it stays in view while it is current. The first real outcome's
         // knights, shown 8,000 characters of each, read one file in 26 then 34 commands, and three tasks ended with nothing
         // written: quest.ts keepReads. Each command has TEAM_COMMAND_SECONDS: at 120 s, the repository's own tests were cut off.)

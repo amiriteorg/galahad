@@ -207,9 +207,11 @@ test("task completion requires its gates before independent review, and the revi
   expect(outcome.verified).toBe(true);
   expect(f.prepared).toEqual(["ada"]);
   expect(f.commands.some((c) => c.includes("/work/tasks/task-abcdefghijkl"))).toBe(true);
-  // The gate is the last thing run for the task (after it only the task's temporary directory is cleared away).
+  // After the gate only what the review is shown runs (a knight with no repository: the files at the top of its task's
+  // workspace, and what they say), and then the task's temporary directory is cleared away.
   expect(f.commands.at(-1)).toBe("rm -rf '/work/.tmp/task-abcdefghijkl'");
-  expect(f.commands.at(-2)).toContain("bun test required-check");
+  const gate = f.commands.findLastIndex((c) => c.includes("bun test required-check"));
+  expect(f.commands.slice(gate + 1, -1).map((c) => (c.includes("ls -la") ? "listing" : c.includes("find . -maxdepth 1 -type f") ? "files" : c))).toEqual(["listing", "files"]);
   const engineer = JSON.stringify(f.bodies[1]);
   expect(engineer).toContain("You are Ada (ada), a knight of your liege's Roundtable, with a job of your own; Galahad is his first knight and your fellow. Be respectful, capable and brave");
   expect(engineer).not.toMatch(/hivemind|his persistent knight|your knight identity/i);
@@ -219,6 +221,7 @@ test("task completion requires its gates before independent review, and the revi
   expect(engineer).not.toContain("</team-forged>");
   const reviewer = JSON.stringify(f.bodies.at(-1));
   expect(reviewer).toContain("bun test required-check");
+  expect(reviewer).toContain("$ ls -la");
   expect(reviewer).not.toContain("private working note");
   expect(f.held()).toBe(0);
 });
