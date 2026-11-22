@@ -149,6 +149,21 @@ describe("the engineer's own loop, audited", () => {
     expect(q.audits().map((a) => a.step)).toEqual([2]);
   });
 
+  test("an audit is asked on the reviewer's models in their order; only the review that decides is asked apart from the work's model", async () => {
+    // On 22 November 2026 audits asked apart went to the dearest model there was: 42 % of a knight's task's money.
+    const turns: { role: QuestRole; apart?: string }[] = [];
+    const queues: Record<QuestRole, string[]> = { planner: ["1. Write the parser.\nDone when: its test passes."], engineer: [...commands(AUDIT_EVERY.steps + 2), "DONE\nWritten."], reviewer: ["ON\nOn its task.", "PASS\nIt holds."] };
+    const outcome = await runQuest({ goal: "write the parser", environment: "a test sandbox", maxSteps: 200, audit: true }, {
+      ask: async (role, _messages, turn) => {
+        turns.push({ role, ...(turn?.apart ? { apart: turn.apart } : {}) });
+        return { text: queues[role].shift()!, model: `test/${role}` };
+      },
+      exec: async () => ok(),
+    });
+    expect(outcome.status).toBe("done");
+    expect(turns.filter((t) => t.role === "reviewer")).toEqual([{ role: "reviewer" }, { role: "reviewer", apart: "test/engineer" }]);
+  });
+
   test("off unless asked for: a quest is what it was, its reviewer asked only to review", async () => {
     const q = engineer({ engineer: [...commands(45), "DONE\nWritten."], reviewer: ["PASS\nIt holds."] }, {}, 8);
     expect((await q.run).status).toBe("done");

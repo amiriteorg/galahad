@@ -1369,7 +1369,10 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     let found: { verdict: AuditVerdict; note: string };
     let model = "";
     try {
-      const reply = await ask("reviewer", [{ role: "user", effort: STEP_EFFORT.audit, content: auditQuestion({ goal: o.goal, plan, gates: gates.map((g) => g.command), steps: since.slice(-2 * AUDIT_EVERY.steps), evidence, last: audits.last, whole: { steps: whole, minutes: (clock() - began) / 60_000 } }) }], worked ? { apart: worked } : {});
+      // (Asked on the reviewer's models in their order, not apart from the work's: an audit only steers, and asked
+      // apart it went to the dearest model there was. On 22 November 2026 a knight's audits, every twenty commands on
+      // Opus through a router that cached nothing, were 42 % of its task's money. The review that decides stays apart.)
+      const reply = await ask("reviewer", [{ role: "user", effort: STEP_EFFORT.audit, content: auditQuestion({ goal: o.goal, plan, gates: gates.map((g) => g.command), steps: since.slice(-2 * AUDIT_EVERY.steps), evidence, last: audits.last, whole: { steps: whole, minutes: (clock() - began) / 60_000 } }) }]);
       model = reply.model;
       found = readAudit(reply.text) ?? { verdict: "unread", note: `Its answer couldn't be read; it began: ${clip(redact(reply.text.trim()), 200, 0)}` };
     } catch (error) {
