@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage, Usage } from "@galahad/core";
 import type { Effort } from "./roster.ts";
-import { conversationSession, keyHeaders, type ResolvedProvider, selfHeaders, withoutRedirects } from "./providers.ts";
+import { conversationSession, keyHeaders, preset, type ResolvedProvider, selfHeaders, withoutRedirects } from "./providers.ts";
 
 export interface CompletionInput {
   provider: ResolvedProvider;
@@ -433,13 +433,19 @@ export function openAIConversation(input: CompletionInput): Conversation {
   let reasoned = "";
   // Which conversation this is, for a plan that routes by that: from how it began, so each of its turns says the same.
   const session = conversationSession(input.model, wordsOf(input.messages.find((m) => m.role === "user")?.content));
+  // How hard it thinks, where the provider takes a level (DeepSeek's `reasoning_effort`): the newest message that says
+  // one, else the call's; a provider whose preset takes none is asked as now, with no level.
+  const effortSpec = preset(input.provider.id)?.effort;
+  const effort = input.messages.findLast((m) => m.effort)?.effort ?? input.effort;
+  const effortField = effortSpec?.field;
+  const effortLevel = effortSpec?.levels[effort];
   return {
     spent: () => spent,
     carry: () => carryOf(input.provider.id, input.model, { reasoning: reasoned }),
     async *turn(tools, signal) {
       finalPending = false;
       spent = undefined;
-      const post = (askUsage: boolean): Promise<Response> =>
+      const post = (askUsage: boolean, askEffort: boolean): Promise<Response> =>
         (input.fetch ?? fetch)(`${input.provider.baseUrl}/chat/completions`, {
           method: "POST",
           // (To a coding plan he says who he is, and which conversation this is: selfHeaders.)
@@ -449,20 +455,33 @@ export function openAIConversation(input: CompletionInput): Conversation {
             stream: true,
             // The stream's last chunk then carries the call's tokens, as the provider counts them.
             ...(askUsage ? { stream_options: { include_usage: true } } : {}),
+            // How hard it thinks, where the provider takes a level (DeepSeek's `reasoning_effort`).
+            ...(askEffort && effortField && effortLevel ? { [effortField]: effortLevel } : {}),
             messages,
             ...(tools.length ? { tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } })) } : {}),
           }),
           redirect: "manual",
           signal: signal ?? input.signal,
         });
-      let response = await post(!NO_USAGE_OPTION.has(input.provider.baseUrl));
-      // An endpoint that refuses the option (an older runtime) is asked without it from then on: its usage is unknown.
-      if (!response.ok && response.status >= 400 && response.status < 500 && !NO_USAGE_OPTION.has(input.provider.baseUrl)) {
+      let askUsage = !NO_USAGE_OPTION.has(input.provider.baseUrl);
+      let askEffort = effortField !== undefined && !NO_EFFORT.has(input.provider.baseUrl);
+      let response = await post(askUsage, askEffort);
+      // An endpoint that refuses an option (an older runtime) is asked without it from then on: its usage is unknown,
+      // or it thinks at its own level.
+      if (!response.ok && response.status >= 400 && response.status < 500 && (askUsage || askEffort)) {
         const refusal = (await response.clone().text().catch(() => "")).slice(0, 600);
-        if (/stream_options|include_usage/i.test(refusal)) {
+        let again = false;
+        if (askUsage && /stream_options|include_usage/i.test(refusal)) {
           NO_USAGE_OPTION.add(input.provider.baseUrl);
-          response = await post(false);
+          askUsage = false;
+          again = true;
         }
+        if (askEffort && effortField && refusal.toLowerCase().includes(effortField.toLowerCase())) {
+          NO_EFFORT.add(input.provider.baseUrl);
+          askEffort = false;
+          again = true;
+        }
+        if (again) response = await post(askUsage, askEffort);
       }
       if (!response.ok || !response.body) {
         const body = (await response.text().catch(() => "")).slice(0, 300);
@@ -575,6 +594,9 @@ export function openAIConversation(input: CompletionInput): Conversation {
 
 /** Endpoints that refused `stream_options` (by base URL): asked without it for the rest of this process. */
 const NO_USAGE_OPTION = new Set<string>();
+
+/** Endpoints that refused their thinking level's field (by base URL): asked without it for the rest of this process. */
+const NO_EFFORT = new Set<string>();
 
 const tokenCount = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.floor(x) : null);
 

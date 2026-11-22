@@ -1,4 +1,4 @@
-import { type ProviderView, sha256B64u } from "@galahad/core";
+import { type ProviderView, sha256B64u, type ThinkingEffort } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 
 export type ProviderKind = "openai" | "anthropic";
@@ -7,6 +7,14 @@ export interface ProviderPreset {
   id: string;
   kind: ProviderKind;
   baseUrl: string;
+  /**
+   * How it takes a thinking level in an OpenAI-compatible call: the request field, and Galahad's five levels
+   * mapped to its own. Absent (every other provider): asked as now, with no level, and its models choose for
+   * themselves. DeepSeek's chat completions take `reasoning_effort` ("none" disables thinking mode;
+   * low / high / max enable it; V4-Pro and V4-Flash take low, high and max: "use low for simple tasks, high
+   * for daily Agent tasks, and max for more complex scenarios").
+   */
+  effort?: { field: string; levels: Record<ThinkingEffort, string> };
   /** Key prefixes that identify this provider when you just paste a key. */
   keyPrefixes?: string[];
   /** Runs on the node itself (no key, nothing leaves the machine). */
@@ -61,7 +69,7 @@ export interface CodingPlan {
  */
 export const PRESETS: ProviderPreset[] = [
   { id: "anthropic", kind: "anthropic", baseUrl: "https://api.anthropic.com", keyPrefixes: ["sk-ant-"] },
-  { id: "deepseek", kind: "openai", baseUrl: "https://api.deepseek.com" },
+  { id: "deepseek", kind: "openai", baseUrl: "https://api.deepseek.com", effort: { field: "reasoning_effort", levels: { low: "low", medium: "high", high: "high", xhigh: "max", max: "max" } } },
   { id: "abliteration", kind: "openai", baseUrl: "https://api.abliteration.ai/v1" },
   { id: "heabsy", kind: "openai", baseUrl: "https://api.heabsy.com/v1", note: "Heabsy's OpenAI-compatible API (FEYA, s.r.o., Slovakia): low-refusal models; GET /v1/models lists the ones your key may use. For work that should run on nothing else, hold the knight or the task to them: sensitive mode." },
   { id: "nearai", kind: "openai", baseUrl: "https://cloud-api.near.ai/v1", note: "NEAR AI Cloud's OpenAI-compatible API: open models run privately, abliterated ones among them (Qwen/Qwen3.8-27B-abliterated, deepseek-ai/DeepSeek-V4.1-Flash-1017-abliterated). It serves other vendors' models too, so sensitive mode holds a knight to the models you name, never to the provider." },
