@@ -1345,7 +1345,8 @@ Next:
         return;
       }
       const { roster, spent = [], checks = {} } = await admin.call<{ roster: Record<string, { models: string[]; configured: boolean; custom?: boolean; effort?: string }>; spent?: { provider: string; until: number }[]; checks?: Record<string, ModelCheck> }>("roster");
-      const spentUntilOf = (ref: string) => spent.find((w) => ref.startsWith(`${w.provider}/`));
+      // (A coding plan's window is its id's, every model of it; any other provider's is its one model's: windowScope.)
+      const spentUntilOf = (ref: string) => spent.find((w) => ref === w.provider || ref.startsWith(`${w.provider}/`));
       for (const [role, spec] of Object.entries(roster)) {
         // (A coding plan's model does his coding and the knights': he passes it over for anything else.)
         const shown = (ref: string) => {
