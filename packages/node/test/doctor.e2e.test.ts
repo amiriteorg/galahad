@@ -319,11 +319,13 @@ describe("faults the owner's server has had, each with its own line and advice",
     // What its provider said on the node's last call to it.
     windowsOf(daemon.store).note("spentplan", 'spentplan → 429 {"error":{"type":"GoUsageLimitError","message":"usage limit reached (5-hour, resets in 1h 37m)"}}');
     try {
-      const first = check(await doctor({ offline: true }), "role.planner.first");
-      expect(first.state).toBe("needs-you");
-      expect(first.line).toMatch(/^planner's first model, spentplan\/big, is skipped on every answer \(its allowance is spent until \d\d:\d\d UTC \(1h 37m from now\), as its provider said: passed over without asking\); stand-in\/worker answers instead$/);
-      const { spent } = await json<{ spent: { provider: string; until: number }[] }>(admin("roster"));
-      expect(spent.map((w) => w.provider)).toEqual(["spentplan"]);
+      const report = await doctor({ offline: true });
+      const spent = check(report, "models.spent.spentplan");
+      expect(spent.state).toBe("ok");
+      expect(spent.line).toMatch(/^spentplan's allowance is spent until \d\d:\d\d UTC \(1h 37m from now\), as its provider said: its models are passed over on every role until then$/);
+      expect(report.checks.some((c) => c.id === "role.planner.first")).toBe(false);
+      const { spent: windows } = await json<{ spent: { provider: string; until: number }[] }>(admin("roster"));
+      expect(windows.map((w) => w.provider)).toEqual(["spentplan"]);
     } finally {
       await json(admin("setRoster", { role: "planner", models: ["stand-in/worker"] }));
     }

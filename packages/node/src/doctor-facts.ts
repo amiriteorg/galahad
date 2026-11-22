@@ -302,7 +302,10 @@ async function rolesOf(deps: DoctorDeps, ask: boolean, signal?: AbortSignal): Pr
     models: spec.models.slice(0, 16).map((ref) => {
       // A role a VM's tools play can't have a plan its terms keep to a tool you run yourself (the gateway refuses a VM it).
       const kept = TOOL_ROLES.has(role) && onPlan(ref) && planOf(ref.slice(0, ref.indexOf("/")))?.allows.tools !== "unattended";
-      return { ref, problem: kept ? VM_TOOLS_CANT : modelProblem(deps, ref), ...(onPlan(ref) ? { plan: true } : {}) };
+      // A provider whose allowance is spent now: marked so the doctor can leave it out of a role's plan and first lines
+      // (the window ends by itself, so it is no fault) while its problem still says what the provider said.
+      const spent = !kept && windowsOf(deps.store).spent(ref.slice(0, ref.indexOf("/"))) !== null;
+      return { ref, problem: kept ? VM_TOOLS_CANT : modelProblem(deps, ref), ...(spent ? { spent: true } : {}), ...(onPlan(ref) ? { plan: true } : {}) };
     }),
     ...(!spec.configured && spec.models.every((ref) => providerRecord(deps.store, ref.slice(0, ref.indexOf("/"))) === null) ? { unset: true } : {}),
     probe: null,
@@ -527,6 +530,7 @@ export async function gatherFacts(deps: DoctorDeps, opts: DoctorOptions = {}): P
     mind: { events: store.eventCount(), integrity, head: store.head(self), forks: store.forks().map((id) => ({ id, name: store.device(id)?.name ?? id.slice(0, 12) })), newestEventAt: newest || null, timeSynced, peers, backup },
     vault: { unlocked: deps.vault.unlocked(), secrets: deps.vault.list().length, requests: deps.vault.requests().map((r) => r.name) },
     providers: { setUp: providerRecords(store).length, byDefault: [...new Set(ROLES.planner!.defaults.map((ref) => ref.slice(0, ref.indexOf("/"))))] },
+    spent: windowsOf(store).list().map((w) => ({ provider: w.provider, until: w.until })),
     roles,
     archive,
     sandbox,

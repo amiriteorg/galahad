@@ -1,3 +1,4 @@
+import { clockUtc, spanWords } from "@galahad/brain";
 import { type DoctorArea, type DoctorCheck, type DoctorReport, type DoctorState, doctorSorted, doctorTally, redact } from "@galahad/core";
 
 /*
@@ -29,9 +30,10 @@ export interface RoleFact {
   chats: boolean;
   /**
    * In the roster's order. `problem`: why this node can't use it (null: it can). `plan`: it is on a coding plan,
-   * so it does his coding and the knights' coding tools use it, and it answers nothing else.
+   * so it does his coding and the knights' coding tools use it, and it answers nothing else. `spent`: its provider's
+   * allowance is spent now (its window ends by itself, so it is passed over, never a finding).
    */
-  models: { ref: string; problem: string | null; plan?: boolean }[];
+  models: { ref: string; problem: string | null; plan?: boolean; spent?: boolean }[];
   /** On its defaults, none of whose providers is set up here (roster.ts): what it lacks is a key for one of them. */
   unset?: boolean;
   /** The one-word call to the first model that can be used (null: nobody was asked). */
@@ -62,6 +64,8 @@ export interface DoctorFacts {
   vault: { unlocked: boolean; secrets: number; requests: string[] };
   /** The providers this fleet has set up (a key added, or one added by hand), and those his roles' defaults name, whose key alone is enough. */
   providers?: { setUp: number; byDefault: string[] };
+  /** Providers whose allowance is spent now (absent: gathered before this was known): each window, and when it resets. */
+  spent?: { provider: string; until: number }[];
   roles: RoleFact[];
   /** null: this node keeps no archive. */
   archive: {
@@ -177,6 +181,38 @@ export function span(ms: number): string {
 
 const octal = (mode: number) => (mode & 0o777).toString(8).padStart(3, "0");
 const openToOthers = (file: FileFact | null): boolean => !!file?.exists && file.mode !== null && (file.mode & 0o077) !== 0;
+
+/** Cut `text` to at most `max` characters at a word boundary (never mid-word). */
+function cutAtWord(text: string, max = 200): string {
+  if (text.length <= max) return text;
+  const end = text.lastIndexOf(" ", max);
+  return text.slice(0, end > 0 ? end : max);
+}
+
+/**
+ * A provider's refusal in its own words: an HTTP status followed by a JSON body reads its status and its message
+ * (`error.message` as OpenAI and Anthropic put it, `error[0].message` as Cloudflare's AI Gateway does, or a top-level
+ * `message`); anything else is said as it came. Secrets are redacted, and it is cut at a word when it must be.
+ */
+export function refusalWords(error: string): string {
+  const words = redact(error).replace(/\s+/g, " ").trim();
+  const statused = /\b(\d{3})\s+(\{.*\})$/s.exec(words);
+  if (!statused) return cutAtWord(words);
+  let message: string | null = null;
+  try {
+    const body = JSON.parse(statused[2]!) as { error?: unknown; message?: unknown };
+    const said = body.error;
+    const first = Array.isArray(said) ? said[0] : said;
+    if (first !== null && typeof first === "object" && typeof (first as { message?: unknown }).message === "string") {
+      message = (first as { message: string }).message;
+    } else if (typeof body.message === "string") {
+      message = body.message;
+    }
+  } catch {
+    message = null;
+  }
+  return message ? cutAtWord(`${statused[1]}: ${message.replace(/\s+/g, " ").trim()}`) : cutAtWord(words);
+}
 
 /** Why a model didn't answer, and what that calls for. */
 function probeAdvice(error: string): string {
@@ -303,6 +339,16 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     const named = f.providers!.byDefault;
     add("models", "models.none", "broken", "no provider is set up here yet, so no model can answer", `Add a key: galahad key add. A key for ${named.slice(0, -1).join(", ")} or ${named.at(-1)} is enough, since his roles' defaults name their models; for another provider, hire one of its models too (galahad roster set <role> <provider/model>).`);
   }
+  // A provider whose allowance is spent until it resets: its models are passed over on every role until then. The window
+  // ends by itself, so there is nothing to do; said once in the models area, never as a role's finding or an Inbox notice.
+  for (const window of f.spent ?? []) {
+    add(
+      "models",
+      `models.spent.${window.provider}`,
+      "ok",
+      `${window.provider}'s allowance is spent until ${clockUtc(window.until)} UTC (${spanWords(window.until - f.now)} from now), as its provider said: its models are passed over on every role until then`,
+    );
+  }
   for (const role of none ? [] : f.roles) {
     if (!role.models.length) continue; // nobody hired for it: a choice, not a problem
     const id = `role.${role.role}`;
@@ -311,7 +357,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     const plans = role.models.filter((m) => m.plan);
     const own = role.models.filter((m) => !m.plan);
     const lent = plans.filter((m) => m.problem === null);
-    const unlent = plans.filter((m) => m.problem !== null);
+    const unlent = plans.filter((m) => m.problem !== null && !m.spent);
     if (unlent.length) {
       add(
         "models",
@@ -325,7 +371,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     }
     const tools = lent.length ? `; his coding and the knights' tools use ${lent.map((m) => m.ref).join(", ")}` : "";
     const usable = own.filter((m) => m.problem === null);
-    const first = own[0];
+    const first = own.find((m) => !m.spent);
     // A VM's eyes are asked by its tools, never by him: a plan they may use plays them alone (one they may not, said above).
     if (!own.length && TOOL_ROLES.has(role.role)) {
       if (lent.length) add("models", id, "ok", `${role.role}: ${lent[0]!.ref} looks at the VMs' screens, asked by their tools through the gateway (a coding plan: it is asked nothing else, so not a word)`);
@@ -370,7 +416,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     else if (probe.ok) add("models", id, "ok", `${role.role}: ${probe.ref} answered${tools}`, undefined, { ms: probe.ms });
     else {
       const others = usable.filter((m) => m.ref !== probe.ref);
-      const error = redact(probe.error ?? "no answer").replace(/\s+/g, " ").slice(0, 200);
+      const error = refusalWords(probe.error ?? "no answer");
       add("models", id, others.length || !CORE_ROLES.has(role.role) ? "needs-you" : "broken", `${role.role}: ${probe.ref} didn't answer: ${error}${others.length ? ` (${others[0]!.ref} is next in line)` : ""}`, probeAdvice(error), { ms: probe.ms });
     }
   }
