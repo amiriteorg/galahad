@@ -281,7 +281,10 @@ export async function runAgent(
     );
     if (started.exitCode !== 0) {
       await stop();
-      return { ...run, status: "failed", error: redact(`couldn't start ${driver.name}: ${started.stderr || started.stdout}`).slice(0, 2000) };
+      // (Its first line is what a trail and the next model are told: a Python traceback's is its last, the exception.)
+      const said = (started.stderr || started.stdout).trim();
+      const first = /^Traceback \(most recent call last\):/.test(said) ? (said.split("\n").filter(Boolean).at(-1) ?? said) : said;
+      return { ...run, status: "failed", error: redact(`couldn't start ${driver.name}: ${first === said ? said : `${first}\n${said}`}`).slice(0, 2000) };
     }
 
     let lastError = "";

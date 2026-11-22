@@ -230,6 +230,18 @@ describe("running an agent", () => {
     }
   });
 
+  test("a run that can't start says why in its first line: a traceback's exception, not its heading", async () => {
+    // On 22 November 2026 a knight's trail said only "couldn't start opencode: Traceback (most recent call last):".
+    const exec = async (command: string): Promise<ExecResult> => {
+      if (command.startsWith("mkdir -p")) return { exitCode: 1, stdout: "", stderr: "Traceback (most recent call last):\n  File \"<string>\", line 3, in <module>\nFileNotFoundError: [Errno 2] No such file or directory: '/work/.galahad-gateway.json'", durationMs: 1, truncated: false };
+      return { exitCode: 0, stdout: command.startsWith("stat -c") ? "0\n" : "", stderr: "", durationMs: 1, truncated: false };
+    };
+    const run = await runAgent(OPENCODE, { model, prompt: "x", session: null, deadline: Date.now() + 60_000, workdir: "/work" }, { exec, sleep: noSleep });
+    expect(run.status).toBe("failed");
+    expect(run.error!.split("\n")[0]).toBe("couldn't start opencode: FileNotFoundError: [Errno 2] No such file or directory: '/work/.galahad-gateway.json'");
+    expect(run.error).toContain('File "<string>", line 3');
+  });
+
   test("a failed run says why: its exit, its last error, its stderr", async () => {
     const box = sandbox([[LINES.start]], 1, { stderr: "provider galahad: 401 unknown token" });
     const run = await runAgent(OPENCODE, { model, prompt: "x", session: null, deadline: Date.now() + 60_000, workdir: "/work" }, { exec: box.exec, sleep: noSleep });
