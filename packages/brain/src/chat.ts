@@ -1,6 +1,7 @@
 import { canonical, type ChatMessage, type ChatStreamEvent, type Json, priceFor, type Prices, pricesOf, redact, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
-import { anthropicConversation, type ModelMessage, openAIConversation, RefusalError, refusalWords, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
+import { type ModelMessage, RefusalError, refusalWords, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
+import { conversationFor } from "./responses.ts";
 import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./persona.ts";
@@ -305,7 +306,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
     // Whether it reads pictures, where a check has said: then that, not the rule of thumb (adapters.ts seesImages).
     const sees = readsScreens(checkOf(ctx.store, ref));
     const start = () => {
-      const fresh = (provider.kind === "anthropic" ? anthropicConversation : openAIConversation)({
+      const fresh = conversationFor({
         provider,
         model: parsed.model,
         ...(sees === null ? {} : { sees }),

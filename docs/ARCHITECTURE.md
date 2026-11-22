@@ -41,7 +41,7 @@ Code layout:
 | `packages/core` | Contracts and primitives: crypto, canonical JSON, HLC, event schemas, API routes and scopes, pairing math, request signing, the oath gate, secret scanning |
 | `packages/mind` | The replica: SQLite log + views, the vault, fleet founding/enrollment/revocation |
 | `packages/link` | Pairing host, the joining client, the sync engine |
-| `packages/brain` | Provider presets, roster, adapters (Anthropic SDK, OpenAI-compatible), chat with fallback, model gateway |
+| `packages/brain` | Provider presets, roster, adapters (Anthropic SDK, OpenAI's Responses, OpenAI-compatible), chat with fallback, model gateway |
 | `packages/node` | Daemon, HTTP server, CLI, capability probe, placement, config/keystore |
 | `apps/web` | The PWA (served by every node) |
 
@@ -263,6 +263,7 @@ The **decider** is a different kind of model: TypeSafe's System One (Jev) answer
 **Another region, and a key that goes only where it was added for.** A preset's address is its vendor's default. A plan sold in several regions (Xiaomi's, Alibaba's, Z.ai's, MiniMax's, Kimi's) is reached at another one by giving that address with its key: `galahad key add --provider mimo-token --base-url https://token-plan-ams.xiaomimimo.com/v1`, or **Another address** in the app's and the iPhone's key sheets. The key is pinned there and the provider is set up there, at an address you typed next to the key, never one read back from the provider's configuration ([SECURITY](SECURITY.md), finding 2). A provider pointed elsewhere after its key was added keeps the key out of the new address, and says which address the key was for: `keyElsewhere` in `GET /api/providers`, "key for another address" in the app and on the iPhone, and the line that fixes it under `galahad provider`.
 
 - **Anthropic** goes through the official SDK with adaptive thinking, explicit effort and streaming. Server-side refusal fallback (`fallbacks: "default"`) is enabled on the models that support it (Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5).
+- **OpenAI's own API** (`api.openai.com`) goes through its Responses API (`packages/brain/src/responses.ts`, since 22 November 2026): OpenAI's docs say GPT-6.2 Astra and Sol call tools only there (Chat Completions takes tools only at a reasoning effort of none, which GPT-6.2 Astra refuses). Stateless (`store: false`), each step's effort as `reasoning.effort` (Galahad's five levels are the five it takes), and an answer that called tools goes back with its reasoning, encrypted, to the model it came from alone. Checked against OpenAI's documented event shapes with a stand-in; not yet against the live API (no OpenAI key on the fleet).
 - **Everything else** uses OpenAI-compatible streaming.
 - **Fallback chain:** a model that fails *before* producing text is skipped (missing key, outage, rate limit, refusal), and the next model answers. Each skip is reported to the client.
 

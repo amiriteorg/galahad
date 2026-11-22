@@ -39,7 +39,9 @@ const ROWS: Row[] = [
   { id: "deepseek", docs: "https://api-docs.deepseek.com/", model: "deepseek-v4-pro", chat: "https://api.deepseek.com/chat/completions", auth: bearer, models: { asks: "https://api.deepseek.com/models" } },
   // Read 21 November 2026, as their presets were added: OpenAI's guide names gpt-6.2-astra its strong default; xAI keeps
   // chat completions, which it calls legacy, beside its Responses API; Mistral's -latest aliases are its own.
-  { id: "openai", docs: "https://developers.openai.com/api/docs/guides/completions", model: "gpt-6.2-astra", chat: "https://api.openai.com/v1/chat/completions", auth: bearer, models: { asks: "https://api.openai.com/v1/models" } },
+  // (Its own models call tools only through Responses: "GPT-6.2 Astra and GPT-6.2 Sol support Chat Completions, but tool
+  // calling requires Responses", developers.openai.com/api/docs/guides/latest-model, read 22 November 2026.)
+  { id: "openai", docs: "https://developers.openai.com/api/reference/resources/responses/methods/create", model: "gpt-6.2-astra", chat: "https://api.openai.com/v1/responses", auth: bearer, models: { asks: "https://api.openai.com/v1/models" } },
   { id: "xai", docs: "https://docs.x.ai/developers/model-capabilities/legacy/chat-completions", model: "grok-4.7", chat: "https://api.x.ai/v1/chat/completions", auth: bearer, models: { asks: "https://api.x.ai/v1/models" } },
   { id: "mistral", docs: "https://docs.mistral.ai/api/endpoint/chat", model: "mistral-large-latest", chat: "https://api.mistral.ai/v1/chat/completions", auth: bearer, models: { asks: "https://api.mistral.ai/v1/models" } },
   { id: "abliteration", docs: "https://docs.abliteration.ai/api/openai-compatibility", model: "abliterated-model", chat: "https://api.abliteration.ai/v1/chat/completions", auth: bearer, models: { asks: "https://api.abliteration.ai/v1/models" } },
@@ -85,6 +87,12 @@ const seen: Seen[] = [];
 let refusing = false;
 
 const OPENAI_STREAM = ['{"choices":[{"delta":{"content":"aye"}}]}', '{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":1}}', "[DONE]"].map((d) => `data: ${d}\n\n`).join("");
+const RESPONSES_STREAM = [
+  { type: "response.output_text.delta", item_id: "msg_1", output_index: 0, content_index: 0, delta: "aye" },
+  { type: "response.completed", response: { status: "completed", usage: { input_tokens: 5, output_tokens: 1 } } },
+]
+  .map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
+  .join("");
 const ANTHROPIC_STREAM = [
   ["message_start", { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", content: [], model: "claude-opus-5-5", stop_reason: null, stop_sequence: null, usage: { input_tokens: 5, output_tokens: 1 } } }],
   ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
@@ -110,6 +118,7 @@ const fake = Bun.serve({
     if (path.endsWith("/models")) return Response.json({ object: "list", data: [{ id: "m-2", object: "model" }, { id: "m-1", object: "model" }] });
     if (path.endsWith("/v1/messages")) return new Response(ANTHROPIC_STREAM, { headers: { "content-type": "text/event-stream" } });
     if (path.endsWith("/chat/completions")) return new Response(OPENAI_STREAM, { headers: { "content-type": "text/event-stream" } });
+    if (path.endsWith("/responses")) return new Response(RESPONSES_STREAM, { headers: { "content-type": "text/event-stream" } });
     return new Response("not found", { status: 404 });
   },
 });
@@ -176,7 +185,7 @@ for (const row of ROWS) {
     test(`its terms, as the code holds it to them${row.plan ? "" : " (none: it is a provider like any other)"}`, () => {
       expect(planOf(row.id)?.allows ?? null).toEqual(row.plan ? { native: row.plan.native, tools: row.plan.tools } : null);
       expect(planOf(row.id)?.session).toBe(row.plan?.session);
-      expect(known.baseUrl).toBe(row.base ? "" : new URL(row.chat).href.replace(/\/(v1\/messages|chat\/completions)$/, ""));
+      expect(known.baseUrl).toBe(row.base ? "" : new URL(row.chat).href.replace(/\/(v1\/messages|chat\/completions|responses)$/, ""));
     });
 
     if (asItself) {
@@ -196,6 +205,10 @@ for (const row of ROWS) {
         if (known.kind === "anthropic") {
           expect(body).toMatchObject({ max_tokens: expect.any(Number), thinking: { type: "adaptive" }, messages: hello });
           expect(call.headers.get("anthropic-version")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        } else if (row.chat.endsWith("/responses")) {
+          expect(body).toMatchObject({ instructions: expect.any(String), input: hello, store: false });
+          expect(body.tools).toBeUndefined();
+          expect(call.headers.get("content-type")).toBe("application/json");
         } else {
           expect(body.messages[0]).toMatchObject({ role: "system", content: expect.any(String) });
           expect(body.messages.slice(1)).toEqual(hello);
@@ -245,7 +258,8 @@ for (const row of ROWS) {
 
     test(`a tool's call through the gateway reaches it ${row.plan?.tools === "interactive" ? "only from one you run yourself" : "from a knight's VM"}, ${row.auth ? "with the key added" : "with no key to add"} and the tool's token kept back`, async () => {
       const { store, vault, key, tokens } = configured(row);
-      const path = known.kind === "anthropic" ? "v1/messages" : "chat/completions";
+      // (A tool asks where its own protocol says: Codex asks OpenAI's Responses, as Galahad does there.)
+      const path = known.kind === "anthropic" ? "v1/messages" : row.chat.endsWith("/responses") ? "responses" : "chat/completions";
       const body = JSON.stringify({ model: row.model, messages: hello, stream: false });
       const through = (label: string) => {
         const { token } = tokens.mint({ label, providers: [row.id], ttlMinutes: 10, maxRequests: 5 });

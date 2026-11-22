@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { type ChatMessage, chooseEyes, type ModelCheck } from "@galahad/core";
-import { anthropicConversation, openAIConversation, type ToolImage } from "./adapters.ts";
+import type { ToolImage } from "./adapters.ts";
+import { conversationFor } from "./responses.ts";
 import { type BrainContext, chat } from "./chat.ts";
 import { offersModel, onPlan, resolveProvider, whyNoKey } from "./providers.ts";
 import { parseRef } from "./roster.ts";
@@ -117,7 +118,7 @@ function judgePlaces(said: string): NonNullable<ModelCheck["places"]> {
 async function withPicture(ctx: BrainContext, ref: string, question: string, signal?: AbortSignal): Promise<string> {
   const { provider: providerId, model } = parseRef(ref);
   const provider = resolveProvider(ctx.store, ctx.vault, providerId, onPlan(ref) ? "coding" : "own")!;
-  const conversation = (provider.kind === "anthropic" ? anthropicConversation : openAIConversation)({
+  const conversation = conversationFor({
     provider,
     model,
     system: "You read screenshots exactly, and answer only what is asked.",
