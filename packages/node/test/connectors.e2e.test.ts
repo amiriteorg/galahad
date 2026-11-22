@@ -663,6 +663,25 @@ describe("loops over the API", () => {
     }
   });
 
+  test("a role you made, played by a coding plan, is its knights' coding: the heartbeat finds no model missing, as the doctor says", async () => {
+    // On the owner's node (22 November 2026) the heartbeat said every half hour that no model could play plan-coder, a
+    // role made for a knight's OpenCode on the owner's plans, while the doctor said it was well.
+    expect((await admin("setSecret", { name: "opencode-go", value: `FAKE-opencode-go-${"0".repeat(24)}`, provider: "opencode-go" })).status).toBe(200);
+    expect((await admin("setProvider", { id: "opencode-go", secret: "opencode-go" })).status).toBe(200);
+    try {
+      await admin("setRoster", { role: "plan-coder", models: ["opencode-go/glm-5.3"] });
+      expect((await admin<{ findings: { key: string }[] }>("heartbeat", {})).body.findings.map((f) => f.key)).not.toContain("no-model:plan-coder");
+      // A chore's role is no knight's coding: on a plan alone it still can't be played (folding a long chat into its story).
+      await admin("setRoster", { role: "fold", models: ["opencode-go/glm-5.3"] });
+      const chore = (await admin<{ findings: { key: string; body: string }[] }>("heartbeat", {})).body.findings.find((f) => f.key === "no-model:fold");
+      expect(chore?.body).toContain("can't play fold");
+    } finally {
+      for (const role of ["plan-coder", "fold"]) await admin("setRoster", { role, models: [] });
+      await admin("removeProvider", { id: "opencode-go" });
+      await admin("deleteSecret", { name: "opencode-go" });
+    }
+  });
+
   test("a loop that calls a connector: reads report back, outward calls wait for you", async () => {
     const set = await admin<{ loop: LoopView }>("setLoop", { name: "poll", schedule: "every 15m", task: { kind: "call", connector: "forge", tool: "me" } });
     expect(set.status).toBe(200);
