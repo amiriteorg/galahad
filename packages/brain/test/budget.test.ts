@@ -180,3 +180,80 @@ describe("a coding agent out of time", () => {
     expect(outcome.summary).toEndWith("stub ran out of time (0 minutes): it ran out of time");
   });
 });
+
+/**
+ * A coding agent on two models whose first run works (a command, then a summary) and ends in a failure, and whose
+ * run on the next model can't start, as Percival's could not once its model access was gone (22 November 2026: its
+ * finished work was given up unjudged). `worked: false`: the first run fails before it does anything.
+ */
+function agentThatFails({ worked = true, firstExit = 1, reviewer = ["PASS\nThe report is there."] }: { worked?: boolean; firstExit?: number; reviewer?: string[] } = {}) {
+  const driver: AgentDriver = { name: "stub", title: "Stub", kind: "openai", check: "true", files: () => ({}), command: () => "stub-agent", read: (line) => JSON.parse(line) as AgentEvent[] };
+  const ok = (stdout = ""): ExecResult => ({ exitCode: 0, stdout, stderr: "", durationMs: 1, truncated: false });
+  const queues: Record<QuestRole, string[]> = { planner: ["1. Write the report.\nDone when: it is written."], engineer: [], reviewer: [...reviewer] };
+  let launches = 0;
+  const asked: QuestRole[] = [];
+  const run = runQuest(
+    { goal: "profile the suite", environment: "a test sandbox", submitAtLimit: true, agent: { driver, models: [{ provider: "p", model: "first" }, { provider: "p", model: "next" }], minutes: 60, workdir: "/work" } },
+    {
+      ask: async (role) => {
+        asked.push(role);
+        const text = queues[role].shift();
+        if (text === undefined) throw new Error(`the ${role} ran out of script`);
+        return { text, model: `test/${role}` };
+      },
+      exec: async (command) => {
+        if (command.includes("base64 -d > /work/.agent/prompt.md")) {
+          launches += 1;
+          if (launches === 1) return ok();
+          return { exitCode: 1, stdout: "", stderr: "Traceback (most recent call last):\n  File \"<string>\", line 1\nFileNotFoundError: [Errno 2] No such file or directory: '/work/.galahad-gateway.json'", durationMs: 1, truncated: false };
+        }
+        if (command.startsWith("stat -c")) return ok("0\n");
+        if (command.startsWith("python3 -c") && command.includes("d, off =")) {
+          const lines = worked ? [JSON.stringify([{ type: "session", id: "ses_1" }, { type: "tool", tool: "bash", input: "bun test > report.txt", output: "ok", ok: true }, { type: "text", text: "Wrote report.txt." }])] : [];
+          return ok(JSON.stringify({ alive: false, exit: firstExit, next: 10, lines }));
+        }
+        return ok();
+      },
+      emit: () => {},
+      sleep: async () => {},
+    },
+  );
+  return { run, asked, launches: () => launches };
+}
+
+describe("a coding agent whose run fails on every model", () => {
+  test("with work done, what it left is judged as it stands (submitAtLimit), and what passes is done", async () => {
+    const q = agentThatFails();
+    const outcome = await q.run;
+    expect(q.launches()).toBe(2);
+    expect(q.asked.filter((role) => role === "reviewer")).toHaveLength(1);
+    expect(outcome.status).toBe("done");
+    expect(outcome.summary).toBe("Its run failed on every model before he said he was done. The work as it stood was put to the reviewer, who accepted it.");
+  });
+
+  test("what they don't pass gives up as before, saying why it failed and that what was there was judged", async () => {
+    const q = agentThatFails({ reviewer: ["REVISE\nThe report is half written."] });
+    const outcome = await q.run;
+    expect(outcome.status).toBe("gave-up");
+    expect(outcome.summary).toContain("stub failed: couldn't start stub: FileNotFoundError: [Errno 2] No such file or directory: '/work/.galahad-gateway.json'");
+    expect(outcome.summary).toEndWith("What was there was put to the reviewer, who did not accept it.");
+    expect(outcome.review).toBe("The report is half written.");
+  });
+
+  test("with nothing done there is nothing to judge: it gives up, the reviewer unasked", async () => {
+    const q = agentThatFails({ worked: false });
+    const outcome = await q.run;
+    expect(outcome.status).toBe("gave-up");
+    expect(q.asked).not.toContain("reviewer");
+  });
+
+  test("work sent back whose next run fails having done nothing new isn't judged again: the reviewer's word stands", async () => {
+    // (A second look at the same work could pass what was just sent back.)
+    const q = agentThatFails({ firstExit: 0, reviewer: ["REVISE\nThe report misses the slowest files."] });
+    const outcome = await q.run;
+    expect(q.launches()).toBe(3);
+    expect(q.asked.filter((role) => role === "reviewer")).toHaveLength(1);
+    expect(outcome.status).toBe("gave-up");
+    expect(outcome.review).toBe("The report misses the slowest files.");
+  });
+});

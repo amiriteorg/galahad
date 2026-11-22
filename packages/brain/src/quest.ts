@@ -120,9 +120,10 @@ export interface QuestOptions {
    */
   gatesFirst?: boolean;
   /**
-   * When the engineer runs out of commands having run some (or a coding agent out of its time or its budget, having
-   * done something), put the work as it stands to the gates and the reviewer anyway: he may have finished and never
-   * said so, and what they pass is done whoever claimed it. Default off: a quest out of commands is stopped, as it was.
+   * When the engineer runs out of commands having run some (or a coding agent out of its time or its budget, or failed
+   * on its every model, having done something), put the work as it stands to the gates and the reviewer anyway: he may
+   * have finished and never said so, and what they pass is done whoever claimed it. Default off: a quest out of commands
+   * is stopped, as it was.
    */
   submitAtLimit?: boolean;
   /**
@@ -1460,6 +1461,10 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
     let prompt = agentBriefing(o, plan, gates, before, [...locked.keys()]);
     let session: string | null = agent.session ?? null;
     let current = 0;
+    // How much of the trail the reviewer has judged, and what it said: work it sent back is judged again only once
+    // there is more of it (a second look at the same work could pass what was just sent back).
+    let judged = 0;
+    let review: string | undefined;
     for (;;) {
       check();
       const model = agent.models[current]!;
@@ -1520,10 +1525,17 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         if (run.status === "timeout" && o.submitAtLimit && trail.length) {
           return await asItStands(`His time (${agent.minutes} minutes) was up before he said he was done: this is the work as it stands.`, `His time (${agent.minutes} minutes) was up`, { status: "gave-up", summary: gaveUp });
         }
-        return finish({ status: "gave-up", summary: gaveUp });
+        // Failed on its every model with work done: judged as it stands too. (22 November 2026: a knight's run that had
+        // written its report couldn't start again once its model access was gone, and the report was given up unjudged.)
+        if (run.status === "failed" && o.submitAtLimit && trail.length > judged) {
+          return await asItStands("His run failed on every model before he said he was done: this is the work as it stands.", "Its run failed on every model", { status: "gave-up", summary: gaveUp });
+        }
+        return finish({ status: "gave-up", summary: gaveUp, ...(review ? { review } : {}) });
       }
       // The reviewer sees the latest commands; every one of them is in the ledger.
       const verdict = await submit(run.summary || "(the agent ended without a summary)", trail.slice(-40));
+      judged = trail.length;
+      review = verdict.notes || undefined;
       if (verdict.verdict === "pass") return finish({ status: "done", summary: run.summary, review: verdict.notes || undefined });
       // (Sent back with its budget spent, it isn't taken up again: the reviewer's word stands.)
       if (revisions >= o.maxRevisions || !session || (await spentNow())) return finish({ status: "unverified", summary: run.summary, review: verdict.notes });
