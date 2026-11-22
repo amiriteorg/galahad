@@ -3884,7 +3884,17 @@
       {
         "id": "deepseek",
         "kind": "openai",
-        "baseUrl": "https://api.deepseek.com"
+        "baseUrl": "https://api.deepseek.com",
+        "effort": {
+          "field": "reasoning_effort",
+          "levels": {
+            "low": "low",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "max",
+            "max": "max"
+          }
+        }
       },
       {
         "id": "abliteration",
