@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type ChatStreamEvent, newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import { chat } from "../src/index.ts";
-import { type SpentWindow, SpentWindows, spentUntil, windowsOf } from "../src/windows.ts";
+import { type SpentWindow, SpentWindows, spentUntil, windowScope, windowsOf } from "../src/windows.ts";
 
 /*
  * A plan's allowance runs in windows (OpenCode Go: five hours). Once its provider has said the window is spent and
@@ -40,6 +40,8 @@ function brain() {
   const vault = new Vault(store, identity);
   store.emit(identity, "provider.set", { id: "plan", kind: "openai", baseUrl: "http://127.0.0.1:9/v1" });
   store.emit(identity, "provider.set", { id: "spare", kind: "openai", baseUrl: "http://localhost:9/v1" });
+  // (A router of many vendors' models, on this machine so it needs no key here.)
+  store.emit(identity, "provider.set", { id: "router", kind: "openai", baseUrl: "http://localhost:8/v1" });
   store.emit(identity, "roster.set", { role: "planner", models: ["plan/a", "spare/b"] });
   return { store, vault };
 }
@@ -72,7 +74,8 @@ describe("a provider whose allowance is spent", () => {
     const second = await run();
     expect(asked).toEqual(["spare"]);
     expect(second.find((e) => e.type === "fallback")).toMatchObject({ from: "plan/a", error: "its allowance is spent until 07:55 UTC (1h 27m from now), as its provider said: passed over without asking" });
-    expect(windowsOf(ctx.store).list()).toEqual([{ provider: "plan", until: Date.UTC(2026, 10, 14, 7, 55), noted: Date.UTC(2026, 10, 14, 6, 18), said: expect.stringContaining("GoUsageLimitError") }]);
+    // (A provider of yours that isn't a coding plan's preset: the window is the model's, as any API's or router's is.)
+    expect(windowsOf(ctx.store).list()).toEqual([{ provider: "plan/a", until: Date.UTC(2026, 10, 14, 7, 55), noted: Date.UTC(2026, 10, 14, 6, 18), said: expect.stringContaining("GoUsageLimitError") }]);
     // Once the window has ended it is asked again, and answers.
     now = Date.UTC(2026, 10, 14, 7, 56);
     planSpent = false;
@@ -98,6 +101,40 @@ describe("a provider whose allowance is spent", () => {
     expect(after.spent("opencode-go")).toEqual(window);
     expect(after.spent("old-plan")).toBeNull();
     expect(after.list()).toEqual([window]);
+  });
+
+  test("a coding plan's window holds back every model of it; any other provider's, the model told to wait alone", async () => {
+    // A router (OrcaRouter, OpenRouter, a Cloudflare AI Gateway) serves many vendors' models, and an API limits each
+    // model apart: one told to wait says nothing of the others.
+    expect(windowScope("opencode-go/glm-5.3")).toBe("opencode-go");
+    expect(windowScope("orcarouter/anthropic/claude-opus-5.5")).toBe("orcarouter/anthropic/claude-opus-5.5");
+    const windows = new SpentWindows();
+    windows.now = () => 0;
+    windows.note(windowScope("opencode-go/glm-5.3"), GO);
+    windows.note(windowScope("orcarouter/anthropic/claude-opus-5.5"), "orcarouter → 429 rate limit reached for this model; try again in 2h");
+    expect(windows.spentFor("opencode-go/deepseek-v4-pro")?.provider).toBe("opencode-go");
+    expect(windows.spentFor("orcarouter/anthropic/claude-opus-5.5")?.provider).toBe("orcarouter/anthropic/claude-opus-5.5");
+    expect(windows.spentFor("orcarouter/google/gemini-3.1-pro-preview")).toBeNull();
+
+    // Through chat: the router's other model is asked, and answers, while the one told to wait is passed over.
+    const ctx0 = brain();
+    const asked: string[] = [];
+    const fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const model = (JSON.parse(String(init?.body)) as { model: string }).model;
+      asked.push(model);
+      if (model === "a") return new Response('{"error":{"message":"rate limit reached for a; try again in 2h"}}', { status: 429 });
+      return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: "Answered." }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+    }) as typeof globalThis.fetch;
+    const ctx = { ...ctx0, fetch };
+    windowsOf(ctx.store).now = () => 0;
+    const run = async () => {
+      for await (const _ of chat(ctx, { models: ["router/a", "router/b"], messages: [{ role: "user", content: "Go on" }] }));
+    };
+    await run();
+    expect(asked).toEqual(["a", "b"]);
+    await run();
+    expect(asked).toEqual(["a", "b", "b"]);
+    expect(windowsOf(ctx.store).list().map((w) => w.provider)).toEqual(["router/a"]);
   });
 
   test("each node keeps its own: another mind's windows are not this one's", () => {

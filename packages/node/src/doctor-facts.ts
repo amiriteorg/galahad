@@ -235,7 +235,7 @@ function modelProblem(deps: DoctorDeps, ref: string): string | null {
     return "not a <provider>/<model> reference";
   }
   // Its allowance spent until a time its provider gave: passed over until then (brain/windows.ts), and said so.
-  const spent = windowsOf(deps.store).spent(parsed.provider);
+  const spent = windowsOf(deps.store).spentFor(ref);
   if (spent) return windowsOf(deps.store).why(spent);
   // (A coding plan's model is the knights' tools' to use: what is asked of it is whether a tool would get its key.)
   const provider = resolveProvider(deps.store, deps.vault, parsed.provider, onPlan(ref) ? "tool" : "own");

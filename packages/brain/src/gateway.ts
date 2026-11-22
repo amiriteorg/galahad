@@ -3,7 +3,7 @@ import { randomId, redact, sha256B64u, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { usageReader } from "./gateway-usage.ts";
 import { gatewaySession, keyHeaders, planOf, resolveProvider } from "./providers.ts";
-import { clockUtc, retryAfterAt, spanWords, windowsOf, type SpentWindow, type SpentWindows } from "./windows.ts";
+import { clockUtc, retryAfterAt, spanWords, windowScope, windowsOf, type SpentWindow, type SpentWindows } from "./windows.ts";
 
 /*
  * The model gateway: how arms (OpenCode, Claude Code, Codex, Hermes, sandboxes)
@@ -219,10 +219,12 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
   // before a byte of the call leaves (a provider that serves others' models too, as NEAR AI's does, serves only those).
   const held = ctx.tokens.modelsOf(token);
   if (held && body && !held.includes(`${providerId}/${modelOf(body)}`)) return json(403, `this lease is for work in sensitive mode, on ${held.join(", ")} alone`);
-  // A plan whose allowance is spent past the next minute (windows.ts) isn't asked a model call again until it resets.
+  // A plan whose allowance is spent past the next minute (windows.ts) isn't asked a model call again until it resets;
+  // nor is a model of any other provider's that was told to wait that long (its others are asked as ever).
   const windows = windowsOf(ctx.store);
-  const open = request.method === "POST" ? windows.spent(providerId) : null;
-  if (open && open.until - windows.now() > WAIT_OUT_MS) return spent(providerId, open, windows);
+  const ref = `${providerId}/${modelOf(body)}`;
+  const open = request.method === "POST" ? windows.spentFor(ref) : null;
+  if (open && open.until - windows.now() > WAIT_OUT_MS) return spent(open.provider, open, windows);
   const upstream = await (ctx.fetch ?? fetch)(target, {
     method: request.method,
     headers,
@@ -241,8 +243,10 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
     const text = redact(await upstream.text(), [provider.apiKey]);
     // A refusal that says the allowance is spent, and until when (in its words, or a 429's retry-after), is remembered
     // as chat's are: the node's other calls pass it over, and its usage meter says it.
-    const window = windows.note(providerId, `${providerId} → ${upstream.status} ${text}`, upstream.status === 429 ? retryAfterAt(upstream.headers.get("retry-after"), windows.now()) : null);
-    if (window && window.until - windows.now() > WAIT_OUT_MS) return spent(providerId, window, windows);
+    // (A listing names no model: only a plan's refusal of one says anything of its window.)
+    const scope = request.method === "POST" || planOf(providerId) ? windowScope(ref) : null;
+    const window = scope ? windows.note(scope, `${providerId} → ${upstream.status} ${text}`, upstream.status === 429 ? retryAfterAt(upstream.headers.get("retry-after"), windows.now()) : null) : null;
+    if (window && window.until - windows.now() > WAIT_OUT_MS) return spent(window.provider, window, windows);
     return new Response(text, { status: upstream.status, headers: responseHeaders });
   }
   // A model call (a POST) is counted as its answer goes by; a listing or a lookup isn't one.

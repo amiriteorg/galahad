@@ -4,7 +4,7 @@ import { anthropicConversation, type ModelMessage, openAIConversation, RefusalEr
 import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./persona.ts";
-import { windowsOf } from "./windows.ts";
+import { windowScope, windowsOf } from "./windows.ts";
 import { followsFormat, readModelCheck, readsScreens, type ModelCheck } from "@galahad/core";
 import { offeredModels, onPlan, planOf, providerRecords, QUIET_MS, quietly, resolveProvider, whyNoKey } from "./providers.ts";
 import { effortFor, parseRef, pinnedEffort, roleModels } from "./roster.ts";
@@ -272,7 +272,7 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       continue;
     }
     // Its allowance spent until a time its provider gave (windows.ts): not asked again until then.
-    const spentWindow = windowsOf(ctx.store).spent(parsed.provider);
+    const spentWindow = windowsOf(ctx.store).spentFor(ref);
     if (spentWindow) {
       yield passOver(ref, windowsOf(ctx.store).why(spentWindow));
       continue;
@@ -463,8 +463,9 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         declined = message;
         apart = wrote;
       }
-      // A refusal that says its allowance is spent, and until when, is remembered: the next ask passes it over.
-      windowsOf(ctx.store).note(parsed.provider, message);
+      // A refusal that says its allowance is spent, and until when, is remembered: the next ask passes it over (its plan's
+      // every model, or this model alone: windowScope).
+      windowsOf(ctx.store).note(windowScope(ref), message);
       yield passOver(ref, message);
     }
   }

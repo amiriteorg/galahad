@@ -2015,7 +2015,7 @@ export function createApp(ctx: AppContext) {
     const covered = leased.get(id) ?? [];
     const usable = (ref: string) => {
       const at = ref.indexOf("/");
-      return at > 0 && !ref.includes("*") && covered.includes(ref.slice(0, at)) && !windowsOf(ctx.store).spent(ref.slice(0, at));
+      return at > 0 && !ref.includes("*") && covered.includes(ref.slice(0, at)) && !windowsOf(ctx.store).spentFor(ref);
     };
     // Named for the role, or with none named the checked model whose clicks land (model-checks.ts): evidence chooses,
     // among the models he offers (checks.ts eyesOf).
@@ -2147,7 +2147,7 @@ export function createApp(ctx: AppContext) {
     // (A knight's own models, when you chose them, in place of its role's.) A plan whose allowance is spent (windows.ts)
     // goes after the rest: a task starts on a model that can answer, and the gateway would refuse the spent one at once.
     const refs = own?.length ? [...own] : roleModels(ctx.store, role);
-    const spent = (ref: string) => ref.indexOf("/") > 0 && windowsOf(ctx.store).spent(ref.slice(0, ref.indexOf("/"))) !== null;
+    const spent = (ref: string) => windowsOf(ctx.store).spentFor(ref) !== null;
     const choose = (providers: typeof views) => chooseAgentModels([...refs.filter((ref) => !spent(ref)), ...refs.filter(spent)], providers, 3, AGENTS[harness]?.kind);
     const models = choose(views.filter((p) => !vm || vm.includes(p.id)));
     return { models, outside: models.length ? [] : choose(views) };

@@ -16,32 +16,36 @@ import { GatewayTokens, handleGateway, windowsOf } from "../src/index.ts";
 const KEY = ["FAKE", "plan", "key"].join("-");
 const GO = '{"type":"error","error":{"type":"GoUsageLimitError","message":"OpenCode Go usage limit reached (5-hour, resets in 1h 37m). To keep going now, turn on Extra Usage."}}';
 
-function gateway(answer: () => Response) {
+function gateway(answer: (model: string) => Response, id = "opencode-go") {
   const listing = () => Response.json({ data: [{ id: "glm-5.3" }] });
   const identity = newNodeIdentity();
   const store = new MindStore(":memory:");
   foundFleet(store, identity, { fleetName: "camelot", nodeName: "ultra" });
   const vault = new Vault(store, identity);
   const baseUrl = "https://plan.invalid/v1";
-  vault.set("opencode-go", KEY, { provider: "opencode-go", origin: new URL(baseUrl).origin });
-  store.emit(identity, "provider.set", { id: "opencode-go", kind: "openai", baseUrl, secret: "opencode-go" });
+  vault.set(id, KEY, { provider: id, origin: new URL(baseUrl).origin });
+  store.emit(identity, "provider.set", { id, kind: "openai", baseUrl, secret: id });
   const tokens = new GatewayTokens(new Database(":memory:"));
-  const { token } = tokens.mint({ label: "sandbox:0123456789", providers: ["opencode-go"], ttlMinutes: 10, maxRequests: 20 });
+  const { token } = tokens.mint({ label: "sandbox:0123456789", providers: [id], ttlMinutes: 10, maxRequests: 20 });
   const asked: string[] = [];
+  const models: string[] = [];
   const ctx = {
     store,
     vault,
     tokens,
     fetch: (async (url: string | URL | Request, init?: RequestInit) => {
       asked.push(`${init?.method ?? "GET"} ${new URL(String(url)).pathname}`);
-      return init?.method === "POST" ? answer() : listing();
+      if (init?.method !== "POST") return listing();
+      const model = (JSON.parse(new TextDecoder().decode(init.body as ArrayBuffer)) as { model: string }).model;
+      models.push(model);
+      return answer(model);
     }) as typeof fetch,
   };
   let now = 1_795_262_400_000;
   windowsOf(store).now = () => now;
-  const call = () => handleGateway(new Request("http://127.0.0.1:7777/gw/opencode-go/chat/completions", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ model: "glm-5.3", messages: [] }) }), ctx);
-  const list = () => handleGateway(new Request("http://127.0.0.1:7777/gw/opencode-go/models", { headers: { authorization: `Bearer ${token}` } }), ctx);
-  return { store, asked, call, list, later: (ms: number) => (now += ms), now: () => now };
+  const call = (model = "glm-5.3") => handleGateway(new Request(`http://127.0.0.1:7777/gw/${id}/chat/completions`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ model, messages: [] }) }), ctx);
+  const list = () => handleGateway(new Request(`http://127.0.0.1:7777/gw/${id}/models`, { headers: { authorization: `Bearer ${token}` } }), ctx);
+  return { store, asked, models, call, list, later: (ms: number) => (now += ms), now: () => now };
 }
 
 const messageOf = async (response: Response) => ((await response.json()) as { error: { message: string } }).error.message;
@@ -105,4 +109,23 @@ test("a window told elsewhere (a reviewer's call through chat) holds the gateway
   // Once it resets, the provider is asked again.
   windowsOf(g.store).now = () => g.now() + 98 * 60_000;
   expect((await g.call()).status).toBe(200);
+});
+
+test("a router's model told to wait is held back alone, its others asked as ever; a plan's window holds every model of the plan", async () => {
+  // A router serves many vendors' models (OrcaRouter, OpenRouter, a Cloudflare AI Gateway): one model told to wait two
+  // hours says nothing of the rest.
+  const busy = '{"error":{"message":"Too Many Requests"}}';
+  const r = gateway((model) => (model === "anthropic/claude-opus-5.5" ? new Response(busy, { status: 429, headers: { "content-type": "application/json", "retry-after": "7200" } }) : Response.json({ choices: [{ message: { content: "aye" } }] })), "orcarouter");
+  const told = await r.call("anthropic/claude-opus-5.5");
+  expect(told.status).toBe(402);
+  expect(await messageOf(told)).toContain("orcarouter/anthropic/claude-opus-5.5's allowance is spent until");
+  expect((await r.call("anthropic/claude-opus-5.5")).status).toBe(402);
+  expect((await r.call("google/gemini-3.1-pro-preview")).status).toBe(200);
+  expect(r.models).toEqual(["anthropic/claude-opus-5.5", "google/gemini-3.1-pro-preview"]);
+  expect(windowsOf(r.store).list().map((w) => w.provider)).toEqual(["orcarouter/anthropic/claude-opus-5.5"]);
+  // A coding plan's allowance is the plan's: told by one of its models, every model of it waits.
+  const p = gateway(() => new Response(GO, { status: 429, headers: { "content-type": "application/json", "retry-after": "5820" } }));
+  expect((await p.call("glm-5.3")).status).toBe(402);
+  expect((await p.call("deepseek-v4-pro")).status).toBe(402);
+  expect(p.models).toEqual(["glm-5.3"]);
 });

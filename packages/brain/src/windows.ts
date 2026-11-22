@@ -6,10 +6,17 @@
  * the window ends (and says until when), the gateway refuses a tool's calls to them as spent (gateway.ts), and then
  * each asks again. A node's own, kept in memory and in its own database (node/usage.ts), so a restart remembers it: on
  * 21 November 2026 a deploy forgot OpenCode Go's window, and the usage meter stopped saying it until the next refusal.
+ *
+ * A coding plan's allowance is the plan's, so its window holds back every model of its. Any other provider's is the
+ * model's alone (windowScope): a router (OrcaRouter, OpenRouter, a Cloudflare AI Gateway) serves many vendors' models,
+ * and an API limits each model apart, so one model told to wait says nothing of the others.
  */
+
+import { onPlan } from "./providers.ts";
 
 /** One provider's allowance, spent until the time its provider gave. */
 export interface SpentWindow {
+  /** What it holds back (windowScope): a coding plan's provider, or one model of any other's (`provider/model`). */
   provider: string;
   /** When it resets (ms). */
   until: number;
@@ -46,6 +53,12 @@ export function retryAfterAt(value: string | null, now: number): number | null {
   return Number.isFinite(ms) && ms > 0 && ms <= 31 * 86_400_000 ? now + Math.ceil(ms) : null;
 }
 
+/** What a refusal of a model's call holds back: its coding plan, every model of it; otherwise that model alone. */
+export function windowScope(ref: string): string {
+  const slash = ref.indexOf("/");
+  return slash > 0 && onPlan(ref) ? ref.slice(0, slash) : ref;
+}
+
 /** HH:MM in UTC, and a span in hours and minutes: how a window is said. */
 export const clockUtc = (at: number): string => new Date(at).toISOString().slice(11, 16);
 export const spanWords = (ms: number): string => {
@@ -64,7 +77,7 @@ export class SpentWindows {
 
   /**
    * Read a provider's refusal: when it says its allowance is spent and when it resets (in its words, else when it said
-   * to try again: `retryAt`, from a 429's retry-after), remember that.
+   * to try again: `retryAt`, from a 429's retry-after), remember that, for what it holds back (`provider`: windowScope).
    */
   note(provider: string, error: string, retryAt: number | null = null): SpentWindow | null {
     const noted = this.now();
@@ -90,6 +103,12 @@ export class SpentWindows {
       return null;
     }
     return window;
+  }
+
+  /** The window that holds a model back now, its plan's or its own, or null. */
+  spentFor(ref: string): SpentWindow | null {
+    const slash = ref.indexOf("/");
+    return (slash > 0 ? this.spent(ref.slice(0, slash)) : null) ?? this.spent(ref);
   }
 
   /** Every window open now. */

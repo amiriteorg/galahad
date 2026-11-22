@@ -1356,7 +1356,7 @@ Next:
       }
       // (Each call thinks as its step needs, unless you pinned its role: galahad roster effort <role> <level|auto>.)
       console.log(dim("  Each step thinks as it needs: routine turns less, hard ones more (galahad roster effort <role> <level|auto>)."));
-      for (const window of spent) console.log(dim(`  ${window.provider}: its allowance is spent until ${new Date(window.until).toISOString().slice(11, 16)} UTC; its models are passed over until then, and the next on each role answers.`));
+      for (const window of spent) console.log(dim(`  ${window.provider}: its allowance is spent until ${new Date(window.until).toISOString().slice(11, 16)} UTC; ${window.provider.includes("/") ? "it is" : "its models are"} passed over until then, and the next on each role answers.`));
       const checked = Object.entries(checks);
       if (checked.length) {
         console.log(`\n  ${bold("Checked")} ${dim("(what each was seen to do: galahad roster check <provider/model>)")}`);
