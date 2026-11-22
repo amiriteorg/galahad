@@ -1305,3 +1305,8 @@ test("a knight's command runs with its lease's model access, and without it, say
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a model's reason for not answering that ends its own sentence isn't given a second full stop", () => {
+  // "…purchase credits.. orcarouter/… answers instead" was seen on a trail on 22 November 2026.
+  expect(progress({ type: "skipped", role: "planner", model: "anthropic/claude-opus-5-5", error: "400: Please purchase credits.", answered: "orcarouter/anthropic/claude-opus-5.5" })).toBe("anthropic/claude-opus-5-5 couldn't answer as planner: 400: Please purchase credits. orcarouter/anthropic/claude-opus-5.5 answers instead");
+});
