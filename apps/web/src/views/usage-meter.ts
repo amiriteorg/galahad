@@ -24,13 +24,24 @@ export function meterWords(m: UsageMeter): string {
 }
 
 /** The tile: the period's spend, against the budget with a bar; a tap opens the sheet. */
+/**
+ * The place a usage tile's bar takes, kept with no budget to fill it (and while the meter loads): a tile whose bar came
+ * in when it answered grew its row of tiles, and moved everything under it (the PWA's layout bench, 22 November 2026).
+ */
+export function meterSlot(): HTMLElement {
+  const slot = meter(0);
+  slot.style.visibility = "hidden";
+  slot.setAttribute("aria-hidden", "true");
+  return slot;
+}
+
 export function usageTile(ctx: Ctx, m: UsageMeter, changed: (m: UsageMeter) => void): HTMLElement {
   const spent = m.budgetUsd !== null && !m.leftUsd;
   const tile = statTile({
     label: `${period(m)}'s usage`,
     icon: "gauge",
     value: spentWords(m),
-    note: [meterWords(m), m.budgetUsd ? meter(m.spentUsd / m.budgetUsd, spent ? "var(--danger)" : undefined, `${Math.round((m.spentUsd / m.budgetUsd) * 100)}% of the budget`) : null, ...spentWindowLines(m.windows)],
+    note: [meterWords(m), m.budgetUsd ? meter(m.spentUsd / m.budgetUsd, spent ? "var(--danger)" : undefined, `${Math.round((m.spentUsd / m.budgetUsd) * 100)}% of the budget`) : meterSlot(), ...spentWindowLines(m.windows)],
   });
   tile.classList.add("usage-tile");
   tile.setAttribute("role", "button");

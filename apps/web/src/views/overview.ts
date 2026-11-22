@@ -8,7 +8,7 @@ import { button, dot, empty, linkButton, pageBody, pageHead, section, skeletonRo
 import { h, keepPlace, replace } from "../ui/dom.ts";
 import { ledgerItem } from "./activity.ts";
 import { inHandSection } from "./in-hand.ts";
-import { usageTile } from "./usage-meter.ts";
+import { meterSlot, usageTile } from "./usage-meter.ts";
 import { doctorSection } from "./doctor-card.ts";
 import { startNewChat } from "./chat.ts";
 import { isOnline, openInvite } from "./fleet.ts";
@@ -31,6 +31,11 @@ export const overviewView: View = (root, ctx, { scope }) => {
 
   function renderStats(fleet: FleetView | null): void {
     const tiles: HTMLElement[] = [];
+    // Every tile keeps its place while what it says loads, as the Vault's and the meter's do: put in once its part had
+    // answered, a tile made a new row of them on a laptop and moved everything under it (the PWA's layout bench, on a
+    // machine busy with other work, 22 November 2026: the Roundtable answered after the page was there).
+    const waiting = (label: string, icon: "server" | "memory" | "user") => statTile({ label, icon, value: "–", note: "loading…" });
+    if (!fleet && ctx.can("mind:read")) tiles.push(waiting("Nodes online", "server"));
     if (fleet) {
       const nodes = fleet.devices.filter((d) => d.kind === "node" && !d.revokedAt);
       const online = nodes.filter((d) => isOnline(fleet, d)).length;
@@ -60,10 +65,13 @@ export const overviewView: View = (root, ctx, { scope }) => {
     // What this period's model calls came to against your budget (a node from before the meter has none to say). Its
     // place is kept while it loads, as the Vault's is: a tile put in once it answers moved the ones after it.
     if (usage && usage !== "none") tiles.push(usageTile(ctx, usage, (next) => { usage = next; renderStats(ctx.live.fleet.value); }));
-    else if (usage === null && ctx.can("mind:read")) tiles.push(statTile({ label: "Usage", icon: "gauge", value: "–", note: "loading…" }));
+    else if (usage === null && ctx.can("mind:read")) tiles.push(statTile({ label: "Usage", icon: "gauge", value: "–", note: ["loading…", meterSlot()] }));
     if (fleet) tiles.push(statTile({ label: "Mind", icon: "memory", value: fleet.events.toLocaleString(), note: "events in the shared mind", href: "#/memory" }));
-    // The mandate's north star (#28): how often you stepped in on the knights' work, per task done and verified.
-    const star = ctx.live.team.value?.northStar;
+    else if (ctx.can("mind:read")) tiles.push(waiting("Mind", "memory"));
+    // The mandate's north star (#28): how often you stepped in on the knights' work, per task done and verified. Said
+    // whenever the Roundtable can be, a dash while no task has ended, so its tile is there from the start.
+    const team = ctx.live.team.value;
+    const star = team?.northStar;
     if (star?.ended) {
       tiles.push(
         statTile({
@@ -74,7 +82,8 @@ export const overviewView: View = (root, ctx, { scope }) => {
           href: "#/team",
         }),
       );
-    }
+    } else if (team) tiles.push(statTile({ label: "You stepped in", icon: "user", value: "–", note: "no knight's task has ended in 30 days", href: "#/team" }));
+    else if (ctx.can("chat") && !ctx.live.teamProblem.value) tiles.push(waiting("You stepped in", "user"));
     replace(stats, ...tiles);
   }
 
@@ -189,6 +198,9 @@ export const overviewView: View = (root, ctx, { scope }) => {
   );
   scope.add(ctx.live.inboxCount.subscribe(() => renderStats(ctx.live.fleet.value)));
   scope.add(ctx.live.team.subscribe(() => keepPlace(root, () => renderStats(ctx.live.fleet.value))));
+  // (Its tile waits for the Roundtable, which a phone doesn't watch from here: asked once, and a failure takes the tile.)
+  scope.add(ctx.live.teamProblem.subscribe(() => keepPlace(root, () => renderStats(ctx.live.fleet.value))));
+  if (ctx.can("chat") && !ctx.live.team.value) void ctx.live.refreshTeam();
   scope.add(vaultChanged.subscribe(() => void loadVault()));
   void loadVault();
   void loadUsage();
