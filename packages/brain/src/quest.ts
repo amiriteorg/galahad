@@ -1505,9 +1505,10 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         prompt = `${steered(found.note)} Then end with a short summary and the evidence.`;
         continue;
       }
-      // Spent: what it left is judged as it stands (submitAtLimit), as when the engineer's budget runs out.
+      // Spent: what it left is judged as it stands (submitAtLimit), as when the engineer's budget runs out. (Only what
+      // the reviewer hasn't judged: work it sent back, with nothing done since, keeps its word, as below.)
       if (run.status === "spent") {
-        if (!o.submitAtLimit || !trail.length) return finish({ status: "stopped", summary: spentSummary() });
+        if (!o.submitAtLimit || trail.length <= judged) return finish({ status: "stopped", summary: spentSummary(), ...(review ? { review } : {}) });
         return await asItStands("His budget was spent before he said he was done: this is the work as it stands.", `Its budget (${usd(o.budgetUsd!)}) was spent`, { status: "stopped", summary: spentSummary() });
       }
       // A model that fails (an outage, a provider's filter) hands over to the next, which carries on the same session.
@@ -1522,7 +1523,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         const why = `${agent.driver.name} ${run.status === "timeout" ? `ran out of time (${agent.minutes} minutes)` : "failed"}: ${run.error ?? ""}`;
         const gaveUp = [run.summary, why].filter(Boolean).join("\n\n");
         // Out of time with work done: the gates and the reviewer still decide (submitAtLimit), as at the end of the engineer's commands.
-        if (run.status === "timeout" && o.submitAtLimit && trail.length) {
+        if (run.status === "timeout" && o.submitAtLimit && trail.length > judged) {
           return await asItStands(`His time (${agent.minutes} minutes) was up before he said he was done: this is the work as it stands.`, `His time (${agent.minutes} minutes) was up`, { status: "gave-up", summary: gaveUp });
         }
         // Failed on its every model with work done: judged as it stands too. (22 November 2026: a knight's run that had
@@ -1661,6 +1662,10 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
 
     const messages: ChatMessage[] = [{ role: "user", content: (o.tools ? toolsBriefing : briefing)(o, plan, gates, before, [...locked.keys()]), effort: STEP_EFFORT.start }];
     const trail: Step[] = [];
+    // How much of the trail the reviewer has judged, and what it said: work it sent back is judged again as it stands
+    // only once there is more of it (a review that spends the budget would otherwise be followed by a second look).
+    let judged = 0;
+    let review: string | undefined;
     /** With tools: the command each result answers and how it exited (null: a call that ran nothing), in order (compactCalls). */
     const told: Omit<Seen, "content">[] = [];
     /** How many of the oldest observations are sent as excerpts (it only grows, a batch at a time: compact). */
@@ -2014,6 +2019,8 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       steps -= 1;
       const rounds = gateRounds.length;
       const verdict = await submit(action.summary, trail);
+      judged = trail.length;
+      review = verdict.notes || undefined;
       if (verdict.verdict === "pass") {
         return finish({ status: "done", summary: action.summary, review: verdict.notes || undefined, ...(verdict.conclusion ? { conclusion: verdict.conclusion } : {}) });
       }
@@ -2040,7 +2047,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         : `Stopped after ${o.maxSteps} commands without finishing.`;
     // Out of commands with work done: the gates and the reviewer still decide (submitAtLimit). He may have finished
     // and gone on checking; what they pass is done, whoever said so.
-    if (o.submitAtLimit && ran > 0) {
+    if (o.submitAtLimit && ran > 0 && trail.length > judged) {
       const verdict = await submit(`${spentOut ? "His budget was spent" : "He ran out of commands"} before he said he was done: this is the work as it stands.`, trail);
       if (verdict.verdict === "pass") {
         return finish({
@@ -2052,7 +2059,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
       }
       return finish({ status: "stopped", summary: `${stopped} What was there was put to ${verdict.by === "gates" ? "the gates, which did not pass" : "the reviewer, who did not accept it"}.`, review: verdict.notes });
     }
-    return finish({ status: "stopped", summary: stopped });
+    return finish({ status: "stopped", summary: stopped, ...(review ? { review } : {}) });
   } catch (error) {
     if (error instanceof Stopped) return finish({ status: "stopped", summary: "Stopped at your request." });
     if (error instanceof Halted) return finish({ status: "stopped", summary: haltedSummary(error.trip, error.command) });

@@ -6,8 +6,8 @@ import { type QuestEvent, type QuestOptions, type QuestRole, runQuest } from "..
 const sh = (command: string) => `Next.\n\`\`\`sh\n${command}\n\`\`\``;
 
 /** A quest whose every model call costs `per` dollars (as its caller prices them), with a script for each role. */
-function priced(engineer: string[], options: Partial<QuestOptions>, per = 0.1, complete = true) {
-  const queues: Record<QuestRole, string[]> = { planner: ["1. Do it.\nDone when: it is done."], engineer: [...engineer], reviewer: ["PASS\nIt is."] };
+function priced(engineer: string[], options: Partial<QuestOptions>, per = 0.1, complete = true, reviewer = ["PASS\nIt is."]) {
+  const queues: Record<QuestRole, string[]> = { planner: ["1. Do it.\nDone when: it is done."], engineer: [...engineer], reviewer: [...reviewer] };
   let usd = 0;
   const seen: { role: QuestRole; messages: ChatMessage[] }[] = [];
   const events: QuestEvent[] = [];
@@ -27,7 +27,7 @@ function priced(engineer: string[], options: Partial<QuestOptions>, per = 0.1, c
     },
   );
   const told = () => seen.filter((s) => s.role === "engineer").map((s) => s.messages.at(-1)!.content);
-  return { run, events, told };
+  return { run, events, told, asked: () => seen.map((s) => s.role) };
 }
 
 describe("a budget in dollars", () => {
@@ -50,6 +50,17 @@ describe("a budget in dollars", () => {
     const outcome = await q.run;
     expect(outcome.status).toBe("stopped");
     expect(outcome.summary).toBe("Stopped: its budget ($0.30) was spent before he finished.");
+  });
+
+  test("work the reviewer sent back, its budget spent by that review, isn't judged again: the reviewer's word stands", async () => {
+    // (Planner, a command, DONE: $0.30; the review that sends it back spends the rest. A second look at the same work
+    // could pass what was just sent back.)
+    const q = priced([sh("echo 1"), "DONE\nDone."], { budgetUsd: 0.35, submitAtLimit: true }, 0.1, true, ["REVISE\nThe test still fails.", "PASS\nIt is."]);
+    const outcome = await q.run;
+    expect(q.asked().filter((role) => role === "reviewer")).toHaveLength(1);
+    expect(outcome.status).toBe("stopped");
+    expect(outcome.summary).toBe("Stopped: its budget ($0.35) was spent before he finished.");
+    expect(outcome.review).toBe("The test still fails.");
   });
 
   test("with no budget nothing is said of money", async () => {
@@ -184,16 +195,18 @@ describe("a coding agent out of time", () => {
 /**
  * A coding agent on two models whose first run works (a command, then a summary) and ends in a failure, and whose
  * run on the next model can't start, as Percival's could not once its model access was gone (22 November 2026: its
- * finished work was given up unjudged). `worked: false`: the first run fails before it does anything.
+ * finished work was given up unjudged). `worked: false`: the first run fails before it does anything. `firstExit: 0`: it
+ * ends well instead, for the reviewer to judge. `then: "hangs"`: a later run starts and does nothing, until its time
+ * (`minutes`) or its budget (`budgetUsd`, spent once it starts) ends it.
  */
-function agentThatFails({ worked = true, firstExit = 1, reviewer = ["PASS\nThe report is there."] }: { worked?: boolean; firstExit?: number; reviewer?: string[] } = {}) {
+function agentThatFails({ worked = true, firstExit = 1, then = "cant-start", minutes = 60, budgetUsd, reviewer = ["PASS\nThe report is there."] }: { worked?: boolean; firstExit?: number; then?: "cant-start" | "hangs"; minutes?: number; budgetUsd?: number; reviewer?: string[] } = {}) {
   const driver: AgentDriver = { name: "stub", title: "Stub", kind: "openai", check: "true", files: () => ({}), command: () => "stub-agent", read: (line) => JSON.parse(line) as AgentEvent[] };
   const ok = (stdout = ""): ExecResult => ({ exitCode: 0, stdout, stderr: "", durationMs: 1, truncated: false });
   const queues: Record<QuestRole, string[]> = { planner: ["1. Write the report.\nDone when: it is written."], engineer: [], reviewer: [...reviewer] };
   let launches = 0;
   const asked: QuestRole[] = [];
   const run = runQuest(
-    { goal: "profile the suite", environment: "a test sandbox", submitAtLimit: true, agent: { driver, models: [{ provider: "p", model: "first" }, { provider: "p", model: "next" }], minutes: 60, workdir: "/work" } },
+    { goal: "profile the suite", environment: "a test sandbox", submitAtLimit: true, ...(budgetUsd !== undefined ? { budgetUsd } : {}), agent: { driver, models: [{ provider: "p", model: "first" }, { provider: "p", model: "next" }], minutes, workdir: "/work" } },
     {
       ask: async (role) => {
         asked.push(role);
@@ -204,17 +217,19 @@ function agentThatFails({ worked = true, firstExit = 1, reviewer = ["PASS\nThe r
       exec: async (command) => {
         if (command.includes("base64 -d > /work/.agent/prompt.md")) {
           launches += 1;
-          if (launches === 1) return ok();
+          if (launches === 1 || then === "hangs") return ok();
           return { exitCode: 1, stdout: "", stderr: "Traceback (most recent call last):\n  File \"<string>\", line 1\nFileNotFoundError: [Errno 2] No such file or directory: '/work/.galahad-gateway.json'", durationMs: 1, truncated: false };
         }
         if (command.startsWith("stat -c")) return ok("0\n");
         if (command.startsWith("python3 -c") && command.includes("d, off =")) {
+          if (launches > 1) return ok(JSON.stringify({ alive: true, exit: null, next: 10, lines: [] }));
           const lines = worked ? [JSON.stringify([{ type: "session", id: "ses_1" }, { type: "tool", tool: "bash", input: "bun test > report.txt", output: "ok", ok: true }, { type: "text", text: "Wrote report.txt." }])] : [];
           return ok(JSON.stringify({ alive: false, exit: firstExit, next: 10, lines }));
         }
         return ok();
       },
       emit: () => {},
+      spentUsd: () => ({ usd: launches > 1 ? 1 : 0, complete: true }),
       sleep: async () => {},
     },
   );
@@ -249,11 +264,25 @@ describe("a coding agent whose run fails on every model", () => {
 
   test("work sent back whose next run fails having done nothing new isn't judged again: the reviewer's word stands", async () => {
     // (A second look at the same work could pass what was just sent back.)
-    const q = agentThatFails({ firstExit: 0, reviewer: ["REVISE\nThe report misses the slowest files."] });
+    const q = agentThatFails({ firstExit: 0, reviewer: ["REVISE\nThe report misses the slowest files.", "PASS\nIt is there now."] });
     const outcome = await q.run;
     expect(q.launches()).toBe(3);
     expect(q.asked.filter((role) => role === "reviewer")).toHaveLength(1);
     expect(outcome.status).toBe("gave-up");
     expect(outcome.review).toBe("The report misses the slowest files.");
+  });
+
+  test("nor is work sent back whose next run did nothing new before its time or its budget ran out", async () => {
+    const late = agentThatFails({ firstExit: 0, then: "hangs", minutes: 0, reviewer: ["REVISE\nThe report misses the slowest files.", "PASS\nIt is there now."] });
+    const timedOut = await late.run;
+    expect(late.asked.filter((role) => role === "reviewer")).toHaveLength(1);
+    expect(timedOut.status).toBe("gave-up");
+    expect(timedOut.review).toBe("The report misses the slowest files.");
+
+    const dear = agentThatFails({ firstExit: 0, then: "hangs", budgetUsd: 0.5, reviewer: ["REVISE\nThe report misses the slowest files.", "PASS\nIt is there now."] });
+    const spent = await dear.run;
+    expect(dear.asked.filter((role) => role === "reviewer")).toHaveLength(1);
+    expect(spent.status).toBe("stopped");
+    expect(spent.review).toBe("The report misses the slowest files.");
   });
 });
