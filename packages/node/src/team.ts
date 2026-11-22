@@ -155,6 +155,13 @@ export class TeamService {
   setBacklog(on: boolean): boolean { this.accepting(); const set = this.store.setBacklog(on); this.changed(); return set; }
   /** Work Galahad offers a knight from your backlog (backlog.ts): proposed, it starts only when you approve it. */
   proposeTask(input: TeamTaskInput): TeamTask { this.accepting(); const task = this.store.createTask(input, { givenBy: TEAM_GALAHAD, propose: true }); this.changed(); return task; }
+  /** One he proposed, taken back before you answered it (backlog.ts: its step done, or another first): it never ran. */
+  withdrawProposal(task: string, why: string): void {
+    this.accepting();
+    if (this.store.task(task)?.status !== "proposed") return;
+    this.store.finish(task, "stopped", why);
+    this.changed();
+  }
   planWorkspace(id: string, node: string): Teammate {
     this.accepting();
     this.steady(id);

@@ -124,6 +124,54 @@ describe("work for idle knights, from your backlog", () => {
     expect(await busy.runner.tick()).toBeNull();
   });
 
+  test("a proposal left a day unanswered is looked at again: a fresher step takes its place, the one waiting withdrawn (never said as declined) and out of your Inbox", async () => {
+    // On the owner's node (22 November 2026) one was still waiting after its step had been built by other work, and it
+    // would have waited so, the knight offered nothing else, until it was answered.
+    const NEWER = JSON.stringify({ title: "The board view", goal: "Show an outcome's tasks as a board: what waits, what runs and what ended, by knight.", gates: ["bun run typecheck"], budgetUsd: 2 });
+    const w = world([PROPOSAL, NEWER, PROPOSAL]);
+    const first = await w.runner.tick();
+    expect(w.asked[0]!.content).not.toContain("waiting for your liege's answer");
+    expect(w.asked[0]!.content).not.toContain('"keep"');
+    expect(w.runner.idle()).toEqual([]);
+    w.clock.add(BACKLOG.perKnightMs);
+    expect(w.runner.idle().map((k) => k.id)).toEqual(["ada"]);
+    const second = await w.runner.tick();
+    // He is told of the one waiting, and that he may keep it.
+    expect(w.asked[1]!.content).toContain(`waiting for your liege's answer since 2026-11-19: "A template of outcomes" (Add \`galahad outcome add --from <template>\``);
+    expect(w.asked[1]!.content).toContain('or {"keep": "why"} when the one waiting is still its next step');
+    expect(second).toMatchObject({ status: "proposed", title: "The board view" });
+    expect(w.store.task(first!.id)).toMatchObject({ status: "stopped", error: 'Withdrawn by Galahad: "The board view" comes first now.' });
+    expect(w.notices().map((n) => n.body.split("\n")[0])).toEqual(["The board view"]);
+    // Withdrawn by him, it was never yours to decline: only what you declined is said as declined.
+    w.store.stopQueued({ task: second!.id });
+    w.clock.add(BACKLOG.perKnightMs);
+    await w.runner.tick();
+    expect(w.asked[2]!.content).toContain('Declined by your liege: "The board view".');
+  });
+
+  test("kept while it is still the next step (said so, or offered again as it was), looked at again a day later; withdrawn when nothing fits", async () => {
+    const w = world([PROPOSAL, '{"keep": "the template is still next"}', PROPOSAL, '{"none": "every step of the plan is done"}']);
+    const first = await w.runner.tick();
+    for (let day = 0; day < 2; day++) {
+      w.clock.add(BACKLOG.perKnightMs);
+      expect(await w.runner.tick()).toBeNull();
+      expect(w.store.task(first!.id)!.status).toBe("proposed");
+      expect(w.notices()).toHaveLength(1);
+      expect(w.runner.idle()).toEqual([]);
+    }
+    w.clock.add(BACKLOG.perKnightMs);
+    expect(await w.runner.tick()).toBeNull();
+    expect(w.store.task(first!.id)).toMatchObject({ status: "stopped", error: "Withdrawn by Galahad: nothing in its repository's plan fits now: its step may be done." });
+    expect(w.notices()).toEqual([]);
+    // A proposal a knight made, or one an outcome's, is never his to withdraw: only his own from the backlog are looked at.
+    const dm = w.store.direct("ada");
+    const asked = w.store.post({ room: dm.id, text: "Anything you would change?" });
+    const theirs = w.store.createTask({ room: dm.id, assignee: "ada", title: "Ada's own idea", goal: "A step Ada proposed to you on its own." }, { teammate: "ada", chainId: asked.chainId });
+    w.clock.add(2 * BACKLOG.perKnightMs);
+    expect(w.store.task(theirs.id)!.status).toBe("proposed");
+    expect(w.runner.idle()).toEqual([]);
+  });
+
   test("a knight with no repository, or a repository with no plan, is offered nothing; nor is anyone with the backlog off", async () => {
     const none = world([PROPOSAL], { read: { stdout: "=== its newest commits\nabc123 first" } });
     expect(none.runner.idle().map((k) => k.id)).toEqual(["ada"]);
