@@ -106,24 +106,34 @@ describe("markdown-lite", () => {
     const deep = `${"> ".repeat(200)}x`;
     expect(() => parseMarkdown(deep)).not.toThrow();
     // Bounded means linear: four times the input takes about four times as long, on any machine
-    // (a quadratic parser would take sixteen). The fastest of a few runs keeps a pause out of it.
-    const fastest = (text: string) => {
-      let best = Infinity;
-      for (let i = 0; i < 5; i++) {
-        const started = performance.now();
-        parseMarkdown(text);
-        best = Math.min(best, performance.now() - started);
+    // (a quadratic parser would take sixteen). Timed by this process's own CPU, so a machine busy with other work
+    // isn't counted (the wall clock read 10.4 on a gate's loaded machine on 22 November 2026, where the parser's own
+    // ratio is about four), and each size's fastest of fifteen runs, the two taken in turn, keeps a pause out of it.
+    const cpu = () => {
+      const used = process.cpuUsage();
+      return used.user + used.system;
+    };
+    const ratio = (small: string, large: string) => {
+      let fastSmall = Infinity;
+      let fastLarge = Infinity;
+      for (let i = 0; i < 15; i++) {
+        let started = cpu();
+        parseMarkdown(small);
+        fastSmall = Math.min(fastSmall, cpu() - started);
+        started = cpu();
+        parseMarkdown(large);
+        fastLarge = Math.min(fastLarge, cpu() - started);
       }
-      return best;
+      return fastLarge / fastSmall;
     };
     for (const unit of ["*a ", "a *b ", "_x ", "**a ", "~~a "]) {
       parseMarkdown(unit.repeat(1000)); // warm
-      expect(fastest(unit.repeat(8000)) / fastest(unit.repeat(2000))).toBeLessThan(10);
+      expect(ratio(unit.repeat(2000), unit.repeat(8000))).toBeLessThan(10);
     }
     // Every line is asked whether it opens a fence: spaces or words after the backticks, then one that isn't.
     for (const line of [(n: number) => `\`\`\`${" ".repeat(n)}\``, (n: number) => `\`\`\`ts ${"a ".repeat(n)}\``, (n: number) => `\`\`\`ts a${" ".repeat(n)}\``]) {
       parseMarkdown(line(1000)); // warm
-      expect(fastest(line(32_000)) / fastest(line(8000))).toBeLessThan(10);
+      expect(ratio(line(8000), line(32_000))).toBeLessThan(10);
     }
   });
 
