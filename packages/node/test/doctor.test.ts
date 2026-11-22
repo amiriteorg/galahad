@@ -326,6 +326,12 @@ describe("each fault gives its own line and advice", () => {
     expect(key.state).toBe("needs-you");
     expect(key.line).toContain("deepseek/deepseek-chat is next in line");
     expect(key.fix).toContain("refused the key");
+    // A 403 of what was asked, not of the key, isn't the key's (brain's refusesKey, the one rule): a 403 of the key is.
+    withFallback.roles[2]!.probe = { ref: "mistral/mistral-large", ok: false, ms: 300, error: "mistral → 403: Your chosen model requires moderation and your input was flagged" };
+    expect(byId(diagnose(withFallback), "role.reviewer").fix).not.toContain("refused the key");
+    expect(byId(diagnose(withFallback), "role.reviewer").fix).toContain("not its key");
+    withFallback.roles[2]!.probe = { ref: "mistral/mistral-large", ok: false, ms: 300, error: "mistral → 403: Your API key does not have permission to use the specified resource." };
+    expect(byId(diagnose(withFallback), "role.reviewer").fix).toContain("refused the key");
     expect(fault((f) => (f.roles[2]!.probe = { ref: "mistral/mistral-large", ok: false, ms: 20_000, error: "no answer within 20 s (timed out)" }), "role.reviewer").fix).toContain("No answer in time");
     expect(fault((f) => (f.roles[2]!.probe = { ref: "mistral/mistral-large", ok: false, ms: 200, error: "429 rate limit" }), "role.reviewer").fix).toContain("limiting");
 

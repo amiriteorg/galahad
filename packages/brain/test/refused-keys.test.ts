@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { newNodeIdentity } from "@galahad/core";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
-import { chat, GatewayTokens, handleGateway, RefusedKeys, refusedKeysOf } from "../src/index.ts";
+import { chat, GatewayTokens, handleGateway, RefusedKeys, refusedKeysOf, refusesKey } from "../src/index.ts";
 
 /*
  * A provider that refuses its key (a 401 or 403 to a model call) is remembered, as a spent allowance is: which
@@ -65,8 +65,38 @@ describe("a provider that refused its key", () => {
     });
   });
 
+  test("a 403's words of an author or a token limit aren't of the key (Percival's review, 22 November 2026)", () => {
+    const refusals = new RefusedKeys();
+    refusals.now = () => NOW;
+    expect(refusals.note("forge", 'forge → 403 {"error":{"message":"you are not the author of this resource"}}')).toBeNull();
+    expect(refusals.note("router", '403 {"error":{"message":"request exceeds your token limit for this tier"}}')).toBeNull();
+    expect(refusals.list()).toEqual([]);
+    // Words that are the key's still are: its credentials, its authentication, a 403 that says unauthorized.
+    expect(refusals.note("a", "403 {\"error\":{\"message\":\"Authentication failed for this credential\"}}")).not.toBeNull();
+    expect(refusals.note("b", '403 {"error":"Unauthorized"}')).not.toBeNull();
+    expect(refusals.note("c", '403 {"error":{"message":"Invalid token"}}')).not.toBeNull();
+  });
+
+  test("a 401 said mid-stream (\"deepseek: 401 …\", the adapter's form for an error in the stream) is a refused key", () => {
+    const refusals = new RefusedKeys();
+    refusals.now = () => NOW;
+    expect(refusals.note("deepseek", "deepseek: 401 your api key is invalid")).toMatchObject({ provider: "deepseek", said: "401 your api key is invalid" });
+    expect(refusals.note("deepseek", "deepseek: the engine said 401 to itself")).toBeNull();
+  });
+
+  test("whether an error is a refused key is one rule, for the doctor's advice too: the words after its status, never a name", () => {
+    expect(refusesKey("deepseek → 401: Authentication Fails")).toBe(true);
+    expect(refusesKey("local:8080 → 401 denied")).toBe(true);
+    expect(refusesKey("anthropic → 403: Your API key does not have permission to use the specified resource.")).toBe(true);
+    expect(refusesKey("openrouter → 403: Your chosen model requires moderation and your input was flagged")).toBe(false);
+    // A plan's name may hold a word of the key's (mimo-token): only what it said counts.
+    expect(refusesKey("mimo-token → 403: quota exceeded for this plan")).toBe(false);
+    expect(refusesKey("orcarouter → 502: the upstream provider answered 401")).toBe(false);
+  });
+
   test("what is kept holds nothing shaped like a key, whatever its caller scrubbed", () => {
-    // (Its callers redact the key by its value; a key the provider echoes that isn't the one sent is caught here.)
+    // (Its callers redact the key by its value; a key the provider echoes that isn't the one sent is caught here when it
+    // is shaped like one: one that isn't, as "abc123xyz456", is kept as said.)
     const refusals = new RefusedKeys();
     refusals.now = () => NOW;
     const shaped = ["sk", "proj", "A".repeat(20), "B".repeat(20)].join("-");

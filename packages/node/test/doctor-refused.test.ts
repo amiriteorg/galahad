@@ -102,6 +102,27 @@ describe("a role whose model's provider refused its key", () => {
     expect(checks.filter((c) => c.area === "models" && c.finding).map((c) => c.id)).toEqual(["models.key.deepseek"]);
   });
 
+  test("a full check asks the refused model its word, and when it is refused again the model behind it is named, as ok", () => {
+    // (Percival's review, 22 November 2026: the probe line named the refused model, a second needs-you for one cause.)
+    const facts = base();
+    facts.roles[0] = { role: "planner", chats: true, models: [{ ref: "deepseek/deepseek-chat", problem: null }, { ref: "mistral/mistral-large-latest", problem: null }], probe: { ref: "deepseek/deepseek-chat", ok: false, ms: 300, error: "deepseek → 401: Authentication Fails" } };
+    facts.refused = [{ provider: "deepseek", at: NOW, said: "401: Authentication Fails" }];
+    const checks = diagnose(facts);
+    expect(byId(checks, "role.planner")).toMatchObject({ state: "ok", line: "planner: mistral/mistral-large-latest has what it needs (not asked: deepseek/deepseek-chat, before it, still refuses its key)" });
+    // One cause, said once: the planner's own lines are this one, ok.
+    expect(checks.filter((c) => c.id.startsWith("role.planner")).map((c) => [c.id, c.state])).toEqual([["role.planner", "ok"]]);
+    // Not answering for another reason (no answer in time) is news of its own, said as it always was.
+    facts.roles[0]!.probe = { ref: "deepseek/deepseek-chat", ok: false, ms: 20_000, error: "no answer within 20 s (timed out)" };
+    expect(byId(diagnose(facts), "role.planner")).toMatchObject({ state: "needs-you", line: "planner: deepseek/deepseek-chat didn't answer: no answer within 20 s (timed out) (mistral/mistral-large-latest is next in line)" });
+  });
+
+  test("a coding role whose own model's key was refused, and whose coding plan works, is played by the plan", () => {
+    const facts = base();
+    facts.roles[1] = { role: "engineer", chats: true, models: [{ ref: "deepseek/deepseek-chat", problem: null }, { ref: "zai-coding/glm-5.3", problem: null, plan: true }], probe: null };
+    facts.refused = [{ provider: "deepseek", at: NOW, said: "401: Authentication Fails" }];
+    expect(byId(diagnose(facts), "role.engineer")).toMatchObject({ state: "ok", line: "engineer: zai-coding/glm-5.3 does his coding (a coding plan: it is asked nothing else, so not a word)" });
+  });
+
   test("a role whose every model's key was refused: nobody can play it, said with why, a coding role's not as outside coding", () => {
     const facts = base();
     facts.roles[0] = { role: "planner", chats: true, models: [{ ref: "deepseek/deepseek-chat", problem: null }], probe: null };
@@ -113,6 +134,8 @@ describe("a role whose model's provider refused its key", () => {
     const checks = diagnose(facts);
     expect(byId(checks, "role.planner")).toMatchObject({ state: "broken", line: "no model can play planner: deepseek/deepseek-chat (its provider refused its key)" });
     expect(byId(checks, "role.plan-coder")).toMatchObject({ state: "needs-you", line: "no model can play plan-coder: mimo-token/mimo-v2.6-pro (its provider refused its key)" });
+    // What to do is the key's (said above), or another model.
+    expect(byId(checks, "role.planner").fix).toBe("Replace its key (said above), or hire a model that works here: galahad roster set planner <provider/model>.");
   });
 });
 

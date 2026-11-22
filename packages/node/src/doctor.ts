@@ -1,4 +1,4 @@
-import { clockUtc, refusalWords, regionalBaseUrls, spanWords } from "@galahad/brain";
+import { clockUtc, refusalWords, refusesKey, regionalBaseUrls, spanWords } from "@galahad/brain";
 import { type DoctorArea, type DoctorCheck, type DoctorReport, type DoctorState, doctorSorted, doctorTally, redact } from "@galahad/core";
 
 /*
@@ -190,7 +190,9 @@ export { refusalWords };
 /** Why a model didn't answer, and what that calls for. */
 function probeAdvice(error: string): string {
   if (/content.?filter|refus|declin/i.test(error)) return "The provider's filter ended the reply. Filters aren't steady: run the doctor again, and if it keeps happening put another model first (galahad roster set).";
-  if (/\b(401|403)\b|unauthor|invalid.*key|forbidden/i.test(error)) return "The provider refused the key. Replace it: galahad key add (or the app's Vault).";
+  // (A refused key by the rule the node remembers one by: brain's refusesKey. A 403 of what was asked isn't the key's.)
+  if (refusesKey(error) || /unauthor|invalid.*key/i.test(error)) return "The provider refused the key. Replace it: galahad key add (or the app's Vault).";
+  if (/\b403\b|forbidden/i.test(error)) return "The provider refused what was asked, not its key (a model its plan doesn't include, a region it doesn't serve, a moderation flag): read its words, or put another model first (galahad roster set).";
   if (/\b429\b|rate.?limit|quota|credit|billing/i.test(error)) return "The provider is limiting or out of credit. Check the account, or put another model first (galahad roster set).";
   if (/time|abort/i.test(error)) return "No answer in time. Check the provider's status and this node's network, or put another model first (galahad roster set).";
   return "Check the provider's status and its base URL (galahad provider list), or put another model first (galahad roster set).";
@@ -365,9 +367,11 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       continue;
     }
     // A role whose work is all coding is played by a plan alone: the engineer's and the reviewer's, and a role you made,
-    // which only knights work on (their conversations and tasks are coding work).
-    if (!own.length && lent.length && (CODING_ROLES.has(role.role) || role.custom)) {
-      add("models", id, "ok", `${role.role}: ${lent[0]!.ref} ${role.custom ? "does the work of the knights on it" : "does his coding"} (a coding plan: it is asked nothing else, so not a word)`);
+    // which only knights work on (their conversations and tasks are coding work). So it is when none of its own models
+    // can be used: a refused key's or a spent one's are said above, and any other's is said here.
+    if (!usable.length && lent.length && (CODING_ROLES.has(role.role) || role.custom)) {
+      const lacking = own.filter((m) => m.problem !== null && !m.spent && !m.refused).map((m) => `; ${m.ref} can't be asked (${m.problem})`).join("");
+      add("models", id, "ok", `${role.role}: ${lent[0]!.ref} ${role.custom ? "does the work of the knights on it" : "does his coding"} (a coding plan: it is asked nothing else, so not a word)${lacking}`);
       continue;
     }
     if (role.unset && !usable.length) {
@@ -378,6 +382,12 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     if (!usable.length || !first) {
       // (A role whose work is all coding, with no plan that can do it, is said as its plans' problems: coding is its work.)
       const unplayable = own.length ? own : CODING_ROLES.has(role.role) || role.custom ? plans : [];
+      // What to do: nothing, for a window that ends by itself; the key, for one refused; else a key or another model.
+      const fix = unplayable.length && unplayable.every((m) => m.spent)
+        ? `It comes back by itself when its allowance resets (said above). To have ${role.role} played before then: galahad roster set ${role.role} <provider/model>.`
+        : unplayable.length && unplayable.every((m) => m.refused)
+          ? `Replace its key (said above), or hire a model that works here: galahad roster set ${role.role} <provider/model>.`
+          : "Add a key (galahad key add) or hire a model that works here (galahad roster set " + role.role + " <provider/model>).";
       add(
         "models",
         id,
@@ -385,7 +395,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
         unplayable.length
           ? `no model can play ${role.role}: ${unplayable.map((m) => `${m.ref} (${m.problem})`).join("; ")}`
           : `no model can play ${role.role} outside coding: ${plans.map((m) => m.ref).join(", ")} ${plans.length === 1 ? "is" : "are"} on a coding plan, which answers coding work only`,
-        "Add a key (galahad key add) or hire a model that works here (galahad roster set " + role.role + " <provider/model>).",
+        fix,
       );
       continue;
     }
@@ -403,6 +413,9 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     if (!role.chats) add("models", id, "ok", `${role.role}: ${usable[0]!.ref} has what it needs (it doesn't answer in words, so it isn't asked)${tools}`);
     else if (!probe) add("models", id, "ok", `${role.role}: ${usable[0]!.ref} has what it needs (not asked${f.offline ? ": offline" : f.quick ? ": a full check asks it one word" : ""})${tools}`);
     else if (probe.ok) add("models", id, "ok", `${role.role}: ${probe.ref} answered${tools}`, undefined, { ms: probe.ms });
+    // A full check asks a refused key's model its word (a key that works again is found so): refused again, the model
+    // behind it is named, as for a spent one, and the refusal stays said once, above.
+    else if (refusedKey.has(probe.ref.slice(0, probe.ref.indexOf("/"))) && refusesKey(probe.error ?? "")) add("models", id, "ok", `${role.role}: ${usable[0]!.ref} has what it needs (not asked: ${probe.ref}, before it, still refuses its key)${tools}`);
     else {
       const others = usable.filter((m) => m.ref !== probe.ref);
       const error = refusalWords(redact(probe.error ?? "no answer"));

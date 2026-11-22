@@ -15,18 +15,28 @@ import type { MindStore, Vault } from "@galahad/mind";
 import { refusalWords } from "./adapters.ts";
 import { providerRecord } from "./providers.ts";
 
-/** The status a call's error begins with: "401 …" as the gateway says it, "mimo-token → 401 …" as chat does. */
-const statusOf = (error: string): number | null => {
-  const found = /^(?:[\w.:-]+(?: \/models)? → )?(\d{3})\b/.exec(error.trim());
-  return found ? Number(found[1]) : null;
-};
+/**
+ * The status a call's error begins with: "401 …" as the gateway says it, "mimo-token → 401 …" as chat does, and
+ * "deepseek: 401 …" as an error said in the middle of a stream is.
+ */
+const STATUS = /^(?:[\w.:-]+?(?: \/models)?(?: →|:) )?(\d{3})\b/;
 
 /**
- * A 403's words that speak of the key. A 403 refuses what was asked as often as the key that asked it (OpenRouter's,
- * when a model's moderation flags what was sent; OpenAI's, from a country it doesn't serve), and replacing a key that
- * works is no fix for either.
+ * A 403's words that speak of the key: the key, its credentials, its authentication, a token that is invalid, expired or
+ * revoked. A 403 refuses what was asked as often as the key that asked it (OpenRouter's, when a model's moderation flags
+ * what was sent; OpenAI's, from a country it doesn't serve; an author's rights, a tier's token limit), and replacing a
+ * key that works is no fix for any of them. (A bare "403 Forbidden" says nothing either way, and is not said.)
  */
-const OF_THE_KEY = /\b(api[ _-]?key|key|credentials?|auth\w*|unauthori[sz]ed|token)\b/i;
+const OF_THE_KEY = /\b(?:api[ _-]?keys?|keys?|credentials?|authenticat\w*|unauthenticated|unauthori[sz]ed|(?:invalid|expired|revoked)\s+(?:\w+\s+)?tokens?|tokens?\s+(?:is\s+|has\s+been\s+)?(?:invalid|expired|revoked))\b/i;
+
+/** Whether a call's error refused its key: a 401, or a 403 whose words after its status speak of the key (never a name). */
+export function refusesKey(error: string): boolean {
+  const said = error.trim();
+  const found = STATUS.exec(said);
+  if (!found) return false;
+  const status = Number(found[1]);
+  return status === 401 || (status === 403 && OF_THE_KEY.test(said.slice(found[0].length)));
+}
 
 /** One provider whose key a call got refused: who, when, and what it said. */
 export interface RefusedKey {
@@ -53,13 +63,10 @@ export class RefusedKeys {
    * where it stands there, never from the words after it, and the words kept are the status and the message alone.
    */
   note(provider: string, error: string): RefusedKey | null {
-    const status = statusOf(error);
-    if (status !== 401 && status !== 403) return null;
+    if (!refusesKey(error)) return null;
     const words = refusalWords(redact(error), 200);
-    const prefix = `${provider} → `;
-    const said = words.startsWith(prefix) ? words.slice(prefix.length) : words;
-    // (The words alone: a provider's name may hold one of them, as mimo-token does.)
-    if (status === 403 && !OF_THE_KEY.test(said)) return null;
+    const named = [`${provider} → `, `${provider}: `].find((prefix) => words.startsWith(prefix));
+    const said = named ? words.slice(named.length) : words;
     const refusal: RefusedKey = { provider, at: this.now(), said };
     this.refusals.set(provider, refusal);
     this.kept?.(refusal);

@@ -125,6 +125,8 @@ describe("an allowance window that ends by itself", () => {
     const coder = byId(diagnose(facts), "role.plan-coder");
     expect(coder.line).toBe(`no model can play plan-coder: opencode-go/deepseek-v4-pro (${SPENT_PROBLEM})`);
     expect(hasId(diagnose(facts), "role.plan-coder.plan")).toBe(false);
+    // Nothing to add a key for: the window ends by itself (Percival's review, 22 November 2026).
+    expect(coder.fix).toBe("It comes back by itself when its allowance resets (said above). To have plan-coder played before then: galahad roster set plan-coder <provider/model>.");
   });
 });
 
