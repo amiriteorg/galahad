@@ -44,7 +44,7 @@ describe("a chat that falls back", () => {
     return { store, vault, fetch };
   }
   const fallbacks = async (ctx: ReturnType<typeof brain>) => {
-    const out: ChatStreamEvent[] = [];
+    const out: Extract<ChatStreamEvent, { type: "fallback" }>[] = [];
     for await (const e of chat(ctx, { models: ["gateway/anthropic/claude-opus-5-5", "spare/b"], messages: [{ role: "user", content: "Go on" }] })) if (e.type === "fallback") out.push(e);
     return out;
   };
