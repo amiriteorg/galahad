@@ -117,6 +117,15 @@ describe("an allowance window that ends by itself", () => {
     expect(planner.line).toContain("opencode-go/gpt-6-luna");
     expect(hasId(diagnose(facts), "role.planner.first")).toBe(false);
   });
+
+  test("a coding role whose only plan is spent: nobody can play it until it resets, said as its work, not as outside coding", () => {
+    const facts = base();
+    facts.spent = [{ provider: "opencode-go", until: UNTIL }];
+    facts.roles.push({ role: "plan-coder", custom: true, chats: true, models: [{ ref: "opencode-go/deepseek-v4-pro", problem: SPENT_PROBLEM, plan: true, spent: true }], probe: null });
+    const coder = byId(diagnose(facts), "role.plan-coder");
+    expect(coder.line).toBe(`no model can play plan-coder: opencode-go/deepseek-v4-pro (${SPENT_PROBLEM})`);
+    expect(hasId(diagnose(facts), "role.plan-coder.plan")).toBe(false);
+  });
 });
 
 describe("a provider's refusal, in its own words", () => {

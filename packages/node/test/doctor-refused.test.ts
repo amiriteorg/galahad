@@ -78,6 +78,44 @@ describe("a provider that refused its key", () => {
   });
 });
 
+// Its models are still asked, and refused, until the key is replaced: a role's lines name the model that answers
+// instead, and the refusal is said once (above), never again as a role's plan or first model (no second Inbox notice).
+describe("a role whose model's provider refused its key", () => {
+  test("a coding plan that refuses its key isn't said to do the work: the plan behind it is", () => {
+    const facts = base();
+    facts.roles.push({ role: "plan-coder", custom: true, chats: true, models: [{ ref: "mimo-token/mimo-v2.6-pro", problem: null, plan: true }, { ref: "zai-coding/glm-5.3", problem: null, plan: true }], probe: null });
+    facts.refused = [{ provider: "mimo-token", at: NOW, said: "401: Invalid API Key" }];
+    const checks = diagnose(facts);
+    expect(byId(checks, "role.plan-coder")).toMatchObject({ state: "ok", line: "plan-coder: zai-coding/glm-5.3 does the work of the knights on it (a coding plan: it is asked nothing else, so not a word)" });
+    expect(hasId(checks, "role.plan-coder.plan")).toBe(false);
+    expect(checks.filter((c) => c.line.includes("mimo-token")).map((c) => c.id)).toEqual(["models.key.mimo-token"]);
+  });
+
+  test("a first model whose key was refused makes no first-model line: the next one answers, and one notice is raised", () => {
+    const facts = base();
+    facts.quick = true;
+    facts.roles[0] = { role: "planner", chats: true, models: [{ ref: "deepseek/deepseek-chat", problem: null }, { ref: "mistral/mistral-large-latest", problem: null }], probe: null };
+    facts.refused = [{ provider: "deepseek", at: NOW, said: "401: Authentication Fails" }];
+    const checks = diagnose(facts);
+    expect(hasId(checks, "role.planner.first")).toBe(false);
+    expect(byId(checks, "role.planner").line).toBe("planner: mistral/mistral-large-latest has what it needs (not asked: a full check asks it one word)");
+    expect(checks.filter((c) => c.area === "models" && c.finding).map((c) => c.id)).toEqual(["models.key.deepseek"]);
+  });
+
+  test("a role whose every model's key was refused: nobody can play it, said with why, a coding role's not as outside coding", () => {
+    const facts = base();
+    facts.roles[0] = { role: "planner", chats: true, models: [{ ref: "deepseek/deepseek-chat", problem: null }], probe: null };
+    facts.roles.push({ role: "plan-coder", custom: true, chats: true, models: [{ ref: "mimo-token/mimo-v2.6-pro", problem: null, plan: true }], probe: null });
+    facts.refused = [
+      { provider: "deepseek", at: NOW, said: "401: Authentication Fails" },
+      { provider: "mimo-token", at: NOW, said: "401: Invalid API Key" },
+    ];
+    const checks = diagnose(facts);
+    expect(byId(checks, "role.planner")).toMatchObject({ state: "broken", line: "no model can play planner: deepseek/deepseek-chat (its provider refused its key)" });
+    expect(byId(checks, "role.plan-coder")).toMatchObject({ state: "needs-you", line: "no model can play plan-coder: mimo-token/mimo-v2.6-pro (its provider refused its key)" });
+  });
+});
+
 describe("a refusal from before the key was last set", () => {
   function keyedBrain() {
     const id = "mimo-token";

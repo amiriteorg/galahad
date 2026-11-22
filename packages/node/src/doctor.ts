@@ -332,15 +332,19 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       finding: { severity: "warn", title: `${refusal.provider} refused its key`, body: `${refusal.provider} refused its key at ${clockUtc(refusal.at)} UTC: ${refusal.said}. ${fix}` },
     });
   }
+  // A refused key's models are still asked, and refused, until it is replaced: a role's lines name the model that answers
+  // instead, and never make a plan or first-model line of them (the refusal is said once, above, with its notice).
+  const refusedKey = new Set((f.refused ?? []).map((refusal) => refusal.provider));
   for (const role of none ? [] : f.roles) {
     if (!role.models.length) continue; // nobody hired for it: a choice, not a problem
     const id = `role.${role.role}`;
+    const models = role.models.map((m) => (m.problem === null && refusedKey.has(m.ref.slice(0, m.ref.indexOf("/"))) ? { ...m, problem: "its provider refused its key", refused: true } : { ...m, refused: false }));
     // A coding plan's models do his coding, and the knights' coding tools use them (brain/providers.ts); they
     // answer nothing else, and are asked no word. What is judged for everything else a role does is the rest.
-    const plans = role.models.filter((m) => m.plan);
-    const own = role.models.filter((m) => !m.plan);
+    const plans = models.filter((m) => m.plan);
+    const own = models.filter((m) => !m.plan);
     const lent = plans.filter((m) => m.problem === null);
-    const unlent = plans.filter((m) => m.problem !== null && !m.spent);
+    const unlent = plans.filter((m) => m.problem !== null && !m.spent && !m.refused);
     if (unlent.length) {
       add(
         "models",
@@ -354,7 +358,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     }
     const tools = lent.length ? `; his coding and the knights' tools use ${lent.map((m) => m.ref).join(", ")}` : "";
     const usable = own.filter((m) => m.problem === null);
-    const first = own.find((m) => !m.spent);
+    const first = own.find((m) => !m.spent && !m.refused);
     // A VM's eyes are asked by its tools, never by him: a plan they may use plays them alone (one they may not, said above).
     if (!own.length && TOOL_ROLES.has(role.role)) {
       if (lent.length) add("models", id, "ok", `${role.role}: ${lent[0]!.ref} looks at the VMs' screens, asked by their tools through the gateway (a coding plan: it is asked nothing else, so not a word)`);
@@ -372,12 +376,14 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       continue;
     }
     if (!usable.length || !first) {
+      // (A role whose work is all coding, with no plan that can do it, is said as its plans' problems: coding is its work.)
+      const unplayable = own.length ? own : CODING_ROLES.has(role.role) || role.custom ? plans : [];
       add(
         "models",
         id,
         CORE_ROLES.has(role.role) ? "broken" : "needs-you",
-        own.length
-          ? `no model can play ${role.role}: ${own.map((m) => `${m.ref} (${m.problem})`).join("; ")}`
+        unplayable.length
+          ? `no model can play ${role.role}: ${unplayable.map((m) => `${m.ref} (${m.problem})`).join("; ")}`
           : `no model can play ${role.role} outside coding: ${plans.map((m) => m.ref).join(", ")} ${plans.length === 1 ? "is" : "are"} on a coding plan, which answers coding work only`,
         "Add a key (galahad key add) or hire a model that works here (galahad roster set " + role.role + " <provider/model>).",
       );
