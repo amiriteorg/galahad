@@ -104,6 +104,25 @@ export const TRIALS_HARD = {
   models: "planner glm-5.3, engineer deepseek-v4-pro, reviewer qwen3.8-max, on a coding plan",
 } as const;
 
+/**
+ * Against a bare coding tool on the same tasks and the same model, 21 November 2026: docs/TRIALS.md, "Does the harness
+ * help?" (the agentic suite at level 3, its eight tasks twice, every engineer call on Claude Opus 5.5). The last column is
+ * the reviewer as it asks now, its send-backs scoped to what a task asks. And OpenCode, on DeepSeek V4 Pro, 20–21 November.
+ */
+export const HEAD_TO_HEAD = {
+  date: "21 November 2026",
+  columns: ["Claude Code alone", "Galahad's loop alone", "With its gates and reviewer"],
+  rows: [
+    { what: "Galahad Index", values: [pct(99), pct(100), pct(100)] },
+    { what: "Solved outright", values: ["15 of 16", "16 of 16", "16 of 16"] },
+    { what: "Called done and wasn't", values: ["1 of 16", "0 of 14", "0 of 14"] },
+    { what: "A trial", values: ["$0.15, 123k tokens", "$0.16, 71k tokens", "$0.36, 118k tokens"] },
+    { what: "A trial's time", values: ["50\u00a0s", "57\u00a0s", "2\u00a0min"] },
+  ],
+  tool: "Claude Code 2.1.319",
+  opencode: { index: [pct(97), pct(96)], falseDone: ["3 of 16", "1 of 12"], usd: ["$0.11", "$0.19"] },
+} as const;
+
 /** Lines of source, test files left out, counted with `git ls-files`: Galahad's at `commit` on `oursDate` (the same count
  * at deaa43c, on 15 November, gave the 84,819 first shown here); Hermes Agent's at its 0.21 checkout, and Rakazo's and
  * OpenMausBot's from their main branches, on `date`, to the thousand. */

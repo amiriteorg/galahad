@@ -4,7 +4,7 @@ import Install from "../components/Install.astro";
 import Knight from "../components/Knight.astro";
 import RoundTable from "../components/RoundTable.astro";
 import Swing from "../components/Swing.astro";
-import { ANDROID, BUN_VERSION, COMPARE, INSTALLER_SHA256, MAC, PHASING, RELEASES, REPO, SIZE, TRIALS, TRIALS_HARD, compact, doc } from "../lib/facts.ts";
+import { ANDROID, BUN_VERSION, COMPARE, HEAD_TO_HEAD, INSTALLER_SHA256, MAC, PHASING, RELEASES, REPO, SIZE, TRIALS, TRIALS_HARD, compact, doc } from "../lib/facts.ts";
 
 /* An example Roundtable at work: six knights, each in its room (its VM), each showing in its eyes what it is doing,
    with one line of it as the app's roster says it. Illustrative, and the caption says so. */
@@ -285,6 +285,41 @@ const TUTOR_INSTALL = "curl -fsSL https://galahad.sh/TUTOR.md -o TUTOR.md && gal
           </tbody>
         </table>
         <p class="schedule-note">With the {TRIALS_HARD.models}; run <code>{TRIALS_HARD.run}</code>.</p>
+      </div>
+
+      <div class="schedule trials">
+        <table>
+          <caption>
+            <b>Against a bare coding tool, {HEAD_TO_HEAD.date}.</b> The same eight at level 3, twice each, every
+            engineer call on Claude Opus 5.5, and {HEAD_TO_HEAD.tool} given each task as you would type it. On sixteen
+            tasks none of the differences is measurable: Galahad's loop did what Claude Code does, in about the same time and
+            for the same money, on 58 % of the tokens, and called nothing done that wasn't.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Measure</th>
+              {HEAD_TO_HEAD.columns.map((column) => <th scope="col">{column}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {
+              HEAD_TO_HEAD.rows.map((row) => (
+                <tr>
+                  <th scope="row">{row.what}</th>
+                  {row.values.map((value) => (
+                    <td class="num">{value}</td>
+                  ))}
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+        <p class="schedule-note">
+          Against OpenCode alone, on DeepSeek V4 Pro: {HEAD_TO_HEAD.opencode.index[0]} to Galahad's {HEAD_TO_HEAD.opencode.index[1]},
+          {" "}{HEAD_TO_HEAD.opencode.falseDone[0]} called done and wasn't to {HEAD_TO_HEAD.opencode.falseDone[1]}, at
+          {" "}{HEAD_TO_HEAD.opencode.usd[0]} a trial to {HEAD_TO_HEAD.opencode.usd[1]}.{" "}
+          <a href={doc("TRIALS", "#does-the-harness-help-")}>The runs, and what each arm was</a>
+        </p>
       </div>
     </div>
   </section>
