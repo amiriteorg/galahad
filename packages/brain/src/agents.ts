@@ -203,6 +203,13 @@ export interface AgentRun {
   error?: string;
 }
 
+/**
+ * How long a run may go unread, every look at it failing, before it is ended: Galahad has lost sight of it. On 22
+ * November 2026 a knight deleted its lease, every command in its VM failed from then on, and a look that failed was
+ * taken as no news, so its task waited on a run that had ended, with an audit paid for every quarter of an hour.
+ */
+export const UNREAD_LIMIT_MS = 5 * 60_000;
+
 /** Prints {alive, exit, next, lines} for the events written since byte `offset`. */
 const POLL = `${AGENT_PROCESS_PY}
 d, off = ${JSON.stringify(AGENT_DIR)}, int(sys.argv[1])
@@ -278,12 +285,24 @@ export async function runAgent(
     }
 
     let lastError = "";
+    /** Since when its looks have failed in a row (null: the last one was read), and what the latest said. */
+    let unreadSince: number | null = null;
+    let unreadWhy = "";
     for (;;) {
       let poll: { alive: boolean; exit: number | null; next: number; lines: string[] };
+      let looked: ExecResult | null = null;
       try {
-        const result = await deps.exec(`python3 -c ${quote(POLL)} ${offset}`, 60);
-        poll = JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "");
-      } catch {
+        looked = await deps.exec(`python3 -c ${quote(POLL)} ${offset}`, 60);
+        poll = JSON.parse(looked.stdout.trim().split("\n").at(-1) ?? "");
+        unreadSince = null;
+      } catch (error) {
+        // A look that couldn't be read is no news, for a while; a run unread for long is one Galahad can't see.
+        unreadSince ??= now();
+        unreadWhy = redact((looked ? looked.stderr || looked.stdout || `exit ${looked.exitCode}` : String((error as Error)?.message ?? error)).trim().split("\n").filter(Boolean).at(-1) ?? "").slice(0, 300);
+        if (now() - unreadSince > UNREAD_LIMIT_MS) {
+          await stop();
+          return { ...run, status: "failed", error: `Galahad couldn't read how its run was going for ${Math.round(UNREAD_LIMIT_MS / 60_000)} minutes, so it was stopped: ${unreadWhy || "no reason given"}` };
+        }
         poll = { alive: true, exit: null, next: offset, lines: [] };
       }
       offset = poll.next;

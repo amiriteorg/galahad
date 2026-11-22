@@ -238,6 +238,37 @@ describe("running an agent", () => {
     expect(run.error).toContain("401 unknown token");
   });
 
+  test("a run that can't be read for five minutes is stopped and failed, saying why, never waited on for ever", async () => {
+    // On 22 November 2026 a knight deleted its lease, every command in its VM failed from then on, and its task waited
+    // on a run that had ended: each look that failed was taken as no news.
+    const commands: string[] = [];
+    let t = 0;
+    const exec = async (command: string): Promise<ExecResult> => {
+      commands.push(command);
+      if (command.startsWith("python3 -c") && command.includes("d, off =")) return { exitCode: 1, stdout: "", stderr: "Traceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory: '/work/.galahad-gateway.json'", durationMs: 1, truncated: false };
+      return { exitCode: 0, stdout: command.startsWith("stat -c") ? "0\n" : "", stderr: "", durationMs: 1, truncated: false };
+    };
+    // (Time moves as it waits between looks, ten seconds each.)
+    const run = await runAgent(OPENCODE, { model, prompt: "x", session: null, deadline: Number.MAX_SAFE_INTEGER, workdir: "/work" }, { exec, sleep: async (ms) => void (t += ms), now: () => t });
+    expect(run.status).toBe("failed");
+    expect(run.error).toBe("Galahad couldn't read how its run was going for 5 minutes, so it was stopped: FileNotFoundError: [Errno 2] No such file or directory: '/work/.galahad-gateway.json'");
+    // About five minutes of looks, ten seconds apart, and its whole process group stopped.
+    expect(commands.filter((c) => c.includes("d, off =")).length).toBeGreaterThan(25);
+    expect(commands.filter((c) => c.includes("d, off =")).length).toBeLessThan(35);
+    expect(commands.some((c) => c.startsWith("python3 -c") && c.includes("cleanup(sys.argv[1])"))).toBe(true);
+  });
+
+  test("a look that fails now and then is no news: the run goes on, and ends as it ends", async () => {
+    let looks = 0;
+    const box = sandbox([[LINES.start], [LINES.text]]);
+    const exec = async (command: string, timeout: number): Promise<ExecResult> => {
+      if (command.includes("d, off =") && ++looks % 2 === 1) return { exitCode: 1, stdout: "", stderr: "a hiccup", durationMs: 1, truncated: false };
+      return box.exec(command);
+    };
+    const run = await runAgent(OPENCODE, { model, prompt: "x", session: null, deadline: Number.MAX_SAFE_INTEGER, workdir: "/work" }, { exec, sleep: noSleep });
+    expect(run).toMatchObject({ status: "finished", session: SESSION });
+  });
+
   test("past its deadline it's stopped, its whole process group", async () => {
     const box = sandbox([[LINES.start], [LINES.shell]], null, { forever: true });
     let t = 0;
