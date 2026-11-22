@@ -339,14 +339,15 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     const named = f.providers!.byDefault;
     add("models", "models.none", "broken", "no provider is set up here yet, so no model can answer", `Add a key: galahad key add. A key for ${named.slice(0, -1).join(", ")} or ${named.at(-1)} is enough, since his roles' defaults name their models; for another provider, hire one of its models too (galahad roster set <role> <provider/model>).`);
   }
-  // A provider whose allowance is spent until it resets: its models are passed over on every role until then. The window
+  // A provider whose allowance is spent until it resets: its models are passed over on every role until then (a coding
+  // plan's every model; any other provider's, the one model told to wait: brain/windows.ts windowScope). The window
   // ends by itself, so there is nothing to do; said once in the models area, never as a role's finding or an Inbox notice.
   for (const window of f.spent ?? []) {
     add(
       "models",
       `models.spent.${window.provider}`,
       "ok",
-      `${window.provider}'s allowance is spent until ${clockUtc(window.until)} UTC (${spanWords(window.until - f.now)} from now), as its provider said: its models are passed over on every role until then`,
+      `${window.provider}'s allowance is spent until ${clockUtc(window.until)} UTC (${spanWords(window.until - f.now)} from now), as its provider said: ${window.provider.includes("/") ? "it is" : "its models are"} passed over on every role until then`,
     );
   }
   for (const role of none ? [] : f.roles) {

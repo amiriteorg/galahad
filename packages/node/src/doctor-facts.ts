@@ -304,7 +304,7 @@ async function rolesOf(deps: DoctorDeps, ask: boolean, signal?: AbortSignal): Pr
       const kept = TOOL_ROLES.has(role) && onPlan(ref) && planOf(ref.slice(0, ref.indexOf("/")))?.allows.tools !== "unattended";
       // A provider whose allowance is spent now: marked so the doctor can leave it out of a role's plan and first lines
       // (the window ends by itself, so it is no fault) while its problem still says what the provider said.
-      const spent = !kept && windowsOf(deps.store).spent(ref.slice(0, ref.indexOf("/"))) !== null;
+      const spent = !kept && windowsOf(deps.store).spentFor(ref) !== null;
       return { ref, problem: kept ? VM_TOOLS_CANT : modelProblem(deps, ref), ...(spent ? { spent: true } : {}), ...(onPlan(ref) ? { plan: true } : {}) };
     }),
     ...(!spec.configured && spec.models.every((ref) => providerRecord(deps.store, ref.slice(0, ref.indexOf("/"))) === null) ? { unset: true } : {}),

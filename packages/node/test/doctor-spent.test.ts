@@ -71,6 +71,18 @@ describe("an allowance window that ends by itself", () => {
     expect(byId(checks, "role.engineer").line).toContain("no model can play engineer");
   });
 
+  test("a window of one model's (a router's or an API's, not a plan's) is said of that model alone", () => {
+    const facts = base();
+    facts.spent = [{ provider: "orcarouter/anthropic/claude-opus-5.5", until: UNTIL }];
+    facts.roles[0]!.models = [
+      { ref: "orcarouter/anthropic/claude-opus-5.5", problem: SPENT_PROBLEM, spent: true },
+      { ref: "deepseek/deepseek-chat", problem: null },
+    ];
+    const checks = diagnose(facts);
+    expect(byId(checks, "models.spent.orcarouter/anthropic/claude-opus-5.5").line).toBe("orcarouter/anthropic/claude-opus-5.5's allowance is spent until 13:37 UTC (1h 37m from now), as its provider said: it is passed over on every role until then");
+    expect(hasId(checks, "role.planner.first")).toBe(false);
+  });
+
   test("a spent first model never makes a .first line: the next usable model answers", () => {
     const facts = base();
     facts.spent = [{ provider: "opencode-go", until: UNTIL }];
