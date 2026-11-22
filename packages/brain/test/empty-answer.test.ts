@@ -223,3 +223,35 @@ describe("a provider that sends its words in parts", () => {
     expect(events.find((e) => e.type === "fallback")).toMatchObject({ error: expect.stringMatching(/without saying anything/) });
   });
 });
+
+// A call asked with no tools (a review, an audit) whose model answers with a call anyway: on Ultra, 22 November 2026,
+// a knight's audit failed twice so ("undefined is not an object (evaluating 'tools.describe')"), and was asked again
+// after fifteen seconds and a minute. A call it wasn't offered is never run: its words are the answer, and a reply
+// with nothing else in it is one with no words, which the next model takes over.
+describe("a model that asks for a tool it wasn't offered", () => {
+  test("its words are the answer, and the call is never run", async () => {
+    const model = scripted([whole(words("ON\nIt is reading the commits it was given."), ...calls("c1", { text: "one" }))]);
+    const events = await all(chat({ ...brain(["local/a"]), fetch: model.fetch }, { messages: ask("Is the work on its task?") }));
+    expect(textOf(events)).toBe("ON\nIt is reading the commits it was given.");
+    expect(types(events)).not.toContain("tool");
+    expect(types(events).at(-1)).toBe("done");
+    expect(errorOf(events)).toBe("");
+  });
+
+  test("with nothing but the call, the next model answers in its place", async () => {
+    const model = scripted([whole(...calls("c1", { text: "one" })), whole(words("ON\nIt is on its task."), stop)]);
+    const events = await all(chat({ ...brain(["local/a", "local/b"]), fetch: model.fetch }, { messages: ask("Is the work on its task?") }));
+    expect(textOf(events)).toBe("ON\nIt is on its task.");
+    expect(types(events)).toContain("fallback");
+    expect(types(events).at(-1)).toBe("done");
+    expect(model.bodies.map((b) => b.model)).toEqual(["a", "b"]);
+  });
+
+  test("with nothing but the call and no model after it, the error says what it did, never a crash's words", async () => {
+    const model = scripted([whole(...calls("c1", { text: "one" }))]);
+    const events = await all(chat({ ...brain(["local/a"]), fetch: model.fetch }, { messages: ask("Is the work on its task?") }));
+    expect(types(events)).not.toContain("done");
+    expect(errorOf(events)).toMatch(/asked for a tool \(post\) when it was offered none/);
+    expect(errorOf(events)).not.toMatch(/undefined is not an object/);
+  });
+});

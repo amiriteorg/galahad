@@ -406,7 +406,12 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
         }
         yield* tally();
         refused = 0;
-        if (!end.calls.length) {
+        // A call to a tool when none was offered (a review, an audit; a runtime that takes none) is never run: the answer
+        // is its words, and a reply with only such calls has none. (22 November 2026: a knight's audit on Ultra failed
+        // twice so, "undefined is not an object (evaluating 'tools.describe')", and was asked again a minute later.)
+        const unoffered = offered.length ? [] : end.calls;
+        const calls: ToolCall[] = offered.length ? end.calls : [];
+        if (!calls.length) {
           // Cut off by the model's output limit: it goes on where it stopped, in the same answer.
           if (end.truncated && continued < MAX_CONTINUATIONS) {
             continued++;
@@ -423,10 +428,12 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
             continue;
           }
           // An answer with no words in it is not an answer: it failed, and says how the provider ended it.
-          if (!spoke) throw new Error(`${ref} ended its answer without saying anything${end.detail ? ` (${end.detail})` : ""}`);
+          if (!spoke) {
+            if (unoffered.length) throw new Error(`${ref} asked for a tool (${[...new Set(unoffered.map((c) => c.name))].join(", ")}) when it was offered none, and said nothing`);
+            throw new Error(`${ref} ended its answer without saying anything${end.detail ? ` (${end.detail})` : ""}`);
+          }
           break;
         }
-        const calls: ToolCall[] = end.calls;
         // The caller's own tools: the answer ends here, with its calls, for the caller to run (and what to carry back).
         if (req.clientTools && !tools) {
           const carry = conversation.carry?.();
