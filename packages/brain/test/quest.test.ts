@@ -806,3 +806,31 @@ describe("a long quest's conversation stays affordable, and stays the same", () 
   });
 });
 
+
+// On Ultra (22 November 2026) a deciding reviewer, asked with no tools, replied three times with a call to read the
+// file it was judging, in its own model's markup; each was taken as REVISE, and a knight's finished work ended unverified.
+describe("a reviewer's reply that is no verdict", () => {
+  const reading = '<tool_calls>\n<invoke name="read">\n<parameter name="path" string="true">/work/tasks/t/review.md</parameter>\n</invoke>\n</tool_calls>';
+
+  const verdicts = (h: ReturnType<typeof harness>) => h.events.filter((e) => e.type === "review").map((e) => (e as { verdict: string }).verdict);
+
+  test("is asked again once, told it has no tools: the verdict it gives then is the verdict", async () => {
+    // (A second DONE is there for the work had it been sent back, as it was.)
+    const h = harness({ engineer: [sh("echo hi > a.txt"), "DONE\nWrote a.txt.", "DONE\nIt is written."], reviewer: [reading, "PASS\nThe evidence shows a.txt written."] });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+    expect(verdicts(h)).toEqual(["pass"]);
+    const asks = h.seen.filter((s) => s.role === "reviewer");
+    expect(asks).toHaveLength(2);
+    expect(asks[1]!.messages.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+    expect(asks[1]!.messages.at(-1)!.content).toContain("You have no tools here");
+  });
+
+  test("no verdict again is sent back, as ever: an unsure reviewer is no approval", async () => {
+    const h = harness({ engineer: [sh("echo hi > a.txt"), "DONE\nWrote a.txt.", "DONE\nIt is written.", "DONE\nStill written."], reviewer: [reading, reading, "PASS\nFine.", "PASS\nFine."] });
+    const outcome = await h.run;
+    expect(outcome.status).toBe("done");
+    expect(verdicts(h)).toEqual(["revise", "pass"]);
+    expect(h.seen.filter((s) => s.role === "reviewer")).toHaveLength(3);
+  });
+});

@@ -459,6 +459,11 @@ export function parseAction(reply: string, parallel = 1): Action {
   return { kind: "invalid", problem: "Your reply had no command block. Send one ```sh block, or start with DONE or GIVE UP." };
 }
 
+/** A reviewer's reply that is a verdict: PASS or REVISE first. */
+const VERDICT = /^\**(PASS|REVISE)\b/i;
+/** What a reviewer whose reply was no verdict is told, asked again. */
+const NO_VERDICT = "Your reply began with neither PASS nor REVISE. You have no tools here, and can open or run nothing: judge from what is above alone, and reply with PASS or REVISE on the first line.";
+
 export function parseVerdict(reply: string): { verdict: "pass" | "revise"; notes: string } {
   const text = reply.trim();
   const firstLine = text.split(/\r?\n/, 1)[0]?.trim() ?? "";
@@ -1328,7 +1333,7 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
         evidence += `$ ${command}\n(could not run: ${(error as Error).message})\n\n`;
       }
     }
-    const reviewed = await ask("reviewer", [
+    const question: ChatMessage[] = [
       {
         role: "user",
         effort: STEP_EFFORT.review,
@@ -1336,7 +1341,14 @@ export async function runQuest(options: QuestOptions, deps: QuestDeps): Promise<
           ? o.review.prompt({ goal: o.goal, plan, steps: trail, summary, evidence: [evidence.trim(), gated].filter(Boolean).join("\n\n") })
           : reviewQuestion({ goal: o.goal, plan, steps: trail, summary, gated, evidence }),
       },
-    ], worked ? { apart: worked } : {});
+    ];
+    let reviewed = await ask("reviewer", question, worked ? { apart: worked } : {});
+    // A reply that is no verdict is asked again once, told why: on 22 November 2026 a reviewer with no tools answered
+    // three times with a call to read the file it judged, each taken as REVISE, and finished work ended unverified.
+    // (Still none, it is sent back as ever: an unsure reviewer is no approval.)
+    if (!o.review && !VERDICT.test(reviewed.text.trim())) {
+      reviewed = await ask("reviewer", [...question, { role: "assistant", content: reviewed.text }, { role: "user", effort: STEP_EFFORT.review, content: NO_VERDICT }], worked ? { apart: worked } : {});
+    }
     const verdict: { verdict: "pass" | "revise"; notes: string; conclusion?: string } = o.review ? o.review.read(reviewed.text) : parseVerdict(reviewed.text);
     emit({ type: "review", verdict: verdict.verdict, notes: verdict.notes, model: reviewed.model });
     return verdict;
