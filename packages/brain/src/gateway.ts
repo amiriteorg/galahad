@@ -3,6 +3,7 @@ import { randomId, redact, sha256B64u, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
 import { usageReader } from "./gateway-usage.ts";
 import { gatewaySession, keyHeaders, planOf, resolveProvider } from "./providers.ts";
+import { refusedKeysOf } from "./refused-keys.ts";
 import { clockUtc, retryAfterAt, spanWords, windowScope, windowsOf, type SpentWindow, type SpentWindows } from "./windows.ts";
 
 /*
@@ -246,9 +247,14 @@ export async function handleGateway(request: Request, ctx: GatewayContext): Prom
     // (A listing names no model: only a plan's refusal of one says anything of its window.)
     const scope = request.method === "POST" || planOf(providerId) ? windowScope(ref) : null;
     const window = scope ? windows.note(scope, `${providerId} → ${upstream.status} ${text}`, upstream.status === 429 ? retryAfterAt(upstream.headers.get("retry-after"), windows.now()) : null) : null;
+    // A provider that refused its key (401/403) is remembered, as a spent allowance is: the doctor and the Inbox say it.
+    // (A local runtime has no key to refuse: its 401 is said of it, not remembered here.)
+    if (request.method === "POST" && !provider.local) refusedKeysOf(ctx.store).note(providerId, `${upstream.status} ${text}`);
     if (window && window.until - windows.now() > WAIT_OUT_MS) return spent(window.provider, window, windows);
     return new Response(text, { status: upstream.status, headers: responseHeaders });
   }
+  // A call that got through (whatever it asked) means the key works: a refusal of it is forgotten.
+  refusedKeysOf(ctx.store).forget(providerId);
   // A model call (a POST) is counted as its answer goes by; a listing or a lookup isn't one.
   const report = ctx.onUsage;
   if (!report || request.method !== "POST" || !upstream.body) return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });

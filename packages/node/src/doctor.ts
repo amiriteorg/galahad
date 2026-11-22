@@ -1,4 +1,4 @@
-import { clockUtc, refusalWords, spanWords } from "@galahad/brain";
+import { clockUtc, refusalWords, regionalBaseUrls, spanWords } from "@galahad/brain";
 import { type DoctorArea, type DoctorCheck, type DoctorReport, type DoctorState, doctorSorted, doctorTally, redact } from "@galahad/core";
 
 /*
@@ -66,6 +66,8 @@ export interface DoctorFacts {
   providers?: { setUp: number; byDefault: string[] };
   /** Providers whose allowance is spent now (absent: gathered before this was known): each window, and when it resets. */
   spent?: { provider: string; until: number }[];
+  /** Providers whose key a call got refused, still unproven by a later call or a newer key (absent: gathered before this was known). */
+  refused?: { provider: string; at: number; said: string }[];
   roles: RoleFact[];
   /** null: this node keeps no archive. */
   archive: {
@@ -320,6 +322,15 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       "ok",
       `${window.provider}'s allowance is spent until ${clockUtc(window.until)} UTC (${spanWords(window.until - f.now)} from now), as its provider said: ${window.provider.includes("/") ? "it is" : "its models are"} passed over on every role until then`,
     );
+  }
+  // A provider that refused its key: said here as needs you, with what to do, and carried to the Inbox by its finding.
+  // (A refusal from before the key was last set was left out of the facts: the key has been replaced since.)
+  for (const refusal of f.refused ?? []) {
+    const regional = regionalBaseUrls(refusal.provider);
+    const fix = `Replace the key: galahad key add --provider ${refusal.provider}.${regional ? " The key must be for the address its plan's page shows (--base-url): a key for another region is refused here." : ""}`;
+    add("models", `models.key.${refusal.provider}`, "needs-you", `${refusal.provider} refused its key at ${clockUtc(refusal.at)} UTC: ${refusal.said}`, fix, {
+      finding: { severity: "warn", title: `${refusal.provider} refused its key`, body: `${refusal.provider} refused its key at ${clockUtc(refusal.at)} UTC: ${refusal.said}. ${fix}` },
+    });
   }
   for (const role of none ? [] : f.roles) {
     if (!role.models.length) continue; // nobody hired for it: a choice, not a problem

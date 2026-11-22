@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync, statfsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type DoctorReport, freeSlots, type NodeCapacity, type NodeIdentity, nextRun, type PeerStatus, redact, type Teammate } from "@galahad/core";
-import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, planOf, providerRecord, providerRecords, resolveProvider, ROLES, roster, windowsOf } from "@galahad/brain";
+import { type BrainContext, chat, embed, installedConnectors, isEmbeddingModel, keyState, onPlan, parseRef, planOf, providerRecord, providerRecords, refusalsStillSaid, resolveProvider, ROLES, roster, windowsOf } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
 import { containerKernel, macFirewallInstalled, type SandboxHost } from "@galahad/sandbox";
 import type { ArchiveService } from "./archive/service.ts";
@@ -531,6 +531,9 @@ export async function gatherFacts(deps: DoctorDeps, opts: DoctorOptions = {}): P
     vault: { unlocked: deps.vault.unlocked(), secrets: deps.vault.list().length, requests: deps.vault.requests().map((r) => r.name) },
     providers: { setUp: providerRecords(store).length, byDefault: [...new Set(ROLES.planner!.defaults.map((ref) => ref.slice(0, ref.indexOf("/"))))] },
     spent: windowsOf(store).list().map((w) => ({ provider: w.provider, until: w.until })),
+    // A provider whose key a call got refused, unless the key was set again since (its secret's last set is newer than
+    // the refusal): the doctor says each still remembered, and leaves out a refusal a replaced key has mooted.
+    refused: refusalsStillSaid(store, deps.vault).map((refusal) => ({ provider: refusal.provider, at: refusal.at, said: refusal.said })),
     roles,
     archive,
     sandbox,

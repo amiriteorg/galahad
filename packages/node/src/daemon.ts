@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonical, decodeHlc, type NodeIdentity, screenSessionView } from "@galahad/core";
-import { type BrainContext, CATALOG, GatewayTokens, installedConnectors, type OAuthEndpoints, pinLegacyKeys, windowsOf } from "@galahad/brain";
+import { type BrainContext, CATALOG, GatewayTokens, installedConnectors, type OAuthEndpoints, pinLegacyKeys, refusedKeysOf, windowsOf } from "@galahad/brain";
 import { indexUrl, McpIndex } from "./mcp-index.ts";
 import { UsageStore } from "./usage.ts";
 import { cloudflareNatives } from "./cloudflare.ts";
@@ -236,6 +236,12 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   const spentWindows = windowsOf(store);
   spentWindows.restore(usage.spentWindows());
   spentWindows.kept = (window) => usage.keepSpentWindow(window);
+  // A provider whose key a call got refused stays said through a restart, too: the doctor and the Inbox say it until a
+  // later call gets through (which forgets it) or the key is set again (which the doctor reads as the refusal being moot).
+  const refusedKeys = refusedKeysOf(store);
+  refusedKeys.restore(usage.refusedKeys());
+  refusedKeys.kept = (refusal) => usage.keepRefusedKey(refusal);
+  refusedKeys.forgot = (provider) => usage.forgetRefusedKey(provider);
   /** His own upkeep's calls (the heartbeat's words, his skills, the archive), counted as his. */
   const upkeepSpent: NonNullable<BrainContext["spent"]> = (call) => usage.note("galahad", call.role, call.ref, call.usage);
 

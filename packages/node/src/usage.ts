@@ -31,6 +31,7 @@ export class UsageStore {
       PRIMARY KEY (day, who, role, model))`);
     db.exec("CREATE TABLE IF NOT EXISTS usage_budget (k TEXT PRIMARY KEY, usd REAL, per TEXT NOT NULL)");
     db.exec("CREATE TABLE IF NOT EXISTS spent_windows (provider TEXT PRIMARY KEY, until INTEGER NOT NULL, noted INTEGER NOT NULL, said TEXT NOT NULL)");
+    db.exec("CREATE TABLE IF NOT EXISTS refused_keys (provider TEXT PRIMARY KEY, refused_at INTEGER NOT NULL, said TEXT NOT NULL)");
   }
 
   /**
@@ -47,6 +48,23 @@ export class UsageStore {
     this.db
       .query("INSERT INTO spent_windows (provider, until, noted, said) VALUES (?, ?, ?, ?) ON CONFLICT (provider) DO UPDATE SET until = excluded.until, noted = excluded.noted, said = excluded.said")
       .run(window.provider, window.until, window.noted, window.said);
+  }
+
+  /** Providers whose key a call got refused (brain refused-keys.ts), kept through a restart: the doctor says each. */
+  refusedKeys(): { provider: string; at: number; said: string }[] {
+    return this.db.query<{ provider: string; refused_at: number; said: string }, []>("SELECT provider, refused_at, said FROM refused_keys ORDER BY provider").all().map((row) => ({ provider: row.provider, at: row.refused_at, said: row.said }));
+  }
+
+  /** A provider's refused key, as its call said it: kept until a later call that got through forgets it (the latest told wins). */
+  keepRefusedKey(refusal: { provider: string; at: number; said: string }): void {
+    this.db
+      .query("INSERT INTO refused_keys (provider, refused_at, said) VALUES (?, ?, ?) ON CONFLICT (provider) DO UPDATE SET refused_at = excluded.refused_at, said = excluded.said")
+      .run(refusal.provider, refusal.at, refusal.said);
+  }
+
+  /** A later call to that provider got through: its key works, so its refusal is forgotten. */
+  forgetRefusedKey(provider: string): void {
+    this.db.query("DELETE FROM refused_keys WHERE provider = ?").run(provider);
   }
 
   /** Your budget for this node's calls: a day's or a month's, in US dollars at your prices (null: none). */

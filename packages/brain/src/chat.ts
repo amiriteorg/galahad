@@ -6,6 +6,7 @@ import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./persona.ts";
 import { windowScope, windowsOf } from "./windows.ts";
+import { refusedKeysOf } from "./refused-keys.ts";
 import { followsFormat, readModelCheck, readsScreens, type ModelCheck } from "@galahad/core";
 import { offeredModels, onPlan, planOf, providerRecords, QUIET_MS, quietly, resolveProvider, whyNoKey } from "./providers.ts";
 import { effortFor, parseRef, pinnedEffort, roleModels, sameModel } from "./roster.ts";
@@ -373,6 +374,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
             yield { type: "text", text: next.value };
           }
           end = next.value;
+          // A call that got through means the key works: a refusal of it (from an earlier call) is forgotten.
+          refusedKeysOf(ctx.store).forget(parsed.provider);
         } catch (error) {
           // A call that failed after it reached the model still cost something: it's counted (as unknown, if nothing said).
           yield* tally();
@@ -477,6 +480,9 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       // A refusal that says its allowance is spent, and until when, is remembered: the next ask passes it over (its plan's
       // every model, or this model alone: windowScope).
       windowsOf(ctx.store).note(windowScope(ref), message);
+      // A provider that refused its key (401/403) is remembered too, for the doctor and the Inbox to say: a later call
+      // that gets through forgets it. A local runtime has no key to refuse (its 401 is said of it, not remembered here).
+      if (!provider.local) refusedKeysOf(ctx.store).note(parsed.provider, message);
       // (Said in the provider's own words: a status and a JSON body read as its message.)
       yield passOver(ref, refusalWords(message, 500));
     }

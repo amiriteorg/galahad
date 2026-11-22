@@ -284,6 +284,16 @@ export function onPlan(ref: string): boolean {
   return slash > 0 && planOf(ref.slice(0, slash)) !== null;
 }
 
+/**
+ * A preset whose note names the plan's other regions, each with its own --base-url (mimo-token's Token Plan page, or a
+ * plan "in mainland China" with another address). Its key must be for the address its plan's page shows: a key for
+ * another region is refused here, so the doctor says so when it is.
+ */
+export function regionalBaseUrls(id: string): boolean {
+  const note = preset(id)?.note ?? "";
+  return /\bbase-url\b/i.test(note) && /(china|europe|region)/i.test(note);
+}
+
 /** Why he has no key to call a provider with: none in the vault, or a coding plan's, which is for coding and nothing else of his. */
 export const whyNoKey = (id: string, use: "own" | "coding" = "own"): string => {
   const plan = planOf(id);
