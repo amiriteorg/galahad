@@ -1,9 +1,12 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { newNodeIdentity, type ExecResult, type TeamCheckpoint, type Teammate, type TeamRoom, type TeamTask, type TeamMessage } from "@galahad/core";
 import { taskStep, type AvatarExpression } from "@galahad/core/avatar";
 import { foundFleet, MindStore, Vault } from "@galahad/mind";
 import { acpDriver, AGENTS, OWN_SIGN_IN, type QuestEvent } from "@galahad/brain";
-import { harnessReadiness, keysLine, progress, TEAM_COMMAND_SECONDS, teamRuntime, type TeamRuntimeDeps } from "../src/team-runtime.ts";
+import { harnessReadiness, keysLine, progress, TEAM_COMMAND_SECONDS, teamRuntime, type TeamRuntimeDeps, withGateway } from "../src/team-runtime.ts";
 import type { TeamRunContext } from "../src/team.ts";
 
 const stores: MindStore[] = [];
@@ -1277,4 +1280,28 @@ test("the files your messages carried go with the conversation: the newest pictu
   // This model can't see, so it is told each picture is there.
   expect(sent).toContain("[A picture is attached here (shot-9.png), but this model can't see pictures.]");
   expect(sent).not.toContain("shot-1.png), but");
+});
+
+test("a knight's command runs with its lease's model access, and without it, saying so, when the lease is gone or broken", () => {
+  // On 22 November 2026 a knight deleted its lease; every command in its VM failed from then on, its coding tool's
+  // progress polls among them, and its task never ended.
+  const dir = mkdtempSync(join(tmpdir(), "galahad-lease-"));
+  try {
+    const lease = join(dir, ".galahad-gateway.json");
+    const run = (path: string) => {
+      const r = Bun.spawnSync(["bash", "-c", withGateway("echo ran; echo \"${OPENAI_BASE_URL:-none}\"; echo \"${SHELL_SECRET:-none}\"", path)], { env: { PATH: process.env.PATH ?? "", HOME: dir } });
+      return { exit: r.exitCode, out: r.stdout.toString(), err: r.stderr.toString() };
+    };
+    // Its lease: what it may use is set, and nothing else it holds.
+    writeFileSync(lease, JSON.stringify({ OPENAI_BASE_URL: "http://127.0.0.1:7777/gw/x", SHELL_SECRET: "never set" }));
+    expect(run(lease)).toEqual({ exit: 0, out: "ran\nhttp://127.0.0.1:7777/gw/x\nnone\n", err: "" });
+    // Gone, or not JSON: the command still runs, with no model access, and says why.
+    for (const broken of [join(dir, "gone.json"), (writeFileSync(lease, "not json"), lease)]) {
+      const r = run(broken);
+      expect([r.exit, r.out]).toEqual([0, "ran\nnone\nnone\n"]);
+      expect(r.err).toContain("is missing or unreadable, so this command has no model access");
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

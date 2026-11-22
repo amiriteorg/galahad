@@ -159,9 +159,22 @@ const after = (history: TeamMessage[], through: string | undefined): TeamMessage
   return at < 0 ? history : history.slice(at + 1);
 };
 
-/** The leased environment is JSON, never executable shell configuration. */
-export const withGateway = (command: string): string => {
-  const script = "import json,os,sys; p='/work/.galahad-gateway.json'; d=json.load(open(p)); allowed={'GALAHAD_GATEWAY','OPENAI_API_KEY','OPENAI_BASE_URL','ANTHROPIC_AUTH_TOKEN','ANTHROPIC_BASE_URL','GALAHAD_TOKEN','GALAHAD_REPO_URL','GALAHAD_KEYS'}; os.environ.update({k:v for k,v in d.items() if k in allowed and isinstance(v,str)}); os.execvp('bash',['bash','-lc',sys.argv[1]])";
+/**
+ * The leased environment is JSON, never executable shell configuration. A VM whose lease is gone still runs the
+ * command, without model access, and says so: on 22 November 2026 a knight deleted its own, and every command of its
+ * task failed from then on, the polls of its coding tool's run among them, so the task never ended.
+ */
+export const withGateway = (command: string, lease = "/work/.galahad-gateway.json"): string => {
+  const script = [
+    "import json,os,sys",
+    `p=${JSON.stringify(lease)}`,
+    "try: d=json.load(open(p))",
+    "except (OSError, ValueError): d=None",
+    "if not isinstance(d, dict): d={}; sys.stderr.write('(Galahad: '+p+' is missing or unreadable, so this command has no model access)\\n')",
+    "allowed={'GALAHAD_GATEWAY','OPENAI_API_KEY','OPENAI_BASE_URL','ANTHROPIC_AUTH_TOKEN','ANTHROPIC_BASE_URL','GALAHAD_TOKEN','GALAHAD_REPO_URL','GALAHAD_KEYS'}",
+    "os.environ.update({k:v for k,v in d.items() if k in allowed and isinstance(v,str)})",
+    "os.execvp('bash',['bash','-lc',sys.argv[1]])",
+  ].join("\n");
   return `python3 -c ${quote(script)} ${quote(command)}`;
 };
 
