@@ -351,6 +351,9 @@ describe("the yours suite at the command line", () => {
       ]);
       // What each spent is recorded beside it, as for any suite.
       expect(node.recorded.every((t) => t.spent?.lines.some((l) => l.role === "engineer"))).toBe(true);
+      // Each of the four was graded: one that wasn't says why here (a gate's run under a loaded machine, 22 November
+      // 2026, left one case 1/1 in the report below, and nothing said what had become of the other).
+      expect(node.recorded.filter((t) => t.status !== "scored").map((t) => `${t.problem}: ${t.status}: ${t.note ?? "no note"}`)).toEqual([]);
       printed = [];
       expect(await trialCommand({ command: "trials", sub: undefined, rest: [], flags: { suite: "yours" }, node: () => node })).toBe(0);
       expect(out()).toContain("— yours —");
@@ -362,5 +365,6 @@ describe("the yours suite at the command line", () => {
       node.remove();
       repo.remove();
     }
-  });
+    // (Two whole runs of the command, with real git and bash: 2.6 s alone, over five in a loaded full suite.)
+  }, 30_000);
 });
