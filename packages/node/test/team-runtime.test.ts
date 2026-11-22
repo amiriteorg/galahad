@@ -1109,6 +1109,9 @@ test("a task's commands have a temporary directory of their own on the workspace
   for (const command of ran) expect(command).toContain(`mkdir -p '${temp}' && export TMPDIR='${temp}' && cd '/work/tasks/${task.id}' && `);
   // He is told, so a failure there is not a riddle.
   expect(String(f.bodies[1].messages.find((m: any) => m.role === "user").content)).toContain("Files in /tmp can't be run here: $TMPDIR is a directory of this task's where they can.");
+  // And what its lease is: on 22 November 2026 a knight tidying up after its work took it for something a test had
+  // left behind and deleted it, and with it the model access its coding tool's next run would have read.
+  expect(String(f.bodies[1].messages.find((m: any) => m.role === "user").content)).toContain("/work/.galahad-gateway.json is your model access, written by Galahad for this task: never move, change or delete it.");
   // The last thing asked of the VM: the task's temporary directory is removed.
   expect(plain(commands.at(-1)!)).toBe(`rm -rf '${temp}'`);
 });
