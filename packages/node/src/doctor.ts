@@ -1,4 +1,4 @@
-import { clockUtc, spanWords } from "@galahad/brain";
+import { clockUtc, refusalWords, spanWords } from "@galahad/brain";
 import { type DoctorArea, type DoctorCheck, type DoctorReport, type DoctorState, doctorSorted, doctorTally, redact } from "@galahad/core";
 
 /*
@@ -182,37 +182,8 @@ export function span(ms: number): string {
 const octal = (mode: number) => (mode & 0o777).toString(8).padStart(3, "0");
 const openToOthers = (file: FileFact | null): boolean => !!file?.exists && file.mode !== null && (file.mode & 0o077) !== 0;
 
-/** Cut `text` to at most `max` characters at a word boundary (never mid-word). */
-function cutAtWord(text: string, max = 200): string {
-  if (text.length <= max) return text;
-  const end = text.lastIndexOf(" ", max);
-  return text.slice(0, end > 0 ? end : max);
-}
-
-/**
- * A provider's refusal in its own words: an HTTP status followed by a JSON body reads its status and its message
- * (`error.message` as OpenAI and Anthropic put it, `error[0].message` as Cloudflare's AI Gateway does, or a top-level
- * `message`); anything else is said as it came. Secrets are redacted, and it is cut at a word when it must be.
- */
-export function refusalWords(error: string): string {
-  const words = redact(error).replace(/\s+/g, " ").trim();
-  const statused = /\b(\d{3})\s+(\{.*\})$/s.exec(words);
-  if (!statused) return cutAtWord(words);
-  let message: string | null = null;
-  try {
-    const body = JSON.parse(statused[2]!) as { error?: unknown; message?: unknown };
-    const said = body.error;
-    const first = Array.isArray(said) ? said[0] : said;
-    if (first !== null && typeof first === "object" && typeof (first as { message?: unknown }).message === "string") {
-      message = (first as { message: string }).message;
-    } else if (typeof body.message === "string") {
-      message = body.message;
-    }
-  } catch {
-    message = null;
-  }
-  return message ? cutAtWord(`${statused[1]}: ${message.replace(/\s+/g, " ").trim()}`) : cutAtWord(words);
-}
+// (A provider's refusal in its own words: brain's refusalWords, which the doctor's tests read from here too.)
+export { refusalWords };
 
 /** Why a model didn't answer, and what that calls for. */
 function probeAdvice(error: string): string {
@@ -417,7 +388,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
     else if (probe.ok) add("models", id, "ok", `${role.role}: ${probe.ref} answered${tools}`, undefined, { ms: probe.ms });
     else {
       const others = usable.filter((m) => m.ref !== probe.ref);
-      const error = refusalWords(probe.error ?? "no answer");
+      const error = refusalWords(redact(probe.error ?? "no answer"));
       add("models", id, others.length || !CORE_ROLES.has(role.role) ? "needs-you" : "broken", `${role.role}: ${probe.ref} didn't answer: ${error}${others.length ? ` (${others[0]!.ref} is next in line)` : ""}`, probeAdvice(error), { ms: probe.ms });
     }
   }

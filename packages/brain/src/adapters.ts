@@ -27,6 +27,41 @@ export class RefusalError extends Error {}
 /** The model can't take tools at all (some local runtimes); the caller asks again without them. */
 export class ToolsUnsupportedError extends Error {}
 
+const cutAtWord = (text: string, max: number): string => {
+  if (text.length <= max) return text;
+  const end = text.lastIndexOf(" ", max);
+  return text.slice(0, end > 0 ? end : max);
+};
+
+/**
+ * A provider's refusal in its own words. `<status> <JSON body>`, after whatever came before it (the provider's name, as
+ * a call's error says it), reads as its status and the body's own message: error.message as OpenAI and Anthropic put
+ * it, error[0].message as Cloudflare's AI Gateway does, or a top-level message; a body cut short (an error keeps its
+ * first few hundred characters) by its first whole message. Anything else is said as it came. Cut at a word past `max`.
+ * On the owner's node (22 November 2026) the doctor and every chat that fell back quoted Anthropic's and Cloudflare's
+ * refusals as raw JSON, cut mid-word.
+ */
+export function refusalWords(error: string, max = 200): string {
+  const words = error.replace(/\s+/g, " ").trim();
+  const statused = /^(.*?)\b(\d{3}) (\{.*)$/.exec(words);
+  if (!statused) return cutAtWord(words, max);
+  let message: string | null = null;
+  try {
+    const body = JSON.parse(statused[3]!) as { error?: unknown; message?: unknown };
+    const first = Array.isArray(body.error) ? body.error[0] : body.error;
+    if (first && typeof first === "object" && typeof (first as { message?: unknown }).message === "string") message = (first as { message: string }).message;
+    else if (typeof body.message === "string") message = body.message;
+  } catch {
+    const found = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(statused[3]!);
+    try {
+      message = found ? (JSON.parse(`"${found[1]}"`) as string) : null;
+    } catch {
+      message = null;
+    }
+  }
+  return cutAtWord(message?.trim() ? `${statused[1]}${statused[2]}: ${message.replace(/\s+/g, " ").trim()}` : words, max);
+}
+
 /** A tool as a model sees it: a name, when to use it, and a JSON Schema for its input. */
 export interface ToolSpec {
   name: string;
@@ -436,6 +471,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
         }
         throw new Error(`${input.provider.id} → ${response.status} ${body}`);
       }
+      // (What it said is read as words where it is shown: refusalWords.)
       let text = "";
       let reasoning = "";
       let finish: string | null = null;

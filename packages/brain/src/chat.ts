@@ -1,6 +1,6 @@
 import { canonical, type ChatMessage, type ChatStreamEvent, type Json, priceFor, type Prices, pricesOf, redact, type Usage } from "@galahad/core";
 import type { MindStore, Vault } from "@galahad/mind";
-import { anthropicConversation, type ModelMessage, openAIConversation, RefusalError, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
+import { anthropicConversation, type ModelMessage, openAIConversation, RefusalError, refusalWords, type ToolCall, type ToolImage, type ToolSpec, ToolsUnsupportedError, type TurnEnd } from "./adapters.ts";
 import { rotated } from "./effort.ts";
 import { isEmbeddingModel } from "./embeddings.ts";
 import { GALAHAD_SYSTEM, runtimeContext, SHOW_GUIDE, TOOL_GUIDE } from "./persona.ts";
@@ -466,7 +466,8 @@ export async function* chat(ctx: BrainContext, req: ChatRequest): AsyncGenerator
       // A refusal that says its allowance is spent, and until when, is remembered: the next ask passes it over (its plan's
       // every model, or this model alone: windowScope).
       windowsOf(ctx.store).note(windowScope(ref), message);
-      yield passOver(ref, message);
+      // (Said in the provider's own words: a status and a JSON body read as its message.)
+      yield passOver(ref, refusalWords(message, 500));
     }
   }
   // A node with no provider set up at all (a fresh one): what to do, said once.
