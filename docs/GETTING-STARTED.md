@@ -44,7 +44,7 @@ bun galahad serve
 
 - Generates this device's keys and stores them in the **Windows Credential Manager** (via `Bun.secrets`).
 - Founds the fleet and creates the first vault key.
-- Writes `~/.galahad/` (config, `mind.db`, `local.db`, a local `admin.token`).
+- Writes `~/.galahad/` (config, `mind.db` and a local `admin.token`; `local.db` follows when the node first runs).
 
 `serve` listens on `127.0.0.1:7777` and on the laptop's tailnet IP. It never binds `0.0.0.0`.
 
@@ -136,7 +136,7 @@ What a deploy does:
 
 1. Ships the committed tree only, into a fresh private directory it makes on the server (`mktemp -d`, removed when the deploy ends). It refuses to run if you have uncommitted changes.
 2. Unpacks it into `~/galahad/releases/<rev>`.
-3. Installs Bun 1.4.4 (the version the repo is tested with) unless that's the one in `~/.bun/bin`, from the official release, checking its SHA-256 against the one pinned in `scripts/remote-setup.sh`; then runs `bun install --frozen-lockfile`.
+3. Installs Bun 1.4.4 (the version the repo is tested with) unless that's the one in `~/.bun/bin`, from the official release, checking its SHA-256 against the one pinned in `scripts/bun-pin.sh`; then runs `bun install --frozen-lockfile`.
 4. Runs the whole test suite on the server, in that release's directory, and stops if anything fails: the node keeps running the release it has, and `~/galahad/app` still points at it. Only a release that passed becomes `app`, in one atomic step. To roll back, point the symlink at an older release and restart.
 5. Creates the node or joins the fleet, but only the first time. On later runs the node's identity and mind are kept. Old releases are removed: it keeps this one, the two before it and the one the node is running from (on Linux, where systemd says which).
 6. Installs and restarts the service, then prints `galahad status`.
@@ -502,7 +502,7 @@ bun galahad arms                           # who's connected
 bun galahad arms revoke claude-code        # cut one off, instantly
 ```
 
-The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_call`, `loops` and `notices`, plus the Oath as a resource. They're the same tools Galahad uses himself when you chat with him in the app or with `galahad ask`. An agent you grant `bank:read` also gets the four read-only bank tools (§13). Its credential is **least privilege**:
+The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet`, `compute`, `place`, `sandbox_run`, `sandbox_create`, `sandbox_exec`, `sandbox_destroy`, `sandbox_save`, `artifacts`, `artifact_read`, `ledger`, `request_secret`, `connectors`, `connector_tool`, `connector_call`, `connector_request`, `loops`, `loop_draft`, `notices`, `archive_search`, `archive_read`, `note_idea`, `skills`, `skill_read` and `skill_write`, each where its scope allows, plus the Oath as a resource. They're the same tools Galahad uses himself when you chat with him in the app or with `galahad ask`. An agent you grant `bank:read` also gets the four read-only bank tools (§13). Its credential is **least privilege**:
 
 - **Memory:** its memories are labelled `agent` (or `untrusted`), never `owner`.
 - **Sandboxes:** it may use and clean up only its own.

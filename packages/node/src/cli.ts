@@ -124,8 +124,8 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     On a Mac a VM pauses to take more threads or memory, and its disk can't grow
   roundtable memory <id> [text]      read or replace that knight's notes
   roundtable engram [on|off]         the VMs' notes store (Engram): say whether it is on, or turn it on or off.
-                                    On, a knight's harness can search and keep notes in its own VM, where the
-                                    VM's image has the pinned Engram; off (the default), nothing is given
+                                    On (the default), a knight's harness can search and keep notes in its own
+                                    VM, where the VM's image has the pinned Engram; off, nothing is given
   roundtable ci [on|off]             failing checks, or a review asking for changes, on a pull request of a knight's
                                     work: say whether they go back to that knight, or turn it on or off. On, it gets
                                     the fix on that branch (once a failing commit or review, three at most) and you
