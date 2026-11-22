@@ -4095,7 +4095,8 @@ export function createApp(ctx: AppContext) {
       if (p.kind !== "client") throw new HttpError(403, "only a paired device collects its notifications, its own");
       return notifyErrors(async () => ctx.notify.collect(p.device));
     },
-    setApplePushKey: async (input) => {
+    setApplePushKey: async (input, p) => {
+      ownerOfNotify(p);
       // A key that can't sign is said so now, not at the first notification.
       try {
         await appleProviderToken(input, Math.floor(Date.now() / 1000));

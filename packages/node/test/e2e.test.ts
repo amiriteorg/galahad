@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { b64u, clientIdFromKey, type FleetView, newNodeIdentity, routes, type RouteName, signRequest, utf8 } from "@galahad/core";
-import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
+import { requestPairing, signedFetch, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
@@ -428,6 +428,19 @@ describe("M0: one mind, two bodies", () => {
     const asAgent = await fetch(`http://127.0.0.1:${portA}${routes.checkoutRepository.path}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(asked) });
     expect(asAgent.status).toBe(403);
     for (const path of ["/work", "/work/../etc", "/etc/repo", "/work/tasks/./x"]) await expect(callA("checkoutRepository", { ...asked, path })).rejects.toThrow(/400/);
+  });
+
+  test("the Apple push key is yours alone to set, as every notification route is: another node, which holds vault:write, is refused", async () => {
+    // Found by a knight's audit of the docs (22 November 2026): this route alone checked only its scope, which a full
+    // node holds (an agent never may).
+    const callA = admin(homeA, portA);
+    const dashes = "-".repeat(5);
+    const body = { key: `${dashes}BEGIN PRIVATE KEY${dashes}\nRkFLRQ==\n${dashes}END PRIVATE KEY${dashes}`, keyId: "FAKEKEY001", teamId: "FAKETEAM01", topic: "org.example.fake" };
+    const asNode = await signedFetch(server.identity, laptop.endpoint, routes.setApplePushKey.path, body);
+    expect(asNode.status).toBe(403);
+    expect(await asNode.text()).toContain("notifications are yours alone");
+    // You at a terminal are asked for a key that can sign, as ever.
+    await expect(callA("setApplePushKey", body)).rejects.toThrow(/400.*isn't an Apple push key/);
   });
 
   test("a kept file is fetched from whichever node holds it, under the same scope, fenced the same way", async () => {
