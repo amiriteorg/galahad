@@ -42,6 +42,16 @@ describe("a provider that refused its key", () => {
     expect(refusals.list()).toEqual([]);
   });
 
+  test("what is kept holds nothing shaped like a key, whatever its caller scrubbed", () => {
+    // (Its callers redact the key by its value; a key the provider echoes that isn't the one sent is caught here.)
+    const refusals = new RefusedKeys();
+    refusals.now = () => NOW;
+    const shaped = ["sk", "proj", "A".repeat(20), "B".repeat(20)].join("-");
+    const kept = refusals.note("openai", `openai → 401 {"error":{"message":"Incorrect API key provided: ${shaped}."}}`)!;
+    expect(kept.said).toStartWith("401: Incorrect API key provided:");
+    expect(kept.said).not.toContain("A".repeat(20));
+  });
+
   test("kept through a restart: restored refusals are as they were told", () => {
     const before = new RefusedKeys();
     before.now = () => NOW;
@@ -130,14 +140,14 @@ describe("through the gateway", () => {
 });
 
 describe("through chat", () => {
-  function brain() {
+  function brain(key = "sk-test") {
     const id = "deepseek";
     const identity = newNodeIdentity();
     const store = new MindStore(":memory:");
     foundFleet(store, identity, { fleetName: "camelot", nodeName: "n" });
     const vault = new Vault(store, identity);
     const baseUrl = "https://deepseek.invalid/v1";
-    vault.set(id, "sk-test", { provider: id, origin: new URL(baseUrl).origin });
+    vault.set(id, key, { provider: id, origin: new URL(baseUrl).origin });
     store.emit(identity, "provider.set", { id, kind: "openai", baseUrl, secret: id });
     store.emit(identity, "roster.set", { role: "planner", models: [`${id}/deepseek-chat`] });
     return { store, vault };
@@ -162,6 +172,19 @@ describe("through chat", () => {
     refused = false;
     await run();
     expect(refusedKeysOf(ctx.store).list()).toEqual([]);
+  });
+
+  test("a refusal that says the key back keeps none of it, as through the gateway", async () => {
+    const own = ["FAKE", "deepseek", "key"].join("-");
+    const ctx0 = brain(own);
+    const fetch = (async (_url: string | URL | Request) =>
+      new Response(JSON.stringify({ error: { message: `Authentication Fails, your api key: ${own} is invalid` } }), { status: 401, headers: { "content-type": "application/json" } })) as typeof globalThis.fetch;
+    const ctx = { ...ctx0, fetch };
+    refusedKeysOf(ctx.store).now = () => NOW;
+    for await (const _ of chat(ctx, { models: ["deepseek/deepseek-chat"], messages: [{ role: "user", content: "Go on" }] }));
+    const [kept] = refusedKeysOf(ctx.store).list();
+    expect(kept!.said).toStartWith("401: Authentication Fails, your api key:");
+    expect(kept!.said).not.toContain(own);
   });
 
   test("a failure that is not a refused key is not remembered as one", async () => {
