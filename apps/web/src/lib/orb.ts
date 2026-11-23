@@ -3,8 +3,9 @@
  * graphic"): a sphere of light inside the still rings of a heads-up display, in the colour of his state. Pure: the parts
  * it is drawn from, in a square 200 wide centred on its middle (y down), and each state's colours. The PWA draws them
  * as SVG (ui/orb.ts); the Apple and Android apps draw the same parts (held to these by the vectors,
- * apps/apple/scripts/vectors.ts), so he is the same orb wherever you meet him. It never moves (your word of 18 November
- * 2026: no spinning or pulsing state): a new state is a new colour. Nothing in it comes from a name, a profile or a model.
+ * apps/apple/scripts/vectors.ts), so he is the same orb wherever you meet him. These are the orb at rest. How it moves
+ * in each mood (your word of 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done") is
+ * lib/orb-motion.ts. Nothing in it comes from a name, a profile or a model.
  */
 
 export type OrbTone = "neutral" | "accent" | "warn" | "ok" | "danger";

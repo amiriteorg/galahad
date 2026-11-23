@@ -5853,7 +5853,4035 @@
         "state": "resting",
         "tone": "neutral"
       }
-    ]
+    ],
+    "motion": {
+      "moods": {
+        "idle": {
+          "breath": 6.5,
+          "swell": 0.012,
+          "turn": {
+            "ring": 3,
+            "ticks": 0,
+            "segments": -4.5
+          },
+          "comet": null,
+          "ripple": null,
+          "motes": {
+            "count": 14,
+            "speed": 7,
+            "sway": 0.25,
+            "flow": "orbit"
+          },
+          "aura": 0.12
+        },
+        "working": {
+          "breath": 2.6,
+          "swell": 0.022,
+          "turn": {
+            "ring": 24,
+            "ticks": 6,
+            "segments": -40
+          },
+          "comet": {
+            "speed": 160,
+            "tail": 90
+          },
+          "ripple": null,
+          "motes": {
+            "count": 26,
+            "speed": 30,
+            "sway": 0,
+            "flow": "inward"
+          },
+          "aura": 0.34
+        },
+        "waiting": {
+          "breath": 2.2,
+          "swell": 0.03,
+          "turn": {
+            "ring": 6,
+            "ticks": 0,
+            "segments": -8
+          },
+          "comet": null,
+          "ripple": 2.2,
+          "motes": {
+            "count": 12,
+            "speed": 10,
+            "sway": 0.45,
+            "flow": "orbit"
+          },
+          "aura": 0.42
+        },
+        "queued": {
+          "breath": 4.5,
+          "swell": 0.012,
+          "turn": {
+            "ring": 10,
+            "ticks": 0,
+            "segments": -10
+          },
+          "comet": {
+            "speed": 40,
+            "tail": 50
+          },
+          "ripple": null,
+          "motes": {
+            "count": 8,
+            "speed": 14,
+            "sway": 0.15,
+            "flow": "orbit"
+          },
+          "aura": 0.16
+        },
+        "paused": {
+          "breath": 9,
+          "swell": 0.006,
+          "turn": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0
+          },
+          "comet": null,
+          "ripple": null,
+          "motes": {
+            "count": 0,
+            "speed": 0,
+            "sway": 0,
+            "flow": "orbit"
+          },
+          "aura": 0.06
+        },
+        "done": {
+          "breath": 5,
+          "swell": 0.015,
+          "turn": {
+            "ring": 2,
+            "ticks": 0,
+            "segments": -3
+          },
+          "comet": {
+            "speed": 50,
+            "tail": 30
+          },
+          "ripple": null,
+          "motes": {
+            "count": 10,
+            "speed": 9,
+            "sway": 0.3,
+            "flow": "orbit"
+          },
+          "aura": 0.3
+        },
+        "failed": {
+          "breath": 3.4,
+          "swell": 0.018,
+          "turn": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0
+          },
+          "comet": null,
+          "ripple": null,
+          "motes": {
+            "count": 8,
+            "speed": 0,
+            "sway": 0,
+            "flow": "fall"
+          },
+          "aura": 0.3
+        }
+      },
+      "states": [
+        {
+          "state": "working",
+          "mood": "working"
+        },
+        {
+          "state": "needs",
+          "mood": "waiting"
+        },
+        {
+          "state": "failed",
+          "mood": "failed"
+        },
+        {
+          "state": "paused",
+          "mood": "paused"
+        },
+        {
+          "state": "queued",
+          "mood": "queued"
+        },
+        {
+          "state": "verified",
+          "mood": "done"
+        },
+        {
+          "state": "unread",
+          "mood": "done"
+        },
+        {
+          "state": "resting",
+          "mood": "idle"
+        },
+        {
+          "state": "thinking",
+          "mood": "idle"
+        }
+      ],
+      "arrive": 0.8,
+      "burst": 1.6,
+      "burstMotes": 16,
+      "ease": 0.35,
+      "longestStep": 0.25,
+      "stages": {
+        "full": {
+          "reach": 150,
+          "band": [
+            64,
+            134
+          ],
+          "mote": 3.4,
+          "share": 1,
+          "waves": [
+            60,
+            140
+          ],
+          "wave": 2.4,
+          "comet": {
+            "r": 70.5,
+            "width": 2.4
+          }
+        },
+        "seat": {
+          "reach": 124,
+          "band": [
+            70,
+            114
+          ],
+          "mote": 4.6,
+          "share": 0.6,
+          "waves": [
+            66,
+            120
+          ],
+          "wave": 4,
+          "comet": {
+            "r": 80,
+            "width": 4.5
+          }
+        },
+        "badge": {
+          "reach": 112,
+          "band": [
+            84,
+            104
+          ],
+          "mote": 7,
+          "share": 0,
+          "waves": [
+            78,
+            110
+          ],
+          "wave": 7,
+          "comet": {
+            "r": 94,
+            "width": 6
+          }
+        },
+        "ring": {
+          "reach": 124,
+          "band": [
+            88,
+            116
+          ],
+          "mote": 5.5,
+          "share": 0.35,
+          "waves": [
+            100,
+            122
+          ],
+          "wave": 5,
+          "comet": null
+        }
+      },
+      "moves": {
+        "ring": [
+          "ring",
+          "notches"
+        ],
+        "ticks": [
+          "ticks",
+          "marks"
+        ],
+        "segments": [
+          "segments"
+        ],
+        "swell": [
+          "body",
+          "rim",
+          "core",
+          "shine",
+          "glint"
+        ],
+        "glow": [
+          "halo",
+          "core"
+        ],
+        "lightsBefore": "body"
+      },
+      "bursts": [
+        {
+          "from": null,
+          "to": "idle",
+          "bursts": false
+        },
+        {
+          "from": "idle",
+          "to": "idle",
+          "bursts": false
+        },
+        {
+          "from": "working",
+          "to": "idle",
+          "bursts": true
+        },
+        {
+          "from": "waiting",
+          "to": "idle",
+          "bursts": false
+        },
+        {
+          "from": "queued",
+          "to": "idle",
+          "bursts": false
+        },
+        {
+          "from": "paused",
+          "to": "idle",
+          "bursts": false
+        },
+        {
+          "from": "done",
+          "to": "idle",
+          "bursts": false
+        },
+        {
+          "from": "failed",
+          "to": "idle",
+          "bursts": false
+        },
+        {
+          "from": null,
+          "to": "working",
+          "bursts": false
+        },
+        {
+          "from": "idle",
+          "to": "working",
+          "bursts": false
+        },
+        {
+          "from": "working",
+          "to": "working",
+          "bursts": false
+        },
+        {
+          "from": "waiting",
+          "to": "working",
+          "bursts": false
+        },
+        {
+          "from": "queued",
+          "to": "working",
+          "bursts": false
+        },
+        {
+          "from": "paused",
+          "to": "working",
+          "bursts": false
+        },
+        {
+          "from": "done",
+          "to": "working",
+          "bursts": false
+        },
+        {
+          "from": "failed",
+          "to": "working",
+          "bursts": false
+        },
+        {
+          "from": null,
+          "to": "waiting",
+          "bursts": false
+        },
+        {
+          "from": "idle",
+          "to": "waiting",
+          "bursts": false
+        },
+        {
+          "from": "working",
+          "to": "waiting",
+          "bursts": false
+        },
+        {
+          "from": "waiting",
+          "to": "waiting",
+          "bursts": false
+        },
+        {
+          "from": "queued",
+          "to": "waiting",
+          "bursts": false
+        },
+        {
+          "from": "paused",
+          "to": "waiting",
+          "bursts": false
+        },
+        {
+          "from": "done",
+          "to": "waiting",
+          "bursts": false
+        },
+        {
+          "from": "failed",
+          "to": "waiting",
+          "bursts": false
+        },
+        {
+          "from": null,
+          "to": "queued",
+          "bursts": false
+        },
+        {
+          "from": "idle",
+          "to": "queued",
+          "bursts": false
+        },
+        {
+          "from": "working",
+          "to": "queued",
+          "bursts": false
+        },
+        {
+          "from": "waiting",
+          "to": "queued",
+          "bursts": false
+        },
+        {
+          "from": "queued",
+          "to": "queued",
+          "bursts": false
+        },
+        {
+          "from": "paused",
+          "to": "queued",
+          "bursts": false
+        },
+        {
+          "from": "done",
+          "to": "queued",
+          "bursts": false
+        },
+        {
+          "from": "failed",
+          "to": "queued",
+          "bursts": false
+        },
+        {
+          "from": null,
+          "to": "paused",
+          "bursts": false
+        },
+        {
+          "from": "idle",
+          "to": "paused",
+          "bursts": false
+        },
+        {
+          "from": "working",
+          "to": "paused",
+          "bursts": false
+        },
+        {
+          "from": "waiting",
+          "to": "paused",
+          "bursts": false
+        },
+        {
+          "from": "queued",
+          "to": "paused",
+          "bursts": false
+        },
+        {
+          "from": "paused",
+          "to": "paused",
+          "bursts": false
+        },
+        {
+          "from": "done",
+          "to": "paused",
+          "bursts": false
+        },
+        {
+          "from": "failed",
+          "to": "paused",
+          "bursts": false
+        },
+        {
+          "from": null,
+          "to": "done",
+          "bursts": false
+        },
+        {
+          "from": "idle",
+          "to": "done",
+          "bursts": true
+        },
+        {
+          "from": "working",
+          "to": "done",
+          "bursts": true
+        },
+        {
+          "from": "waiting",
+          "to": "done",
+          "bursts": true
+        },
+        {
+          "from": "queued",
+          "to": "done",
+          "bursts": true
+        },
+        {
+          "from": "paused",
+          "to": "done",
+          "bursts": true
+        },
+        {
+          "from": "done",
+          "to": "done",
+          "bursts": false
+        },
+        {
+          "from": "failed",
+          "to": "done",
+          "bursts": true
+        },
+        {
+          "from": null,
+          "to": "failed",
+          "bursts": false
+        },
+        {
+          "from": "idle",
+          "to": "failed",
+          "bursts": false
+        },
+        {
+          "from": "working",
+          "to": "failed",
+          "bursts": false
+        },
+        {
+          "from": "waiting",
+          "to": "failed",
+          "bursts": false
+        },
+        {
+          "from": "queued",
+          "to": "failed",
+          "bursts": false
+        },
+        {
+          "from": "paused",
+          "to": "failed",
+          "bursts": false
+        },
+        {
+          "from": "done",
+          "to": "failed",
+          "bursts": false
+        },
+        {
+          "from": "failed",
+          "to": "failed",
+          "bursts": false
+        }
+      ],
+      "seeds": [
+        {
+          "name": "",
+          "seed": 2166136261
+        },
+        {
+          "name": "a",
+          "seed": 3826002220
+        },
+        {
+          "name": "foobar",
+          "seed": 3214735720
+        },
+        {
+          "name": "galahad",
+          "seed": 948537319
+        },
+        {
+          "name": "gareth",
+          "seed": 3974791404
+        },
+        {
+          "name": "Will’s “iPad” \\ 🛡️",
+          "seed": 3419317483
+        }
+      ],
+      "rands": [
+        {
+          "seed": 0,
+          "i": 0,
+          "k": 0,
+          "value": 0.199607003480196
+        },
+        {
+          "seed": 1,
+          "i": 2,
+          "k": 3,
+          "value": 0.5360206479672343
+        },
+        {
+          "seed": 4294967295,
+          "i": 25,
+          "k": 8,
+          "value": 0.40056034130975604
+        },
+        {
+          "seed": 3974791404,
+          "i": 7,
+          "k": 4,
+          "value": 0.8365286788903177
+        },
+        {
+          "seed": 5,
+          "i": 1000,
+          "k": 6,
+          "value": 0.12103163194842637
+        }
+      ],
+      "clocks": [
+        {
+          "mood": "idle",
+          "seed": 0,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 3,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -4.5,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.2807953478768468,
+            "swell": 0.012,
+            "light": 0,
+            "aura": 0.12
+          }
+        },
+        {
+          "mood": "idle",
+          "seed": 3974791404,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 3,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -4.5,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.6826324770227075,
+            "swell": 0.012,
+            "light": 0,
+            "aura": 0.12
+          }
+        },
+        {
+          "mood": "working",
+          "seed": 0,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 24,
+            "ticksSpeed": 6,
+            "segmentsSpeed": -40,
+            "headSpeed": 160,
+            "tail": 90,
+            "breath": 0.2807953478768468,
+            "swell": 0.022,
+            "light": 1,
+            "aura": 0.34
+          }
+        },
+        {
+          "mood": "working",
+          "seed": 3974791404,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 24,
+            "ticksSpeed": 6,
+            "segmentsSpeed": -40,
+            "headSpeed": 160,
+            "tail": 90,
+            "breath": 0.6826324770227075,
+            "swell": 0.022,
+            "light": 1,
+            "aura": 0.34
+          }
+        },
+        {
+          "mood": "waiting",
+          "seed": 0,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 6,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -8,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.2807953478768468,
+            "swell": 0.03,
+            "light": 0,
+            "aura": 0.42
+          }
+        },
+        {
+          "mood": "waiting",
+          "seed": 3974791404,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 6,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -8,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.6826324770227075,
+            "swell": 0.03,
+            "light": 0,
+            "aura": 0.42
+          }
+        },
+        {
+          "mood": "queued",
+          "seed": 0,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 10,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -10,
+            "headSpeed": 40,
+            "tail": 50,
+            "breath": 0.2807953478768468,
+            "swell": 0.012,
+            "light": 1,
+            "aura": 0.16
+          }
+        },
+        {
+          "mood": "queued",
+          "seed": 3974791404,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 10,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -10,
+            "headSpeed": 40,
+            "tail": 50,
+            "breath": 0.6826324770227075,
+            "swell": 0.012,
+            "light": 1,
+            "aura": 0.16
+          }
+        },
+        {
+          "mood": "paused",
+          "seed": 0,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 0,
+            "ticksSpeed": 0,
+            "segmentsSpeed": 0,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.2807953478768468,
+            "swell": 0.006,
+            "light": 0,
+            "aura": 0.06
+          }
+        },
+        {
+          "mood": "paused",
+          "seed": 3974791404,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 0,
+            "ticksSpeed": 0,
+            "segmentsSpeed": 0,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.6826324770227075,
+            "swell": 0.006,
+            "light": 0,
+            "aura": 0.06
+          }
+        },
+        {
+          "mood": "done",
+          "seed": 0,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 2,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -3,
+            "headSpeed": 50,
+            "tail": 30,
+            "breath": 0.2807953478768468,
+            "swell": 0.015,
+            "light": 1,
+            "aura": 0.3
+          }
+        },
+        {
+          "mood": "done",
+          "seed": 3974791404,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 2,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -3,
+            "headSpeed": 50,
+            "tail": 30,
+            "breath": 0.6826324770227075,
+            "swell": 0.015,
+            "light": 1,
+            "aura": 0.3
+          }
+        },
+        {
+          "mood": "failed",
+          "seed": 0,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 0,
+            "ticksSpeed": 0,
+            "segmentsSpeed": 0,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.2807953478768468,
+            "swell": 0.018,
+            "light": 0,
+            "aura": 0.3
+          }
+        },
+        {
+          "mood": "failed",
+          "seed": 3974791404,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 0,
+            "ticksSpeed": 0,
+            "segmentsSpeed": 0,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.6826324770227075,
+            "swell": 0.018,
+            "light": 0,
+            "aura": 0.3
+          }
+        }
+      ],
+      "start": {
+        "ring": 0,
+        "ticks": 0,
+        "segments": 0,
+        "head": 297.4064965546131,
+        "ringSpeed": 3,
+        "ticksSpeed": 0,
+        "segmentsSpeed": -4.5,
+        "headSpeed": 0,
+        "tail": 0,
+        "breath": 0.771334377117455,
+        "swell": 0.012,
+        "light": 0,
+        "aura": 0.12
+      },
+      "steps": [
+        {
+          "mood": "idle",
+          "dt": 0.016666666666666666,
+          "clock": {
+            "ring": 0.05,
+            "ticks": 0,
+            "segments": 359.925,
+            "head": 297.4064965546131,
+            "ringSpeed": 3,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -4.5,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.7738984796815576,
+            "swell": 0.012,
+            "light": 0,
+            "aura": 0.12
+          }
+        },
+        {
+          "mood": "working",
+          "dt": 0.016666666666666666,
+          "clock": {
+            "ring": 0.11627606580828315,
+            "ticks": 0.004650304516652326,
+            "segments": 359.82248569827647,
+            "head": 297.53050467505716,
+            "ringSpeed": 3.9765639484969886,
+            "ticksSpeed": 0.27901827099913956,
+            "segmentsSpeed": -6.150858103411576,
+            "headSpeed": 7.440487226643722,
+            "tail": 90,
+            "breath": 0.780308736091814,
+            "swell": 0.012465030451665233,
+            "light": 0.04650304516652326,
+            "aura": 0.13023066993663512
+          }
+        },
+        {
+          "mood": "working",
+          "dt": 0.1,
+          "clock": {
+            "ring": 1.0115603136033258,
+            "ticks": 0.1747315181723788,
+            "segments": 358.36617185081343,
+            "head": 302.06600370587654,
+            "ringSpeed": 8.952842477950426,
+            "ticksSpeed": 1.7008121365572648,
+            "segmentsSpeed": -14.563138474630481,
+            "headSpeed": 45.35499030819372,
+            "tail": 90,
+            "breath": 0.8187702745533524,
+            "swell": 0.014834686894262109,
+            "light": 0.2834686894262108,
+            "aura": 0.1823631116737664
+          }
+        },
+        {
+          "mood": "working",
+          "dt": 0.6,
+          "clock": {
+            "ring": 5.170007697363566,
+            "ticks": 1.1485736278181617,
+            "segments": 351.4792727020759,
+            "head": 328.0351266297641,
+            "ringSpeed": 16.63378953504096,
+            "ticksSpeed": 3.895368438583132,
+            "segmentsSpeed": -27.5475965949502,
+            "headSpeed": 103.87649169555019,
+            "tail": 90,
+            "breath": 0.9149241207071985,
+            "swell": 0.018492280730971887,
+            "light": 0.6492280730971887,
+            "aura": 0.26283017608138154
+          }
+        },
+        {
+          "mood": "done",
+          "dt": 0.03333333333333333,
+          "clock": {
+            "ring": 5.68015449867971,
+            "ticks": 1.2666236049287103,
+            "segments": 350.6353525153613,
+            "head": 331.3345319479175,
+            "ringSpeed": 15.304404039484309,
+            "ticksSpeed": 3.5414993133164563,
+            "segmentsSpeed": -25.317605601437435,
+            "headSpeed": 98.98215954460318,
+            "tail": 30,
+            "breath": 0.9215907873738652,
+            "swell": 0.01817502952689729,
+            "light": 0.6810934426760297,
+            "aura": 0.26620681510379507
+          }
+        },
+        {
+          "mood": "done",
+          "dt": 0.2,
+          "clock": {
+            "ring": 7.5828021114017155,
+            "ticks": 1.666613373190278,
+            "segments": 347.5147212507706,
+            "head": 346.86675457790005,
+            "ringSpeed": 9.513238063610025,
+            "ticksSpeed": 1.999948841307838,
+            "segmentsSpeed": -15.603156322953595,
+            "headSpeed": 77.66111314991275,
+            "tail": 30,
+            "breath": 0.9615907873738653,
+            "swell": 0.01679299671174862,
+            "light": 0.8199076878520477,
+            "aura": 0.2809163760887542
+          }
+        },
+        {
+          "mood": "failed",
+          "dt": 0.05,
+          "clock": {
+            "ring": 7.9951429030220025,
+            "ticks": 1.7532989457483152,
+            "segments": 346.83841968163483,
+            "head": 350.23288971088294,
+            "ringSpeed": 8.246815832405742,
+            "ticksSpeed": 1.7337114511607477,
+            "segmentsSpeed": -13.526031382715779,
+            "headSpeed": 67.32270265965758,
+            "tail": 30,
+            "breath": 0.9762966697268064,
+            "swell": 0.01695367552448908,
+            "light": 0.7107598544342106,
+            "aura": 0.2834568281841969
+          }
+        },
+        {
+          "mood": "waiting",
+          "dt": -1,
+          "clock": {
+            "ring": 7.9951429030220025,
+            "ticks": 1.7532989457483152,
+            "segments": 346.83841968163483,
+            "head": 350.23288971088294,
+            "ringSpeed": 8.246815832405742,
+            "ticksSpeed": 1.7337114511607477,
+            "segmentsSpeed": -13.526031382715779,
+            "headSpeed": 67.32270265965758,
+            "tail": 30,
+            "breath": 0.9762966697268064,
+            "swell": 0.01695367552448908,
+            "light": 0.7107598544342106,
+            "aura": 0.2834568281841969
+          }
+        },
+        {
+          "mood": "waiting",
+          "dt": 0.016,
+          "clock": {
+            "ring": 8.125485568230646,
+            "ticks": 1.7797987910301833,
+            "segments": 346.6259540823757,
+            "head": 351.26191977424423,
+            "ringSpeed": 8.146416575540172,
+            "ticksSpeed": 1.6562403301167539,
+            "segmentsSpeed": -13.279099953695882,
+            "headSpeed": 64.31437896008046,
+            "tail": 30,
+            "breath": 0.9835693969995337,
+            "swell": 0.01753665222568398,
+            "light": 0.6789994581587991,
+            "aura": 0.2895582775253722
+          }
+        },
+        {
+          "mood": "paused",
+          "dt": 0.25,
+          "clock": {
+            "ring": 9.122488140688697,
+            "ticks": 1.9824984509878112,
+            "segments": 345.00078592518696,
+            "head": 359.13306172661737,
+            "ringSpeed": 3.9880102898322063,
+            "ticksSpeed": 0.8107986398305115,
+            "segmentsSpeed": -6.50067262875494,
+            "headSpeed": 31.484567809492574,
+            "tail": 30,
+            "breath": 0.011347174777311508,
+            "swell": 0.011647671876292752,
+            "light": 0.33239852158533045,
+            "aura": 0.1723783401448063
+          }
+        },
+        {
+          "mood": "queued",
+          "dt": 0.008333333333333333,
+          "clock": {
+            "ring": 9.156900326251835,
+            "ticks": 1.9890961336158999,
+            "segments": 344.94592754268984,
+            "head": 359.3971027396704,
+            "ringSpeed": 4.129462267576523,
+            "ticksSpeed": 0.7917219153706443,
+            "segmentsSpeed": -6.583005899651976,
+            "headSpeed": 31.68492156636241,
+            "tail": 50,
+            "breath": 0.01319902662916336,
+            "swell": 0.011655961562788563,
+            "light": 0.3481060583608965,
+            "aura": 0.17208709867915417
+          }
+        },
+        {
+          "mood": "idle",
+          "dt": 0.1,
+          "clock": {
+            "ring": 9.541776850998742,
+            "ticks": 2.048592237799011,
+            "segments": 344.3393943791968,
+            "head": 1.7781526486696748,
+            "ringSpeed": 3.8487652474690797,
+            "ticksSpeed": 0.5949610418311123,
+            "segmentsSpeed": -6.065331634930318,
+            "headSpeed": 23.81049908999277,
+            "tail": 50,
+            "breath": 0.028583642013778745,
+            "swell": 0.011741462926490498,
+            "light": 0.26159379844015396,
+            "aura": 0.15914227191955607
+          }
+        }
+      ],
+      "frames": [
+        {
+          "mood": "idle",
+          "seed": 0,
+          "t": 0.37,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 3,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -4.5,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.2807953478768468,
+            "swell": 0.012,
+            "light": 0,
+            "aura": 0.12
+          },
+          "frame": {
+            "scale": 1.0117760630223487,
+            "glow": 1.1177606302234857,
+            "aura": 0.13413127562681829,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": null,
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 74.54060162978945,
+                "u": 0.7846237282535135,
+                "size": 0.6467988707590848,
+                "alpha": 0.39549236654059305
+              },
+              {
+                "angle": 61.28673141854583,
+                "u": 0.2326173738602911,
+                "size": 0.5902057879138738,
+                "alpha": 0.5302416533023881
+              },
+              {
+                "angle": 235.13095922496868,
+                "u": 0.936942257073995,
+                "size": 0.817475636373274,
+                "alpha": 0.3704965353690996
+              },
+              {
+                "angle": 325.39463705067755,
+                "u": 0.4906666202069404,
+                "size": 0.8397134464466944,
+                "alpha": 0.3520956424006185
+              },
+              {
+                "angle": 53.95741600729525,
+                "u": 0.4822734881188273,
+                "size": 0.705659719533287,
+                "alpha": 0.6699124629238722
+              },
+              {
+                "angle": 156.695782456554,
+                "u": 0.5335954614363215,
+                "size": 0.8327177410246804,
+                "alpha": 0.9999847392882301
+              },
+              {
+                "angle": 288.5419968872354,
+                "u": 0.5109254084224455,
+                "size": 0.5920016809832305,
+                "alpha": 0.8576718848020141
+              },
+              {
+                "angle": 164.39671801317482,
+                "u": 0.7129311934995477,
+                "size": 0.61112598516047,
+                "alpha": 0.3501385547397435
+              },
+              {
+                "angle": 241.18672856598627,
+                "u": 0.09348088150960501,
+                "size": 0.7459579843562096,
+                "alpha": 0.35083119671154606
+              },
+              {
+                "angle": 5.432452873040456,
+                "u": 0.917030082296083,
+                "size": 0.9638719426002353,
+                "alpha": 0.4077802061447059
+              },
+              {
+                "angle": 311.70053942940433,
+                "u": 1,
+                "size": 0.9992599213728681,
+                "alpha": 0.9822623484642691
+              },
+              {
+                "angle": 176.43302331669256,
+                "u": 0.02272958514644842,
+                "size": 0.854173609870486,
+                "alpha": 0.3500095193165825
+              },
+              {
+                "angle": 78.3528864450613,
+                "u": 0.8042044157472703,
+                "size": 0.6296260815579444,
+                "alpha": 0.3532074163547427
+              },
+              {
+                "angle": 337.2076592371403,
+                "u": 0,
+                "size": 0.5019048304529861,
+                "alpha": 0.35047091058214935
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "idle",
+          "seed": 3974791404,
+          "t": 12.25,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 3,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -4.5,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.6826324770227075,
+            "swell": 0.012,
+            "light": 0,
+            "aura": 0.12
+          },
+          "frame": {
+            "scale": 0.9890590540452397,
+            "glow": 0.8905905404523977,
+            "aura": 0.10687086485428772,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": null,
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 108.30869459762471,
+                "u": 0.36714915335298337,
+                "size": 0.7429698964115232,
+                "alpha": 0.9965315587459354
+              },
+              {
+                "angle": 265.8931641235831,
+                "u": 0.423147104861351,
+                "size": 0.7714341122191399,
+                "alpha": 0.6150466359755701
+              },
+              {
+                "angle": 194.18172872724244,
+                "u": 0.5447332986165795,
+                "size": 0.7957316319225356,
+                "alpha": 0.9738983020638465
+              },
+              {
+                "angle": 326.8112404324929,
+                "u": 0.8851589442040784,
+                "size": 0.862298185005784,
+                "alpha": 0.490231012383303
+              },
+              {
+                "angle": 324.0793289212161,
+                "u": 1,
+                "size": 0.6413558849599212,
+                "alpha": 0.36309760389937423
+              },
+              {
+                "angle": 203.74086431227624,
+                "u": 0.7276737987643273,
+                "size": 0.6103124315850437,
+                "alpha": 0.7299757393652828
+              },
+              {
+                "angle": 293.9663306880975,
+                "u": 0.3396102611540888,
+                "size": 0.8810925155412406,
+                "alpha": 0.9547872021001834
+              },
+              {
+                "angle": 8.73454445216339,
+                "u": 1,
+                "size": 0.9182643394451588,
+                "alpha": 0.8826551965403441
+              },
+              {
+                "angle": 2.3759600356570445,
+                "u": 0,
+                "size": 0.7773267512675375,
+                "alpha": 0.35698190083742326
+              },
+              {
+                "angle": 24.306978840730153,
+                "u": 0.8460266267201879,
+                "size": 0.940697587793693,
+                "alpha": 0.4067525496673151
+              },
+              {
+                "angle": 102.67442710651085,
+                "u": 0.634604121779709,
+                "size": 0.6715834042988718,
+                "alpha": 0.9860080169788322
+              },
+              {
+                "angle": 328.11691589205293,
+                "u": 0.007435523106751787,
+                "size": 0.5155131223145872,
+                "alpha": 0.8152269405416253
+              },
+              {
+                "angle": 344.2702024821774,
+                "u": 0,
+                "size": 0.8052982061635703,
+                "alpha": 0.9829413174728528
+              },
+              {
+                "angle": 24.278543594526127,
+                "u": 0.6332341263872799,
+                "size": 0.5036075143143535,
+                "alpha": 0.6661269760538284
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "working",
+          "seed": 0,
+          "t": 0.37,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 24,
+            "ticksSpeed": 6,
+            "segmentsSpeed": -40,
+            "headSpeed": 160,
+            "tail": 90,
+            "breath": 0.2807953478768468,
+            "swell": 0.022,
+            "light": 1,
+            "aura": 0.34
+          },
+          "frame": {
+            "scale": 1.0215894488743058,
+            "glow": 1.2158944887430572,
+            "aura": 0.41340412617263944,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": {
+              "head": 58.373262137174606,
+              "tail": 90,
+              "alpha": 1
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 183.7139718251599,
+                "u": 0.1636598301208827,
+                "size": 0.6467988707590848,
+                "alpha": 0.28597742428359846
+              },
+              {
+                "angle": 178.3318903833824,
+                "u": 0.08184537942019854,
+                "size": 0.5902057879138738,
+                "alpha": 0.17159789080982396
+              },
+              {
+                "angle": 322.05151357900706,
+                "u": 0.3238839323794718,
+                "size": 0.817475636373274,
+                "alpha": 0.4800144260625526
+              },
+              {
+                "angle": 62.40360362310912,
+                "u": 0.2664028393273461,
+                "size": 0.8397134464466944,
+                "alpha": 0.4095018544884127
+              },
+              {
+                "angle": 116.1677615474494,
+                "u": 0.5233312742477642,
+                "size": 0.705659719533287,
+                "alpha": 0.7694064030684837
+              },
+              {
+                "angle": 192.13712459265545,
+                "u": 0.7591355039345555,
+                "size": 0.8327177410246804,
+                "alpha": 0.6865171275312838
+              },
+              {
+                "angle": 302.52526215554474,
+                "u": 0.9274754320872964,
+                "size": 0.5920016809832305,
+                "alpha": 0.20361975280811934
+              },
+              {
+                "angle": 263.00363609057655,
+                "u": 0.2530010665353397,
+                "size": 0.61112598516047,
+                "alpha": 0.3926265359168237
+              },
+              {
+                "angle": 330.13989272616334,
+                "u": 0.29567752250155954,
+                "size": 0.7459579843562096,
+                "alpha": 0.4409893701821221
+              },
+              {
+                "angle": 87.46530358932279,
+                "u": 0.3640700138105064,
+                "size": 0.9638719426002353,
+                "alpha": 0.5370178148346914
+              },
+              {
+                "angle": 347.459323097941,
+                "u": 0.7956589644513752,
+                "size": 0.9992599213728681,
+                "alpha": 0.5914106717647798
+              },
+              {
+                "angle": 278.78060426582203,
+                "u": 0.24351315495863934,
+                "size": 0.854173609870486,
+                "alpha": 0.38090750671957346
+              },
+              {
+                "angle": 182.3024653048737,
+                "u": 0.2217389189754474,
+                "size": 0.6296260815579444,
+                "alpha": 0.35431780123486833
+              },
+              {
+                "angle": 82.09854551737192,
+                "u": 0.23217282545213458,
+                "size": 0.5019048304529861,
+                "alpha": 0.36674648861226655
+              },
+              {
+                "angle": 356.0431087362222,
+                "u": 0.5401853219843736,
+                "size": 0.521862086141482,
+                "alpha": 0.8266183891973161
+              },
+              {
+                "angle": 89.75671634063099,
+                "u": 0.42748546806889953,
+                "size": 0.537462531356141,
+                "alpha": 0.6687837773315771
+              },
+              {
+                "angle": 220.04151146364,
+                "u": 0.22199020792915847,
+                "size": 0.5654053373727947,
+                "alpha": 0.3556503935645747
+              },
+              {
+                "angle": 218.72075349079017,
+                "u": 0.4511860919601718,
+                "size": 0.6814534879522398,
+                "alpha": 0.6638017597537529
+              },
+              {
+                "angle": 268.5816788256168,
+                "u": 0.8141010137961717,
+                "size": 0.5677648257697001,
+                "alpha": 0.541791152236131
+              },
+              {
+                "angle": 150.41665598821035,
+                "u": 0.5241646995978547,
+                "size": 0.9911248093703762,
+                "alpha": 0.800632780605703
+              },
+              {
+                "angle": 163.1482345565547,
+                "u": 0.6911617914456495,
+                "size": 0.578700908808969,
+                "alpha": 0.8131182498901085
+              },
+              {
+                "angle": 105.62868941207239,
+                "u": 0.04470529655694577,
+                "size": 0.6800087535521016,
+                "alpha": 0.09922691647551618
+              },
+              {
+                "angle": 115.34378842499046,
+                "u": 0.12139083458212097,
+                "size": 0.6077126438030973,
+                "alpha": 0.23135941954510944
+              },
+              {
+                "angle": 162.30733875300092,
+                "u": 0.35239993309227213,
+                "size": 0.5818325649015605,
+                "alpha": 0.5364617119647938
+              },
+              {
+                "angle": 193.81452159203417,
+                "u": 0.8727738694942233,
+                "size": 0.7511015108320862,
+                "alpha": 0.3616492508435133
+              },
+              {
+                "angle": 346.0988643358592,
+                "u": 0.28293554673290333,
+                "size": 0.6811031925026327,
+                "alpha": 0.4269974235839599
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "working",
+          "seed": 3974791404,
+          "t": 12.25,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 24,
+            "ticksSpeed": 6,
+            "segmentsSpeed": -40,
+            "headSpeed": 160,
+            "tail": 90,
+            "breath": 0.6826324770227075,
+            "swell": 0.022,
+            "light": 1,
+            "aura": 0.34
+          },
+          "frame": {
+            "scale": 0.9799415990829395,
+            "glow": 0.7994159908293957,
+            "aura": 0.2718014368819946,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": {
+              "head": 151.61012263968587,
+              "tail": 90,
+              "alpha": 1
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 0.2168112245886391,
+                "u": 0.42566993627597505,
+                "size": 0.7429698964115232,
+                "alpha": 0.9705230341110945
+              },
+              {
+                "angle": 289.70303382104953,
+                "u": 0.06875505652300085,
+                "size": 0.7714341122191399,
+                "alpha": 0.15720582159384577
+              },
+              {
+                "angle": 87.49413072757994,
+                "u": 0.43722662963282666,
+                "size": 0.7957316319225356,
+                "alpha": 0.962897217286031
+              },
+              {
+                "angle": 189.4877249431462,
+                "u": 0.8501045913304432,
+                "size": 0.862298185005784,
+                "alpha": 0.293580076143395
+              },
+              {
+                "angle": 36.47301377664883,
+                "u": 0.14543948313849153,
+                "size": 0.6413558849599212,
+                "alpha": 0.2466486689051818
+              },
+              {
+                "angle": 94.92428635362012,
+                "u": 0.12293961557843414,
+                "size": 0.6103124315850437,
+                "alpha": 0.3062759187999283
+              },
+              {
+                "angle": 100.68399149073616,
+                "u": 0.8229076406017137,
+                "size": 0.8810925155412406,
+                "alpha": 0.5115620364800647
+              },
+              {
+                "angle": 300.05574954463725,
+                "u": 0.8994455088861599,
+                "size": 0.9182643394451588,
+                "alpha": 0.28543455688907454
+              },
+              {
+                "angle": 23.276825265510524,
+                "u": 0.24941506209128583,
+                "size": 0.7773267512675375,
+                "alpha": 0.3916050019320475
+              },
+              {
+                "angle": 168.2778881687659,
+                "u": 0.07553039916132276,
+                "size": 0.940697587793693,
+                "alpha": 0.1385216822623308
+              },
+              {
+                "angle": 79.03576124405936,
+                "u": 0.08183526415048181,
+                "size": 0.6715834042988718,
+                "alpha": 0.2518071823549424
+              },
+              {
+                "angle": 194.33485960486962,
+                "u": 0.9217305968861593,
+                "size": 0.5155131223145872,
+                "alpha": 0.21228194738364325
+              },
+              {
+                "angle": 246.23138293815668,
+                "u": 0.9280679523251498,
+                "size": 0.8052982061635703,
+                "alpha": 0.22141656662419668
+              },
+              {
+                "angle": 50.30127847930032,
+                "u": 0.39106336196111613,
+                "size": 0.5036075143143535,
+                "alpha": 0.7242688988317681
+              },
+              {
+                "angle": 102.80167615364496,
+                "u": 0.18855129756384947,
+                "size": 0.8121630164096132,
+                "alpha": 0.39028723605693894
+              },
+              {
+                "angle": 191.29275660775863,
+                "u": 0.3775473305926207,
+                "size": 0.8819475235650316,
+                "alpha": 0.5670190737116969
+              },
+              {
+                "angle": 246.0210914539831,
+                "u": 0.4703765497473409,
+                "size": 0.6534741036593914,
+                "alpha": 0.8973311785328674
+              },
+              {
+                "angle": 341.88493629908635,
+                "u": 0.8497874431300074,
+                "size": 0.7827911966014653,
+                "alpha": 0.4202049195704333
+              },
+              {
+                "angle": 282.12426951849716,
+                "u": 0.11588791707407431,
+                "size": 0.9078388029010966,
+                "alpha": 0.2109623250070804
+              },
+              {
+                "angle": 139.63663814254107,
+                "u": 0.7380590588667353,
+                "size": 0.5968015644466504,
+                "alpha": 0.5348620795182654
+              },
+              {
+                "angle": 268.34897150184133,
+                "u": 0.791090729737296,
+                "size": 0.7935317039955407,
+                "alpha": 0.39923500011153684
+              },
+              {
+                "angle": 33.782525990681506,
+                "u": 0.9021973527002709,
+                "size": 0.6374904464464635,
+                "alpha": 0.20920892005058683
+              },
+              {
+                "angle": 78.24476983673242,
+                "u": 0.5834858537335084,
+                "size": 0.5416675364831463,
+                "alpha": 0.9487522124746888
+              },
+              {
+                "angle": 179.07009790040922,
+                "u": 0.525008654044794,
+                "size": 0.5314488864969462,
+                "alpha": 0.9946023113596655
+              },
+              {
+                "angle": 19.139944616725415,
+                "u": 0.14994072497242783,
+                "size": 0.6725858467398211,
+                "alpha": 0.3171996742885332
+              },
+              {
+                "angle": 134.0392559334179,
+                "u": 0.3245255213081375,
+                "size": 0.9900103813270107,
+                "alpha": 0.8458026590243118
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "waiting",
+          "seed": 0,
+          "t": 0.37,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 6,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -8,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.2807953478768468,
+            "swell": 0.03,
+            "light": 0,
+            "aura": 0.42
+          },
+          "frame": {
+            "scale": 1.0294401575558714,
+            "glow": 1.2944015755587144,
+            "aura": 0.54364866173466,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": null,
+            "ripples": [
+              0.11212121212121211,
+              0.7787878787878788
+            ],
+            "motes": [
+              {
+                "angle": 75.69006464846898,
+                "u": 0.7026967045075838,
+                "size": 0.6467988707590848,
+                "alpha": 0.39549236654059305
+              },
+              {
+                "angle": 62.18237548314501,
+                "u": 0.19315752493319369,
+                "size": 0.5902057879138738,
+                "alpha": 0.5302416533023881
+              },
+              {
+                "angle": 235.88573656056542,
+                "u": 0.8231792274038142,
+                "size": 0.817475636373274,
+                "alpha": 0.3704965353690996
+              },
+              {
+                "angle": 326.5655901756836,
+                "u": 0.371662377367035,
+                "size": 0.8397134464466944,
+                "alpha": 0.3520956424006185
+              },
+              {
+                "angle": 54.610907109454274,
+                "u": 0.4934957317277373,
+                "size": 0.705659719533287,
+                "alpha": 0.6699124629238722
+              },
+              {
+                "angle": 157.5485132315429,
+                "u": 0.6541280511931848,
+                "size": 0.8327177410246804,
+                "alpha": 0.9999847392882301
+              },
+              {
+                "angle": 289.2307339027291,
+                "u": 0.572261349120894,
+                "size": 0.5920016809832305,
+                "alpha": 0.8576718848020141
+              },
+              {
+                "angle": 165.56633271686732,
+                "u": 0.5962641881599234,
+                "size": 0.61112598516047,
+                "alpha": 0.3501385547397435
+              },
+              {
+                "angle": 241.76513728690333,
+                "u": 0,
+                "size": 0.7459579843562096,
+                "alpha": 0.35083119671154606
+              },
+              {
+                "angle": 6.1787031826330345,
+                "u": 0.8176371843792523,
+                "size": 0.9638719426002353,
+                "alpha": 0.4077802061447059
+              },
+              {
+                "angle": 313.1663471775828,
+                "u": 1,
+                "size": 0.9992599213728681,
+                "alpha": 0.9822623484642691
+              },
+              {
+                "angle": 177.9420441268012,
+                "u": 0,
+                "size": 0.854173609870486,
+                "alpha": 0.3500095193165825
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "waiting",
+          "seed": 3974791404,
+          "t": 12.25,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 6,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -8,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.6826324770227075,
+            "swell": 0.03,
+            "light": 0,
+            "aura": 0.42
+          },
+          "frame": {
+            "scale": 0.9726476351130994,
+            "glow": 0.7264763511309942,
+            "aura": 0.3051200674750175,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": null,
+            "ripples": [
+              0.3787878787878788
+            ],
+            "motes": [
+              {
+                "angle": 132.17676098633092,
+                "u": 0.2741325187877007,
+                "size": 0.7429698964115232,
+                "alpha": 0.9965315587459354
+              },
+              {
+                "angle": 301.3793132296996,
+                "u": 0.5741006066603066,
+                "size": 0.7714341122191399,
+                "alpha": 0.6150466359755701
+              },
+              {
+                "angle": 218.41385014762636,
+                "u": 0.4749763169253646,
+                "size": 0.7957316319225356,
+                "alpha": 0.9738983020638465
+              },
+              {
+                "angle": 353.50981027644593,
+                "u": 0.6903391658823621,
+                "size": 0.862298185005784,
+                "alpha": 0.490231012383303
+              },
+              {
+                "angle": 7.1027753775706515,
+                "u": 1,
+                "size": 0.6413558849599212,
+                "alpha": 0.36309760389937423
+              },
+              {
+                "angle": 222.77601769194007,
+                "u": 0.5323106774750699,
+                "size": 0.6103124315850437,
+                "alpha": 0.7299757393652828
+              },
+              {
+                "angle": 312.94023212394677,
+                "u": 0.39182035316203134,
+                "size": 0.8810925155412406,
+                "alpha": 0.9547872021001834
+              },
+              {
+                "angle": 45.15906612505205,
+                "u": 1,
+                "size": 0.9182643394451588,
+                "alpha": 0.8826551965403441
+              },
+              {
+                "angle": 40.31039560271893,
+                "u": 0.047059999552396356,
+                "size": 0.7773267512675375,
+                "alpha": 0.35698190083742326
+              },
+              {
+                "angle": 75.57235587039031,
+                "u": 0.7525140390189375,
+                "size": 0.940697587793693,
+                "alpha": 0.4067525496673151
+              },
+              {
+                "angle": 132.17637047637254,
+                "u": 0.4418914135469123,
+                "size": 0.6715834042988718,
+                "alpha": 0.9860080169788322
+              },
+              {
+                "angle": 356.3985178928124,
+                "u": 0,
+                "size": 0.5155131223145872,
+                "alpha": 0.8152269405416253
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "queued",
+          "seed": 0,
+          "t": 0.37,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 10,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -10,
+            "headSpeed": 40,
+            "tail": 50,
+            "breath": 0.2807953478768468,
+            "swell": 0.012,
+            "light": 1,
+            "aura": 0.16
+          },
+          "frame": {
+            "scale": 1.0117760630223487,
+            "glow": 1.1177606302234857,
+            "aura": 0.1788417008357577,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": {
+              "head": 58.373262137174606,
+              "tail": 50,
+              "alpha": 1
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 77.22268200670834,
+                "u": 0.8348964846974408,
+                "size": 0.6467988707590848,
+                "alpha": 0.39549236654059305
+              },
+              {
+                "angle": 63.37656756927725,
+                "u": 0.28165909222671526,
+                "size": 0.5902057879138738,
+                "alpha": 0.5302416533023881
+              },
+              {
+                "angle": 236.89210634136106,
+                "u": 0.9492323343712386,
+                "size": 0.817475636373274,
+                "alpha": 0.3704965353690996
+              },
+              {
+                "angle": 328.126861009025,
+                "u": 0.5266536267965877,
+                "size": 0.8397134464466944,
+                "alpha": 0.3520956424006185
+              },
+              {
+                "angle": 55.48222857899964,
+                "u": 0.43777115691060137,
+                "size": 0.705659719533287,
+                "alpha": 0.6699124629238722
+              },
+              {
+                "angle": 158.68548759819475,
+                "u": 0.5008106313789696,
+                "size": 0.8327177410246804,
+                "alpha": 0.9999847392882301
+              },
+              {
+                "angle": 290.14904992338734,
+                "u": 0.5327413787466436,
+                "size": 0.5920016809832305,
+                "alpha": 0.8576718848020141
+              },
+              {
+                "angle": 167.12581898845733,
+                "u": 0.7517923995759438,
+                "size": 0.61112598516047,
+                "alpha": 0.3501385547397435
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "queued",
+          "seed": 3974791404,
+          "t": 12.25,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 10,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -10,
+            "headSpeed": 40,
+            "tail": 50,
+            "breath": 0.6826324770227075,
+            "swell": 0.012,
+            "light": 1,
+            "aura": 0.16
+          },
+          "frame": {
+            "scale": 0.9890590540452397,
+            "glow": 0.8905905404523977,
+            "aura": 0.14249448647238364,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": {
+              "head": 151.61012263968587,
+              "tail": 50,
+              "alpha": 1
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 164.00084950460587,
+                "u": 0.5345863970727728,
+                "size": 0.7429698964115232,
+                "alpha": 0.9965315587459354
+              },
+              {
+                "angle": 348.6941787045216,
+                "u": 0.5623125562468579,
+                "size": 0.7714341122191399,
+                "alpha": 0.6150466359755701
+              },
+              {
+                "angle": 250.72334537480492,
+                "u": 0.7250225547547832,
+                "size": 0.7957316319225356,
+                "alpha": 0.9738983020638465
+              },
+              {
+                "angle": 29.107903401716612,
+                "u": 0.8539540758822557,
+                "size": 0.862298185005784,
+                "alpha": 0.490231012383303
+              },
+              {
+                "angle": 64.46737065271009,
+                "u": 0.8434704603466292,
+                "size": 0.6413558849599212,
+                "alpha": 0.36309760389937423
+              },
+              {
+                "angle": 248.1562221981585,
+                "u": 0.7107941580440276,
+                "size": 0.6103124315850437,
+                "alpha": 0.7299757393652828
+              },
+              {
+                "angle": 338.2387673717458,
+                "u": 0.5360203933591657,
+                "size": 0.8810925155412406,
+                "alpha": 0.9547872021001834
+              },
+              {
+                "angle": 93.72509502223693,
+                "u": 0.8970130952813222,
+                "size": 0.9182643394451588,
+                "alpha": 0.8826551965403441
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "paused",
+          "seed": 0,
+          "t": 0.37,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 0,
+            "ticksSpeed": 0,
+            "segmentsSpeed": 0,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.2807953478768468,
+            "swell": 0.006,
+            "light": 0,
+            "aura": 0.06
+          },
+          "frame": {
+            "scale": 1.0058880315111742,
+            "glow": 1.058880315111743,
+            "aura": 0.06353281890670458,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": null,
+            "ripples": [],
+            "motes": [],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "paused",
+          "seed": 3974791404,
+          "t": 12.25,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 0,
+            "ticksSpeed": 0,
+            "segmentsSpeed": 0,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.6826324770227075,
+            "swell": 0.006,
+            "light": 0,
+            "aura": 0.06
+          },
+          "frame": {
+            "scale": 0.9945295270226199,
+            "glow": 0.9452952702261989,
+            "aura": 0.05671771621357193,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": null,
+            "ripples": [],
+            "motes": [],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "done",
+          "seed": 0,
+          "t": 0.37,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 2,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -3,
+            "headSpeed": 50,
+            "tail": 30,
+            "breath": 0.2807953478768468,
+            "swell": 0.015,
+            "light": 1,
+            "aura": 0.3
+          },
+          "frame": {
+            "scale": 1.0147200787779358,
+            "glow": 1.147200787779357,
+            "aura": 0.3441602363338071,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": {
+              "head": 58.373262137174606,
+              "tail": 30,
+              "alpha": 1
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 75.30691030890914,
+                "u": 0.7598509564180775,
+                "size": 0.6467988707590848,
+                "alpha": 0.39549236654059305
+              },
+              {
+                "angle": 61.88382746161194,
+                "u": 0.2136059434717191,
+                "size": 0.5902057879138738,
+                "alpha": 0.5302416533023881
+              },
+              {
+                "angle": 235.6341441153665,
+                "u": 0.9189443494832489,
+                "size": 0.817475636373274,
+                "alpha": 0.3704965353690996
+              },
+              {
+                "angle": 326.17527246734824,
+                "u": 0.46524380046844094,
+                "size": 0.8397134464466944,
+                "alpha": 0.3520956424006185
+              },
+              {
+                "angle": 54.39307674206793,
+                "u": 0.4963930455974022,
+                "size": 0.705659719533287,
+                "alpha": 0.6699124629238722
+              },
+              {
+                "angle": 157.26426963987993,
+                "u": 0.5582998912521229,
+                "size": 0.8327177410246804,
+                "alpha": 0.9999847392882301
+              },
+              {
+                "angle": 289.00115489756456,
+                "u": 0.5125187699384622,
+                "size": 0.5920016809832305,
+                "alpha": 0.8576718848020141
+              },
+              {
+                "angle": 165.17646114896982,
+                "u": 0.6869865590572094,
+                "size": 0.61112598516047,
+                "alpha": 0.3501385547397435
+              },
+              {
+                "angle": 241.572334379931,
+                "u": 0.07415537211602302,
+                "size": 0.7459579843562096,
+                "alpha": 0.35083119671154606
+              },
+              {
+                "angle": 5.929953079435508,
+                "u": 0.9045535072656785,
+                "size": 0.9638719426002353,
+                "alpha": 0.4077802061447059
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "done",
+          "seed": 3974791404,
+          "t": 12.25,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 2,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -3,
+            "headSpeed": 50,
+            "tail": 30,
+            "breath": 0.6826324770227075,
+            "swell": 0.015,
+            "light": 1,
+            "aura": 0.3
+          },
+          "frame": {
+            "scale": 0.9863238175565497,
+            "glow": 0.8632381755654971,
+            "aura": 0.2589714526696491,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": {
+              "head": 151.61012263968587,
+              "tail": 30,
+              "alpha": 1
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 124.22073885676218,
+                "u": 0.4666432783598814,
+                "size": 0.7429698964115232,
+                "alpha": 0.9965315587459354
+              },
+              {
+                "angle": 289.5505968609941,
+                "u": 0.654512403070982,
+                "size": 0.7714341122191399,
+                "alpha": 0.6150466359755701
+              },
+              {
+                "angle": 210.33647634083172,
+                "u": 0.6716637077806739,
+                "size": 0.7957316319225356,
+                "alpha": 0.9738983020638465
+              },
+              {
+                "angle": 344.61028699512826,
+                "u": 0.7284377905851303,
+                "size": 0.862298185005784,
+                "alpha": 0.490231012383303
+              },
+              {
+                "angle": 352.7616265587858,
+                "u": 0.8673230228656373,
+                "size": 0.6413558849599212,
+                "alpha": 0.36309760389937423
+              },
+              {
+                "angle": 216.43096656538546,
+                "u": 0.5842942572456947,
+                "size": 0.6103124315850437,
+                "alpha": 0.7299757393652828
+              },
+              {
+                "angle": 306.615598311997,
+                "u": 0.5613912343960814,
+                "size": 0.8810925155412406,
+                "alpha": 0.9547872021001834
+              },
+              {
+                "angle": 33.01755890075583,
+                "u": 0.9968497252079046,
+                "size": 0.9182643394451588,
+                "alpha": 0.8826551965403441
+              },
+              {
+                "angle": 27.665583747031633,
+                "u": 0.16527276628586132,
+                "size": 0.7773267512675375,
+                "alpha": 0.35698190083742326
+              },
+              {
+                "angle": 58.48389686050359,
+                "u": 0.9448951867555694,
+                "size": 0.940697587793693,
+                "alpha": 0.4067525496673151
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "failed",
+          "seed": 0,
+          "t": 0.37,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 58.373262137174606,
+            "ringSpeed": 0,
+            "ticksSpeed": 0,
+            "segmentsSpeed": 0,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.2807953478768468,
+            "swell": 0.018,
+            "light": 0,
+            "aura": 0.3
+          },
+          "frame": {
+            "scale": 1.017664094533523,
+            "glow": 1.1766409453352287,
+            "aura": 0.3529922836005686,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": null,
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 215.94011329752942,
+                "u": 0.48604517095244093,
+                "size": 0.6467988707590848,
+                "alpha": 0.1017210452318081
+              },
+              {
+                "angle": 213.60128331110235,
+                "u": 0.19369579656066035,
+                "size": 0.5902057879138738,
+                "alpha": 0.07991252130477998
+              },
+              {
+                "angle": 124.01072882296378,
+                "u": 0.5486406313794239,
+                "size": 0.817475636373274,
+                "alpha": 0.1770892525409019
+              },
+              {
+                "angle": 117.74671407852287,
+                "u": 0.3418343379201246,
+                "size": 0.8397134464466944,
+                "alpha": 0.14028471833248132
+              },
+              {
+                "angle": 289.9566381913098,
+                "u": 0.2783635188360242,
+                "size": 0.705659719533287,
+                "alpha": 0.4193757122681374
+              },
+              {
+                "angle": 304.5547871981606,
+                "u": 0.3419482580897161,
+                "size": 0.8327177410246804,
+                "alpha": 0.8111373085483545
+              },
+              {
+                "angle": 58.42480948900982,
+                "u": 0.4219769915128836,
+                "size": 0.5920016809832305,
+                "alpha": 0.866172888164975
+              },
+              {
+                "angle": 231.96073851880948,
+                "u": 0.45393063788725396,
+                "size": 0.61112598516047,
+                "alpha": 0.13375081614920725
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "failed",
+          "seed": 3974791404,
+          "t": 12.25,
+          "since": null,
+          "from": null,
+          "burst": false,
+          "clock": {
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "head": 151.61012263968587,
+            "ringSpeed": 0,
+            "ticksSpeed": 0,
+            "segmentsSpeed": 0,
+            "headSpeed": 0,
+            "tail": 0,
+            "breath": 0.6826324770227075,
+            "swell": 0.018,
+            "light": 0,
+            "aura": 0.3
+          },
+          "frame": {
+            "scale": 0.9835885810678596,
+            "glow": 0.8358858106785965,
+            "aura": 0.2507657432035789,
+            "ring": 0,
+            "ticks": 0,
+            "segments": 0,
+            "comet": null,
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 242.11816759382396,
+                "u": 0.27932071410171433,
+                "size": 0.7429698964115232,
+                "alpha": 0.2846960309705205
+              },
+              {
+                "angle": 75.31708509732225,
+                "u": 0.34458052510841575,
+                "size": 0.7714341122191399,
+                "alpha": 0.405839969401881
+              },
+              {
+                "angle": 235.6391284849899,
+                "u": 0.37189013177661717,
+                "size": 0.7957316319225356,
+                "alpha": 0.27846659636361065
+              },
+              {
+                "angle": 95.2140237273694,
+                "u": 0.5266149747975643,
+                "size": 0.862298185005784,
+                "alpha": 0.35153501570040163
+              },
+              {
+                "angle": 106.08130171915424,
+                "u": 0.5364949884936916,
+                "size": 0.6413558849599212,
+                "alpha": 0.24054321000498616
+              },
+              {
+                "angle": 212.9532529167082,
+                "u": 0.3841793287851522,
+                "size": 0.6103124315850437,
+                "alpha": 0.12626263445616123
+              },
+              {
+                "angle": 54.62583462708937,
+                "u": 0.36090931322680436,
+                "size": 0.8810925155412406,
+                "alpha": 0.8330046970992377
+              },
+              {
+                "angle": 118.50050693069366,
+                "u": 0.5320559454647812,
+                "size": 0.9182643394451588,
+                "alpha": 0.3703108437397912
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "working",
+          "seed": 0,
+          "t": 31.4,
+          "since": 0.3,
+          "from": "idle",
+          "burst": false,
+          "clock": {
+            "ring": 3.544806652404011,
+            "ticks": 0.7556590435440033,
+            "segments": 354.179017325698,
+            "head": 78.52416996501469,
+            "ringSpeed": 15.088170240784054,
+            "ticksSpeed": 3.4537629259383014,
+            "segmentsSpeed": -24.934763978468283,
+            "headSpeed": 92.10034469168804,
+            "tail": 90,
+            "breath": 0.3961799632614621,
+            "swell": 0.017756271543230503,
+            "light": 0.5756271543230501,
+            "aura": 0.24663797395107107
+          },
+          "frame": {
+            "scale": 1.0107786269901764,
+            "glow": 1.1077862699017649,
+            "aura": 0.2732221611793857,
+            "ring": 3.544806652404011,
+            "ticks": 0.7556590435440033,
+            "segments": 354.179017325698,
+            "comet": {
+              "head": 78.52416996501469,
+              "tail": 90,
+              "alpha": 0.5756271543230501
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 85.81286666063579,
+                "u": 0.012799100551754705,
+                "size": 0.6467988707590848,
+                "alpha": 0.009562247570609035
+              },
+              {
+                "angle": 153.1765996287238,
+                "u": 0.5508951727614146,
+                "size": 0.5902057879138738,
+                "alpha": 0.3571898113873601
+              },
+              {
+                "angle": 171.68795243361535,
+                "u": 0.8518552129979913,
+                "size": 0.817475636373274,
+                "alpha": 0.10898629037769778
+              },
+              {
+                "angle": 330.3054052441196,
+                "u": 0.21737329179591747,
+                "size": 0.8397134464466944,
+                "alpha": 0.14237460658245005
+              },
+              {
+                "angle": 334.1612731786164,
+                "u": 0.2737972584012134,
+                "size": 0.705659719533287,
+                "alpha": 0.18864500238556822
+              },
+              {
+                "angle": 163.5476760556678,
+                "u": 0.956893509288987,
+                "size": 0.8327177410246804,
+                "alpha": 0.03566808042749644
+              },
+              {
+                "angle": 156.3189947138095,
+                "u": 0.9592640550857396,
+                "size": 0.5920016809832305,
+                "alpha": 0.033625722754249215
+              },
+              {
+                "angle": 170.5368642362373,
+                "u": 0.19768908774901028,
+                "size": 0.61112598516047,
+                "alpha": 0.12723721193944912
+              },
+              {
+                "angle": 82.19991058937956,
+                "u": 0.4041914750055309,
+                "size": 0.7459579843562096,
+                "alpha": 0.2745081532030251
+              },
+              {
+                "angle": 297.3810819697395,
+                "u": 0.8301203080857977,
+                "size": 0.9638719426002353,
+                "alpha": 0.10996699905911646
+              },
+              {
+                "angle": 116.74317677389377,
+                "u": 0.9624409103901499,
+                "size": 0.9992599213728681,
+                "alpha": 0.03847351111072538
+              },
+              {
+                "angle": 65.83719257080497,
+                "u": 0.5641937789195577,
+                "size": 0.854173609870486,
+                "alpha": 0.2037273643899117
+              },
+              {
+                "angle": 277.2554330655298,
+                "u": 0.055096112341527004,
+                "size": 0.6296260815579444,
+                "alpha": 0.05491810015062851
+              },
+              {
+                "angle": 57.52911015060545,
+                "u": 0.06097611456870489,
+                "size": 0.5019048304529861,
+                "alpha": 0.06852249077830334
+              },
+              {
+                "angle": 261.95237757721907,
+                "u": 0.45690317422151594,
+                "size": 0.521862086141482,
+                "alpha": 0.3298782973427289
+              },
+              {
+                "angle": 255.0957719235796,
+                "u": 0.8958352243030099,
+                "size": 0.537462531356141,
+                "alpha": 0.10809811945917124
+              },
+              {
+                "angle": 343.3146867972366,
+                "u": 0.6853130160896601,
+                "size": 0.5654053373727947,
+                "alpha": 0.2785175915682818
+              },
+              {
+                "angle": 78.58086214340437,
+                "u": 0.09772154126276256,
+                "size": 0.6814534879522398,
+                "alpha": 0.11223804701357544
+              },
+              {
+                "angle": 152.35428489059495,
+                "u": 0.2890943620071198,
+                "size": 0.5677648257697001,
+                "alpha": 0.16658000084616195
+              },
+              {
+                "angle": 256.93189680050443,
+                "u": 0.5177274436778898,
+                "size": 0.9911248093703762,
+                "alpha": 0.2223664060085737
+              },
+              {
+                "angle": 69.43040500857046,
+                "u": 0.61434460594349,
+                "size": 0.578700908808969,
+                "alpha": 0.3510084258900206
+              },
+              {
+                "angle": 26.702139307393054,
+                "u": 0.2060778208416707,
+                "size": 0.6800087535521016,
+                "alpha": 0.15750304757840514
+              },
+              {
+                "angle": 233.32907141364285,
+                "u": 0.45456532541886574,
+                "size": 0.6077126438030973,
+                "alpha": 0.20595110875066167
+              },
+              {
+                "angle": 249.71240847552485,
+                "u": 0.10456911939395575,
+                "size": 0.5818325649015605,
+                "alpha": 0.10615865520609691
+              },
+              {
+                "angle": 314.940670385932,
+                "u": 0.9650184247877647,
+                "size": 0.7511015108320862,
+                "alpha": 0.03473233014545817
+              },
+              {
+                "angle": 95.49809555563468,
+                "u": 0.4948066498002852,
+                "size": 0.6811031925026327,
+                "alpha": 0.371917214024804
+              }
+            ],
+            "leaving": [
+              {
+                "angle": 299.47290999679825,
+                "u": 0.865854186248926,
+                "size": 0.6467988707590848,
+                "alpha": 0.2948828001528043
+              },
+              {
+                "angle": 236.5505577893462,
+                "u": 0.2607318183959141,
+                "size": 0.5902057879138738,
+                "alpha": 0.5932338084955175
+              },
+              {
+                "angle": 22.829324148362502,
+                "u": 1,
+                "size": 0.817475636373274,
+                "alpha": 0.30684877902860774
+              },
+              {
+                "angle": 194.53223009803332,
+                "u": 0.625083161031348,
+                "size": 0.8397134464466944,
+                "alpha": 0.2653755630815468
+              },
+              {
+                "angle": 181.8356162775308,
+                "u": 0.4878273658062285,
+                "size": 0.705659719533287,
+                "alpha": 0.3214008230310461
+              },
+              {
+                "angle": 323.562135281181,
+                "u": 0.3958276930377944,
+                "size": 0.8327177410246804,
+                "alpha": 0.3582338430728742
+              },
+              {
+                "angle": 63.317282594786946,
+                "u": 0.42374653084511016,
+                "size": 0.5920016809832305,
+                "alpha": 0.35650024673348407
+              },
+              {
+                "angle": 33.27240250781176,
+                "u": 0.8431198254707062,
+                "size": 0.61112598516047,
+                "alpha": 0.2486248759725969
+              },
+              {
+                "angle": 354.3724567375146,
+                "u": 0.23362777965812453,
+                "size": 0.7459579843562096,
+                "alpha": 0.4141836569606464
+              },
+              {
+                "angle": 151.46220940151252,
+                "u": 1,
+                "size": 0.9638719426002353,
+                "alpha": 0.24262130520226
+              },
+              {
+                "angle": 238.536666440079,
+                "u": 0.9332971617202332,
+                "size": 0.9992599213728681,
+                "alpha": 0.5090047855089206
+              },
+              {
+                "angle": 111.72528472542763,
+                "u": 0.14212680274165668,
+                "size": 0.854173609870486,
+                "alpha": 0.22282250791465477
+              },
+              {
+                "angle": 347.842580336798,
+                "u": 0.9153560318003326,
+                "size": 0.6296260815579444,
+                "alpha": 0.48987533481190415
+              },
+              {
+                "angle": 302.68128308015866,
+                "u": 0.08586537426590063,
+                "size": 0.5019048304529861,
+                "alpha": 0.5886503009814253
+              }
+            ],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "waiting",
+          "seed": 3974791404,
+          "t": 47.9,
+          "since": 1.9,
+          "from": "working",
+          "burst": false,
+          "clock": {
+            "ring": 16.818908532904366,
+            "ticks": 1.8063028443014553,
+            "segments": 335.16638483039225,
+            "head": 199.77819848772472,
+            "ringSpeed": 6.079008513170012,
+            "ticksSpeed": 0.0263361710566706,
+            "segmentsSpeed": -8.14045957896891,
+            "headSpeed": 0.7022978948445491,
+            "tail": 90,
+            "breath": 0.5462688406590709,
+            "swell": 0.02996488510525777,
+            "light": 0.004389361842778432,
+            "aura": 0.4196488510525777
+          },
+          "frame": {
+            "scale": 0.9914109262589577,
+            "glow": 0.9141092625895769,
+            "aura": 0.383604901782235,
+            "ring": 16.818908532904366,
+            "ticks": 1.8063028443014553,
+            "segments": 335.16638483039225,
+            "comet": null,
+            "ripples": [
+              0.5151515151515138
+            ],
+            "motes": [
+              {
+                "angle": 3.7132417366374284,
+                "u": 0.6467215259591069,
+                "size": 0.7429698964115232,
+                "alpha": 0.35051258557452897
+              },
+              {
+                "angle": 285.6190997965168,
+                "u": 0.40130963596478975,
+                "size": 0.7714341122191399,
+                "alpha": 0.9771720761314553
+              },
+              {
+                "angle": 93.48191236169077,
+                "u": 0.8119109571160495,
+                "size": 0.7957316319225356,
+                "alpha": 0.6338340670743401
+              },
+              {
+                "angle": 252.50410005520098,
+                "u": 1,
+                "size": 0.862298185005784,
+                "alpha": 0.37135143464071513
+              },
+              {
+                "angle": 64.45947365486063,
+                "u": 0.8074091472352045,
+                "size": 0.6413558849599212,
+                "alpha": 0.9495647275299586
+              },
+              {
+                "angle": 47.429954558610916,
+                "u": 0.9274964194263567,
+                "size": 0.6103124315850437,
+                "alpha": 0.9128384068403669
+              },
+              {
+                "angle": 136.99998346762732,
+                "u": 0.4879045078847064,
+                "size": 0.8810925155412406,
+                "alpha": 0.35602308252363013
+              },
+              {
+                "angle": 38.501704938244075,
+                "u": 0.7292316642129856,
+                "size": 0.9182643394451588,
+                "alpha": 0.8287774836483723
+              },
+              {
+                "angle": 48.30022634170018,
+                "u": 0,
+                "size": 0.7773267512675375,
+                "alpha": 0.9830745856556616
+              },
+              {
+                "angle": 212.88138746423647,
+                "u": 1,
+                "size": 0.940697587793693,
+                "alpha": 0.37710602102111795
+              },
+              {
+                "angle": 58.36529051326215,
+                "u": 0.7978353966443785,
+                "size": 0.6715834042988718,
+                "alpha": 0.9751209460338489
+              },
+              {
+                "angle": 270.74929648521356,
+                "u": 0.25520184858958317,
+                "size": 0.5155131223145872,
+                "alpha": 0.6710905395859443
+              }
+            ],
+            "leaving": [],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "failed",
+          "seed": 3974791404,
+          "t": 8.8,
+          "since": 0.5,
+          "from": "working",
+          "burst": false,
+          "clock": {
+            "ring": 5.517902050861778,
+            "ticks": 1.3794755127154446,
+            "segments": 350.80349658189704,
+            "head": 188.39613631209775,
+            "ringSpeed": 5.751624874602617,
+            "ticksSpeed": 1.4379062186506542,
+            "segmentsSpeed": -9.586041457671024,
+            "headSpeed": 38.3441658306841,
+            "tail": 90,
+            "breath": 0.8296913005521193,
+            "swell": 0.018958604145767104,
+            "light": 0.23965103644177563,
+            "aura": 0.30958604145767105
+          },
+          "frame": {
+            "scale": 0.9833687645618031,
+            "glow": 0.8336876456180314,
+            "aura": 0.25809805801905206,
+            "ring": 5.517902050861778,
+            "ticks": 1.3794755127154446,
+            "segments": 350.80349658189704,
+            "comet": {
+              "head": 188.39613631209775,
+              "tail": 90,
+              "alpha": 0.23965103644177563
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 220.76870845719432,
+                "u": 0.26291467878340524,
+                "size": 0.7429698964115232,
+                "alpha": 0.05793894082872096
+              },
+              {
+                "angle": 109.52709930321446,
+                "u": 0.30553622085128856,
+                "size": 0.7714341122191399,
+                "alpha": 0.0977350062091508
+              },
+              {
+                "angle": 215.38688649752925,
+                "u": 0.3546354138890446,
+                "size": 0.7957316319225356,
+                "alpha": 0.059023057754431583
+              },
+              {
+                "angle": 108.98016514388483,
+                "u": 0.5038827625482333,
+                "size": 0.862298185005784,
+                "alpha": 0.2678478684159359
+              },
+              {
+                "angle": 147.32892051840804,
+                "u": 0.48646089258561087,
+                "size": 0.6413558849599212,
+                "alpha": 0.054974983219870655
+              },
+              {
+                "angle": 207.96410248355267,
+                "u": 0.3801633550568684,
+                "size": 0.6103124315850437,
+                "alpha": 0.08150094351295664
+              },
+              {
+                "angle": 55.585574824006095,
+                "u": 0.35706513573491255,
+                "size": 0.8810925155412406,
+                "alpha": 0.4176181796466354
+              },
+              {
+                "angle": 155.34678477705995,
+                "u": 0.4915135333285483,
+                "size": 0.9182643394451588,
+                "alpha": 0.056647328959042065
+              }
+            ],
+            "leaving": [
+              {
+                "angle": 243.26555591694938,
+                "u": 0.8400948254652381,
+                "size": 0.7429698964115232,
+                "alpha": 0.1105705222687485
+              },
+              {
+                "angle": 169.1840171910486,
+                "u": 0.2402420017995257,
+                "size": 0.7714341122191399,
+                "alpha": 0.14293653060469358
+              },
+              {
+                "angle": 330.61339606061057,
+                "u": 0.8425196981138674,
+                "size": 0.7957316319225356,
+                "alpha": 0.1134300021049447
+              },
+              {
+                "angle": 192.7277159785026,
+                "u": 0.19650557786139844,
+                "size": 0.862298185005784,
+                "alpha": 0.20258203905896188
+              },
+              {
+                "angle": 268.8204908473973,
+                "u": 0.1994765601038644,
+                "size": 0.6413558849599212,
+                "alpha": 0.12411309292623707
+              },
+              {
+                "angle": 335.56001313839363,
+                "u": 0.6708984967268172,
+                "size": 0.6103124315850437,
+                "alpha": 0.3097566340419181
+              },
+              {
+                "angle": 101.26969636578326,
+                "u": 0.37272091661795415,
+                "size": 0.8810925155412406,
+                "alpha": 0.2874761162197345
+              },
+              {
+                "angle": 298.817466896458,
+                "u": 0.05490330801917853,
+                "size": 0.9182643394451588,
+                "alpha": 0.045587686124844644
+              },
+              {
+                "angle": 260.77307693558873,
+                "u": 0.37998165391299166,
+                "size": 0.7773267512675375,
+                "alpha": 0.2257671457277931
+              },
+              {
+                "angle": 29.90986977616808,
+                "u": 0.02543020717904243,
+                "size": 0.940697587793693,
+                "alpha": 0.016584514816846186
+              },
+              {
+                "angle": 321.72645104022195,
+                "u": 0.36702030070611436,
+                "size": 0.6715834042988718,
+                "alpha": 0.19992383692006335
+              },
+              {
+                "angle": 197.34842479194504,
+                "u": 0.2328656699692373,
+                "size": 0.5155131223145872,
+                "alpha": 0.2008918945252437
+              },
+              {
+                "angle": 247.325335922489,
+                "u": 0.14345371398123286,
+                "size": 0.8052982061635703,
+                "alpha": 0.11463049714548176
+              },
+              {
+                "angle": 285.03570876208073,
+                "u": 0.4769318698491798,
+                "size": 0.5036075143143535,
+                "alpha": 0.31690402250676797
+              },
+              {
+                "angle": 344.0046713693604,
+                "u": 0.40749583586850546,
+                "size": 0.8121630164096132,
+                "alpha": 0.2035459536331599
+              },
+              {
+                "angle": 72.79235672570053,
+                "u": 0.8905476982556877,
+                "size": 0.8819475235650316,
+                "alpha": 0.07328409069604092
+              },
+              {
+                "angle": 119.7832029928573,
+                "u": 0.5426777235068316,
+                "size": 0.6534741036593914,
+                "alpha": 0.34970621397024476
+              },
+              {
+                "angle": 219.34756398415095,
+                "u": 0.9797392937952423,
+                "size": 0.7827911966014653,
+                "alpha": 0.01832943312439529
+              },
+              {
+                "angle": 163.8551075926573,
+                "u": 0.6182917815613242,
+                "size": 0.9078388029010966,
+                "alpha": 0.3065305815469109
+              },
+              {
+                "angle": 357.66520536077576,
+                "u": 0.6611700128654179,
+                "size": 0.5968015644466504,
+                "alpha": 0.30712085709815484
+              },
+              {
+                "angle": 125.57898399947851,
+                "u": 0.7086363081380505,
+                "size": 0.7935317039955407,
+                "alpha": 0.26134165814076155
+              },
+              {
+                "angle": 36.13526491822665,
+                "u": 0.3717275439294374,
+                "size": 0.6374904464464635,
+                "alpha": 0.3445207232425668
+              },
+              {
+                "angle": 304.44918396601327,
+                "u": 0.5722639243818612,
+                "size": 0.5416675364831463,
+                "alpha": 0.36512322654970236
+              },
+              {
+                "angle": 43.39726836856278,
+                "u": 0.49705482230305886,
+                "size": 0.5314488864969462,
+                "alpha": 0.3658154581171899
+              },
+              {
+                "angle": 259.73243683317276,
+                "u": 0.3501282369468388,
+                "size": 0.6725858467398211,
+                "alpha": 0.18530728717931896
+              },
+              {
+                "angle": 17.176349066026773,
+                "u": 0.727189550689916,
+                "size": 0.9900103813270107,
+                "alpha": 0.15750185386937948
+              }
+            ],
+            "sparks": []
+          }
+        },
+        {
+          "mood": "done",
+          "seed": 0,
+          "t": 64.2,
+          "since": 0.4,
+          "from": "working",
+          "burst": true,
+          "clock": {
+            "ring": 5.330844599784723,
+            "ticks": 1.235684890850379,
+            "segments": 351.17994317308927,
+            "head": 101.0274851360982,
+            "ringSpeed": 9.015944261127347,
+            "ticksSpeed": 1.9134393439438218,
+            "segmentsSpeed": -14.799542620986902,
+            "headSpeed": 85.07972130563672,
+            "tail": 30,
+            "breath": 0.36079534787684686,
+            "swell": 0.017232345901267793,
+            "light": 1,
+            "aura": 0.31275626229295883
+          },
+          "frame": {
+            "scale": 1.0132226930614574,
+            "glow": 1.1322269306145731,
+            "aura": 0.3541110628864431,
+            "ring": 5.330844599784723,
+            "ticks": 1.235684890850379,
+            "segments": 351.17994317308927,
+            "comet": {
+              "head": 101.0274851360982,
+              "tail": 30,
+              "alpha": 1
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 310.20062232767236,
+                "u": 1,
+                "size": 0.6467988707590848,
+                "alpha": 0
+              },
+              {
+                "angle": 165.4159407861996,
+                "u": 0.47737923924421743,
+                "size": 0.5902057879138738,
+                "alpha": 0
+              },
+              {
+                "angle": 266.2620143678505,
+                "u": 1,
+                "size": 0.817475636373274,
+                "alpha": 0
+              },
+              {
+                "angle": 212.19098573061638,
+                "u": 0.7204388493376768,
+                "size": 0.8397134464466944,
+                "alpha": 0
+              },
+              {
+                "angle": 32.60121499188244,
+                "u": 0.2738633171013789,
+                "size": 0.705659719533287,
+                "alpha": 0
+              },
+              {
+                "angle": 238.58701586318205,
+                "u": 0.3175181646260212,
+                "size": 0.8327177410246804,
+                "alpha": 0
+              },
+              {
+                "angle": 285.4504821864423,
+                "u": 0.5758580796334851,
+                "size": 0.5920016809832305,
+                "alpha": 0
+              },
+              {
+                "angle": 50.49948712214825,
+                "u": 0.9544578469140806,
+                "size": 0.61112598516047,
+                "alpha": 0
+              },
+              {
+                "angle": 180.92229645671318,
+                "u": 0.22989792951193463,
+                "size": 0.7459579843562096,
+                "alpha": 0
+              },
+              {
+                "angle": 32.14474168452438,
+                "u": 0.9694366587208891,
+                "size": 0.9638719426002353,
+                "alpha": 0
+              }
+            ],
+            "leaving": [
+              {
+                "angle": 352.3821141825056,
+                "u": 0.2829173109975365,
+                "size": 0.6467988707590848,
+                "alpha": 0.2879873727757452
+              },
+              {
+                "angle": 249.79620849908156,
+                "u": 0.36220143191680876,
+                "size": 0.5902057879138738,
+                "alpha": 0.40693300840362634
+              },
+              {
+                "angle": 142.80220297925416,
+                "u": 0.6684023610575238,
+                "size": 0.817475636373274,
+                "alpha": 0.42836435619455826
+              },
+              {
+                "angle": 243.00856648063746,
+                "u": 0.5951312950498355,
+                "size": 0.8397134464466944,
+                "alpha": 0.44052030075345555
+              },
+              {
+                "angle": 194.1092970749196,
+                "u": 0.26848898512480446,
+                "size": 0.705659719533287,
+                "alpha": 0.37111184002352277
+              },
+              {
+                "angle": 256.5372373829898,
+                "u": 0.481433070217939,
+                "size": 0.8327177410246804,
+                "alpha": 0.46807070030594294
+              },
+              {
+                "angle": 131.82767753401868,
+                "u": 0.25132550640217133,
+                "size": 0.5920016809832305,
+                "alpha": 0.21113424439892847
+              },
+              {
+                "angle": 82.85042798672612,
+                "u": 0.5688062999890491,
+                "size": 0.61112598516047,
+                "alpha": 0.46552325262438266
+              },
+              {
+                "angle": 197.016816355203,
+                "u": 0.720313216614624,
+                "size": 0.7459579843562096,
+                "alpha": 0.38425168139777394
+              },
+              {
+                "angle": 268.7906060070479,
+                "u": 0.581214399359709,
+                "size": 0.9638719426002353,
+                "alpha": 0.38170203366343636
+              },
+              {
+                "angle": 16.611381755242746,
+                "u": 0.6253622067740281,
+                "size": 0.9992599213728681,
+                "alpha": 0.4341393463687845
+              },
+              {
+                "angle": 344.49191691509895,
+                "u": 0.3897923759520445,
+                "size": 0.854173609870486,
+                "alpha": 0.4691989133093499
+              },
+              {
+                "angle": 20.834464407764244,
+                "u": 0.3655735838983212,
+                "size": 0.6296260815579444,
+                "alpha": 0.2862248250685023
+              },
+              {
+                "angle": 48.457969962724746,
+                "u": 0.42368149268741107,
+                "size": 0.5019048304529861,
+                "alpha": 0.35583598889170537
+              },
+              {
+                "angle": 172.54934883035185,
+                "u": 0.7984547550587102,
+                "size": 0.521862086141482,
+                "alpha": 0.20577434852021503
+              },
+              {
+                "angle": 193.07582423169197,
+                "u": 0.877526233148604,
+                "size": 0.537462531356141,
+                "alpha": 0.1051982350410075
+              },
+              {
+                "angle": 229.98436617016546,
+                "u": 0.5476071864945702,
+                "size": 0.5654053373727947,
+                "alpha": 0.28997934876350373
+              },
+              {
+                "angle": 180.50195669080222,
+                "u": 0.9825543719790026,
+                "size": 0.6814534879522398,
+                "alpha": 0.015158277890531256
+              },
+              {
+                "angle": 39.55188330926376,
+                "u": 0.16372477842088173,
+                "size": 0.5677648257697001,
+                "alpha": 0.20074074562696545
+              },
+              {
+                "angle": 5.887742712307727,
+                "u": 0.8834656971688695,
+                "size": 0.9911248093703762,
+                "alpha": 0.10947311313061657
+              },
+              {
+                "angle": 340.4215487670658,
+                "u": 0.9627299206559989,
+                "size": 0.578700908808969,
+                "alpha": 0.03225183546178937
+              },
+              {
+                "angle": 313.3282803504653,
+                "u": 0.8062395609814992,
+                "size": 0.6800087535521016,
+                "alpha": 0.15937643895753364
+              },
+              {
+                "angle": 114.40922874615399,
+                "u": 0.17928731379930696,
+                "size": 0.6077126438030973,
+                "alpha": 0.2597736766628943
+              },
+              {
+                "angle": 345.31299780516747,
+                "u": 0.3292274922813263,
+                "size": 0.5818325649015605,
+                "alpha": 0.239634781507218
+              },
+              {
+                "angle": 206.1858421693628,
+                "u": 0.5491506005411679,
+                "size": 0.7511015108320862,
+                "alpha": 0.4939988249498365
+              },
+              {
+                "angle": 207.50243922333175,
+                "u": 0.9201811963877837,
+                "size": 0.6811031925026327,
+                "alpha": 0.06871078253791647
+              }
+            ],
+            "sparks": [
+              {
+                "angle": 31.335920211859047,
+                "u": 0.578125,
+                "size": 0.9118706027045846,
+                "alpha": 0.75
+              },
+              {
+                "angle": 37.74930089130066,
+                "u": 0.578125,
+                "size": 0.8412598236463964,
+                "alpha": 0.75
+              },
+              {
+                "angle": 65.93319117382634,
+                "u": 0.578125,
+                "size": 0.683199845161289,
+                "alpha": 0.75
+              },
+              {
+                "angle": 99.62411391723435,
+                "u": 0.578125,
+                "size": 0.6724591284058988,
+                "alpha": 0.75
+              },
+              {
+                "angle": 112.96919755754061,
+                "u": 0.578125,
+                "size": 0.6635328696109354,
+                "alpha": 0.75
+              },
+              {
+                "angle": 141.94038947520312,
+                "u": 0.578125,
+                "size": 0.7591024484485388,
+                "alpha": 0.75
+              },
+              {
+                "angle": 161.59692667773925,
+                "u": 0.578125,
+                "size": 0.7821587310172617,
+                "alpha": 0.75
+              },
+              {
+                "angle": 174.03059648058843,
+                "u": 0.578125,
+                "size": 0.6040351908653975,
+                "alpha": 0.75
+              },
+              {
+                "angle": 197.9706664592959,
+                "u": 0.578125,
+                "size": 0.9817247697152197,
+                "alpha": 0.75
+              },
+              {
+                "angle": 220.57262136251666,
+                "u": 0.578125,
+                "size": 0.6790211802348495,
+                "alpha": 0.75
+              },
+              {
+                "angle": 258.0028766585747,
+                "u": 0.578125,
+                "size": 0.9737153509631753,
+                "alpha": 0.75
+              },
+              {
+                "angle": 265.9662360959919,
+                "u": 0.578125,
+                "size": 0.685392370633781,
+                "alpha": 0.75
+              },
+              {
+                "angle": 295.7596642791759,
+                "u": 0.578125,
+                "size": 0.852214269619435,
+                "alpha": 0.75
+              },
+              {
+                "angle": 323.9701648830669,
+                "u": 0.578125,
+                "size": 0.791690993309021,
+                "alpha": 0.75
+              },
+              {
+                "angle": 333.55745601293165,
+                "u": 0.578125,
+                "size": 0.7106754797510803,
+                "alpha": 0.75
+              },
+              {
+                "angle": 1.204136332962662,
+                "u": 0.578125,
+                "size": 0.9193183444440365,
+                "alpha": 0.75
+              }
+            ]
+          }
+        },
+        {
+          "mood": "done",
+          "seed": 3974791404,
+          "t": 65,
+          "since": 1.2,
+          "from": "waiting",
+          "burst": true,
+          "clock": {
+            "ring": 3.570282519451666,
+            "ticks": 0,
+            "segments": 354.93714685068534,
+            "head": 196.98159114654007,
+            "ringSpeed": 2.129732963579182,
+            "ticksSpeed": 0,
+            "segmentsSpeed": -3.1621662044739773,
+            "headSpeed": 48.37833795526023,
+            "tail": 30,
+            "breath": 0.9226324770227077,
+            "swell": 0.015486498613421933,
+            "light": 0.9675667591052045,
+            "aura": 0.30389198890737545
+          },
+          "frame": {
+            "scale": 0.9927648003725893,
+            "glow": 0.9276480037258926,
+            "aura": 0.28190479685821795,
+            "ring": 3.570282519451666,
+            "ticks": 0,
+            "segments": 354.93714685068534,
+            "comet": {
+              "head": 196.98159114654007,
+              "tail": 30,
+              "alpha": 0.9675667591052045
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 72.5571883271914,
+                "u": 0.6153917622550288,
+                "size": 0.7429698964115232,
+                "alpha": 0.19900949014608138
+              },
+              {
+                "angle": 27.973706742050126,
+                "u": 0.581946368954549,
+                "size": 0.7714341122191399,
+                "alpha": 0.3889277306225395
+              },
+              {
+                "angle": 163.375922444975,
+                "u": 0.8057007770135851,
+                "size": 0.7957316319225356,
+                "alpha": 0.46574736397615457
+              },
+              {
+                "angle": 329.5122198772151,
+                "u": 0.8830679932921655,
+                "size": 0.862298185005784,
+                "alpha": 0.4367262570076435
+              },
+              {
+                "angle": 188.55431241332553,
+                "u": 0.7667233472064728,
+                "size": 0.6413558849599212,
+                "alpha": 0.4824073863838457
+              },
+              {
+                "angle": 102.3340704292059,
+                "u": 0.7452775927138083,
+                "size": 0.6103124315850437,
+                "alpha": 0.2077819731019324
+              },
+              {
+                "angle": 191.7274270649068,
+                "u": 0.5972187679081866,
+                "size": 0.8810925155412406,
+                "alpha": 0.3551058789211006
+              },
+              {
+                "angle": 143.56291030766442,
+                "u": 0.8223060550846836,
+                "size": 0.9182643394451588,
+                "alpha": 0.19008430997098213
+              },
+              {
+                "angle": 157.71655750111677,
+                "u": 0.13098110834756904,
+                "size": 0.7773267512675375,
+                "alpha": 0.21120358336226483
+              },
+              {
+                "angle": 0.7488695089705288,
+                "u": 1,
+                "size": 0.940697587793693,
+                "alpha": 0.3537144222522522
+              }
+            ],
+            "leaving": [],
+            "sparks": [
+              {
+                "angle": 46.32571853406262,
+                "u": 0.984375,
+                "size": 0.8155761254951358,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 65.049591291463,
+                "u": 0.984375,
+                "size": 0.991691000573337,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 83.18991884181742,
+                "u": 0.984375,
+                "size": 0.7172353038564324,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 112.73213429376483,
+                "u": 0.984375,
+                "size": 0.7638965373858809,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 135.0024274358293,
+                "u": 0.984375,
+                "size": 0.9920019563287497,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 148.19088217627723,
+                "u": 0.984375,
+                "size": 0.9178507056087255,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 168.29983462463133,
+                "u": 0.984375,
+                "size": 0.9415673798881471,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 202.06640673684888,
+                "u": 0.984375,
+                "size": 0.8568833768367767,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 205.78435687639285,
+                "u": 0.984375,
+                "size": 0.716651922557503,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 245.0833912898088,
+                "u": 0.984375,
+                "size": 0.7267033487558365,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 268.54842757224105,
+                "u": 0.984375,
+                "size": 0.9482260110788048,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 287.2608616563957,
+                "u": 0.984375,
+                "size": 0.9066013532690704,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 299.55909856420476,
+                "u": 0.984375,
+                "size": 0.7885595404542982,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 326.3791128038429,
+                "u": 0.984375,
+                "size": 0.9229102234356106,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 357.3348642879864,
+                "u": 0.984375,
+                "size": 0.8191965961828828,
+                "alpha": 0.2500000000000001
+              },
+              {
+                "angle": 20.773046995745972,
+                "u": 0.984375,
+                "size": 0.7615890240296721,
+                "alpha": 0.2500000000000001
+              }
+            ]
+          }
+        },
+        {
+          "mood": "idle",
+          "seed": 0,
+          "t": 90.05,
+          "since": 0.9,
+          "from": "working",
+          "burst": true,
+          "clock": {
+            "ring": 8.564630371331132,
+            "ticks": 1.6756086775231802,
+            "segments": 346.03598199132114,
+            "head": 103.0561602044594,
+            "ringSpeed": 4.604952026806129,
+            "ticksSpeed": 0.4585577219446082,
+            "segmentsSpeed": -7.2131331881722645,
+            "headSpeed": 12.228205918522882,
+            "tail": 90,
+            "breath": 0.41925688633838526,
+            "swell": 0.01276426286990768,
+            "light": 0.076426286990768,
+            "aura": 0.13681378313796896
+          },
+          "frame": {
+            "scale": 1.006201389341829,
+            "glow": 1.06201389341829,
+            "aura": 0.14529813850363998,
+            "ring": 8.564630371331132,
+            "ticks": 1.6756086775231802,
+            "segments": 346.03598199132114,
+            "comet": {
+              "head": 103.0561602044594,
+              "tail": 90,
+              "alpha": 0.076426286990768
+            },
+            "ripples": [],
+            "motes": [
+              {
+                "angle": 4.618894067860651,
+                "u": 0.8156607308816449,
+                "size": 0.6467988707590848,
+                "alpha": 0.06087988867743441
+              },
+              {
+                "angle": 207.81782870934103,
+                "u": 0.2943663548407052,
+                "size": 0.5902057879138738,
+                "alpha": 0.12418426265090501
+              },
+              {
+                "angle": 301.9949413819122,
+                "u": 0.8716198468900347,
+                "size": 0.817475636373274,
+                "alpha": 0.05533791232685446
+              },
+              {
+                "angle": 267.62664944148855,
+                "u": 0.46593544134781134,
+                "size": 0.8397134464466944,
+                "alpha": 0.11445813934749623
+              },
+              {
+                "angle": 63.53901446796954,
+                "u": 0.4071169270314954,
+                "size": 0.705659719533287,
+                "alpha": 0.09788079872655037
+              },
+              {
+                "angle": 278.9572881385568,
+                "u": 0.5655514524372429,
+                "size": 0.8327177410246804,
+                "alpha": 0.0716653004967278
+              },
+              {
+                "angle": 318.05690575778715,
+                "u": 0.5997571185121392,
+                "size": 0.5920016809832305,
+                "alpha": 0.08980015909808192
+              },
+              {
+                "angle": 105.87178683299567,
+                "u": 0.6954357827977782,
+                "size": 0.61112598516047,
+                "alpha": 0.10674021102498986
+              },
+              {
+                "angle": 208.30552013616534,
+                "u": 0.032601733946012026,
+                "size": 0.7459579843562096,
+                "alpha": 0.12286898420135996
+              },
+              {
+                "angle": 67.47397931433517,
+                "u": 0.8384888586531558,
+                "size": 0.9638719426002353,
+                "alpha": 0.11977550307913779
+              },
+              {
+                "angle": 60.6874511379865,
+                "u": 1,
+                "size": 0.9992599213728681,
+                "alpha": 0.08164652389811473
+              },
+              {
+                "angle": 309.85906273452565,
+                "u": 0.019598066236447498,
+                "size": 0.854173609870486,
+                "alpha": 0.07561658493819613
+              },
+              {
+                "angle": 137.20676166939086,
+                "u": 0.8099932954630935,
+                "size": 0.6296260815579444,
+                "alpha": 0.049953677173826476
+              },
+              {
+                "angle": 197.86104583855467,
+                "u": 0,
+                "size": 0.5019048304529861,
+                "alpha": 0.11401433464270928
+              }
+            ],
+            "leaving": [],
+            "sparks": [
+              {
+                "angle": 39.78928935248405,
+                "u": 0.916259765625,
+                "size": 0.9118706027045846,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 46.20267003192566,
+                "u": 0.916259765625,
+                "size": 0.8412598236463964,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 74.38656031445134,
+                "u": 0.916259765625,
+                "size": 0.683199845161289,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 108.07748305785935,
+                "u": 0.916259765625,
+                "size": 0.6724591284058988,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 121.42256669816561,
+                "u": 0.916259765625,
+                "size": 0.6635328696109354,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 150.39375861582812,
+                "u": 0.916259765625,
+                "size": 0.7591024484485388,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 170.05029581836425,
+                "u": 0.916259765625,
+                "size": 0.7821587310172617,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 182.48396562121343,
+                "u": 0.916259765625,
+                "size": 0.6040351908653975,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 206.4240355999209,
+                "u": 0.916259765625,
+                "size": 0.9817247697152197,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 229.02599050314166,
+                "u": 0.916259765625,
+                "size": 0.6790211802348495,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 266.4562457991997,
+                "u": 0.916259765625,
+                "size": 0.9737153509631753,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 274.4196052366169,
+                "u": 0.916259765625,
+                "size": 0.685392370633781,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 304.2130334198009,
+                "u": 0.916259765625,
+                "size": 0.852214269619435,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 332.4235340236919,
+                "u": 0.916259765625,
+                "size": 0.791690993309021,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 342.01082515355665,
+                "u": 0.916259765625,
+                "size": 0.7106754797510803,
+                "alpha": 0.4375
+              },
+              {
+                "angle": 9.657505473587662,
+                "u": 0.916259765625,
+                "size": 0.9193183444440365,
+                "alpha": 0.4375
+              }
+            ]
+          }
+        }
+      ]
+    }
   },
   "connectorStates": [
     {

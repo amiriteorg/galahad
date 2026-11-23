@@ -23,6 +23,7 @@ import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web
 import { desktopAddress, screenPoint, shotSource } from "../../web/src/lib/desktop.ts";
 import { ART, CANVAS, SHOWN } from "../../web/src/lib/knight-eyes.ts";
 import { ORB_TONES, orbLevel, orbPalette, orbParts, orbToneOfState } from "../../web/src/lib/orb.ts";
+import { ORB_ARRIVE, ORB_BURST, ORB_BURST_MOTES, ORB_EASE, ORB_LONGEST_STEP, ORB_MOODS, ORB_MOTION, ORB_MOVES, ORB_STAGES, orbBursts, orbClock, orbFrame, orbMoodOfState, orbRand, orbSeed, orbStep, type OrbClock, type OrbMood } from "../../web/src/lib/orb-motion.ts";
 import { connectorState } from "../../web/src/lib/connector-state.ts";
 import { noticeFrom } from "../../web/src/lib/notices.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
@@ -479,7 +480,51 @@ const orb = {
   sizes: [16, 28, 36, 47, 48, 64, 72, 119, 120, 168, 200, 320].map((size) => ({ size, level: orbLevel(size) })),
   // Where he stands at the Roundtable, as his seat's orb shows it.
   states: ["working", "needs", "failed", "paused", "queued", "verified", "unread", "resting"].map((state) => ({ state, tone: orbToneOfState(state) })),
+  motion: orbMotion(),
 };
+
+/** How the orb moves (the PWA's own lib/orb-motion.ts): each mood's motion, each state's mood, the stages, its random
+ * numbers, and its clock and frames as they stand at given moments, for every app to draw the same. */
+function orbMotion() {
+  const gareth = orbSeed("gareth");
+  // A clock taken through moods a step at a time: each step's mood, its time, and the clock after it. A step longer
+  // than the longest a frame takes, and one back in time, are among them.
+  const steps: { mood: OrbMood; dt: number; clock: OrbClock }[] = [];
+  let clock = orbClock("idle", 5);
+  for (const [mood, dt] of [["idle", 1 / 60], ["working", 1 / 60], ["working", 0.1], ["working", 0.6], ["done", 1 / 30], ["done", 0.2], ["failed", 0.05], ["waiting", -1], ["waiting", 0.016], ["paused", 0.25], ["queued", 1 / 120], ["idle", 0.1]] as [OrbMood, number][]) {
+    clock = orbStep(clock, mood, dt);
+    steps.push({ mood, dt, clock });
+  }
+  // Frames: each mood settled at two moments (Galahad's own orb, then a knight's); moods arriving; bursts under way.
+  const frame = (mood: OrbMood, seed: number, t: number, since: number | null = null, from: OrbMood | null = null, run = 0) => {
+    let c = orbClock(from ?? mood, seed);
+    for (let i = 0; i < run; i++) c = orbStep(c, mood, 0.1);
+    return { mood, seed, t, since, from, burst: orbBursts(from, mood), clock: c, frame: orbFrame(mood, c, t, { seed, since, from, burst: orbBursts(from, mood) }) };
+  };
+  const frames = [
+    ...ORB_MOODS.flatMap((mood) => [frame(mood, 0, 0.37), frame(mood, gareth, 12.25)]),
+    frame("working", 0, 31.4, 0.3, "idle", 3),
+    frame("waiting", gareth, 47.9, 1.9, "working", 19),
+    frame("failed", gareth, 8.8, 0.5, "working", 5),
+    frame("done", 0, 64.2, 0.4, "working", 4),
+    frame("done", gareth, 65, 1.2, "waiting", 12),
+    frame("idle", 0, 90.05, 0.9, "working", 9),
+  ];
+  return {
+    moods: ORB_MOTION,
+    states: ["working", "needs", "failed", "paused", "queued", "verified", "unread", "resting", "thinking"].map((state) => ({ state, mood: orbMoodOfState(state) })),
+    arrive: ORB_ARRIVE, burst: ORB_BURST, burstMotes: ORB_BURST_MOTES, ease: ORB_EASE, longestStep: ORB_LONGEST_STEP,
+    stages: ORB_STAGES,
+    moves: ORB_MOVES,
+    bursts: ORB_MOODS.flatMap((to) => [null, ...ORB_MOODS].map((from) => ({ from, to, bursts: orbBursts(from, to) }))),
+    seeds: ["", "a", "foobar", "galahad", "gareth", "Will’s “iPad” \\ 🛡️"].map((name) => ({ name, seed: orbSeed(name) })),
+    rands: [[0, 0, 0], [1, 2, 3], [0xffffffff, 25, 8], [gareth, 7, 4], [5, 1000, 6]].map(([seed, i, k]) => ({ seed, i, k, value: orbRand(seed!, i!, k!) })),
+    clocks: ORB_MOODS.flatMap((mood) => [0, gareth].map((seed) => ({ mood, seed, clock: orbClock(mood, seed) }))),
+    start: orbClock("idle", 5),
+    steps,
+    frames,
+  };
+}
 
 // ---- where a connector's key or sign-in stands (the PWA's own lib/connector-state.ts) -------------------------------
 // (signIn: whose sign-in it uses, or null for a key: Google's or Microsoft's needs your app; a hosted MCP server's doesn't.)
