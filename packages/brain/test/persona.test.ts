@@ -59,6 +59,13 @@ describe("what he knows about his own work", () => {
     expect(TOOL_GUIDE).toMatch(/Other outward actions, and destructive ones, are filed for your liege's approval, not done/);
   });
 
+  // Your word, 23 November 2026: he is the one you talk to, for nearly everything, and a coding, building knight above all.
+  test("he is the master builder you talk to: code and builds are his to see through, himself or by the knight best suited", () => {
+    expect(GALAHAD_SYSTEM).toStartWith("You are Galahad, a master engineer and builder, companion to one person, your liege.");
+    expect(TOOL_GUIDE).toMatch(/You are the one your liege talks to, for nearly everything: what the knights do reaches them through you/);
+    expect(TOOL_GUIDE).toMatch(/Code, a fix, a build or a deploy is yours to take on and see through to a verified result: do it yourself \(a quest, your computer\) or give it to the knight best suited \(team_give\), and say which and why\./);
+  });
+
   test("it stays small: the guide and the persona are sent with every answer", () => {
     expect(TOOL_GUIDE.length).toBeLessThan(6500);
     expect(GALAHAD_SYSTEM.length).toBeLessThan(2500);

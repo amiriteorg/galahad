@@ -162,9 +162,10 @@ export function toldItem(n: { key: string; severity: string; source: string; dis
   if (OUTCOME_SOURCE.test(n.source) && !n.dismissed && n.severity === "info") {
     return { key: `notice:${n.key}`, kind: "told", alert: false, title: "Galahad: an outcome of yours", body: "There's news of it: his words are in its room and your Inbox.", open: "inbox", needs: ["mind:read"] };
   }
-  // Work Galahad proposes a knight with nothing to do, from your backlog: fixed words; what it is waits in its conversation.
+  // Work Galahad proposes a knight with nothing to do, from your backlog, that may spend more than is left of your budget
+  // (what fits it he gives himself, and tells no one): fixed words; what it is waits in its conversation.
   if (n.source === "backlog" && !n.dismissed && n.severity === "info") {
-    return { key: `notice:${n.key}`, kind: "told", alert: false, title: "Galahad: work for a knight", body: "He proposes a task from your backlog for a knight with nothing to do. It starts when you approve it.", open: "inbox", needs: ["mind:read"] };
+    return { key: `notice:${n.key}`, kind: "told", alert: false, title: "Galahad: work for a knight", body: "He proposes a task from your backlog that may spend more than is left of your budget. It starts when you approve it.", open: "inbox", needs: ["mind:read"] };
   }
   const rule = RULE_SOURCE.exec(n.source)?.[1];
   if (!rule || n.dismissed || n.severity !== "info") return null;
@@ -202,7 +203,8 @@ export function questionItem(q: { id: string; connector: string; askedAt: number
     key: `question:${q.id}`,
     kind: "question",
     alert: false,
-    title: "A question for you",
+    // Every notification is his (your word, 23 November 2026: he is the one you hear from), a service's question too.
+    title: "Galahad: a service asks you",
     body: /^[a-z][a-z0-9-]{0,39}$/.test(q.connector) ? `${q.connector} asks you something in the Inbox; its call waits for your answer.` : "A service asks you something in the Inbox; its call waits for your answer.",
     open: "inbox",
     needs: ["mind:read"],
