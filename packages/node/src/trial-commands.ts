@@ -2,6 +2,7 @@ import {
   type Comparison,
   compareTrials,
   costOf,
+  moneyPrices,
   type EffortLevel,
   mergeSpend,
   modelReport,
@@ -469,23 +470,27 @@ export async function usageCommand(node: NodeClient, flags: Readonly<Record<stri
     return 0;
   }
   const lines = (rows: typeof view.rows): UsageLine[] => rows.map(({ day: _day, who: _who, ...line }) => line);
-  console.log(`${bold(`Model calls on ${view.node}`)} ${dim(`since ${view.since} (UTC) · tokens as the providers reported them · money at your prices`)}`);
+  // Money as it goes: a coding plan's calls are paid for already (moneyPrices), so they are tokens, never money.
+  const plans = view.plans ?? [];
+  const money = moneyPrices(view.prices, plans);
+  const onPlan = (ref: string) => plans.includes(ref.slice(0, ref.indexOf("/")));
+  console.log(`${bold(`Model calls on ${view.node}`)} ${dim(`since ${view.since} (UTC) · tokens as the providers reported them · money at your prices${plans.length ? ", a coding plan's calls paid for already" : ""}`)}`);
   // The meter first: this period against your budget (a node from before it has none to say).
   const meter = await node.call<UsageMeter>("usageMeter").catch(() => null);
   if (meter) {
     console.log(`  ${meterLine(meter)}`);
     for (const window of meter.windows ?? []) console.log(`    ${spentWindowLine(window, Date.now())}`);
   }
-  console.log(`  ${spendLabel(mergeSpend(lines(view.rows)), view.prices)}`);
+  console.log(`  ${spendLabel(mergeSpend(lines(view.rows)), money)}`);
   const group = (title: string, key: (r: (typeof view.rows)[number]) => string): void => {
     console.log(`\n${bold(title)}`);
     const keys = [...new Set(view.rows.map(key))];
     const totals = keys.map((k) => ({ k, lines: mergeSpend(lines(view.rows.filter((r) => key(r) === k))) })).sort((a, b) => spendTotal(b.lines).tokens - spendTotal(a.lines).tokens);
     for (const { k, lines: ls } of totals) {
       const t = spendTotal(ls);
-      const cost = costOf(ls, view.prices);
-      const money = cost.complete ? usdLabel(cost.usd) : cost.unpriced.length ? dim("no price") : `≥ ${usdLabel(cost.usd)}`;
-      console.log(`  ${k.padEnd(44)} ${String(t.calls).padStart(6)} calls  ${tokensLabel(t.input).padStart(8)} in  ${tokensLabel(t.output).padStart(8)} out  ${money}${t.unknown ? dim(`  (${t.unknown} unreported)`) : ""}`);
+      const cost = costOf(ls, money);
+      const said = title === "By model" && onPlan(k) ? dim("a coding plan") : cost.complete ? usdLabel(cost.usd) : cost.unpriced.length ? dim("no price") : `≥ ${usdLabel(cost.usd)}`;
+      console.log(`  ${k.padEnd(44)} ${String(t.calls).padStart(6)} calls  ${tokensLabel(t.input).padStart(8)} in  ${tokensLabel(t.output).padStart(8)} out  ${said}${t.unknown ? dim(`  (${t.unknown} unreported)`) : ""}`);
     }
   };
   group("By model", (r) => r.model);

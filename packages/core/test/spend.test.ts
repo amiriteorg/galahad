@@ -8,6 +8,7 @@ import {
   describeVariant,
   galahadIndex,
   mergeSpend,
+  moneyPrices,
   parseVariant,
   priceFor,
   PricedModel,
@@ -61,6 +62,22 @@ describe("a tally", () => {
   test("tallies add up line by line", () => {
     const merged = mergeSpend([line(), line({ role: "planner", input: 5 })], null, [line({ calls: 2, unknown: 1, input: 7 })]);
     expect(merged).toEqual([line({ calls: 3, unknown: 1, input: 1007, output: 200 }), line({ role: "planner", input: 5 })]);
+  });
+});
+
+describe("money as it goes: a coding plan's calls are paid for already", () => {
+  test("a model of a plan costs nothing more, priced or not; every other price stays yours", () => {
+    const prices = { "opencode-go/glm-5.3": { input: 1.4, output: 4.4 }, "deepseek/*": { input: 0.5, output: 2 }, "zai-coding/glm-5.3": { input: 9, output: 9 } };
+    const money = moneyPrices(prices, ["opencode-go", "zai-coding", "mimo-token"]);
+    expect(priceFor(money, "opencode-go/glm-5.3")).toEqual({ input: 0, output: 0, cached: 0 });
+    expect(priceFor(money, "opencode-go/kimi-k3")).toEqual({ input: 0, output: 0, cached: 0 });
+    expect(priceFor(money, "mimo-token/mimo-v2.6-pro")).toEqual({ input: 0, output: 0, cached: 0 });
+    expect(priceFor(money, "zai-coding/glm-5.3")).toEqual({ input: 0, output: 0, cached: 0 });
+    expect(priceFor(money, "deepseek/deepseek-v4-pro")).toEqual({ input: 0.5, output: 2 });
+    // A provider that isn't a plan, though its name begins like one, keeps its price.
+    expect(priceFor(moneyPrices({ "opencode/x": { input: 1, output: 1 } }, ["opencode-go"]), "opencode/x")).toEqual({ input: 1, output: 1 });
+    const line = { role: "engineer", calls: 1, unknown: 0, input: 1_000_000, output: 1_000_000, cached: 0, reasoning: 0 };
+    expect(costOf([{ ...line, model: "mimo-token/mimo-v2.6-pro" }, { ...line, model: "deepseek/deepseek-v4-pro" }], money)).toEqual({ usd: 2.5, unpriced: [], complete: true });
   });
 });
 

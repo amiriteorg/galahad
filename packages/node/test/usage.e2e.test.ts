@@ -207,6 +207,8 @@ describe("the node's own count, and your prices", () => {
     const counted = before.rows.filter((r) => r.model === "stand-in/counted");
     expect(costOf(counted, before.prices)).toMatchObject({ usd: 0, unpriced: ["stand-in/counted"], complete: false });
 
+    // The coding plans are said beside your prices: their calls are paid for already (moneyPrices).
+    expect((await call<{ plans: string[] }>("prices")).plans).toEqual(expect.arrayContaining(["opencode-go", "zai-coding", "mimo-token"]));
     const { prices } = await call<{ prices: Record<string, Price> }>("setPrice", { model: "stand-in/counted", input: 2, output: 8, cached: 0.2 });
     expect(prices).toEqual({ "stand-in/counted": { input: 2, output: 8, cached: 0.2 } });
     await call("setPrice", { model: "stand-in/*", input: 1, output: 1 });

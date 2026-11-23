@@ -271,6 +271,9 @@ export const preset = (id: string): ProviderPreset | undefined => PRESETS.find((
 /** The coding plan a provider is on: one added as a plan's preset. A provider of your own making is yours, and Galahad knows nothing of its terms. */
 export const planOf = (id: string): CodingPlan | null => preset(id)?.plan ?? null;
 
+/** The coding plans' provider ids: their calls are paid for already, so they cost nothing more as money goes (core's moneyPrices). */
+export const PLAN_PROVIDERS: readonly string[] = PRESETS.filter((p) => p.plan).map((p) => p.id);
+
 /** Whether he offers a model of his own accord: any a provider of yours serves; of a coding plan, the ones its preset names. */
 export function offersModel(ref: string): boolean {
   const slash = ref.indexOf("/");

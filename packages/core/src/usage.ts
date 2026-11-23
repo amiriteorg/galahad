@@ -107,4 +107,6 @@ export interface UsageView {
   since: string;
   rows: UsageRow[];
   prices: Record<string, Price>;
+  /** The coding plans' providers: their calls are paid for already, never money (moneyPrices). Absent from an older node. */
+  plans?: readonly string[];
 }

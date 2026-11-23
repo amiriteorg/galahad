@@ -117,6 +117,23 @@ export function priceFor(prices: Prices, model: string): Price | null {
   return slash > 0 ? (prices[`${model.slice(0, slash)}/*`] ?? null) : null;
 }
 
+/**
+ * Your prices as money goes (your word, 23 November 2026: a budget of yours is outside the coding plans): a coding
+ * plan's calls are paid for already, so every model of one of `plans` (their provider ids) costs nothing more, priced
+ * by you or not. What each would cost at your prices stays yours to see (`galahad price`, the trials). Budgets, the
+ * usage meter and what a task or an outcome spent are counted this way.
+ */
+export function moneyPrices(prices: Prices, plans: readonly string[]): Prices {
+  const free: Price = { input: 0, output: 0, cached: 0 };
+  const out: Record<string, Price> = {};
+  for (const [ref, price] of Object.entries(prices)) {
+    const slash = ref.indexOf("/");
+    out[ref] = slash > 0 && plans.includes(ref.slice(0, slash)) ? free : price;
+  }
+  for (const plan of plans) out[`${plan}/*`] = free;
+  return out;
+}
+
 export interface Cost {
   /** US dollars for the calls that are counted and priced. */
   usd: number;

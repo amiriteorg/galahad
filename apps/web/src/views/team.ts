@@ -3,7 +3,7 @@ import { outcomeBar, isOutcomeRoom } from "./outcome-bar.ts";
 import { findSecrets } from "@galahad/core/secret-scan";
 import type { TeamEngramStatus, TeamHarness, TeamMessage, TeamRoomView, TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
 import { TEAM_LIMITS } from "@galahad/core/team-limits";
-import type { Price } from "@galahad/core/spend";
+import { moneyPrices, type Price } from "@galahad/core/spend";
 import { avatarExpression } from "@galahad/core/avatar";
 import { isAbort, isUnavailable } from "../api.ts";
 import { errorMessage, type View } from "../context.ts";
@@ -596,9 +596,10 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     const next = snapshot;
     if (!prices && next.tasks.some((task) => task.record)) {
       prices = {};
-      void ctx.api.get<{ prices: Record<string, Price> }>("/api/prices", scope.signal).then(
+      void ctx.api.get<{ prices: Record<string, Price>; plans?: string[] }>("/api/prices", scope.signal).then(
         (result) => {
-          prices = result.prices;
+          // Money as it goes: a coding plan's calls are paid for already (moneyPrices).
+          prices = moneyPrices(result.prices, result.plans ?? []);
           draw(true);
         },
         () => {},

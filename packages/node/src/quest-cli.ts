@@ -21,6 +21,7 @@ import {
   type SkillLearned,
   addUsage,
   costOf,
+  moneyPrices,
   mergeSpend,
   type Price,
   type Prices,
@@ -778,8 +779,9 @@ export async function runNodeQuest(
   };
   // And what its sandboxes' own calls through the gateway came to (a coding agent's): counted beside them.
   const tools = gatewaySpend(node, hooks.sandboxSpent);
-  // With a budget: what those calls have cost so far at your prices (asked for once, as the run starts).
-  const prices: Prices = options.budgetUsd !== undefined ? await node.call<{ prices: Prices }>("prices").then((r) => r.prices, () => ({})) : {};
+  // With a budget: what those calls have cost so far at your prices (asked for once, as the run starts), a coding
+  // plan's paid for already (moneyPrices).
+  const prices: Prices = options.budgetUsd !== undefined ? await node.call<{ prices: Prices; plans?: string[] }>("prices").then((r) => moneyPrices(r.prices, r.plans ?? []), () => ({})) : {};
   const spentUsd = options.budgetUsd !== undefined
     ? async () => {
         const cost = costOf(mergeSpend(usage, await tools.now()), prices);

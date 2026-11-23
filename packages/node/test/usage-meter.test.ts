@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { moneyPrices } from "@galahad/core";
+import { PLAN_PROVIDERS } from "@galahad/brain";
 import { meterLine } from "../src/trial-commands.ts";
 import { UsageStore } from "../src/usage.ts";
 
@@ -14,6 +16,23 @@ function store(now: () => number) {
 }
 
 describe("the usage meter", () => {
+  // Your word, 23 November 2026: a daily budget of a couple of dollars, outside the coding plans.
+  test("a coding plan's calls are paid for already: never money, never against your budget, priced by you or not", () => {
+    const usage = store(at("2026-11-23T09:00:00Z"));
+    usage.note("galahad", "engineer", "opencode-go/glm-5.3", { input: 2_000_000, output: 200_000, cached: 0, reasoning: 0 });
+    usage.note("galahad", "engineer", "mimo-token/mimo-v2.6-pro", { input: 3_000_000, output: 100_000, cached: 0, reasoning: 0 });
+    usage.note("galahad", "planner", "deepseek/deepseek-v4-pro", { input: 1_000_000, output: 250_000, cached: 0, reasoning: 0 });
+    usage.setBudget({ usd: 2, per: "day" });
+    const meter = usage.meter("ultra", moneyPrices(PRICES, PLAN_PROVIDERS));
+    // DeepSeek's $1.00 is money; GLM on OpenCode Go (priced by you at $2.80) and MiMo's plan (no price) are not.
+    expect(meter).toMatchObject({ budgetUsd: 2, complete: true, unpriced: [], calls: 3 });
+    expect(meter.spentUsd).toBeCloseTo(1, 9);
+    expect(meter.leftUsd).toBeCloseTo(1, 9);
+    expect(meterLine(meter)).toBe("Today: $1.00 of $2.00, $1.00 left · 6.55M tokens in 3 calls");
+    // At your prices as you stated them, the plan's calls would have spent the day's budget.
+    expect(usage.meter("ultra", PRICES).leftUsd).toBe(0);
+  });
+
   test("a month's calls at your prices against a month's budget, what is left, and what cost most", () => {
     let now = Date.parse("2026-11-01T09:00:00Z");
     const usage = store(() => now);
