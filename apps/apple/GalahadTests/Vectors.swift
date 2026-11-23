@@ -162,6 +162,40 @@ struct Vectors: Decodable {
         let steps: [Step]
     }
 
+    /// Galahad's orb (the PWA's lib/orb.ts): each state's colours, the parts of each level, and the level of each size.
+    struct OrbCases: Decodable {
+        struct Palette: Decodable { let tint: String; let light: String; let deep: String }
+        struct Stop: Decodable { let at: Double; let ink: String; let opacity: Double }
+        /// A part as lib/orb.ts writes it: its kind, and that kind's fields.
+        struct Part: Decodable {
+            let name: String
+            let kind: String
+            let r: Double?
+            let cx: Double?
+            let cy: Double?
+            let spread: Double?
+            let stops: [Stop]?
+            let width: Double?
+            let ink: String?
+            let opacity: Double?
+            let arcs: [[Double]]?
+            let count: Int?
+            let offset: Double?
+            let length: Double?
+            let from: [Double]?
+            let to: [Double]?
+            let rx: Double?
+            let ry: Double?
+            let rotate: Double?
+        }
+        struct Size: Decodable { let size: Double; let level: String }
+        struct State: Decodable { let state: String; let tone: String }
+        let palettes: [String: Palette]
+        let levels: [String: [Part]]
+        let sizes: [Size]
+        let states: [State]
+    }
+
     struct NoticeFrom: Decodable {
         let source: String
         let from: String
@@ -339,6 +373,7 @@ struct Vectors: Decodable {
     let keys: KeyCases
     let desktop: DesktopCases
     let eyes: EyeCases
+    let orb: OrbCases
     let connectorStates: [ConnectorState]
     let threads: [Thread]
     let chats: ChatList

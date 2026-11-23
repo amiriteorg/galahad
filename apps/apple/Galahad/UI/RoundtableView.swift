@@ -31,6 +31,8 @@ struct RoundtableView: View {
     @AppStorage("roundtable.cards") private var asCards = true
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// An iPhone's: Galahad's row shows his tab.
+    @Environment(\.showGalahad) private var showGalahad
 
     private var words: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var mayArrange: Bool { session.can("fleet:admin") && session.team != nil }
@@ -225,9 +227,16 @@ struct RoundtableView: View {
         }
     }
 
-    /// A row that opens its page; while Edit moves the knights, only the row, with no way on beside its handle.
+    /// A row that opens its page; while Edit moves the knights, only the row, with no way on beside its handle. Galahad's,
+    /// on an iPhone, shows his own tab.
     @ViewBuilder private func opening<Row: View>(_ route: Route, @ViewBuilder row: () -> Row) -> some View {
-        if editingRows { row() } else { NavigationLink(value: route, label: row) }
+        if editingRows {
+            row()
+        } else if route == .galahad, let showGalahad {
+            Button(action: showGalahad, label: row).tint(.primary)
+        } else {
+            NavigationLink(value: route, label: row)
+        }
     }
 
     /// A seat as a card: the same, with its face large.
@@ -450,11 +459,19 @@ struct SeatFace: View {
 
     var body: some View {
         let ring = size >= Metrics.cardFace ? Metrics.cardRing : Metrics.rowRing
-        Portrait(drawing: drawing, size: size, expression: expression, id: id, temper: temper)
-            .padding(ring)
-            .overlay { StandingRing(kind: standing, width: ring * 0.6, selected: selected) }
-            // Its middle on the ring's foot, whatever its size.
-            .overlay { if leads { LeadsMark().offset(y: size / 2 + ring) } }
+        Group {
+            if drawing == "galahad" {
+                // Galahad himself is his orb (your word, 23 November 2026), in the room a face and its ring take: its
+                // colour is where he stands, as the ring's would be.
+                GalahadOrb(size: size + 2 * ring, tone: Orb.Tone(standing))
+            } else {
+                Portrait(drawing: drawing, size: size, expression: expression, id: id, temper: temper)
+                    .padding(ring)
+                    .overlay { StandingRing(kind: standing, width: ring * 0.6, selected: selected) }
+            }
+        }
+        // Its middle on the ring's foot, whatever its size.
+        .overlay { if leads { LeadsMark().offset(y: size / 2 + ring) } }
     }
 }
 

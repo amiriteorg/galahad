@@ -7,9 +7,11 @@ struct TimelineTitle: View {
     let title: String
     let line: String?
     var needs = false
+    /// Centred alone in the bar; leading beside a face (Galahad's orb).
+    var alignment: HorizontalAlignment = .center
 
     var body: some View {
-        VStack(spacing: Space.line) {
+        VStack(alignment: alignment, spacing: Space.line) {
             Text(title).font(.headline).foregroundStyle(.primary)
             Text(line ?? " ")
                 .font(.caption)

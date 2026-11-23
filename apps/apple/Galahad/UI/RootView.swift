@@ -63,19 +63,35 @@ struct MainView: View {
     }
 }
 
-/// An iPhone's tabs.
+/// An iPhone's tabs: Galahad first, where it opens (your word, 23 November 2026: he is the one you talk to, for nearly
+/// everything), then the Roundtable with every knight, the Inbox and More.
 enum PhoneTab: Hashable {
-    case roundtable, inbox, more
+    case galahad, roundtable, inbox, more
+}
+
+/// What shows over Galahad's home: the chat on screen.
+enum GalahadPage: Hashable {
+    case chat
 }
 
 struct PhoneTabs: View {
     let app: AppModel
     let session: Session
-    @State private var tab: PhoneTab = .roundtable
+    @State private var tab: PhoneTab = .galahad
     @State private var path: [Route] = []
+    @State private var talking: [GalahadPage] = []
 
     var body: some View {
         TabView(selection: $tab) {
+            Tab(value: PhoneTab.galahad) {
+                NavigationStack(path: $talking) {
+                    GalahadHome(session: session) { talking = [.chat] }
+                        .navigationDestination(for: GalahadPage.self) { _ in ChatView(session: session) }
+                }
+            } label: {
+                // His orb, in the colour of where he stands, as everywhere he is.
+                Label { Text("Galahad") } icon: { OrbIcon.image(session.galahadTone) }
+            }
             Tab("Roundtable", systemImage: "person.3", value: PhoneTab.roundtable) {
                 NavigationStack(path: $path) {
                     RoundtableView(session: session) { path.append($0) }
@@ -90,10 +106,12 @@ struct PhoneTabs: View {
                 NavigationStack { MoreView(app: app, session: session) }
             }
         }
+        .environment(\.showInbox) { tab = .inbox }
+        .environment(\.showGalahad) { tab = .galahad }
         .task(id: PushCenter.shared.opened) { await follow() }
     }
 
-    /// A notification you tapped: its place, and on the Roundtable the page it names.
+    /// A notification you tapped: its place, and the chat it names over Galahad's home.
     private func follow() async {
         guard let opened = PushCenter.shared.opened else { return }
         PushCenter.shared.opened = nil
@@ -102,9 +120,10 @@ struct PhoneTabs: View {
         case .settings: tab = .more
         case .overview: tab = .roundtable; path = []
         case .chat(let id):
-            tab = .roundtable
-            path = [.galahad]
-            if let id { await session.chat.open(id, with: session.client) }
+            tab = .galahad
+            guard let id else { talking = []; return }
+            await session.chat.open(id, with: session.client)
+            talking = [.chat]
         }
     }
 }
@@ -137,6 +156,7 @@ struct SplitPlaces: View {
                 .workspaceColumn(session: session, seat: place.workspaceSeat(session))
         }
         .sheet(isPresented: $giving) { GiveSheet(session: session) }
+        .environment(\.showInbox) { place = .inbox }
         .focusedSceneValue(\.placeActions, PlaceActions(go: { place = $0 }, newChat: newChat, give: mayGive ? { giving = true } : nil))
         .task(id: PushCenter.shared.opened) { await follow() }
     }

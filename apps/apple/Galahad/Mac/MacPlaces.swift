@@ -20,6 +20,7 @@ struct MacPlaces: View {
                 .workspaceColumn(session: session, seat: mac.place.workspaceSeat(session))
         }
         .sheet(isPresented: $mac.giving) { GiveSheet(session: session) }
+        .environment(\.showInbox) { mac.place = .inbox }
         .task { await session.refresh() }
     }
 

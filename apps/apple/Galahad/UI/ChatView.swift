@@ -83,7 +83,14 @@ struct ChatView: View {
             if build == nil {
             #if os(iOS)
             ToolbarItem(placement: .principal) {
-                TimelineTitle(title: "Galahad", line: chat.title ?? session.galahad.text, needs: chat.title == nil && session.galahad.tone == .warn)
+                HStack(spacing: Space.s2) {
+                    GalahadOrb(size: 30, tone: session.galahadTone)
+                    TimelineTitle(title: "Galahad", line: chat.title ?? session.galahad.text, needs: chat.title == nil && session.galahad.tone == .warn, alignment: .leading)
+                }
+            }
+            #else
+            ToolbarItem(placement: .navigation) {
+                GalahadOrb(size: 26, tone: session.galahadTone)
             }
             #endif
             ToolbarItemGroup(placement: .barTrailing) {
@@ -154,9 +161,11 @@ struct ChatView: View {
         }
     }
 
+    /// A new chat: Galahad himself, as his orb (GalahadHome.swift), what you might ask him, and what he asks you.
     private var welcome: some View {
-        TimelineWelcome(title: "Ask Galahad", words: "He answers with his tools at hand, within what this device may do. What you say here is kept on your node.") {
-            Portrait(drawing: "galahad", size: Metrics.welcomeFace, expression: chat.answering ? "thinking" : "idle", id: "galahad")
+        GalahadWelcome(session: session) { text in
+            chat.draft = text
+            composing = true
         }
     }
 }
@@ -230,7 +239,8 @@ struct MessageRow: View {
             }
         case .assistant:
             HStack(alignment: .top, spacing: Space.s2) {
-                Portrait(drawing: "galahad", size: Metrics.speakerFace)
+                // His orb beside each answer of his, still and at rest: the colour of his state is his line's, above.
+                GalahadOrb(size: Metrics.speakerFace)
                 VStack(alignment: .leading, spacing: Space.s2) {
                     ForEach(Array(turn.steps.enumerated()).filter { $0.element.tool != nil }, id: \.offset) { _, step in
                         StepLine(step: step)
@@ -278,6 +288,8 @@ struct Composer: View {
     @Bindable var chat: ChatModel
     let client: NodeClient
     var composing: FocusState<Bool>.Binding
+    /// Told once a message has gone (the iPhone's home shows the chat it began).
+    var sent: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -337,6 +349,12 @@ struct Composer: View {
         guard !chat.answering, chat.sendable else { return }
         let typing = composing.wrappedValue
         chat.send(with: client)
+        // Shown elsewhere now (over the iPhone's home): the keyboard goes with this box.
+        if let sent {
+            composing.wrappedValue = false
+            sent()
+            return
+        }
         // The new box takes the keyboard where the old one had it, so it stays up for the next message.
         if typing { Task { @MainActor in composing.wrappedValue = true } }
     }

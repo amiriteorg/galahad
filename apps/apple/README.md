@@ -4,8 +4,14 @@ A SwiftUI client for a Galahad node: Apple's own components, with Galahad's acce
 and signs every request the way `packages/core` verifies it. The Mac's app is the same sources built for macOS
 (`GalahadMac`; [docs/MAC.md](../../docs/MAC.md)).
 
-On an iPhone or an iPad it keeps, besides its pairing, its key and your choices, the last Roundtable it saw, so it opens
-on your Roundtable at once however slow the connection (your word, 21 November 2026). It is the record Galahad for
+On an iPhone it opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything): his
+first tab is his home (`Galahad/UI/GalahadHome.swift`), his orb large in the colour of where he stands, his line, what
+you might ask, what he asks you, your recent chats and the message box, each chat shown over it; the Roundtable, the
+Inbox and More are the other tabs. His orb (`Core/Orb.swift`, drawn by `UI/OrbView.swift`) is the PWA's, part for part,
+held to it by the parity vectors; it is his seat at the Roundtable and in the sidebar too, and beside each answer.
+
+On an iPhone or an iPad it keeps, besides its pairing, its key and your choices, the last Roundtable it saw, so it shows
+your Roundtable at once however slow the connection (your word, 21 November 2026). It is the record Galahad for
 Android keeps (`Galahad/App/KeptTable.swift`): the team in the fields its roster reads (no knight's instructions or
 notes, no task's brief), the chats' titles, which approvals wait (who asks and for which tool, never what a request
 holds) and how many things wait for you. It is in the app's caches (never backed up; the system may clear them),
@@ -62,7 +68,7 @@ screen has it (its mark, which opens its board of cards; the one who leads and t
 its still ring; the rooms; the Inbox and More), and the place chosen beside it. Each window keeps its own place across
 launches; a knight, a room or one of Galahad's chats opens in a window of its own (its row's menu); the menus (iPadOS's
 menu bar) have ⌘N a new chat, ⌥⌘N a new window, ⌘K a task for the Roundtable and ⌘1 to ⌘4 the places, acting in the window
-in front. A narrow window (Slide Over, a thin split) is the iPhone's three tabs. One `AppModel` serves every window, and
+in front. A narrow window (Slide Over, a thin split) is the iPhone's four tabs. One `AppModel` serves every window, and
 one loop asks the node again while any of them is in front.
 
 ## The Mac
