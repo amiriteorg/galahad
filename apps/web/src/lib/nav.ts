@@ -93,6 +93,10 @@ export function tabsOf(visible: Place[]): Place[] {
   return order.flatMap((id) => visible.filter((place) => place.id === id));
 }
 
+/** The tab that counts what waits in the Inbox: Galahad's, wherever it is in the bar (he is the one who tells you); on a
+ * device with no Galahad, the Inbox's own. */
+export const countedOn = (tabs: Place[]): Route | null => (tabs.find((tab) => tab.id === "chat") ?? tabs.find((tab) => tab.id === "inbox"))?.id ?? null;
+
 /** More's index: every other place this device may see, under its heading. */
 export function moreIndex(visible: Place[]): { heading: string; places: Place[] }[] {
   return Object.entries(HEADINGS)

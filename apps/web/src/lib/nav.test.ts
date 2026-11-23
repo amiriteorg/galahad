@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AnyScope } from "../types.ts";
-import { homeOf, moreIndex, PLACES, placesFor, primaryOf, railOf, routeOf, tabOf, tabsOf } from "./nav.ts";
+import { countedOn, homeOf, moreIndex, PLACES, placesFor, primaryOf, railOf, routeOf, tabOf, tabsOf } from "./nav.ts";
 
 /* Every address the app had before it was a roster and More, with the scope each asked for (and Sandboxes'
  * second one): an address is a contract, and what a device may see follows its scopes as it did. */
@@ -88,6 +88,13 @@ describe("the app's places", () => {
     expect(homeOf(device(...OWNER), { narrow: true })).toBe("chat");
     expect(ids(tabsOf(device("mind:read")))).toEqual(["inbox", "more"]);
     expect(ids(tabsOf(device()))).toEqual(["inbox", "more"]);
+  });
+
+  test("what waits in the Inbox is counted on Galahad's tab, at the bar's right end; with no Galahad, on the Inbox's own", () => {
+    expect(countedOn(tabsOf(device(...OWNER)))).toBe("chat");
+    expect(countedOn(tabsOf(device("chat")))).toBe("chat");
+    expect(countedOn(tabsOf(device("mind:read")))).toBe("inbox");
+    expect(countedOn([])).toBeNull();
   });
 
   test("a place reached from More keeps More marked, and a timeline keeps the roster marked", () => {

@@ -10,6 +10,7 @@ import { button, dot, kbd, retryFailed } from "./ui/controls.ts";
 import { openSheet } from "./ui/dialog.ts";
 import { h, isMac, isTyping, replace, Scope } from "./ui/dom.ts";
 import { icon } from "./ui/icons.ts";
+import { orb } from "./ui/orb.ts";
 import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
 import { activityView } from "./views/activity.ts";
@@ -20,7 +21,7 @@ import { projectsView } from "./views/projects.ts";
 import { rosterNav } from "./views/roster.ts";
 import { chatActivityPill, chatsForPalette, chatView, lookAtWork, startNewChat } from "./views/chat.ts";
 import { filterConversations } from "./lib/chats.ts";
-import { homeOf, type Place, placesFor, railOf, routeOf, tabOf, tabsOf } from "./lib/nav.ts";
+import { countedOn, homeOf, type Place, placesFor, railOf, routeOf, tabOf, tabsOf } from "./lib/nav.ts";
 import { closesKeyboard, keyboardOpen } from "./lib/viewport.ts";
 import { conversationFromHash } from "@galahad/core/notify-payload";
 import { readOpenMessage } from "./lib/push.ts";
@@ -264,11 +265,13 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   for (const type of ["pointerover", "focusin"]) rail.addEventListener(type, (event) => tipFor(event.target), { signal: lifetime.signal });
   for (const type of ["pointerleave", "focusout", "scroll", "click"]) rail.addEventListener(type, () => (railTip.hidden = true), { signal: lifetime.signal });
 
-  // Tab bar (phones): Galahad, the Roundtable and More. What waits in the Inbox is counted on the first: on him.
+  // Tab bar (phones): the Roundtable, More, and Galahad at its right end, his tab his orb (as the iPhone's and Android's
+  // are). What waits in the Inbox is counted on his tab (lib/nav.ts countedOn).
+  const counted = countedOn(tabs);
   const tabbar = h(
     "nav",
     { class: "tabbar", "aria-label": "Sections" },
-    ...tabs.map((spec, i) => link(spec, "tab", [icon(spec.icon), h("span", {}, spec.label), i === 0 ? inboxBadge() : null])),
+    ...tabs.map((spec) => link(spec, "tab", [spec.id === "chat" ? orb({ size: 22 }) : icon(spec.icon), h("span", {}, spec.label), spec.id === counted ? inboxBadge() : null])),
   );
 
   // Quick (a phone's): asking Galahad and giving a task, floating at the bottom right over every place but a timeline
