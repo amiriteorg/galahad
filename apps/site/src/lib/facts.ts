@@ -156,9 +156,10 @@ export const COMPARE = {
 
 /** What is built, being built and next: docs/PLAN.md's rows in a line each, with the state the plan gives them, in its order. */
 export const PHASING = {
-  date: "19 November 2026",
+  date: "23 November 2026",
   rows: [
     { state: "built", what: "Edit before you approve", line: "An approval's words are yours to change before your yes: your version is what's sent." },
+    { state: "built", what: "He approves his own", line: "His knights' work in the repositories you gave them, and tasks within a $3 budget that fits yours, he approves himself and says so; what is monetary, legal or destructive waits for you." },
     { state: "built", what: "Outcomes he owns", line: "A result you give him for days or weeks: he plans it, gives his knights tasks within its budget, and reports daily." },
     { state: "built", what: "CI and review back to the knight", line: "A shipped pull request that fails its checks, or a review that asks for changes, goes back to the knight who did it." },
     { state: "built", what: "Event triggers", line: "Work started by a signed webhook, new mail, or a GitHub run, push, issue or pull request, not only a clock." },
