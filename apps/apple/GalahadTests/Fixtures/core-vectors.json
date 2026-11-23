@@ -5243,6 +5243,618 @@
       }
     ]
   },
+  "orb": {
+    "palettes": {
+      "neutral": {
+        "tint": "#8ab8ff",
+        "light": "#cae0ff",
+        "deep": "#354969"
+      },
+      "accent": {
+        "tint": "#58a6ff",
+        "light": "#b6d8ff",
+        "deep": "#1f4169"
+      },
+      "warn": {
+        "tint": "#f0b549",
+        "light": "#f9dfb4",
+        "deep": "#624818"
+      },
+      "ok": {
+        "tint": "#4cc38a",
+        "light": "#b6e5c9",
+        "deep": "#1a4e35"
+      },
+      "danger": {
+        "tint": "#ff6b6b",
+        "light": "#ffc0bb",
+        "deep": "#692727"
+      }
+    },
+    "levels": {
+      "badge": [
+        {
+          "name": "ring",
+          "kind": "ring",
+          "r": 94,
+          "width": 5,
+          "ink": "tint",
+          "opacity": 0.5,
+          "arcs": null
+        },
+        {
+          "name": "body",
+          "kind": "disc",
+          "r": 78,
+          "cx": 0.4,
+          "cy": 0.36,
+          "spread": 0.72,
+          "stops": [
+            {
+              "at": 0,
+              "ink": "white",
+              "opacity": 0.96
+            },
+            {
+              "at": 0.24,
+              "ink": "light",
+              "opacity": 1
+            },
+            {
+              "at": 0.64,
+              "ink": "tint",
+              "opacity": 1
+            },
+            {
+              "at": 1,
+              "ink": "deep",
+              "opacity": 1
+            }
+          ]
+        },
+        {
+          "name": "rim",
+          "kind": "rim",
+          "r": 76,
+          "width": 3.5,
+          "from": [
+            -53,
+            -53
+          ],
+          "to": [
+            53,
+            53
+          ],
+          "stops": [
+            {
+              "at": 0,
+              "ink": "white",
+              "opacity": 0
+            },
+            {
+              "at": 0.55,
+              "ink": "white",
+              "opacity": 0
+            },
+            {
+              "at": 1,
+              "ink": "white",
+              "opacity": 0.55
+            }
+          ]
+        },
+        {
+          "name": "core",
+          "kind": "disc",
+          "r": 30,
+          "cx": 0.5,
+          "cy": 0.5,
+          "spread": 0.5,
+          "stops": [
+            {
+              "at": 0,
+              "ink": "white",
+              "opacity": 0.85
+            },
+            {
+              "at": 1,
+              "ink": "white",
+              "opacity": 0
+            }
+          ]
+        },
+        {
+          "name": "shine",
+          "kind": "shine",
+          "cx": -27,
+          "cy": -34,
+          "rx": 24,
+          "ry": 13,
+          "rotate": -28,
+          "opacity": 0.3
+        }
+      ],
+      "seat": [
+        {
+          "name": "halo",
+          "kind": "disc",
+          "r": 99,
+          "cx": 0.5,
+          "cy": 0.5,
+          "spread": 0.5,
+          "stops": [
+            {
+              "at": 0,
+              "ink": "tint",
+              "opacity": 0.55
+            },
+            {
+              "at": 0.62,
+              "ink": "tint",
+              "opacity": 0.2
+            },
+            {
+              "at": 1,
+              "ink": "tint",
+              "opacity": 0
+            }
+          ]
+        },
+        {
+          "name": "ring",
+          "kind": "ring",
+          "r": 94,
+          "width": 2.4,
+          "ink": "tint",
+          "opacity": 0.55,
+          "arcs": [
+            [
+              8,
+              82
+            ],
+            [
+              98,
+              172
+            ],
+            [
+              188,
+              262
+            ],
+            [
+              278,
+              352
+            ]
+          ]
+        },
+        {
+          "name": "notches",
+          "kind": "ticks",
+          "r": 94,
+          "count": 4,
+          "offset": 0,
+          "length": 12,
+          "width": 3.2,
+          "ink": "tint",
+          "opacity": 0.85
+        },
+        {
+          "name": "segments",
+          "kind": "ring",
+          "r": 80,
+          "width": 4.5,
+          "ink": "tint",
+          "opacity": 0.5,
+          "arcs": [
+            [
+              20,
+              90
+            ],
+            [
+              140,
+              210
+            ],
+            [
+              260,
+              330
+            ]
+          ]
+        },
+        {
+          "name": "body",
+          "kind": "disc",
+          "r": 66,
+          "cx": 0.4,
+          "cy": 0.36,
+          "spread": 0.72,
+          "stops": [
+            {
+              "at": 0,
+              "ink": "white",
+              "opacity": 0.96
+            },
+            {
+              "at": 0.24,
+              "ink": "light",
+              "opacity": 1
+            },
+            {
+              "at": 0.64,
+              "ink": "tint",
+              "opacity": 1
+            },
+            {
+              "at": 1,
+              "ink": "deep",
+              "opacity": 1
+            }
+          ]
+        },
+        {
+          "name": "rim",
+          "kind": "rim",
+          "r": 64.4,
+          "width": 2.6,
+          "from": [
+            -45,
+            -45
+          ],
+          "to": [
+            45,
+            45
+          ],
+          "stops": [
+            {
+              "at": 0,
+              "ink": "white",
+              "opacity": 0
+            },
+            {
+              "at": 0.55,
+              "ink": "white",
+              "opacity": 0
+            },
+            {
+              "at": 1,
+              "ink": "white",
+              "opacity": 0.55
+            }
+          ]
+        },
+        {
+          "name": "core",
+          "kind": "disc",
+          "r": 28,
+          "cx": 0.5,
+          "cy": 0.5,
+          "spread": 0.5,
+          "stops": [
+            {
+              "at": 0,
+              "ink": "white",
+              "opacity": 0.85
+            },
+            {
+              "at": 1,
+              "ink": "white",
+              "opacity": 0
+            }
+          ]
+        },
+        {
+          "name": "shine",
+          "kind": "shine",
+          "cx": -23,
+          "cy": -30,
+          "rx": 21,
+          "ry": 11,
+          "rotate": -28,
+          "opacity": 0.3
+        }
+      ],
+      "full": [
+        {
+          "name": "halo",
+          "kind": "disc",
+          "r": 99,
+          "cx": 0.5,
+          "cy": 0.5,
+          "spread": 0.5,
+          "stops": [
+            {
+              "at": 0,
+              "ink": "tint",
+              "opacity": 0.55
+            },
+            {
+              "at": 0.62,
+              "ink": "tint",
+              "opacity": 0.2
+            },
+            {
+              "at": 1,
+              "ink": "tint",
+              "opacity": 0
+            }
+          ]
+        },
+        {
+          "name": "ring",
+          "kind": "ring",
+          "r": 95,
+          "width": 1.1,
+          "ink": "tint",
+          "opacity": 0.5,
+          "arcs": [
+            [
+              6,
+              84
+            ],
+            [
+              96,
+              174
+            ],
+            [
+              186,
+              264
+            ],
+            [
+              276,
+              354
+            ]
+          ]
+        },
+        {
+          "name": "notches",
+          "kind": "ticks",
+          "r": 95,
+          "count": 4,
+          "offset": 0,
+          "length": 9,
+          "width": 1.6,
+          "ink": "tint",
+          "opacity": 0.8
+        },
+        {
+          "name": "ticks",
+          "kind": "ticks",
+          "r": 86.5,
+          "count": 72,
+          "offset": 0,
+          "length": 3,
+          "width": 0.8,
+          "ink": "tint",
+          "opacity": 0.45
+        },
+        {
+          "name": "marks",
+          "kind": "ticks",
+          "r": 86.5,
+          "count": 12,
+          "offset": 0,
+          "length": 7,
+          "width": 1.4,
+          "ink": "tint",
+          "opacity": 0.75
+        },
+        {
+          "name": "segments",
+          "kind": "ring",
+          "r": 77,
+          "width": 2.6,
+          "ink": "tint",
+          "opacity": 0.55,
+          "arcs": [
+            [
+              20,
+              90
+            ],
+            [
+              140,
+              210
+            ],
+            [
+              260,
+              330
+            ]
+          ]
+        },
+        {
+          "name": "inner",
+          "kind": "ring",
+          "r": 70.5,
+          "width": 0.8,
+          "ink": "tint",
+          "opacity": 0.28,
+          "arcs": null
+        },
+        {
+          "name": "body",
+          "kind": "disc",
+          "r": 60,
+          "cx": 0.4,
+          "cy": 0.36,
+          "spread": 0.72,
+          "stops": [
+            {
+              "at": 0,
+              "ink": "white",
+              "opacity": 0.96
+            },
+            {
+              "at": 0.24,
+              "ink": "light",
+              "opacity": 1
+            },
+            {
+              "at": 0.64,
+              "ink": "tint",
+              "opacity": 1
+            },
+            {
+              "at": 1,
+              "ink": "deep",
+              "opacity": 1
+            }
+          ]
+        },
+        {
+          "name": "rim",
+          "kind": "rim",
+          "r": 58.6,
+          "width": 1.8,
+          "from": [
+            -41,
+            -41
+          ],
+          "to": [
+            41,
+            41
+          ],
+          "stops": [
+            {
+              "at": 0,
+              "ink": "white",
+              "opacity": 0
+            },
+            {
+              "at": 0.55,
+              "ink": "white",
+              "opacity": 0
+            },
+            {
+              "at": 1,
+              "ink": "white",
+              "opacity": 0.55
+            }
+          ]
+        },
+        {
+          "name": "core",
+          "kind": "disc",
+          "r": 26,
+          "cx": 0.5,
+          "cy": 0.5,
+          "spread": 0.5,
+          "stops": [
+            {
+              "at": 0,
+              "ink": "white",
+              "opacity": 0.85
+            },
+            {
+              "at": 1,
+              "ink": "white",
+              "opacity": 0
+            }
+          ]
+        },
+        {
+          "name": "shine",
+          "kind": "shine",
+          "cx": -21,
+          "cy": -27,
+          "rx": 19,
+          "ry": 10,
+          "rotate": -28,
+          "opacity": 0.3
+        },
+        {
+          "name": "glint",
+          "kind": "shine",
+          "cx": -31,
+          "cy": -35,
+          "rx": 3.4,
+          "ry": 2.6,
+          "rotate": -28,
+          "opacity": 0.8
+        }
+      ]
+    },
+    "sizes": [
+      {
+        "size": 16,
+        "level": "badge"
+      },
+      {
+        "size": 28,
+        "level": "badge"
+      },
+      {
+        "size": 36,
+        "level": "badge"
+      },
+      {
+        "size": 47,
+        "level": "badge"
+      },
+      {
+        "size": 48,
+        "level": "seat"
+      },
+      {
+        "size": 64,
+        "level": "seat"
+      },
+      {
+        "size": 72,
+        "level": "seat"
+      },
+      {
+        "size": 119,
+        "level": "seat"
+      },
+      {
+        "size": 120,
+        "level": "full"
+      },
+      {
+        "size": 168,
+        "level": "full"
+      },
+      {
+        "size": 200,
+        "level": "full"
+      },
+      {
+        "size": 320,
+        "level": "full"
+      }
+    ],
+    "states": [
+      {
+        "state": "working",
+        "tone": "accent"
+      },
+      {
+        "state": "needs",
+        "tone": "warn"
+      },
+      {
+        "state": "failed",
+        "tone": "danger"
+      },
+      {
+        "state": "paused",
+        "tone": "neutral"
+      },
+      {
+        "state": "queued",
+        "tone": "neutral"
+      },
+      {
+        "state": "verified",
+        "tone": "ok"
+      },
+      {
+        "state": "unread",
+        "tone": "ok"
+      },
+      {
+        "state": "resting",
+        "tone": "neutral"
+      }
+    ]
+  },
   "connectorStates": [
     {
       "key": "none-needed",

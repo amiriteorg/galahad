@@ -139,6 +139,22 @@ describe("a knight in its seat", () => {
     expect(working!.attrs.style).toBeUndefined();
   });
 
+  test("Galahad's seat is his orb, in the room a face and its ring take, in the colour of where he stands; the Black Knight is drawn", () => {
+    const [needs, resting, card, beast] = withDocument(() => [
+      seat({ id: "galahad", name: "Galahad", state: "needs", expression: "asking", size: 32 }),
+      seat({ id: "galahad", name: "Galahad", size: 32 }),
+      seat({ id: "galahad", name: "Galahad", state: "working", size: 88 }),
+      seat({ id: "galahad", name: "Galahad", state: "working", beast: true, size: 88 }),
+    ] as unknown as Node_[]);
+    expect([needs!.attrs.class, needs!.attrs["data-state"]]).toEqual(["seat seat-s seat-orb", "needs"]);
+    const shown = (node: Node_) => node.children[0]!.attrs;
+    expect([shown(needs!).class, shown(needs!)["data-tone"], shown(needs!).style]).toEqual(["orb", "warn", "--orb-size:40px"]);
+    expect([shown(resting!)["data-tone"], shown(card!)["data-tone"], shown(card!).style]).toEqual(["neutral", "accent", "--orb-size:102px"]);
+    expect(shown(needs!)["aria-label"]).toBe("Galahad");
+    expect(beast!.attrs.class).toBe("seat seat-m");
+    expect(beast!.children[0]!.attrs["data-look"]).toBe("black-knight");
+  });
+
   test("its state is said in words beside its name, in its tone; working with a live dot, so it isn't read as a quiet one", () => {
     const [working, needs, failed, resting] = withDocument(() => [stateChip("working"), stateChip("needs"), stateChip("failed"), stateChip("resting")] as unknown as (Node_ | null)[]);
     expect([working!.attrs["data-tone"], working!.children.map((child) => child.text || child.attrs.class)]).toEqual(["work", ["dot live", "Working"]]);

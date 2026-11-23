@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { orbPalette, orbParts } from "../lib/orb.ts";
 import { orb, type OrbTone } from "./orb.ts";
 
 /** Captures the renderer's real createElement and createElementNS calls, without an HTML parser or a browser. */
@@ -25,6 +26,8 @@ function draw(...options: Parameters<typeof orb>[0][]): Node_[] {
 }
 const walk = (node: Node_): Node_[] => [node, ...node.children.flatMap(walk)];
 const classed = (node: Node_, name: string) => walk(node).filter((child) => child.attrs.class?.split(" ").includes(name));
+/** The shapes drawn, in order: the svg's children after its defs. */
+const shapes = (node: Node_) => node.children[0]!.children.slice(1);
 
 // Your word, 23 November 2026: Galahad, the one you talk to, as a Jarvis-like orb.
 describe("Galahad's orb", () => {
@@ -34,26 +37,41 @@ describe("Galahad's orb", () => {
       expect(node!.attrs["data-tone"]).toBe(tone);
       expect(node!.attrs.style).toBe("--orb-size:168px");
       for (const child of walk(node!)) {
-        expect(child.ns === "html" ? ["span"] : ["svg", "defs", "radialGradient", "stop", "circle", "ellipse"]).toContain(child.tag);
+        expect(child.ns === "html" ? ["span"] : ["svg", "defs", "radialGradient", "linearGradient", "stop", "circle", "path", "ellipse"]).toContain(child.tag);
         for (const key of Object.keys(child.attrs)) expect(key).not.toMatch(/^(on|href|xlink)/i);
       }
+      // Its colours are its state's own, the lit sphere's and the rings' alike.
+      const colors = new Set(walk(node!).flatMap((child) => [child.attrs.stroke, child.attrs["stop-color"]]).filter((c) => c?.startsWith("#")));
+      const { tint, light, deep } = orbPalette(tone);
+      expect([...colors].sort()).toEqual([tint, light, deep, "#ffffff"].sort());
     }
     // A tone it doesn't know is its rest; a size past its bounds is held to them.
     const [odd, tiny, huge] = draw({ tone: "pulse" as OrbTone, size: 36 }, { size: 4 }, { size: 900 });
     expect([odd!.attrs["data-tone"], tiny!.attrs.style, huge!.attrs.style]).toEqual(["neutral", "--orb-size:16px", "--orb-size:320px"]);
   });
 
-  test("large, the still rings of a heads-up display around it; small, the sphere with one ring", () => {
-    const [large, small] = draw({ size: 168 }, { size: 36 });
-    expect([classed(large!, "orb-ticks").length, classed(large!, "orb-ring").length, classed(large!, "orb-halo").length]).toEqual([1, 2, 1]);
-    expect([classed(small!, "orb-ticks").length, classed(small!, "orb-ring").length, classed(small!, "orb-halo").length]).toEqual([0, 1, 0]);
+  test("each part as lib/orb.ts gives it, in its order: the whole display on his welcome, the sphere and a ring beside his words", () => {
+    const [large, seat, small] = draw({ size: 168 }, { size: 64 }, { size: 28 });
+    for (const [node, size] of [[large!, 168], [seat!, 64], [small!, 28]] as const) {
+      expect(shapes(node).map((child) => child.attrs.class)).toEqual(orbParts(size).map((part) => `orb-${part.name}`));
+    }
+    // The ticks round the full display, each a stroke of its own: 72 fine ones and 12 marks.
+    expect(classed(large!, "orb-ticks")[0]!.attrs.d!.match(/M/g)!.length).toBe(72);
+    expect(classed(large!, "orb-marks")[0]!.attrs.d!.match(/M/g)!.length).toBe(12);
+    // The outer ring's four arcs leave its notches room, at the top, the sides and the foot.
+    expect(classed(large!, "orb-ring")[0]!.attrs.d).toStartWith("M9.93 -94.48A95 95 0 0 1 94.48 -9.93M94.48 9.93");
+    expect(classed(small!, "orb-ticks")).toEqual([]);
   });
 
-  test("two on one page never share a gradient, and each fill names its own", () => {
+  test("two on one page never share a gradient, and each fill and stroke names its own", () => {
     const [a, b] = draw({ size: 168 }, { size: 168 });
-    const ids = (node: Node_) => walk(node).filter((child) => child.tag === "radialGradient").map((child) => child.attrs.id!);
+    const ids = (node: Node_) => walk(node).filter((child) => child.tag.endsWith("Gradient")).map((child) => child.attrs.id!);
     expect(ids(a!).some((id) => ids(b!).includes(id))).toBe(false);
-    for (const node of [a!, b!]) for (const fill of walk(node).map((child) => child.attrs.fill).filter(Boolean)) expect(ids(node)).toContain(fill!.slice(5, -1));
+    for (const node of [a!, b!]) {
+      const refs = walk(node).flatMap((child) => [child.attrs.fill, child.attrs.stroke]).filter((paint) => paint?.startsWith("url("));
+      expect(refs.length).toBe(ids(node).length);
+      for (const paint of refs) expect(ids(node)).toContain(paint!.slice(5, -1));
+    }
   });
 
   test("named when it stands alone, decorative beside his name", () => {

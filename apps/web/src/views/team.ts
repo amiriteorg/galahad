@@ -21,6 +21,7 @@ import { h, keepPlace, prefersReducedMotion, replace, syncChildren } from "../ui
 import { icon } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
 import { leadMark, stateChip, workerAvatar } from "../ui/avatar.ts";
+import { orb } from "../ui/orb.ts";
 import { toast } from "../ui/toast.ts";
 import { makePrimary, pending } from "./arrange.ts";
 import { attachedView, attachTray, type Waiting } from "./attach-tray.ts";
@@ -212,7 +213,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
     return h(
       "article",
       { class: `team-message${owner ? " owner" : ""}`, "data-key": message.id, "aria-label": `${speaker} said` },
-      owner ? null : workerAvatar({ id: message.speaker, name: speaker, profile: personOf(message.speaker)?.avatar, still: true }),
+      // (Galahad speaking in a room is his orb, at rest, as beside his own answers.)
+      owner ? null : message.speaker === GALAHAD ? orb({ size: 40 }) : workerAvatar({ id: message.speaker, name: speaker, profile: personOf(message.speaker)?.avatar, still: true }),
       h(
         "div",
         { class: "team-message-body" },

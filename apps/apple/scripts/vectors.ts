@@ -22,6 +22,7 @@ import { parseMarkdown } from "../../web/src/lib/markdown.ts";
 import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web/src/lib/text.ts";
 import { desktopAddress, screenPoint, shotSource } from "../../web/src/lib/desktop.ts";
 import { ART, CANVAS, SHOWN } from "../../web/src/lib/knight-eyes.ts";
+import { ORB_TONES, orbLevel, orbPalette, orbParts, orbToneOfState } from "../../web/src/lib/orb.ts";
 import { connectorState } from "../../web/src/lib/connector-state.ts";
 import { noticeFrom } from "../../web/src/lib/notices.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
@@ -471,6 +472,15 @@ const eyes = {
   steps: ["Plan · read the code", "Thinking · which test", "Running · desktop open https://x", "Running · desktop", "Running · bun test", "Exit 0 · 12 passed", "Exit -1 · killed", "Gate 1/2 · bun test", "Gates · 1. bun test", "Gates · all 2 passed", "Gates · 1 of 2 failed: back to the work", "Gates before the work · 2", "Review · PASS", "Submitted for review · now", "gates", "gated", "  Running · ls", "Something else", ""].map((line) => ({ line, step: core.taskStep(line) })),
 };
 
+// ---- Galahad's orb (the PWA's own lib/orb.ts): each state's colours, the parts of each level, and the level of each size ----
+const orb = {
+  palettes: Object.fromEntries(ORB_TONES.map((tone) => [tone, orbPalette(tone)])),
+  levels: { badge: orbParts(28), seat: orbParts(64), full: orbParts(168) },
+  sizes: [16, 28, 36, 47, 48, 64, 72, 119, 120, 168, 200, 320].map((size) => ({ size, level: orbLevel(size) })),
+  // Where he stands at the Roundtable, as his seat's orb shows it.
+  states: ["working", "needs", "failed", "paused", "queued", "verified", "unread", "resting"].map((state) => ({ state, tone: orbToneOfState(state) })),
+};
+
 // ---- where a connector's key or sign-in stands (the PWA's own lib/connector-state.ts) -------------------------------
 // (signIn: whose sign-in it uses, or null for a key: Google's or Microsoft's needs your app; a hosted MCP server's doesn't.)
 const connectorStates = ["none-needed", "ready", "missing", "optional-missing", "signed-out", "wrong-origin", "unheard-of"].flatMap((key) =>
@@ -816,6 +826,7 @@ const vectors = {
   keys,
   desktop,
   eyes,
+  orb,
   connectorStates,
   threads,
   chats,

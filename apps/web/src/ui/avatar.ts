@@ -1,8 +1,10 @@
 import { AVATAR_EXPRESSIONS, AVATAR_LOOKS, AVATAR_TEMPERAMENTS, avatarLook, lookProfile, resolveAvatar, type AvatarExpression, type AvatarLook, type AvatarProfile } from "@galahad/core/avatar";
 import { ART, type Art, CANVAS, eyeScale, type Eyes, SHOWN } from "../lib/knight-eyes.ts";
 import { type KnightState, STATES } from "../lib/knight-state.ts";
+import { orbToneOfState } from "../lib/orb.ts";
 import { button, dot, field } from "./controls.ts";
 import { h, replace, svg } from "./dom.ts";
+import { orb } from "./orb.ts";
 
 /*
  * A knight as the owner drew it: the drawing itself (src/knights/, cut out of its paper), with live eyes drawn over the
@@ -152,15 +154,24 @@ export function workerAvatar(options: WorkerAvatarOptions): HTMLElement {
   );
 }
 
+/** What a seat leaves round its face for its ring, by its size (the stylesheet's --seat-pad). */
+const SEAT_PAD = { s: 4, m: 7, l: 9 } as const;
+
 /**
  * A knight in its seat: the face in a ring of its state's colour (lib/knight-state.ts), as wide as the drawing's own
- * reach and a little more, so the ring covers and cuts nothing of it. The ring turns while the knight works (it rests
- * when the device asks for less motion), calls softly while the knight waits on you, and is a hairline at rest. Its
- * size follows the face's: `seat-s` for a row's, `seat-m` for a card's, `seat-l` for a portrait.
+ * reach and a little more, so the ring covers and cuts nothing of it. Every ring stands still, a hairline at rest. Its
+ * size follows the face's: `seat-s` for a row's, `seat-m` for a card's, `seat-l` for a portrait. Galahad himself is his
+ * orb (your word, 23 November 2026) in the room a face and its ring take, its colour where he stands, as the ring's
+ * would be; in beast mode he is the Black Knight's drawing still.
  */
 export function seat(options: WorkerAvatarOptions & { state?: KnightState }): HTMLElement {
   const size = Number.isFinite(options.size) ? options.size! : 40;
-  return h("span", { class: `seat seat-${size <= 48 ? "s" : size <= 96 ? "m" : "l"}`, "data-state": options.state ?? "resting" }, workerAvatar(options));
+  const scale = size <= 48 ? "s" : size <= 96 ? "m" : "l";
+  const state = options.state ?? "resting";
+  if (options.id === "galahad" && options.beast !== true) {
+    return h("span", { class: `seat seat-${scale} seat-orb`, "data-state": state }, orb({ size: size + 2 * SEAT_PAD[scale], tone: orbToneOfState(state), label: "Galahad" }));
+  }
+  return h("span", { class: `seat seat-${scale}`, "data-state": state }, workerAvatar(options));
 }
 
 /** A knight's state in words, beside its name (a badge in the state's tone; working has a live dot, so it isn't read as

@@ -1285,6 +1285,9 @@
       .seat[data-state="verified"], .seat[data-state="unread"] { --ring: var(--ok); }
       .seat[data-state="queued"] { --ring: var(--text-3); }
       .seat[data-state="paused"]::before { box-shadow: none; border: var(--ring-w) dashed var(--text-3); }
+      /* Galahad's seat is his orb (ui/avatar.ts seat()): the orb's own rings take the ring's room, in his state's colour. */
+      .seat.seat-orb { padding: 0; background: none; }
+      .seat.seat-orb::before { content: none; }
       /* A state in words in a badge (ui/avatar.ts stateChip(), a chat's, a quest's, a loop's): working's carries a still dot. */
       .badge .dot { width: 6px; height: 6px; }
       /* The one who leads the Roundtable (ui/avatar.ts leadMark()): beside its name, small, in ink, in words. */
@@ -1539,19 +1542,10 @@
       .chat-hero h2 { font-size: var(--fs-20); font-weight: 650; letter-spacing: -0.02em; }
       .hero-galahad { display: grid; place-items: center; margin-bottom: var(--sp-1); }
       .hero-galahad .worker-avatar { animation: emblem-in var(--d-sheet) var(--ease-out); }
-      /* Galahad's orb (ui/orb.ts): a sphere of light in the colour of his state, inside still rings. It never moves. */
-      /* (Light, in either theme: the states' own colours as a dark theme has them, since a light theme's are dimmed for
-         words on white, and a dimmed light reads as a bronze ball.) */
-      .orb { --orb: #8ab8ff; display: inline-grid; place-items: center; flex: none; width: var(--orb-size); height: var(--orb-size); }
-      .orb[data-tone="accent"] { --orb: #58a6ff; }
-      .orb[data-tone="warn"] { --orb: #f0b549; }
-      .orb[data-tone="ok"] { --orb: #4cc38a; }
-      .orb[data-tone="danger"] { --orb: #ff6b6b; }
+      /* Galahad's orb (ui/orb.ts): a sphere of light in the colour of his state, inside still rings. It never moves. Its
+         colours are its own (lib/orb.ts), the same in either theme and in every app. */
+      .orb { display: inline-grid; place-items: center; flex: none; width: var(--orb-size); height: var(--orb-size); }
       .orb > svg { display: block; width: 100%; height: 100%; overflow: visible; }
-      .orb-ring { fill: none; stroke: var(--orb); stroke-width: 1; opacity: 0.42; vector-effect: non-scaling-stroke; }
-      .orb-ring.orb-faint { opacity: 0.22; }
-      .orb-ticks { fill: none; stroke: var(--orb); stroke-width: 1.5; stroke-dasharray: 1.2 6.2; opacity: 0.55; }
-      .orb-shine { fill: #ffffff; opacity: 0.3; }
       /* What he asks you, under his orb (views/galahad-asks.ts): the Inbox's own cards, read left to right. */
       .galahad-asks { width: 100%; max-width: 640px; text-align: left; margin-top: var(--sp-2); }
       .chat-hero p { color: var(--text-2); max-width: 46ch; }
