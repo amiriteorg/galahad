@@ -10,9 +10,11 @@ import type { TeamService } from "./team.ts";
  * task of its waiting, running or proposed, none of an outcome's, nothing ended in the last few minutes) is offered one
  * task by Galahad, at most once a day: the next small step of its repository's own plan (docs/PLAN.md, PLAN.md,
  * ROADMAP.md or TODO.md, read in the knight's VM as it last fetched it, with its newest commits) or of its open issues
- * (read through your GitHub connector), as a proposal in its conversation with you that starts when you approve it and
- * goes when you decline it. Each look is one answer of the planner's, at a plan's care (roster.ts STEP_EFFORT). On
- * until you say otherwise: `galahad roundtable backlog off`.
+ * (read through your GitHub connector), in its conversation with you. He approves it himself and it starts (your word,
+ * 23 November 2026: he approves his own decisions and his knights'; what is monetary asks you): its money is its budget,
+ * always set and at most BACKLOG.taskUsd, which must fit what is left of yours when you set one (`galahad usage
+ * budget`). Past that it waits for you as a proposal, to approve or decline. Each look is one answer of the planner's,
+ * at a plan's care (roster.ts STEP_EFFORT). On until you say otherwise: `galahad roundtable backlog off`.
  *
  * A proposal you leave unanswered for a day is looked at again with the repository as it is then: kept when it is still
  * the next step, else withdrawn (its step done by other work, or another first), the fresher one in its place. On the
@@ -85,7 +87,7 @@ export function readProposal(text: string): Proposal | null {
 export function backlogQuestion(input: { knight: Teammate; read: string; recent: readonly Pick<TeamTask, "title" | "status" | "verified">[]; declined: readonly string[]; passed?: readonly string[]; waiting?: Pick<TeamTask, "title" | "goal" | "createdAt"> }): string {
   const { knight, waiting } = input;
   const done = (t: Pick<TeamTask, "status" | "verified">) => (t.status === "done" ? (t.verified ? "done and verified" : "done, unverified") : t.status);
-  return `${knight.name} (${knight.id}), a knight of your liege's Roundtable, has nothing to do. Its job: ${knight.instructions || "(none written)"}. It works in ${knight.repository}, alone, in a VM of its own with the repository's tests and tools. Every task of its is checked by its gates and an independent reviewer, and nothing it does goes outward (a pull request, a message, a release) without your liege's yes.
+  return `${knight.name} (${knight.id}), a knight of your liege's Roundtable, has nothing to do. Its job: ${knight.instructions || "(none written)"}. It works in ${knight.repository}, alone, in a VM of its own with the repository's tests and tools. Every task of its is checked by its gates and an independent reviewer. What you offer, you give: it starts on your own yes, within the budget you set it (real money, on a model paid by the call), so offer only what is worth that.
 
 Offer it ONE task from the repository's own plan or its open issues below: the smallest next step of the most important item that isn't done (its newest commits and its recent tasks say what is), one it can finish and verify alone in an hour or two. Its goal says what to change, where, and how it is known to be done. Its gates are up to three shell commands, each on one line, that exit 0 only when it is done (the repository's own tests and checks, run as the repository runs them); a gate that names a test file locks that file, so name a folder or a pattern when the task must write a test. Never offer one your liege declined, nor anything outward.
 
@@ -121,6 +123,8 @@ export interface BacklogOptions {
   issues?: (repository: string) => Promise<string>;
   /** Whether a knight is an outcome's now: its work is the outcome's to give. */
   busy: (knight: string) => boolean;
+  /** What is left of your usage budget now, in US dollars (usage.ts meter; null: you set none). */
+  budgetLeft?: () => number | null;
   log: (message: string) => void;
   now?: () => number;
   /** For tests: his answers. */
@@ -220,9 +224,14 @@ export class BacklogRunner {
       this.o.log(`backlog: no proposal could be read for ${knight.id}: ${redact(text.trim()).slice(0, 160)}`);
       return null;
     }
-    // The one waiting, still its next step (said so, or offered again as it was): it waits on as it was.
+    // The one waiting, still its next step (said so, or offered again as it was): it waits on as it was, unless it is
+    // his to approve now (what is left of your budget fits it).
     if ("keep" in found || (waiting && "title" in found && found.title === waiting.title)) {
       this.o.log(`backlog: ${knight.id}'s proposal ${waiting?.id ?? "(none waits)"} kept${"keep" in found ? `: ${redact(found.keep).slice(0, 200)}` : ""}`);
+      if (waiting && this.approveIfHis(waiting, knight)) {
+        this.clearNotice(waiting.id);
+        return this.o.store.task(waiting.id);
+      }
       return null;
     }
     if ("none" in found) {
@@ -231,18 +240,38 @@ export class BacklogRunner {
       return null;
     }
     const room = this.o.store.direct(knight.id);
-    const task = this.o.service().proposeTask({ room: room.id, assignee: knight.id, title: found.title, goal: found.goal, gates: found.gates, ...(found.budgetUsd !== undefined ? { budgetUsd: found.budgetUsd } : {}) });
-    // In your Inbox, in the node's own words: what he proposes is in its conversation with you, to approve or decline.
-    this.o.mind.emit(this.o.identity, "notice.raised", { key: `backlog:${task.id}`, severity: "info", title: `Work proposed for ${knight.name}`, body: `${found.title}\nIt waits in your conversation with ${knight.name}, and starts when you approve it there (or galahad roundtable approve ${task.id}).`.slice(0, 600), source: "backlog", at: this.now() });
+    // What it may spend is always said: work with no budget is money nobody capped.
+    const task = this.o.service().proposeTask({ room: room.id, assignee: knight.id, title: found.title, goal: found.goal, gates: found.gates, budgetUsd: found.budgetUsd ?? BACKLOG.taskUsd });
     if (waiting) this.withdraw(waiting, `"${found.title}" comes first now`);
+    if (this.approveIfHis(task, knight)) return this.o.store.task(task.id);
+    // Past what is left of your budget it is money, so yours: in your Inbox, in the node's own words, it waits in its
+    // conversation with you, to approve or decline.
+    this.o.mind.emit(this.o.identity, "notice.raised", { key: `backlog:${task.id}`, severity: "info", title: `Work proposed for ${knight.name}`, body: `${found.title}\nIt may spend $${task.budgetUsd}, more than is left of your budget, so it waits in your conversation with ${knight.name}, and starts when you approve it there (or galahad roundtable approve ${task.id}).`.slice(0, 600), source: "backlog", at: this.now() });
     return task;
+  }
+
+  /**
+   * His own yes to a proposal of his (your word, 23 November 2026): when its budget is set, within the backlog's cap, and
+   * fits what is left of yours, if you set one. Whether he gave it.
+   */
+  private approveIfHis(task: TeamTask, knight: Teammate): boolean {
+    const budget = task.budgetUsd;
+    const left = this.o.budgetLeft?.() ?? null;
+    if (budget === undefined || budget > BACKLOG.taskUsd || (left !== null && left < budget)) return false;
+    this.o.service().approveOwn(task.id, `the next step of ${knight.name}'s repository's own plan, within its budget of $${budget}${left === null ? "" : `, and of the $${left.toFixed(2)} left of yours`}`);
+    this.o.log(`backlog: ${task.id} given to ${knight.id} on his own approval`);
+    return true;
+  }
+
+  private clearNotice(task: string): void {
+    const key = `backlog:${task}`;
+    if (this.o.mind.lww(`notice:${key}`)?.value) this.o.mind.emit(this.o.identity, "notice.cleared", { key });
   }
 
   /** A proposal of his taken back before you answered it, in its conversation (its end says why) and out of your Inbox. */
   private withdraw(task: TeamTask, why: string): void {
     this.o.service().withdrawProposal(task.id, `${WITHDRAWN}: ${why}.`.slice(0, 500));
-    const key = `backlog:${task.id}`;
-    if (this.o.mind.lww(`notice:${key}`)?.value) this.o.mind.emit(this.o.identity, "notice.cleared", { key });
+    this.clearNotice(task.id);
     this.o.log(`backlog: ${task.id} withdrawn: ${why}`);
   }
 }

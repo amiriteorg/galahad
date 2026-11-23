@@ -2263,6 +2263,8 @@ export function createApp(ctx: AppContext) {
       identity: ctx.identity,
       brain: () => brainFor({ device: `arm:${GALAHAD_ARM}`, kind: "arm", label: GALAHAD_ARM, scopes: [] }),
       exec: (knight, command, timeout, signal) => execTeam(knight, command, timeout, signal),
+      // What he gives on his own must fit what is left of your budget, when you set one.
+      budgetLeft: () => ctx.usage.meter(ctx.nodeName, pricesOf(ctx.store)).leftUsd,
       // Its open issues, read through your connector for its owner when you added one, else through github's.
       issues: async (repository) => {
         const repo = githubRepo(repository);

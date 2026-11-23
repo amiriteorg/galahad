@@ -128,12 +128,13 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     VM, where the VM's image has the pinned Engram; off, nothing is given
   roundtable ci [on|off]             failing checks, or a review asking for changes, on a pull request of a knight's
                                     work: say whether they go back to that knight, or turn it on or off. On, it gets
-                                    the fix on that branch (once a failing commit or review, three at most) and you
-                                    approve the push; off (the default), they are yours, though an outcome gives its
-                                    own back within its budget
-  roundtable backlog [on|off]        work for idle knights: one with a repository and nothing to do is offered the next
-                                    step of its repository's plan, a task a day at most, which starts when you approve it
-                                    (galahad roundtable approve <task>); on until you turn it off
+                                    the fix on that branch (once a failing commit or review, three at most), whose
+                                    push Galahad approves in a repository you gave the knight; off (the default), they
+                                    are yours, though an outcome gives its own back within its budget
+  roundtable backlog [on|off]        work for idle knights: one with a repository and nothing to do is given the next
+                                    step of its repository's plan, a task a day at most, on Galahad's own yes within its
+                                    budget ($3 at most); one that may spend more than is left of your budget (galahad
+                                    usage budget) waits for you (galahad roundtable approve <task>); on until you turn it off
   roundtable order <knight,knight,...>  your order of the knights, on every device (those not named come after)
   roundtable primary <knight|galahad>   who leads the Roundtable: it answers what you say to a room without a name
   roundtable avatar <id> [--look kay|gaheris|percival|palamedes|gawain|tristan|lancelot|bedivere|bors|gareth]

@@ -153,8 +153,17 @@ export class TeamService {
   /** Whether failing checks go back to the knight whose work it was, outside an outcome too (ci-back.ts reads it when they fail). */
   setCiBack(on: boolean): boolean { this.accepting(); const set = this.store.setCiBack(on); this.changed(); return set; }
   setBacklog(on: boolean): boolean { this.accepting(); const set = this.store.setBacklog(on); this.changed(); return set; }
-  /** Work Galahad offers a knight from your backlog (backlog.ts): proposed, it starts only when you approve it. */
+  /** Work Galahad offers a knight from your backlog (backlog.ts): proposed, it starts when he approves it himself, or you do. */
   proposeTask(input: TeamTaskInput): TeamTask { this.accepting(); const task = this.store.createTask(input, { givenBy: TEAM_GALAHAD, propose: true }); this.changed(); return task; }
+  /** One he proposed, approved by him (backlog.ts says when it is his to): it waits its turn like any task, and its trail says whose yes it was. */
+  approveOwn(task: string, why: string): TeamTask {
+    this.accepting();
+    const approved = this.store.approve(task);
+    this.store.noteTask(task, `Approved by Galahad himself: ${why}`.slice(0, 500));
+    this.changed();
+    this.kick();
+    return approved;
+  }
   /** One he proposed, taken back before you answered it (backlog.ts: its step done, or another first): it never ran. */
   withdrawProposal(task: string, why: string): void {
     this.accepting();
