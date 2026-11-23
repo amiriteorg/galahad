@@ -679,9 +679,18 @@
       [data-tone="failed"] { --tone: var(--failed); --tone-soft: color-mix(in srgb, var(--failed) 10%, transparent); }
       /* Words in their tone (an action class beside a tool's name). */
       .toned { color: var(--tone); }
-      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone, var(--text-3)); flex: none; display: inline-block; }
+      /* A state's dot is a small orb of its colour, lit from above (your word, 24 November 2026: everything orbs); one
+         for something going on sends out a wave of its light, unless motion is reduced. */
+      .dot {
+        position: relative; width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block;
+        background: radial-gradient(circle at 34% 30%, color-mix(in oklab, var(--tone, var(--text-3)), white 55%) 0, var(--tone, var(--text-3)) 55%, color-mix(in oklab, var(--tone, var(--text-3)), black 28%) 100%);
+      }
       .dot:not([data-tone]) { --tone: var(--text-3); }
-      .dot.live { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone, var(--text-3)) 22%, transparent); }
+      .dot.live { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone, var(--text-3)) 22%, transparent), 0 0 8px 1px color-mix(in srgb, var(--tone, var(--text-3)) 45%, transparent); }
+      .dot.live::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--tone, var(--text-3)); opacity: 0; pointer-events: none; animation: dot-wave 2.2s var(--ease-out) infinite; }
+      @keyframes dot-wave { from { transform: scale(1); opacity: 0.55; } to { transform: scale(2.9); opacity: 0; } }
+      :root[data-motion="reduce"] .dot.live::after { animation: none; }
+      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .dot.live::after { animation: none; } }
       .count {
         display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-full);
         background: var(--accent-fill); color: var(--on-accent); font-size: 11px; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums;
@@ -1278,7 +1287,8 @@
       .seat:not([data-state="resting"]) { --ring-w: 2px; }
       .seat.seat-m:not([data-state="resting"]) { --ring-w: 2.5px; }
       .seat.seat-l:not([data-state="resting"]) { --ring-w: 3px; }
-      /* Every state's ring stands still (the owner's word: nothing at the table spins or pulses): its colour says it. */
+      /* Each state's ring, in its colour; round it, its state's lights move (ui/orb.ts seatLights; your word, 24 November
+         2026), and stand still where motion is reduced. */
       .seat[data-state="working"] { --ring: var(--work); }
       .seat[data-state="needs"] { --ring: var(--needs); }
       .seat[data-state="failed"] { --ring: var(--failed); }
@@ -1288,7 +1298,7 @@
       /* Galahad's seat is his orb (ui/avatar.ts seat()): the orb's own rings take the ring's room, in his state's colour. */
       .seat.seat-orb { padding: 0; background: none; }
       .seat.seat-orb::before { content: none; }
-      /* A state in words in a badge (ui/avatar.ts stateChip(), a chat's, a quest's, a loop's): working's carries a still dot. */
+      /* A state in words in a badge (ui/avatar.ts stateChip(), a chat's, a quest's, a loop's): working's carries a live dot. */
       .badge .dot { width: 6px; height: 6px; }
       /* The one who leads the Roundtable (ui/avatar.ts leadMark()): beside its name, small, in ink, in words. */
       .lead-mark {
@@ -1542,10 +1552,14 @@
       .chat-hero h2 { font-size: var(--fs-20); font-weight: 650; letter-spacing: -0.02em; }
       .hero-galahad { display: grid; place-items: center; margin-bottom: var(--sp-1); }
       .hero-galahad .worker-avatar { animation: emblem-in var(--d-sheet) var(--ease-out); }
-      /* Galahad's orb (ui/orb.ts): a sphere of light in the colour of his state, inside still rings. It never moves. Its
-         colours are its own (lib/orb.ts), the same in either theme and in every app. */
+      /* Galahad's orb (ui/orb.ts): a sphere of light in the colour of his state, inside the rings of a display, moving as
+         his mood does (lib/orb-motion.ts). Its colours are its own (lib/orb.ts), the same in either theme and every app. */
       .orb { display: inline-grid; place-items: center; flex: none; width: var(--orb-size); height: var(--orb-size); }
       .orb > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+      /* An orb that moves (ui/orb.ts), and a knight's seat's lights: a canvas centred on it, its motes and waves reaching
+         past it over what is round it, which they never move or take a tap from. */
+      .orb-live { position: relative; }
+      .orb-canvas, .seat-lights { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; }
       /* What he asks you, under his orb (views/galahad-asks.ts): the Inbox's own cards, read left to right. */
       .galahad-asks { width: 100%; max-width: 640px; text-align: left; margin-top: var(--sp-2); }
       .chat-hero p { color: var(--text-2); max-width: 46ch; }

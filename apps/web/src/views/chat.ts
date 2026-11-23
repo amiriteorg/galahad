@@ -17,6 +17,8 @@ import { badge, button, callout, copyText, dot, empty, skeletonRows, spinner } f
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { debounce, h, replace } from "../ui/dom.ts";
 import { orb } from "../ui/orb.ts";
+import { galahadState } from "../lib/knight-state.ts";
+import { orbMoodOfState } from "../lib/orb-motion.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
 import { selector, type SelectorGroup } from "../ui/selector.ts";
@@ -659,7 +661,7 @@ export function watchTurns(api: Api, signal: AbortSignal): void {
   void look();
 }
 
-/** A chat's state as its badge in a list (a still dot while he's working in it: nothing in a state spins). */
+/** A chat's state as its badge in a list (a live dot while he's working in it, sending out its waves). */
 export function chatStateBadge(c: Pick<ConversationSummary, "state" | "queued" | "held" | "needs">): HTMLElement | null {
   const b = stateBadge(c);
   if (!b) return null;
@@ -724,8 +726,9 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
 
   // ---- Galahad himself: his orb, in the colour of what he's doing, and that in a line. A tap shows what he has in hand. ----
   const face = h("span", { class: "chat-face" });
-  // The welcome's orb, the same one large (your word, 23 November 2026: the one you talk to, as an orb).
-  const heroOrb = h("div", { class: "hero-galahad" }, orb({ size: 168 }));
+  // The welcome's orb, the same one large (your word, 23 November 2026: the one you talk to, as an orb), moving as he
+  // is (24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done").
+  const heroOrb = h("div", { class: "hero-galahad" }, orb({ size: 168, mood: "idle" }));
   // What he asks you, answered under his orb (made once: the welcome is drawn again, its subscriptions are not), shown
   // once no chat is being opened in its place.
   const asks = canChat ? galahadAsks(ctx, scope, () => opening === 0) : null;
@@ -752,9 +755,14 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     inboxCount.hidden = !needs;
     inboxCount.textContent = String(needs ?? "");
     inbox.setAttribute("aria-label", needs ? `Inbox: ${needs} waiting` : "Inbox");
-    if (now.tone !== shownTone) {
-      replace(face, orb({ size: 36, tone: (shownTone = now.tone) }));
-      replace(heroOrb, orb({ size: 168, tone: now.tone }));
+    // His orbs in the colour and the mood of where he stands: at work while he answers or works, waiting while
+    // something needs you, done while an answer of his is new to you, idle otherwise. (Both are his one orb: drawn
+    // again, each carries on where it was, and a change of mood fades or bursts.)
+    const mood = orbMoodOfState(galahadState(now));
+    if (`${now.tone}/${mood}` !== shownTone) {
+      shownTone = `${now.tone}/${mood}`;
+      replace(face, orb({ size: 36, tone: now.tone, mood }));
+      replace(heroOrb, orb({ size: 168, tone: now.tone, mood }));
     }
     // Who answers and with what, beside his name: the model, and the role when it isn't the planner (the menu changes both).
     const as = [role === "planner" ? null : role, modelName((roster ?? DEFAULT_ROLES)[role]?.models[0])].filter(Boolean).join(" · ");
@@ -825,6 +833,9 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     return bar;
   }
 
+  let writing: { id: number; orb: HTMLElement } | null = null;
+  const writingOrb = (id: number): HTMLElement => (writing?.id === id ? writing : (writing = { id, orb: orb({ size: 28, mood: "working" }) })).orb;
+
   function renderTurn(turn: Turn): HTMLElement {
     if (turn.role === "user") {
       return h(
@@ -853,8 +864,9 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     return h(
       "article",
       { class: `turn assistant${thread.turns.at(-1) === turn ? " last" : ""}`, "aria-label": "Galahad said" },
-      // His orb beside each answer of his, still and at rest: the colour of his state is his line's, above.
-      h("span", { class: "avatar agent orb-avatar", "aria-hidden": "true" }, orb({ size: 28 })),
+      // His orb beside each answer of his, still and at rest, but for the one he is writing, which is at work (and kept
+      // while he writes, as the answer is drawn again with each word): the colour of his state is his line's, above.
+      h("span", { class: "avatar agent orb-avatar", "aria-hidden": "true" }, turn.status === "streaming" ? writingOrb(turn.id) : orb({ size: 28 })),
       h("div", { class: "turn-body" }, processView(turn), turn.content ? content : null, errorBox, turn.status === "streaming" ? null : turnActions(turn)),
     );
   }
@@ -1520,7 +1532,7 @@ export function chatActivityPill(): HTMLElement {
     if (!streaming) return;
     replace(
       pill,
-      dot("accent", { live: true }),
+      dot("work", { live: true }),
       h("a", { class: "plain-link", href: "#/chat" }, model ? `Answering · ${model.split("/").pop()}` : "Answering…"),
       button("Stop", { size: "sm", variant: "ghost", icon: "stop", onClick: stopChat, label: "Stop Galahad answering" }),
     );
