@@ -726,8 +726,9 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const face = h("span", { class: "chat-face" });
   // The welcome's orb, the same one large (your word, 23 November 2026: the one you talk to, as an orb).
   const heroOrb = h("div", { class: "hero-galahad" }, orb({ size: 168 }));
-  // What he asks you, answered under his orb (made once: the welcome is drawn again, its subscriptions are not).
-  const asks = canChat ? galahadAsks(ctx, scope) : null;
+  // What he asks you, answered under his orb (made once: the welcome is drawn again, its subscriptions are not), shown
+  // once no chat is being opened in its place.
+  const asks = canChat ? galahadAsks(ctx, scope, () => opening === 0) : null;
   const nowLine = h("span", { class: "chat-now ellipsis" });
   const answers = h("span", { class: "chat-as ellipsis" });
   const who = h("button", { class: "chat-who", type: "button", onclick: () => openInHand(ctx) }, face, h("span", { class: "chat-who-text" }, h("span", { class: "chat-name" }, "Galahad", answers), nowLine));
@@ -906,11 +907,10 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     return h(
       "div",
       { class: "chat-hero" },
-      // Galahad himself, the orb you talk to, at your service, and what he asks you.
+      // Galahad himself, the orb you talk to, at your service.
       heroOrb,
       h("h2", {}, startIn ? projectName(startIn) : "At your service."),
       h("p", {}, startIn ? "A new chat in this project: its instructions and memories go with every answer." : "Ask anything. Galahad recalls what your fleet remembers, and uses his tools. Keys belong in the vault, never here."),
-      asks,
       canChat
         ? h(
             "div",
@@ -935,6 +935,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
         : null,
       recentChats(),
       awayBox,
+      // (Last, as what happened while you were away is: they come once the node has said, and below all else they move nothing.)
+      asks?.box,
     );
   }
 
@@ -1428,6 +1430,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const onKept = () => {
     renderSub();
     if (!thread.turns.length) renderAll();
+    asks?.render();
   };
   keptChanged.add(onKept);
   scope.add(() => keptChanged.delete(onKept));
@@ -1475,6 +1478,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     if (thread.turns.length) newConversation(opts.project);
     else startIn = opts.project;
   } else if (!opts.conversation && !opts.query && canChat) restoreOpenChat(ctx.api);
+  // (After the chat you had open is asked for, so a welcome that is only passing through shows none of it.)
+  asks?.render();
   renderSub();
   renderAll();
   renderRoles();

@@ -16,10 +16,14 @@ import { secretRequestCard } from "./vault.ts";
 /** At most this many here; the rest are counted, a tap from the Inbox. */
 const SHOWN = 4;
 
-export function galahadAsks(ctx: Ctx, scope: Scope): HTMLElement {
+/**
+ * The section, and its drawing (the caller draws it first, once the welcome is where you stay: `settled` says so, so
+ * that one shown on a welcome a moment before the chat you had open comes back never moves what follows).
+ */
+export function galahadAsks(ctx: Ctx, scope: Scope, settled: () => boolean = () => true): { box: HTMLElement; render: () => void } {
   const box = h("section", { class: "galahad-asks stack", "aria-label": "Galahad asks you", hidden: true });
   const render = (): void => {
-    const cards = [
+    const cards = !settled() ? [] : [
       ...ctx.live.actions.value.filter((action) => isWaiting(action)).map((action) => actionCard(ctx, action)),
       ...ctx.live.secretRequests.value.map((request) => secretRequestCard(ctx, request)),
       ...ctx.live.connectorRequests.value.map((request) => connectorRequestCard(ctx, request)),
@@ -35,6 +39,5 @@ export function galahadAsks(ctx: Ctx, scope: Scope): HTMLElement {
     );
   };
   for (const watched of [ctx.live.actions, ctx.live.secretRequests, ctx.live.connectorRequests, ctx.live.questions]) scope.add(watched.subscribe(render));
-  render();
-  return box;
+  return { box, render };
 }
