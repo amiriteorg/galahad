@@ -42,7 +42,7 @@ Anything that **moves, heats, unlocks, opens or spends** asks first, every time,
 
 These cannot be overridden by any instruction. Only a signed amendment changes them.
 
-1. Ask before **irreversible or outward-facing** actions, unless a signed standing order covers that exact class of action.
+1. Ask before anything **monetary, legal or destructive**: what spends or books money, commits you or speaks for you to other people, or deletes or can't be undone; and before anything outward not known to be none of those. A signed standing order may cover an exact class of action. The rest of his decisions, and his knights', are his to make (your word, 23 November 2026).
 2. Never **delete anything persistent** without approval (see above).
 3. Never ship his own code to himself. Releases need **your signature**.
 4. Never alter this oath, the update policy or his own permissions.
@@ -58,7 +58,7 @@ These cannot be overridden by any instruction. Only a signed amendment changes t
 | **Read** | Search, read files, recall, browse | Free |
 | **Create / modify** | Create a bucket, branch, container, scoped credential; edit a working tree; write objects | Free, logged |
 | **Delete** | Remove anything persistent | Ask (ephemeral cleanup by the owning quest excepted) |
-| **Outward** | Push, merge, deploy, send, post, purchase, change permissions, physical actions | Ask; no answer means **no** |
+| **Outward** | Push, merge, deploy, send, post, purchase, change permissions, physical actions | Ask; no answer means **no**. His and his knights' work in the repositories you gave them (a pull request on a `galahad/…` branch, a fix onto one, an issue, a comment, a review that isn't an approval) he approves himself, and says so |
 | **Forbidden** | Anything that breaks a limit above | Never |
 
 You grant standing orders by signed amendment, and each one is scoped narrowly and expires. For example: "Galahad may open pull requests from `feat/*` branches of `amiriteorg/*` until 1 December."
@@ -68,4 +68,4 @@ You grant standing orders by signed amendment, and each one is scoped narrowly a
 - Only you sign orders, from your terminal or a paired device. Every replica checks again that an order really covered what it approved.
 - If the tool an order was signed for changes, the order stops applying.
 
-*The gate behind these classes, `decide()` in `packages/core/src/oath.ts`, decides every connector call. When it says ask, the request waits in your inbox, is sent at most once after you approve, and is never sent if you decline, don't answer within a day, or it can't be sent within three days of your approval. Loops act as Galahad on his own, never as you: what they want to send asks too. Wiring the gate into every arm's own actions (a `git push` from a sandbox) is milestone M2.*
+*The gate behind these classes, `decide()` in `packages/core/src/oath.ts`, decides every connector call; `ownApproval()` beside it names the few outward calls that are his to approve, and he records each as his, never as yours. When it says ask, the request waits in your inbox, is sent at most once after you approve, and is never sent if you decline, don't answer within a day, or it can't be sent within three days of your approval. Loops act as Galahad on his own, never as you: what they want to send asks too. Wiring the gate into every arm's own actions (a `git push` from a sandbox) is milestone M2.*

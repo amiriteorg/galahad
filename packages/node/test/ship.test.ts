@@ -399,6 +399,8 @@ describe("the gate, end to end", () => {
     // In the outbox as the knight's, answered by you: what the CI watcher follows.
     const actions = (await send(home.adminToken(), "actions")).body.actions as ActionView[];
     const filed = actions.find((a) => a.tool === "ship" && a.state === "done" && a.by.endsWith(".kay"));
+    // Your tap is your approval, recorded as yours, though the repository is one you gave a knight.
+    expect(filed?.self).toBe(false);
     expect(filed?.args).toMatchObject({ owner: "amiriteorg", repo: "shipyard", artifact, title: "Parse SI units", branch: `galahad/parse-si-units-${id.slice(-8)}` });
     expect(String(filed?.args.body)).toStartWith("Units parse, kilo to giga.");
     // Said on the task, and not offered again.
@@ -426,5 +428,45 @@ describe("the gate, end to end", () => {
     const main = await send(armToken, "callConnector", { connector: "github", tool: "ship.update", args: { ...fix, branch: "main" } });
     expect(main.status).toBe(400);
     expect(main.body.error).toMatch(/branch doesn't match/);
+  });
+
+  // Your word, 23 November 2026: he approves his own decisions and his knights'; what is monetary, legal or destructive
+  // still asks you (oath.ts ownApproval).
+  test("his knights' work in the repository you gave them is his to approve: sent at once, and said to be his", async () => {
+    const team = new TeamStore(join(home.dir, "team.db"));
+    try {
+      team.saveTeammate({ id: "lynette", name: "Lynette", repository: "https://github.com/amiriteorg/shipyard" });
+    } finally {
+      team.close();
+    }
+    const knight = { kind: "agent" as const, by: "team.0123456789.lynette" };
+    const actions = async () => (await send(home.adminToken(), "actions")).body.actions as ActionView[];
+    const why = "a pull request of the work, on a galahad/… branch, in amiriteorg/shipyard, a repository you gave a knight";
+    let before = seen.length;
+    const shipped = await daemon.connectors.call({ connector: "github", tool: "ship", args: { ...ARGS, artifact, branch: "galahad/his-own" }, why: "its gates and its reviewer passed" }, knight);
+    expect(shipped.status).toBe("done");
+    expect(shipped.status === "done" && shipped.own).toBe(why);
+    expect(seen.slice(before).filter((s) => s.method === "POST" && s.url.endsWith("/pulls"))).toHaveLength(1);
+    const filed = (await actions()).find((a) => a.id === (shipped.status === "done" ? shipped.action : ""))!;
+    expect([filed.state, filed.self, filed.note]).toEqual(["done", true, `Galahad approved it himself: ${why}`]);
+    // A fix pushed onto its branch, likewise.
+    before = seen.length;
+    const pushed = await daemon.connectors.call({ connector: "github", tool: "ship.update", args: { owner: "amiriteorg", repo: "shipyard", artifact, branch: "galahad/fixing", title: "Fix the failing checks" }, why: "its checks failed" }, knight);
+    expect(pushed.status === "done" && pushed.own).toBe("a fix pushed onto its galahad/… branch, in amiriteorg/shipyard, a repository you gave a knight");
+    expect(seen.slice(before).filter((s) => s.method === "PATCH")).toHaveLength(1);
+    // His own tools in chat, in a repository you gave a knight.
+    const opened = await daemon.connectors.call({ connector: "github", tool: "pr.create", args: { owner: "amiriteorg", repo: "shipyard", head: "galahad/his-own", base: "main", title: "Parse SI units" } }, { kind: "agent", by: "arm:galahad" });
+    expect(opened.status === "done" && opened.own).toBe("a pull request in amiriteorg/shipyard, a repository you gave a knight");
+  });
+
+  test("what isn't his still waits for you: another repository, a tool you run with a token of its own, your own tap", async () => {
+    const before = seen.length;
+    const elsewhere = await daemon.connectors.call({ connector: "github", tool: "pr.create", args: { owner: "oven-sh", repo: "bun", head: "galahad/x", base: "main", title: "A fix" } }, { kind: "agent", by: "arm:galahad" });
+    expect(elsewhere.status).toBe("asked");
+    const tool = await send(armToken, "callConnector", { connector: "github", tool: "pr.create", args: { owner: "amiriteorg", repo: "shipyard", head: "galahad/x", base: "main", title: "A fix" } });
+    expect(tool.body.status).toBe("asked");
+    const tapped = await daemon.connectors.call({ connector: "github", tool: "pr.create", args: { owner: "amiriteorg", repo: "shipyard", head: "galahad/y", base: "main", title: "Another" } }, { kind: "agent", by: "team.0123456789.lynette", yours: true });
+    expect(tapped.status).toBe("asked");
+    expect(seen.length).toBe(before);
   });
 });

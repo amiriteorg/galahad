@@ -1919,8 +1919,10 @@ export interface ActionView {
   /** The standing order that answered it, when one did. */
   order: { id: string; label: string } | null;
   receipt: string | null;
-  /** What you said with your answer; for one you edited, which it was sent as. */
+  /** What you said with your answer; for one you edited, which it was sent as; for one Galahad approved himself, why. */
   note: string | null;
+  /** Galahad approved it himself, as his to approve (oath.ts ownApproval; your word of 23 November 2026), not you. */
+  self: boolean;
 }
 
 /** A line of "while you were away" (PLAN #37): what happened, in its state's colour (done green, failed red, waits amber). */

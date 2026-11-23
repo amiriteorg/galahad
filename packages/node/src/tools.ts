@@ -537,7 +537,7 @@ export const TOOLS: GalahadTool[] = [
     routes: ["callConnector"],
     flow: "egress",
     async run(api, { connector, tool: name, args, why }) {
-      const outcome = await api.call<{ status: string; action?: string; target: string; order?: { label: string }; result?: { status: number; body: string; truncated: boolean }; private?: boolean }>(
+      const outcome = await api.call<{ status: string; action?: string; target: string; order?: { label: string }; own?: string; result?: { status: number; body: string; truncated: boolean }; private?: boolean }>(
         "callConnector",
         { connector, tool: name, ...(args ? { args } : {}), ...(why ? { why } : {}) },
       );
@@ -545,7 +545,11 @@ export const TOOLS: GalahadTool[] = [
         return `Filed for the user's approval as action ${outcome.action} (${outcome.target}). Nothing has been sent. It will be sent once, by Galahad, if they approve.`;
       }
       const result = outcome.result!;
-      const under = outcome.order ? `Sent under the user's standing order "${outcome.order.label}" (action ${outcome.action}).\n` : "";
+      const under = outcome.order
+        ? `Sent under the user's standing order "${outcome.order.label}" (action ${outcome.action}).\n`
+        : outcome.own
+          ? `Sent on your own approval, as the user lets you give it (${outcome.own}; action ${outcome.action}): tell them what you sent.\n`
+          : "";
       const text = `${under}${outcome.target} → ${result.status}${result.truncated ? " (truncated)" : ""}\n${clip(result.body)}`;
       return outcome.private ? { text, private: connector } : text;
     },

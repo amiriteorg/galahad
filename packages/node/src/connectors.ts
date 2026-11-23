@@ -27,6 +27,7 @@ import {
   orderProblems,
   type OrderTerms,
   type OrderView,
+  ownApproval,
   randomId,
   redact,
   reviewedMcp,
@@ -51,6 +52,7 @@ import {
 } from "@galahad/brain";
 import type { MindStore, Vault } from "@galahad/mind";
 import type { LedgerEntryInput } from "@galahad/sandbox";
+import { GALAHAD_ARM } from "./arms.ts";
 
 /*
  * Connector calls, through the oath gate:
@@ -67,13 +69,16 @@ import type { LedgerEntryInput } from "@galahad/sandbox";
  *
  * A standing order is your answer given in advance. An agent's call that one covers
  * is still filed as an action (so you see it), answered by the order on the spot,
- * and sent through the same outbox.
+ * and sent through the same outbox. So is one that is Galahad's own to approve (your
+ * word, 23 November 2026: oath.ts ownApproval): his, or his knights' or loops', and
+ * none of monetary, legal or destructive; it is answered as his, and says so.
  */
 
-export type Caller = { kind: "owner"; device: string } | { kind: "agent"; by: string; quest?: string };
+/** Who calls: you, or an agent; `yours` is an agent's call made on your word (you tapped Ship it), which you approve, never he. */
+export type Caller = { kind: "owner"; device: string } | { kind: "agent"; by: string; quest?: string; yours?: true };
 
 export type CallOutcome =
-  | { status: "done"; class: string; target: string; result: ConnectorResult; order?: { id: string; label: string }; action?: string; private?: true }
+  | { status: "done"; class: string; target: string; result: ConnectorResult; order?: { id: string; label: string }; own?: string; action?: string; private?: true }
   | { status: "asked"; action: string; class: string; target: string; expires: number };
 
 type StoredOrder = OrderTerms & { id: string; revoked: boolean; signedHlc: string; via?: string };
@@ -105,6 +110,8 @@ export interface ConnectorServiceOptions {
   now?: () => number;
   /** The native tools this node can carry out (a call to another is refused). */
   natives?: Partial<Record<NativeName, NativeTool>>;
+  /** The repositories you gave your knights (as you gave them): his and their work there is his to approve (ownApproval). Absent: none. */
+  repositories?: () => readonly string[];
   /** Where Google's and Microsoft's sign-ins are reached (tests: a stand-in). */
   oauthEndpoints?: Partial<OAuthEndpoints>;
   /**
@@ -116,6 +123,13 @@ export interface ConnectorServiceOptions {
 
 /** How long an action waits for you. No answer means no. */
 export const ACTION_TTL_MS = 24 * 60 * 60_000;
+
+/**
+ * Galahad's own callers, whose calls he may approve himself: him (his chat's tools, and the node's work for him), his
+ * knights' work as the node carries it out, and his loops; no token you mint can take these names (arms.ts). Not a
+ * tool you run with a token of its own (arm:…), another node, or you asking to be asked (quest).
+ */
+const isHis = (by: string): boolean => by === GALAHAD_ARM || by === `arm:${GALAHAD_ARM}` || by.startsWith("team.") || by.startsWith("loop:");
 
 export class ConnectorService {
   private readonly now: () => number;
@@ -189,6 +203,17 @@ export class ConnectorService {
           const sent = await this.sendApproved(filed, `under your standing order "${order.label}"`);
           if (!sent.result) throw new ConnectorCallError(sent.status ?? 502, sent.receipt);
           return { status: "done", class: request.class, target: request.target, result: sent.result, order: { id: order.id, label: order.label }, action: id };
+        }
+      }
+      const tool = manifest.tools[input.tool];
+      const own = tool && !isMcpTool(tool) && isHis(caller.by) && !caller.yours ? ownApproval({ class: request.class, origin: manifest.origin, ...(tool.native ? { native: tool.native } : {}), method: tool.method, path: tool.path, args }, this.o.repositories?.() ?? []) : null;
+      if (own) {
+        this.o.store.emit(this.o.identity, "action.decided", { id, verdict: "approved", note: `Galahad approved it himself: ${own}`.slice(0, 500) }, { trust: "agent" });
+        const filed = this.actions(10_000).find((a) => a.id === id);
+        if (filed?.state === "approved") {
+          const sent = await this.sendApproved(filed, `on Galahad's own approval: ${own}`);
+          if (!sent.result) throw new ConnectorCallError(sent.status ?? 502, sent.receipt);
+          return { status: "done", class: request.class, target: request.target, result: sent.result, own, action: id };
         }
       }
       this.o.ledger({ class: request.class, resource, target: request.target, verdict: "ask", reason: decision.reason, quest, detail: `action ${id}, asked by ${caller.by}` });
@@ -358,7 +383,7 @@ export class ConnectorService {
           why?: string;
           expires: number;
         };
-        const decision = this.o.store.lww<{ verdict: "approved" | "denied"; via?: string; order?: string; note?: string }>(`action-decision:${body.id}`);
+        const decision = this.o.store.lww<{ verdict: "approved" | "denied"; via?: string; order?: string; note?: string; self?: boolean }>(`action-decision:${body.id}`);
         const orderId = decision?.value?.order;
         const order = orderId ? this.o.store.lww<StoredOrder>(`order:${orderId}`)?.value : null;
         const done = this.o.store.lww<{ ok: boolean; receipt: string }>(`action-done:${body.id}`)?.value ?? null;
@@ -387,6 +412,7 @@ export class ConnectorService {
           order: orderId ? { id: orderId, label: order?.label ?? orderId } : null,
           receipt: done?.receipt ?? null,
           note: decision?.value?.note ?? null,
+          self: decision?.value?.self === true,
         };
       })
       .sort((a, b) => (a.requestedAt < b.requestedAt ? 1 : -1))

@@ -46,6 +46,7 @@ describe("which pull requests are followed", () => {
     order: null,
     receipt: "pull request #12: https://github.com/amiriteorg/galahad/pull/12 (3 files on galahad/units into main, commit 4f7a1c2e9b8d)",
     note: null,
+    self: false,
     ...over,
   });
   const at = () => 1_000;

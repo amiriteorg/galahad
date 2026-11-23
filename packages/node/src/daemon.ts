@@ -447,7 +447,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   if (bank.status().configured && bank.problem()) log(`bank access is off: ${bank.problem()}`);
   // MCP servers' questions mid-call (questions.ts): each waits in your Inbox for you, and its call with it.
   const questions = new Questions({ log });
-  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, ask: (connector, params, signal) => questions.ask(connector, params, signal), ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}), natives: { "github.ship": shipNative(artifacts), "github.ship.update": shipNative(artifacts, true), ...gmailNatives, ...outlookNatives, ...cloudflareNatives } });
+  const connectors = new ConnectorService({ store, vault, identity, local, ledger, log, fetch: opts.fetch, ask: (connector, params, signal) => questions.ask(connector, params, signal), ...(opts.oauthEndpoints ? { oauthEndpoints: opts.oauthEndpoints } : {}), natives: { "github.ship": shipNative(artifacts), "github.ship.update": shipNative(artifacts, true), ...gmailNatives, ...outlookNatives, ...cloudflareNatives }, repositories: () => team.store.teammates().flatMap((k) => (k.repository ? [k.repository] : [])) });
   const taskDeps: LoopTaskDeps = {
     bank,
     store,

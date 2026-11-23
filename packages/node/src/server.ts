@@ -2511,7 +2511,7 @@ export function createApp(ctx: AppContext) {
       const filed = await connectorErrors(() =>
         ctx.connectors.call(
           { connector, tool: "ship", args: { owner: where.owner, repo: where.repo, artifact, branch: shipBranch(title, task.id.slice(-8)), title, body }, why: `Your word, in the app, on @${task.assignee}'s verified work (task ${task.id}).` },
-          { kind: "agent", by: teammateLabel(task.assignee) },
+          { kind: "agent", by: teammateLabel(task.assignee), yours: true },
         ),
       );
       let receipt: string;

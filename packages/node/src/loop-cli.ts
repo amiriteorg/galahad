@@ -625,7 +625,7 @@ export async function actionCommand(api: Api, sub: string | undefined, rest: str
     console.log(`  ${bold(a.id)}  ${state.padEnd(8)} ${a.class.padEnd(7)} ${a.connector}.${a.tool}  ${dim(`asked by ${a.by}`)}`);
     if (a.state === "lapsed") console.log(dim(`      your approval expired ${new Date(a.sendBy!).toISOString()} before the node that asked could send it: never sent`));
     if (a.state === "approved" && a.sendBy !== null) console.log(dim(`      sent by ${new Date(a.sendBy).toISOString()} or never`));
-    const answered = a.order ? dim(`  · answered by your standing order "${a.order.label}"`) : "";
+    const answered = a.order ? dim(`  · answered by your standing order "${a.order.label}"`) : a.self ? dim(`  · ${a.note ?? "Galahad approved it himself"}`) : "";
     console.log(`      ${a.target}${a.why ? dim(`  · ${a.why}`) : ""}${answered}${a.receipt ? `\n      ${dim(a.receipt.slice(0, 200))}` : ""}`);
   }
   if (shown.some((a) => a.state === "waiting")) {

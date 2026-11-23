@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { decide } from "../src/index.ts";
+import { decide, type OwnCall, ownApproval } from "../src/index.ts";
 
 describe("oath gate", () => {
   test("creating infrastructure is free; deleting it asks", () => {
@@ -22,5 +22,42 @@ describe("oath gate", () => {
 
   test("forbidden is always denied", () => {
     expect(decide({ class: "forbidden", resource: "oath", target: "self" }).verdict).toBe("deny");
+  });
+});
+
+// Your word, 23 November 2026: he approves his own decisions and his knights'; what is monetary, legal or destructive
+// still asks you.
+describe("what Galahad approves himself", () => {
+  const KNIGHTS = ["https://github.com/amiriteorg/galahad", "git@github.com:wckdboy/Engram.git"];
+  const github = (over: Partial<OwnCall>): OwnCall => ({ class: "outward", origin: "https://api.github.com", method: "POST", path: "/repos/{owner}/{repo}/pulls", args: { owner: "amiriteorg", repo: "galahad" }, ...over });
+
+  test("his knights' work in the repositories you gave them: a pull request, a fix onto its branch, an issue, a comment, a review that isn't an approval", () => {
+    expect(ownApproval(github({ native: "github.ship" }), KNIGHTS)).toBe("a pull request of the work, on a galahad/… branch, in amiriteorg/galahad, a repository you gave a knight");
+    expect(ownApproval(github({ native: "github.ship.update", method: "PATCH", path: "/repos/{owner}/{repo}/git/refs/heads/{branch}" }), KNIGHTS)).toBe("a fix pushed onto its galahad/… branch, in amiriteorg/galahad, a repository you gave a knight");
+    expect(ownApproval(github({ path: "/repos/{owner}/{repo}/issues" }), KNIGHTS)).toBe("an issue in amiriteorg/galahad, a repository you gave a knight");
+    expect(ownApproval(github({ path: "/repos/{owner}/{repo}/issues/{number}/comments" }), KNIGHTS)).toStartWith("a comment in");
+    expect(ownApproval(github({}), KNIGHTS)).toStartWith("a pull request in");
+    for (const event of ["COMMENT", "REQUEST_CHANGES", "comment"]) expect(ownApproval(github({ path: "/repos/{owner}/{repo}/pulls/{number}/reviews", args: { owner: "amiriteorg", repo: "galahad", event } }), KNIGHTS)).toStartWith("a review in");
+    // A repository is the same one however its address is written, whatever its case.
+    expect(ownApproval(github({ args: { owner: "WCKDboy", repo: "engram" } }), KNIGHTS)).toStartWith("a pull request in WCKDboy/engram");
+  });
+
+  test("everything else waits for you", () => {
+    // Someone else's repository: it speaks for you in another's place.
+    expect(ownApproval(github({ native: "github.ship", args: { owner: "oven-sh", repo: "bun" } }), KNIGHTS)).toBeNull();
+    // No knight of yours has a repository: nothing is his.
+    expect(ownApproval(github({ native: "github.ship" }), [])).toBeNull();
+    // A review that approves is your word on your account (branch protection counts it), and one that says no event isn't known.
+    expect(ownApproval(github({ path: "/repos/{owner}/{repo}/pulls/{number}/reviews", args: { owner: "amiriteorg", repo: "galahad", event: "APPROVE" } }), KNIGHTS)).toBeNull();
+    expect(ownApproval(github({ path: "/repos/{owner}/{repo}/pulls/{number}/reviews" }), KNIGHTS)).toBeNull();
+    // What GitHub's API does elsewhere isn't known to be safe: a merge, a delete.
+    expect(ownApproval(github({ method: "PUT", path: "/repos/{owner}/{repo}/pulls/{number}/merge" }), KNIGHTS)).toBeNull();
+    expect(ownApproval(github({ class: "delete", method: "DELETE", path: "/repos/{owner}/{repo}/git/refs/heads/{branch}" }), KNIGHTS)).toBeNull();
+    // Another address is another service, whatever its paths look like; another native tool isn't GitHub's ship.
+    expect(ownApproval(github({ origin: "https://github.example.com", native: "github.ship" }), KNIGHTS)).toBeNull();
+    expect(ownApproval(github({ native: "gmail.send" }), KNIGHTS)).toBeNull();
+    expect(ownApproval({ class: "outward", origin: "https://gmail.googleapis.com", native: "gmail.send", method: "POST", path: "/gmail/v1/users/me/messages/send", args: { to: "someone@example.com" } }, KNIGHTS)).toBeNull();
+    // A repository that isn't named as text isn't named.
+    expect(ownApproval(github({ args: { owner: ["amiriteorg"], repo: "galahad" } }), KNIGHTS)).toBeNull();
   });
 });

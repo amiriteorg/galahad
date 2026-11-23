@@ -149,8 +149,8 @@ export function reviewBack(deps: CiBackDeps, pull: ShippedPull, review: CiReview
 }
 
 export interface OfferDeps {
-  /** One call of the GitHub connector's, as the knight's own: it asks you (an approval card) unless a standing order answers. */
-  call: (input: { connector: string; tool: string; args: Record<string, ArgValue>; why: string }) => Promise<{ status: "asked" } | { status: "done"; result: { ok: boolean; body: string } }>;
+  /** One call of the GitHub connector's, as the knight's own: it asks you (an approval card) unless a standing order answers, or it is Galahad's own to approve (`own`, why). */
+  call: (input: { connector: string; tool: string; args: Record<string, ArgValue>; why: string }) => Promise<{ status: "asked" } | { status: "done"; result: { ok: boolean; body: string }; own?: string }>;
   note: (task: string, text: string) => void;
   log: (message: string) => void;
 }
@@ -168,7 +168,7 @@ export async function offerFix(deps: OfferDeps, task: TeamTask): Promise<void> {
       why: `@${task.assignee} ${fix.conflict ? "merged the base branch in and resolved the conflicts" : "fixed the failing checks"} on ${where} (task ${task.id}), and the independent reviewer passed it: one commit on top of ${fix.branch}, where the fix began. The pull request updates and its checks run again. Its patch: ${task.changes.artifact}, changes.patch.`.slice(0, 500),
     });
     if (sent.status === "asked") deps.note(task.id, `Push · onto ${fix.branch}: it waits for your approval (Inbox)`);
-    else deps.note(task.id, `Push · onto ${fix.branch}, under your standing order: ${sent.result.body}`.slice(0, 500));
+    else deps.note(task.id, `Push · onto ${fix.branch}, ${sent.own ? "approved by Galahad himself" : "under your standing order"}: ${sent.result.body}`.slice(0, 500));
   } catch (error) {
     const message = (error as Error).message;
     deps.note(task.id, `Push · not offered: ${/has no tool "ship\.update"/.test(message) ? `the GitHub connector can't push fixes yet; add it again (galahad connector add ${fix.connector})` : message}`.slice(0, 500));

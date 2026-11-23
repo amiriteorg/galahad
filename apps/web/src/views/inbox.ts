@@ -256,7 +256,7 @@ function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
       ". No answer means no. ",
       destructive
         ? "Deleting anything persistent asks you, unless a standing order of yours names exactly this."
-        : "Outward actions (posting, sending, pushing, the physical world) ask you, unless a standing order of yours covers them.",
+        : "Outward actions (posting, sending, pushing, the physical world) ask you, unless a standing order of yours covers them, or they are his knights' work in the repositories you gave them, which he approves himself.",
     ),
     admin
       ? formActions(decline, similar, edit, approve)
@@ -392,10 +392,10 @@ function decidedRow(ctx: Ctx, action: ActionView): HTMLElement {
       asked ? h("span", {}, relativeTime(asked)) : null,
       action.order
         ? h("span", { class: "row tight" }, icon("scroll", { size: 12 }), `answered by your standing order "${action.order.label}"`)
-        : action.decidedVia
+        : action.decidedVia && !action.self
           ? h("span", {}, `answered from ${deviceName(ctx, action.decidedVia)}`)
           : null,
-      // What you said with it; for one you edited, which it was sent as.
+      // What you said with it; for one you edited, which it was sent as; for one he approved himself, why (it says so).
       action.note ? h("span", { class: "wrap-anywhere" }, action.note) : null,
     ],
     body: action.receipt ? h("details", { class: "process" }, h("summary", { "data-key": `receipt:${action.id}` }, icon("chevron-right", { size: 14, class: "chev" }), "Receipt"), h("pre", { class: "result process-body" }, action.receipt)) : null,
@@ -559,7 +559,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const questionsSection = section("Services ask you", { note: "An MCP server asked you something in the middle of a call of Galahad's. Only you answer it, never a model; what you send goes to that service alone." }, questionsBox);
   const actionsSection = section(
     "Galahad asks your leave",
-    { note: "Anything outward, and every delete, waits for you unless a standing order answers it. Approved, it's sent once; no answer in 24 hours means no." },
+    { note: "What spends money, speaks for you, or can't be undone (anything outward, every delete) waits for you unless a standing order answers it; his knights' work in the repositories you gave them he approves himself. Approved, it's sent once; no answer in 24 hours means no." },
     actionsBox,
   );
   const requestsSection = section("Credentials Galahad asked for", {}, requestsBox);

@@ -945,7 +945,8 @@ export class MindStore {
         if (!this.lww(`action:${body.id}`)) return "no such action";
         // The first decision stands: an approval can't be flipped after the fact, nor a refusal.
         if (this.lww(`action-decision:${body.id}`)) return "action already decided";
-        this.putLww(`action-decision:${body.id}`, event, { ...body, ...(event.prov?.via ? { via: event.prov.via } : {}) } as Json);
+        // One recorded as an agent's, not yours, is Galahad's own approval (oath.ts ownApproval): it says so where it shows.
+        this.putLww(`action-decision:${body.id}`, event, { ...body, ...(event.prov?.via ? { via: event.prov.via } : {}), ...(event.prov?.trust === "agent" ? { self: true } : {}) } as Json);
         return null;
       }
       case "action.done": {

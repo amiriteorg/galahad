@@ -326,6 +326,12 @@ describe("a fix that ended verified", () => {
     expect(o.notes).toEqual(["Push · onto galahad/units, under your standing order: 1 file pushed onto galahad/units, commit 9f2c1d0e4b7a: pull request #12 updated"]);
   });
 
+  test("one Galahad approved himself (a repository you gave a knight) is said to be his, with what GitHub answered", async () => {
+    const o = offer({ status: "done", own: "a fix pushed onto its galahad/… branch, in amiriteorg/shipyard, a repository you gave a knight", result: { ok: true, body: "1 file pushed onto galahad/units, commit 9f2c1d0e4b7a: pull request #12 updated" } });
+    await offerFix(o.deps, fixTask());
+    expect(o.notes).toEqual(["Push · onto galahad/units, approved by Galahad himself: 1 file pushed onto galahad/units, commit 9f2c1d0e4b7a: pull request #12 updated"]);
+  });
+
   test("a GitHub connector from before fixes could be pushed says to add it again; nothing else is tried", async () => {
     const o = offer(new Error('github-amiriteorg has no tool "ship.update" (it has: me, repo, ship)'));
     await offerFix(o.deps, fixTask());
