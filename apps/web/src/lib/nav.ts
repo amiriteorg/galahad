@@ -28,7 +28,8 @@ interface PlaceSpec {
 }
 
 const LIST = [
-  { id: "chat", label: "Chat", icon: "chat", under: "primary", scope: "chat", key: "c", keywords: ["galahad", "counsel", "ask", "talk", "history", "conversations", "home"], about: "" },
+  // Galahad himself, the one you talk to (your word, 23 November 2026): his address stays #/chat, and "chat" still finds him.
+  { id: "chat", label: "Galahad", icon: "chat", under: "primary", scope: "chat", key: "c", keywords: ["galahad", "chat", "counsel", "ask", "talk", "history", "conversations", "home", "orb"], about: "" },
   // (Its address stays #/team, and #/roundtable is the same page. Its older names still find it.)
   { id: "team", label: "Roundtable", icon: "roundtable", under: "primary", scope: "chat", key: "h", keywords: ["knights", "roundtable", "give", "rooms", "messages", "tasks", "coordination", "team", "squires", "hermes"], about: "" },
   // (What needs you shows on the row it belongs to; the Inbox is where all of it is answered.)
@@ -77,16 +78,15 @@ export function routeOf(hash: string, visible: Place[]): Route | null {
 export const primaryOf = (visible: Place[]): Place[] => visible.filter((place) => place.under === "primary");
 
 /**
- * The place the app opens on, and falls back to. A phone opens on the roster itself; a wide screen has the
- * roster beside every page, so it opens on Galahad's timeline. A device that may not chat has neither: its Inbox.
+ * The place the app opens on, and falls back to: Galahad, on every screen (your word, 23 November 2026: he is the one
+ * you talk to, for nearly everything; the knights are one tap away, at the Roundtable). A device that may not chat
+ * opens on its Inbox.
  */
-export const homeOf = (visible: Place[], screen: { narrow: boolean }): Route => {
-  const roster = primaryOf(visible).map((place) => place.id);
-  return (screen.narrow && roster.includes("team") ? "team" : roster[0]) ?? "inbox";
-};
+export const homeOf = (visible: Place[], _screen: { narrow: boolean }): Route => primaryOf(visible)[0]?.id ?? "inbox";
 
-/** A phone's bar: the roster and More (for a device with no roster, its Inbox and More). */
-export const tabsOf = (visible: Place[]): Place[] => visible.filter((place) => place.id === (visible.some((other) => other.id === "team") ? "team" : "inbox") || place.id === "more");
+/** A phone's bar: Galahad, the Roundtable and More (for a device with no roster, its Inbox and More). */
+export const tabsOf = (visible: Place[]): Place[] =>
+  visible.some((place) => place.id === "team") ? visible.filter((place) => place.id === "chat" || place.id === "team" || place.id === "more") : visible.filter((place) => place.id === "inbox" || place.id === "more");
 
 /** More's index: every other place this device may see, under its heading. */
 export function moreIndex(visible: Place[]): { heading: string; places: Place[] }[] {

@@ -32,7 +32,7 @@ describe("the app's places", () => {
 
   test("the roster comes first: Galahad's own timeline and the Roundtable's; the Inbox is no longer a place of its own in the navigation", () => {
     expect(ids(primaryOf(device(...OWNER)))).toEqual(["chat", "team"]);
-    expect(primaryOf(device(...OWNER)).map((place) => place.label)).toEqual(["Chat", "Roundtable"]);
+    expect(primaryOf(device(...OWNER)).map((place) => place.label)).toEqual(["Galahad", "Roundtable"]);
   });
 
   test("#/roundtable is the Roundtable's address as well as #/team; no other place has a second name", () => {
@@ -63,8 +63,9 @@ describe("the app's places", () => {
     expect(index.every((group) => group.places.length > 0)).toBe(true);
   });
 
-  test("the app opens on the roster: a phone on the roster itself, a wide screen on Galahad's timeline beside it; a device that may not chat opens on its Inbox", () => {
-    expect(homeOf(device(...OWNER), { narrow: true })).toBe("team");
+  // Your word, 23 November 2026: Galahad is the one you talk to, for nearly everything; the knights are one tap away.
+  test("the app opens on Galahad, on a phone as on a wide screen; a device that may not chat opens on its Inbox", () => {
+    expect(homeOf(device(...OWNER), { narrow: true })).toBe("chat");
     expect(homeOf(device(...OWNER), { narrow: false })).toBe("chat");
     for (const narrow of [true, false]) {
       expect(homeOf(device("mind:read"), { narrow })).toBe("inbox");
@@ -79,16 +80,17 @@ describe("the app's places", () => {
     for (const shortcut of manifest.shortcuts) expect([shortcut.url, routeOf(shortcut.url.replace(/^\//, ""), device(...OWNER))]).not.toEqual([shortcut.url, null]);
   });
 
-  test("a phone's bar is the roster and More; a device with no roster has its Inbox there", () => {
-    expect(ids(tabsOf(device(...OWNER)))).toEqual(["team", "more"]);
-    expect(ids(tabsOf(device("chat")))).toEqual(["team", "more"]);
+  test("a phone's bar is Galahad, the Roundtable and More; a device with no roster has its Inbox there", () => {
+    expect(ids(tabsOf(device(...OWNER)))).toEqual(["chat", "team", "more"]);
+    expect(ids(tabsOf(device("chat")))).toEqual(["chat", "team", "more"]);
+    expect(tabsOf(device(...OWNER)).map((tab) => tab.label)).toEqual(["Galahad", "Roundtable", "More"]);
     expect(ids(tabsOf(device("mind:read")))).toEqual(["inbox", "more"]);
     expect(ids(tabsOf(device()))).toEqual(["inbox", "more"]);
   });
 
   test("a place reached from More keeps More marked, and a timeline keeps the roster marked", () => {
     const tabs = tabsOf(device(...OWNER));
-    expect(tabOf("chat", tabs)).toBe("team");
+    expect(tabOf("chat", tabs)).toBe("chat");
     expect(tabOf("team", tabs)).toBe("team");
     for (const id of ["more", "inbox", "overview", "fleet", "settings", "vault"] as const) expect([id, tabOf(id, tabs)]).toEqual([id, "more"]);
     // On a device whose bar holds the Inbox, the Inbox marks itself.

@@ -264,7 +264,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   for (const type of ["pointerover", "focusin"]) rail.addEventListener(type, (event) => tipFor(event.target), { signal: lifetime.signal });
   for (const type of ["pointerleave", "focusout", "scroll", "click"]) rail.addEventListener(type, () => (railTip.hidden = true), { signal: lifetime.signal });
 
-  // Tab bar (phones): the Roundtable, and More. What waits in the Inbox is counted on the first.
+  // Tab bar (phones): Galahad, the Roundtable and More. What waits in the Inbox is counted on the first: on him.
   const tabbar = h(
     "nav",
     { class: "tabbar", "aria-label": "Sections" },

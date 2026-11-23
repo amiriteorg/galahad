@@ -949,6 +949,8 @@ try {
       { name: "roundtable-arrange", hash: "#/team", steps: [press("Arrange")], wait: "[data-arranging]" },
       { name: "roundtable-lin-leads", hash: "#/team", around: { route: "arrangeTeam", before: { primary: "lin" }, after: { primary: "galahad" } } },
       { name: "galahad", hash: `#/chat?c=${conversation}`, wait: ".turn.assistant" },
+      // A new chat with him: his orb, large, and what he asks you under it (where the checkout has it).
+      { name: "galahad-welcome", hash: "#/chat", steps: [press("Chat options"), press("New chat")], wait: ".chat-hero" },
       // Files with a message: a kept one that carried a picture and a text, and the message box with two waiting to go.
       ...(attachedChat ? [{ name: "galahad-attached", hash: `#/chat?c=${attachedChat}`, wait: ".attached-picture img[src]" }] : []),
       { name: "chat-attaching", hash: "#/chat", steps: [ATTACHING], wait: ".composer-file.up ~ .composer-file.up" },

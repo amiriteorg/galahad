@@ -16,7 +16,7 @@ import type { RoleSpec } from "../types.ts";
 import { badge, button, callout, copyText, dot, empty, skeletonRows, spinner } from "../ui/controls.ts";
 import { confirmAction, openSheet } from "../ui/dialog.ts";
 import { debounce, h, replace } from "../ui/dom.ts";
-import { workerAvatar } from "../ui/avatar.ts";
+import { orb } from "../ui/orb.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
 import { selector, type SelectorGroup } from "../ui/selector.ts";
@@ -29,6 +29,7 @@ import { queuePanel } from "./chat-queue.ts";
 import { openInHand } from "./in-hand.ts";
 import { openAddKey, secretRequestCard } from "./vault.ts";
 import { connectorRequestCard } from "./connectors.ts";
+import { galahadAsks } from "./galahad-asks.ts";
 
 /*
  * Chat. A turn runs on the node, not in this page: the page starts it and watches
@@ -721,8 +722,12 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const canChat = ctx.can("chat");
   const coarse = matchMedia("(pointer: coarse)").matches;
 
-  // ---- Galahad himself: his face, and what he's doing now in a line. A tap shows what he has in hand. ----
+  // ---- Galahad himself: his orb, in the colour of what he's doing, and that in a line. A tap shows what he has in hand. ----
   const face = h("span", { class: "chat-face" });
+  // The welcome's orb, the same one large (your word, 23 November 2026: the one you talk to, as an orb).
+  const heroOrb = h("div", { class: "hero-galahad" }, orb({ size: 168 }));
+  // What he asks you, answered under his orb (made once: the welcome is drawn again, its subscriptions are not).
+  const asks = canChat ? galahadAsks(ctx, scope) : null;
   const nowLine = h("span", { class: "chat-now ellipsis" });
   const answers = h("span", { class: "chat-as ellipsis" });
   const who = h("button", { class: "chat-who", type: "button", onclick: () => openInHand(ctx) }, face, h("span", { class: "chat-who-text" }, h("span", { class: "chat-name" }, "Galahad", answers), nowLine));
@@ -733,7 +738,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const inbox = h("a", { class: "btn ghost sm icon-only chat-inbox", href: "#/inbox", "aria-label": "Inbox", title: "Inbox" }, icon("inbox", { size: 16 }), inboxCount);
   // His own computer: watched and taken over from here, and given to him here while he has none.
   const computer = ctx.can("sandbox") ? h("button", { class: "btn ghost sm icon-only chat-computer", type: "button", "aria-label": "His computer", title: "His computer", onclick: () => openComputer(ctx) }, icon("monitor", { size: 16 })) : null;
-  let shownFace = "";
+  let shownTone = "";
   function renderNow(): void {
     const waiting = ctx.live.actions.value.filter((action) => isWaiting(action));
     const needs = ctx.live.inboxLoaded.value ? galahadNeeds(ctx.live.inboxCount.value, waiting, ctx.live.team.value?.teammates.map((person) => person.id) ?? []) : null;
@@ -746,7 +751,10 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     inboxCount.hidden = !needs;
     inboxCount.textContent = String(needs ?? "");
     inbox.setAttribute("aria-label", needs ? `Inbox: ${needs} waiting` : "Inbox");
-    if (now.expression !== shownFace) replace(face, workerAvatar({ id: "galahad", name: "Galahad", expression: (shownFace = now.expression), size: 36 }));
+    if (now.tone !== shownTone) {
+      replace(face, orb({ size: 36, tone: (shownTone = now.tone) }));
+      replace(heroOrb, orb({ size: 168, tone: now.tone }));
+    }
     // Who answers and with what, beside his name: the model, and the role when it isn't the planner (the menu changes both).
     const as = [role === "planner" ? null : role, modelName((roster ?? DEFAULT_ROLES)[role]?.models[0])].filter(Boolean).join(" · ");
     if (answers.textContent !== as) answers.textContent = as;
@@ -844,7 +852,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     return h(
       "article",
       { class: `turn assistant${thread.turns.at(-1) === turn ? " last" : ""}`, "aria-label": "Galahad said" },
-      h("span", { class: "avatar agent", "aria-hidden": "true" }, icon("mark", { size: 16 })),
+      // His orb beside each answer of his, still and at rest: the colour of his state is his line's, above.
+      h("span", { class: "avatar agent orb-avatar", "aria-hidden": "true" }, orb({ size: 28 })),
       h("div", { class: "turn-body" }, processView(turn), turn.content ? content : null, errorBox, turn.status === "streaming" ? null : turnActions(turn)),
     );
   }
@@ -897,10 +906,11 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     return h(
       "div",
       { class: "chat-hero" },
-      // Galahad himself, as the owner drew him, at your service.
-      h("div", { class: "hero-galahad" }, workerAvatar({ id: "galahad", name: "Galahad", size: 168 })),
+      // Galahad himself, the orb you talk to, at your service, and what he asks you.
+      heroOrb,
       h("h2", {}, startIn ? projectName(startIn) : "At your service."),
       h("p", {}, startIn ? "A new chat in this project: its instructions and memories go with every answer." : "Ask anything. Galahad recalls what your fleet remembers, and uses his tools. Keys belong in the vault, never here."),
+      asks,
       canChat
         ? h(
             "div",

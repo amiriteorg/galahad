@@ -489,6 +489,7 @@
         background: var(--surface-3); color: var(--text-2);
       }
       .avatar.agent { background: var(--accent-soft); color: var(--accent); }
+      .avatar.agent.orb-avatar { background: none; }
       /* A toned avatar: a notice's severity, a run's status, a tool's class. */
       .avatar[data-tone] { background: var(--tone-soft); color: var(--tone); }
       .device-meta { min-width: 0; line-height: 1.25; }
@@ -1538,6 +1539,21 @@
       .chat-hero h2 { font-size: var(--fs-20); font-weight: 650; letter-spacing: -0.02em; }
       .hero-galahad { display: grid; place-items: center; margin-bottom: var(--sp-1); }
       .hero-galahad .worker-avatar { animation: emblem-in var(--d-sheet) var(--ease-out); }
+      /* Galahad's orb (ui/orb.ts): a sphere of light in the colour of his state, inside still rings. It never moves. */
+      /* (Light, in either theme: the states' own colours as a dark theme has them, since a light theme's are dimmed for
+         words on white, and a dimmed light reads as a bronze ball.) */
+      .orb { --orb: #8ab8ff; display: inline-grid; place-items: center; flex: none; width: var(--orb-size); height: var(--orb-size); }
+      .orb[data-tone="accent"] { --orb: #58a6ff; }
+      .orb[data-tone="warn"] { --orb: #f0b549; }
+      .orb[data-tone="ok"] { --orb: #4cc38a; }
+      .orb[data-tone="danger"] { --orb: #ff6b6b; }
+      .orb > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+      .orb-ring { fill: none; stroke: var(--orb); stroke-width: 1; opacity: 0.42; vector-effect: non-scaling-stroke; }
+      .orb-ring.orb-faint { opacity: 0.22; }
+      .orb-ticks { fill: none; stroke: var(--orb); stroke-width: 1.5; stroke-dasharray: 1.2 6.2; opacity: 0.55; }
+      .orb-shine { fill: #ffffff; opacity: 0.3; }
+      /* What he asks you, under his orb (views/galahad-asks.ts): the Inbox's own cards, read left to right. */
+      .galahad-asks { width: 100%; max-width: 640px; text-align: left; margin-top: var(--sp-2); }
       .chat-hero p { color: var(--text-2); max-width: 46ch; }
 
       /* ---------- timeline (ledger) ---------- */

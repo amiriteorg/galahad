@@ -174,7 +174,8 @@ function openEdit(ctx: Ctx, action: ActionView, node: string): void {
   const sheet = openSheet({ title: "Edit, then approve", description: `${action.connector}.${action.tool}, asked by ${callerName(action.by)}`, body: form, size: "wide", initialFocus: () => fields[0]?.area });
 }
 
-function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
+/** An approval waiting for you, as the Inbox shows it, and Galahad's welcome too (galahad-asks.ts). */
+export function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
   const info = CLASS_INFO[action.class as ActionClass];
   const destructive = action.class === "delete";
   const node = deviceName(ctx, action.node);
