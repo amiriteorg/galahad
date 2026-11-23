@@ -58,8 +58,8 @@ export function decide(action: Action): Decision {
  * What Galahad approves himself, of what asks (your word, 23 November 2026: he approves his own decisions and his
  * knights'; what is monetary, legal or destructive still asks you). An outward call is his to answer only when what it
  * does is known, and is none of the three: his knights' work in the repositories you gave them, on GitHub (a pull
- * request of their work on a galahad/… branch, a fix pushed onto one, an issue, a comment, a review that comments or
- * asks for changes). Only you give a knight its repository, so he can't widen this himself. Everything else asks as
+ * request from a galahad/… branch, a fix pushed onto one, an issue, a comment on an issue or a pull request, a review
+ * that comments or asks for changes). Only you give a knight its repository, so he can't widen this himself. Everything else asks as
  * before: a delete, which can't be undone; whatever spends or books money; whatever speaks for you to other people or
  * in their places (mail, someone else's repository); the physical world; a review that approves (your word on your
  * account, which branch protection counts); a tool whose effects aren't known (an MCP server's outward tool).
@@ -104,8 +104,14 @@ export function ownApproval(call: OwnCall, repositories: readonly string[]): str
   const what = GITHUB_OWN[`${call.method} ${call.path}`];
   if (!what) return null;
   if (what === "a review" && !["COMMENT", "REQUEST_CHANGES"].includes(String(call.args.event ?? "").toUpperCase())) return null;
+  // A pull request is his only from a branch of his own, as a shipment's is (Percival's review, 23 November 2026: the
+  // template's head was any branch, a branch of yours too).
+  if (what === "a pull request" && !(typeof call.args.head === "string" && GALAHAD_BRANCH.test(call.args.head))) return null;
   return `${what} in ${where}`;
 }
+
+/** A branch of Galahad's own, as the GitHub connector's shipments pin it (connector-catalog.ts). */
+const GALAHAD_BRANCH = /^galahad\/[A-Za-z0-9._-]{1,80}(\/[A-Za-z0-9._-]{1,80})?$/;
 
 /** "owner/repo" of a github.com repository's address (https or ssh), lowercased; null for anything else. */
 function githubRepository(remote: string): string | null {

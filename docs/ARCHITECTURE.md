@@ -359,7 +359,7 @@ Live load (CPU, free memory, battery) and what each node's own work holds (slots
 | Class | Verdict |
 |---|---|
 | read, create, modify | **allow** (logged) |
-| outward (push, send, deploy, purchase) | **ask**; his and his knights' work in a repository you gave a knight (`ownApproval`: a pull request on a `galahad/…` branch, a fix onto one, an issue, a comment, a review that isn't an approval) he approves himself |
+| outward (push, send, deploy, purchase) | **ask**; his and his knights' work in a repository you gave a knight (`ownApproval`: a pull request from a `galahad/…` branch, a fix onto one, an issue, a comment on an issue or a pull request, a review that isn't an approval) he approves himself |
 | delete | **ask**, except cleaning up *ephemeral* things the same quest created |
 | forbidden | **deny** |
 

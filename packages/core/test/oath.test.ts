@@ -29,7 +29,7 @@ describe("oath gate", () => {
 // still asks you.
 describe("what Galahad approves himself", () => {
   const KNIGHTS = ["https://github.com/amiriteorg/galahad", "git@github.com:wckdboy/Engram.git"];
-  const github = (over: Partial<OwnCall>): OwnCall => ({ class: "outward", origin: "https://api.github.com", method: "POST", path: "/repos/{owner}/{repo}/pulls", args: { owner: "amiriteorg", repo: "galahad" }, ...over });
+  const github = (over: Partial<OwnCall>): OwnCall => ({ class: "outward", origin: "https://api.github.com", method: "POST", path: "/repos/{owner}/{repo}/pulls", args: { owner: "amiriteorg", repo: "galahad", head: "galahad/units" }, ...over });
 
   test("his knights' work in the repositories you gave them: a pull request, a fix onto its branch, an issue, a comment, a review that isn't an approval", () => {
     expect(ownApproval(github({ native: "github.ship" }), KNIGHTS)).toBe("a pull request of the work, on a galahad/… branch, in amiriteorg/galahad, a repository you gave a knight");
@@ -39,7 +39,7 @@ describe("what Galahad approves himself", () => {
     expect(ownApproval(github({}), KNIGHTS)).toStartWith("a pull request in");
     for (const event of ["COMMENT", "REQUEST_CHANGES", "comment"]) expect(ownApproval(github({ path: "/repos/{owner}/{repo}/pulls/{number}/reviews", args: { owner: "amiriteorg", repo: "galahad", event } }), KNIGHTS)).toStartWith("a review in");
     // A repository is the same one however its address is written, whatever its case.
-    expect(ownApproval(github({ args: { owner: "WCKDboy", repo: "engram" } }), KNIGHTS)).toStartWith("a pull request in WCKDboy/engram");
+    expect(ownApproval(github({ args: { owner: "WCKDboy", repo: "engram", head: "galahad/units" } }), KNIGHTS)).toStartWith("a pull request in WCKDboy/engram");
   });
 
   test("everything else waits for you", () => {
@@ -59,5 +59,7 @@ describe("what Galahad approves himself", () => {
     expect(ownApproval({ class: "outward", origin: "https://gmail.googleapis.com", native: "gmail.send", method: "POST", path: "/gmail/v1/users/me/messages/send", args: { to: "someone@example.com" } }, KNIGHTS)).toBeNull();
     // A repository that isn't named as text isn't named.
     expect(ownApproval(github({ args: { owner: ["amiriteorg"], repo: "galahad" } }), KNIGHTS)).toBeNull();
+    // A pull request from a branch that isn't his (yours, or another fork's), or from none, is yours (Percival's review).
+    for (const head of ["feat/orders", "main", "someone:galahad/units", "galahad/", undefined]) expect([head, ownApproval(github({ args: { owner: "amiriteorg", repo: "galahad", ...(head === undefined ? {} : { head }) } }), KNIGHTS)]).toEqual([head, null]);
   });
 });
