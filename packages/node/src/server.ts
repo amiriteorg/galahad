@@ -2248,7 +2248,8 @@ export function createApp(ctx: AppContext) {
       log: ctx.log,
     });
     team.outcomes = outcomes;
-    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, answer: answerInRoom, timeoutMs: 15 * 60_000, taskTimeoutMs: null, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, onRecruit, onTaskEnded: (task) => {
+    // What he starts on his own yes (TeamService.approveOwn) must fit what is left of your budget, when you set one.
+    ctx.team.service = new TeamService({ store: ctx.team.store, ...runtime, answer: answerInRoom, timeoutMs: 15 * 60_000, taskTimeoutMs: null, restartWaitMs: (TEAM_COMMAND_SECONDS + 60) * 1000, budgetLeft: () => ctx.usage.meter(ctx.nodeName, pricesOf(ctx.store)).leftUsd, onRecruit, onTaskEnded: (task) => {
       if (task.outcome) outcomes.nudge();
       // A fix to a pull request that ended verified is offered to you as a push onto its branch, as its knight's (ci-back.ts).
       if (task.fix) void offerFix({ call: (input) => ctx.connectors.call(input, { kind: "agent", by: teammateLabel(task.assignee) }), note: (id, text) => team.service?.noteTask(id, text), log: ctx.log }, task);
@@ -2263,8 +2264,6 @@ export function createApp(ctx: AppContext) {
       identity: ctx.identity,
       brain: () => brainFor({ device: `arm:${GALAHAD_ARM}`, kind: "arm", label: GALAHAD_ARM, scopes: [] }),
       exec: (knight, command, timeout, signal) => execTeam(knight, command, timeout, signal),
-      // What he gives on his own must fit what is left of your budget, when you set one.
-      budgetLeft: () => ctx.usage.meter(ctx.nodeName, pricesOf(ctx.store)).leftUsd,
       // Its open issues, read through your connector for its owner when you added one, else through github's.
       issues: async (repository) => {
         const repo = githubRepo(repository);

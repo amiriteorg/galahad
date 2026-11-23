@@ -1,4 +1,4 @@
-import { type ExecResult, heldModels, type NodeIdentity, redact, TEAM_GALAHAD, type Teammate, type TeamTask } from "@galahad/core";
+import { type ExecResult, heldModels, type NodeIdentity, redact, TEAM_GALAHAD, TEAM_LIMITS, type Teammate, type TeamTask } from "@galahad/core";
 import { chat, STEP_EFFORT } from "@galahad/brain";
 import type { MindStore } from "@galahad/mind";
 import { z } from "zod";
@@ -13,7 +13,7 @@ import type { TeamService } from "./team.ts";
  * (read through your GitHub connector), in its conversation with you. He approves it himself and it starts (your word,
  * 23 November 2026: he approves his own decisions and his knights'; what is monetary asks you): its money is its budget,
  * always set and at most BACKLOG.taskUsd, which must fit what is left of yours when you set one (`galahad usage
- * budget`). Past that it waits for you as a proposal, to approve or decline. Each look is one answer of the planner's,
+ * budget`; TeamService.approveOwn holds the rule). Past that it waits for you as a proposal, to approve or decline. Each look is one answer of the planner's,
  * at a plan's care (roster.ts STEP_EFFORT). On until you say otherwise: `galahad roundtable backlog off`.
  *
  * A proposal you leave unanswered for a day is looked at again with the repository as it is then: kept when it is still
@@ -22,7 +22,7 @@ import type { TeamService } from "./team.ts";
  * have waited so, the knight offered nothing else, until you answered it.
  */
 
-export const BACKLOG = { everyMs: 60 * 60_000, firstMs: 5 * 60_000, perKnightMs: 24 * 3600_000, settleMs: 10 * 60_000, planChars: 30_000, taskUsd: 3, recent: 8, issues: 20 } as const;
+export const BACKLOG = { everyMs: 60 * 60_000, firstMs: 5 * 60_000, perKnightMs: 24 * 3600_000, settleMs: 10 * 60_000, planChars: 30_000, taskUsd: TEAM_LIMITS.ownTaskUsd, recent: 8, issues: 20 } as const;
 /** How a proposal he took back reads (its task's error): withdrawn, never declined by you. */
 export const WITHDRAWN = "Withdrawn by Galahad";
 const PLANS = ["docs/PLAN.md", "PLAN.md", "ROADMAP.md", "docs/ROADMAP.md", "TODO.md"];
@@ -123,8 +123,6 @@ export interface BacklogOptions {
   issues?: (repository: string) => Promise<string>;
   /** Whether a knight is an outcome's now: its work is the outcome's to give. */
   busy: (knight: string) => boolean;
-  /** What is left of your usage budget now, in US dollars (usage.ts meter; null: you set none). */
-  budgetLeft?: () => number | null;
   log: (message: string) => void;
   now?: () => number;
   /** For tests: his answers. */
@@ -250,15 +248,9 @@ export class BacklogRunner {
     return task;
   }
 
-  /**
-   * His own yes to a proposal of his (your word, 23 November 2026): when its budget is set, within the backlog's cap, and
-   * fits what is left of yours, if you set one. Whether he gave it.
-   */
+  /** His own yes to a proposal of his, when it is his to give (TeamService.approveOwn: within its budget and yours). Whether he gave it. */
   private approveIfHis(task: TeamTask, knight: Teammate): boolean {
-    const budget = task.budgetUsd;
-    const left = this.o.budgetLeft?.() ?? null;
-    if (budget === undefined || budget > BACKLOG.taskUsd || (left !== null && left < budget)) return false;
-    this.o.service().approveOwn(task.id, `the next step of ${knight.name}'s repository's own plan, within its budget of $${budget}${left === null ? "" : `, and of the $${left.toFixed(2)} left of yours`}`);
+    if (!this.o.service().approveOwn(task.id, `the next step of ${knight.name}'s repository's own plan`)) return false;
     this.o.log(`backlog: ${task.id} given to ${knight.id} on his own approval`);
     return true;
   }

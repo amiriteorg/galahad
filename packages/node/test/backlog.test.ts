@@ -31,10 +31,10 @@ function world(answers: string[] = [], options: { read?: Partial<ExecResult>; bu
   const store = new TeamStore(":memory:", () => now);
   store.saveTeammate({ id: "ada", name: "Ada", repository: "https://github.com/you/project" });
   store.saveTeammate({ id: "lin", name: "Lin" });
-  const service = new TeamService({ store, respond: async () => "", executeTask: async (_k, task) => ({ verified: true, output: `Done: ${task.title}` }) });
-  const asked: { content: string; effort?: string; role?: string; coding?: boolean; models?: string[] }[] = [];
   // What is left of your usage budget (null: you set none).
   const budget = { left: options.left ?? null };
+  const service = new TeamService({ store, respond: async () => "", executeTask: async (_k, task) => ({ verified: true, output: `Done: ${task.title}` }), budgetLeft: () => budget.left });
+  const asked: { content: string; effort?: string; role?: string; coding?: boolean; models?: string[] }[] = [];
   const read: string[] = [];
   const fake = (async function* (_ctx: unknown, req: { messages: { content: string; effort?: string }[]; role?: string; coding?: boolean; models?: string[] }) {
     asked.push({ ...req.messages[0]!, role: req.role, coding: req.coding, ...(req.models ? { models: req.models } : {}) });
@@ -52,7 +52,6 @@ function world(answers: string[] = [], options: { read?: Partial<ExecResult>; bu
       return { exitCode: 0, stdout: PLAN, stderr: "", durationMs: 1, truncated: false, ...options.read };
     },
     busy: (knight) => (options.busy ?? []).includes(knight),
-    budgetLeft: () => budget.left,
     ...(options.issues !== undefined ? { issues: async () => options.issues! } : {}),
     log: () => {},
     now: () => now,

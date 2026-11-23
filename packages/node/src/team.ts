@@ -53,6 +53,8 @@ export interface TeamServiceOptions {
   onRecruit?(made: Teammate): void;
   /** A task's run has ended, however it ended (an outcome it is a step of looks again: outcomes.ts). */
   onTaskEnded?(task: TeamTask): void;
+  /** What is left of your usage budget now, in US dollars (usage.ts meter; null: you set none): what he starts on his own yes must fit it. */
+  budgetLeft?(): number | null;
 }
 
 interface Active {
@@ -155,11 +157,20 @@ export class TeamService {
   setBacklog(on: boolean): boolean { this.accepting(); const set = this.store.setBacklog(on); this.changed(); return set; }
   /** Work Galahad offers a knight from your backlog (backlog.ts): proposed, it starts when he approves it himself, or you do. */
   proposeTask(input: TeamTaskInput): TeamTask { this.accepting(); const task = this.store.createTask(input, { givenBy: TEAM_GALAHAD, propose: true }); this.changed(); return task; }
-  /** One he proposed, approved by him (backlog.ts says when it is his to): it waits its turn like any task, and its trail says whose yes it was. */
-  approveOwn(task: string, why: string): TeamTask {
+  /**
+   * A proposed task, his own from your backlog or a knight's from a room, started on his own yes (your word, 23 November
+   * 2026: he approves his own decisions and his knights'; what is monetary asks you): only when it names its budget, at
+   * most TEAM_LIMITS.ownTaskUsd, and that fits what is left of yours, if you set one. It waits its turn like any task,
+   * and its trail says whose yes it was and why. Null when it isn't his to approve: it waits for yours.
+   */
+  approveOwn(task: string, why: string): TeamTask | null {
     this.accepting();
+    const proposed = this.store.task(task);
+    const budget = proposed?.budgetUsd;
+    const left = this.options.budgetLeft?.() ?? null;
+    if (proposed?.status !== "proposed" || budget === undefined || budget > TEAM_LIMITS.ownTaskUsd || (left !== null && left < budget)) return null;
     const approved = this.store.approve(task);
-    this.store.noteTask(task, `Approved by Galahad himself: ${why}`.slice(0, 500));
+    this.store.noteTask(task, `Approved by Galahad himself: ${why}, within its budget of $${budget}${left === null ? "" : `, and of the $${left.toFixed(2)} left of yours`}`.slice(0, 500));
     this.changed();
     this.kick();
     return approved;
@@ -479,7 +490,13 @@ export class TeamService {
         this.changed(); this.kick(); return message;
       },
       remember: (text) => { budget(); const saved = this.store.remember(job.teammate, text); this.changed(); return saved; },
-      delegate: (task) => { budget(); const saved = this.store.createTask({ ...task, room: job.room }, { teammate: job.teammate, chainId: job.chainId }); this.changed(); this.kick(); return saved; },
+      delegate: (task) => {
+        budget();
+        const saved = this.store.createTask({ ...task, room: job.room }, { teammate: job.teammate, chainId: job.chainId });
+        // A knight's proposal within a budget it names is his to approve (approveOwn); any other waits for you.
+        const given = saved.status === "proposed" ? this.approveOwn(saved.id, `proposed by @${job.teammate} in ${this.store.room(job.room)?.name ?? job.room}`) : null;
+        this.changed(); this.kick(); return given ?? saved;
+      },
       recruit: (worker) => { budget(); const made = this.store.recruit(worker, job.teammate, job.room); this.recruited(made); return made; },
       emit: (progress) => { current(); this.store.progress(job.id, progress); this.changed(); },
     };

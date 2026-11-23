@@ -426,6 +426,37 @@ describe("task orchestration", () => {
     // Only a proposal is approved, and only once.
     expect(() => service.control({ task: ada!.id, action: "approve" })).toThrow("isn't waiting for your approval");
   });
+  // Your word, 23 November 2026: he approves his own decisions and his knights'; what is monetary asks you.
+  test("a knight's proposal that names a budget within his cap, and within what is left of yours, is Galahad's to approve: it runs, its trail says whose yes it was", async () => {
+    const ran: string[] = [];
+    const left = { usd: null as number | null };
+    const { store, service } = setup({
+      respond: async (teammate, _room, _history, context) => {
+        if (teammate.id !== "ada") return "";
+        context.delegate({ assignee: "lin", title: "Check migrations", goal: "Run every migration.", budgetUsd: 2 });
+        context.delegate({ assignee: "ada", title: "Big", goal: "A bigger piece of work.", budgetUsd: TEAM_LIMITS.ownTaskUsd + 1 });
+        context.delegate({ assignee: "ada", title: "Uncapped", goal: "Work that names no budget." });
+        return "";
+      },
+      executeTask: async (_teammate, task) => { ran.push(task.title); return { verified: true, output: "Verified" }; },
+      budgetLeft: () => left.usd,
+    });
+    const asked = service.post({ room: "workshop", text: "@ada: get the release ready." });
+    service.start(); await service.settled();
+    const [check, big, uncapped] = ["Check migrations", "Big", "Uncapped"].map((title) => store.tasks("workshop").find((t) => t.title === title)!);
+    expect(ran).toEqual(["Check migrations"]);
+    expect(store.task(check!.id)).toMatchObject({ status: "done", verified: true, proposedBy: "ada" });
+    expect(store.trail(check!.id).entries.map((e) => e.text)).toContain("Approved by Galahad himself: proposed by @ada in Workshop, within its budget of $2");
+    // Money past his cap, or uncapped, is yours: those wait for you.
+    expect([big!.status, uncapped!.status]).toEqual(["proposed", "proposed"]);
+    // Past what is left of your budget it waits too; within it, he says how much was left.
+    left.usd = 1;
+    expect(service.approveOwn(store.createTask({ room: "workshop", assignee: "lin", title: "Small", goal: "A small piece.", budgetUsd: 2 }, { teammate: "ada", chainId: asked.chainId }).id, "proposed by @ada in Workshop")).toBeNull();
+    left.usd = 4;
+    const small = store.createTask({ room: "workshop", assignee: "lin", title: "Smaller", goal: "A smaller piece.", budgetUsd: 2 }, { teammate: "ada", chainId: asked.chainId });
+    expect(service.approveOwn(small.id, "proposed by @ada in Workshop")?.status).toBe("queued");
+    expect(store.trail(small.id).entries.map((e) => e.text)).toContain("Approved by Galahad himself: proposed by @ada in Workshop, within its budget of $2, and of the $4.00 left of yours");
+  });
   test("tasks you give run at once: only a knight's waits for you", async () => {
     const { store, service } = setup();
     const given = service.createTask({ room: "workshop", assignee: "ada", title: "Yours", goal: "Yours" });
