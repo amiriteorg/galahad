@@ -10,7 +10,8 @@ import type { TeamService } from "./team.ts";
  * Outcomes (PLAN #43, the core of Devin Bots): an outcome you give Galahad to own for days or weeks. He works it in a
  * room of its own: gives tasks to the knights you named for it, on his own within its budget (your ruling of 18
  * November), each task still gated and reviewed in its knight's VM; judges what comes back; keeps his plan; reports
- * once a day; and asks you there when a decision is yours. Shipping, and anything outward, still asks on a card.
+ * once a day; and asks you there when a decision is yours (your word, 23 November 2026: what is monetary, legal or
+ * destructive), deciding the rest himself. Shipping, and anything outward that isn't his to approve, asks on a card.
  *
  * He looks at it when one of its tasks ends, when you write in its room, when its report is due, and (with nothing of it
  * in flight) every few hours; never when nothing changed, never twice at once. Each look is one answer of the planner
@@ -350,7 +351,7 @@ export class OutcomeRunner {
       `- Give a free knight a task with a goal it can finish and check in one sitting: name a gate command that passes only when it's done, and a budget from what's left (most tasks $0.50 to $3, at most ${usdLabel(OUTCOME_LIMITS.taskUsd)}). At most ${OUTCOME_LIMITS.inFlight} of its tasks wait or run at once.`,
       "- A gate runs in that knight's VM, in the task's workspace: name only commands its VM has (the gates that passed there before show what it runs with). One it can't run can never pass, whatever the work.",
       "- A task's own account of its work is checked by its gates and an independent reviewer: build on verified results; read why a failed one failed before you give it again, differently.",
-      "- Ask your liege (tell_liege, kind question) when a choice is theirs: an approach, access or a key you lack, anything outward. Shipping is theirs, on a card.",
+      "- Decide what is yours to decide (an approach, which knight, what next), and say in your report what you decided and why. Ask your liege (tell_liege, kind question) only when a choice is theirs: money past this outcome's budget, anything legal (it commits them, or speaks for them to others), anything that can't be undone, or access or a key you lack. Shipping is theirs, on a card.",
       "- Keep your plan short and current (keep_notes): what's done, what's next, what's in the way.",
       "- When it's done, say so with finish_outcome and what shows it.",
       answering ? "- Your liege just wrote here: answer them in a few lines (your answer is posted in the room), after using your tools if that's what they asked." : "- Say nothing else: only what you tell your liege with tell_liege reaches them.",

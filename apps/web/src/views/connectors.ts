@@ -761,7 +761,7 @@ export const connectorsView: View = (root, ctx, { scope, opts }) => {
     h(
       "div",
       { class: "page" },
-      pageHead("Connectors", "How Galahad reaches the services you use. Reading, creating and changing are his to do, and logged. Anything outward, and every delete, asks you first."),
+      pageHead("Connectors", "How Galahad reaches the services you use. Reading, creating and changing are his to do, and logged. Anything outward, and every delete, asks you first, but his and the knights' work in the repositories you gave them, which he approves himself."),
       ctx.can("brain:write") ? null : callout("quiet", "This device can see connectors but not install or remove them (no brain:write scope)."),
       note,
       // Shown whole once the connectors and the orders have answered: each part came in on its own, pushing the next.

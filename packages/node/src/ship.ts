@@ -10,15 +10,16 @@ import type { NativeTool } from "./connectors.ts";
  * The sandbox never holds a GitHub key. When a quest worked on a clone, it leaves its
  * changes in its kept work as a shipment (ship/manifest.json: the commit it started
  * from, each changed file's path and mode, deletions; ship/files/…: the new contents).
- * `github.ship` is one outward action: you approve it (or a standing order does), and
- * then the node, with the connector's key on its pinned origin (api.github.com),
+ * `github.ship` is one outward action: you approve it (or a standing order does, or he
+ * does: his and his knights' work in a repository you gave a knight, oath.ts ownApproval),
+ * and then the node, with the connector's key on its pinned origin (api.github.com),
  * commits the files on a new branch with GitHub's Git Data API and opens the pull
  * request. A branch that already exists is never touched.
  *
  * `github.ship.update` is the one exception, for a fix to a pull request already shipped
  * (ci-back.ts): its commit goes on top of the branch, and only when the branch stands
  * exactly where the fixing work began; the branch is moved forward, never forced, and
- * the pull request on it updates. Like a ship, it asks you first.
+ * the pull request on it updates. Like a ship, it asks you first, but where it is his to approve.
  */
 
 const Sha = z.string().regex(/^[0-9a-f]{40}$/);

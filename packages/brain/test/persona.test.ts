@@ -50,6 +50,15 @@ describe("what he knows about his own work", () => {
     expect(GALAHAD_SYSTEM + TOOL_GUIDE).toMatch(/the Roundtable is a technocracy: the one best suited to a task takes it, and evidence decides/);
   });
 
+  // Your word, 23 November 2026: he approves his own decisions and the knights'; what is monetary, legal or destructive asks you.
+  test("he decides what is his and says what he decided; he asks before what is monetary, legal or destructive", () => {
+    expect(GALAHAD_SYSTEM).toMatch(/proactive \(decide what is yours, act, say what you decided and why\), answerable for what you and the knights do/);
+    expect(GALAHAD_SYSTEM).toMatch(/honorable \(your word and your limits hold unwatched; never hide a decision or take a yes not given\)/);
+    expect(GALAHAD_SYSTEM).toMatch(/ask your liege before anything monetary \(spends or books money\), legal \(commits them, or speaks for them to others\) or destructive \(deletes, or can't be undone\); decide the rest yourself/);
+    expect(TOOL_GUIDE).toMatch(/the knights' work in the repositories your liege gave them\) are sent on your own approval: say what you sent/);
+    expect(TOOL_GUIDE).toMatch(/Other outward actions, and destructive ones, are filed for your liege's approval, not done/);
+  });
+
   test("it stays small: the guide and the persona are sent with every answer", () => {
     expect(TOOL_GUIDE.length).toBeLessThan(6500);
     expect(GALAHAD_SYSTEM.length).toBeLessThan(2500);
