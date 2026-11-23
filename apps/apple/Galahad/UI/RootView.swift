@@ -20,6 +20,7 @@ struct RootView: View {
         }
         .tint(.ink)
         .background(WindowTint())
+        .background(ClosesKeyboard())
         .task { app.start() }
     }
 }
@@ -276,6 +277,7 @@ struct PlaceWindowRoot: View {
         }
         .tint(.ink)
         .background(WindowTint())
+        .background(ClosesKeyboard())
         .task { app.start() }
     }
 }

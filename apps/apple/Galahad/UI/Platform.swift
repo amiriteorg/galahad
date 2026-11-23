@@ -17,6 +17,21 @@ typealias PlatformImage = UIImage
 typealias PlatformImage = NSImage
 #endif
 
+/// When a touch closes the keyboard on screen (your word, 23 November 2026: it can always be closed, so you never get
+/// stuck under it): a touch anywhere but on a field, or in the row the field is typed in (its paperclip, its send, its
+/// Seal), while no screen that types into something else (a knight's screen, its terminal) holds it open. What was
+/// touched still does what it does.
+enum KeyboardClosing {
+    /// How far above and below the field its row reaches: its buttons stand beside it, a little taller than its words.
+    static let row: CGFloat = 16
+
+    /// `field` is where the field with the keyboard is (nil: none has it); `onField`, that the touch is on a field.
+    static func closes(touchY: CGFloat, onField: Bool, field: CGRect?, held: Bool) -> Bool {
+        guard let field, !onField, !held else { return false }
+        return touchY < field.minY - row || touchY > field.maxY + row
+    }
+}
+
 extension Image {
     init(platformImage image: PlatformImage) {
         #if os(iOS)
@@ -231,6 +246,64 @@ enum Typing {
     static func newLine() -> Bool { false }
 }
 
+/// Closes the keyboard at a touch `KeyboardClosing` says closes it, in every window of the app (sheets included): a tap
+/// that closes it is still the tap it was, so a button beside it still presses.
+@MainActor final class KeyboardCloser: NSObject, UIGestureRecognizerDelegate {
+    static let shared = KeyboardCloser()
+    /// The screens on show that type into something else, and keep the keyboard while you press beside their field.
+    static var holds = 0
+    private static let name = "galahad.closes-keyboard"
+
+    func install(on window: UIWindow) {
+        guard !(window.gestureRecognizers ?? []).contains(where: { $0.name == Self.name }) else { return }
+        let tap = UITapGestureRecognizer(target: self, action: #selector(close(_:)))
+        tap.name = Self.name
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesEnded = false
+        tap.delegate = self
+        window.addGestureRecognizer(tap)
+    }
+
+    @objc private func close(_ tap: UITapGestureRecognizer) { tap.view?.endEditing(true) }
+
+    func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard let window = recognizer.view as? UIWindow else { return false }
+        let field = (UIResponder.typing as? UIView).map { $0.convert($0.bounds, to: window) }
+        // On a field (this one or another, a page's or a terminal's): the touch puts the caret there.
+        var view = touch.view
+        var onField = false
+        while let each = view, !onField {
+            onField = each is UITextInput
+            view = each.superview
+        }
+        return KeyboardClosing.closes(touchY: touch.location(in: window).y, onField: onField, field: field, held: Self.holds > 0)
+    }
+
+    func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+
+/// Puts the keyboard's closer on the window it is drawn in (the app's root has one; an iPad's other windows too).
+struct ClosesKeyboard: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView { Probe() }
+    func updateUIView(_ view: UIView, context: Context) {}
+
+    final class Probe: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if let window { KeyboardCloser.shared.install(on: window) }
+        }
+    }
+}
+
+extension View {
+    /// A screen that types into something else (a knight's screen, its terminal), with keys to press beside its field:
+    /// while it shows, a press there keeps the keyboard. Return, or dragging the page, still closes it.
+    func holdsKeyboard() -> some View {
+        onAppear { KeyboardCloser.holds += 1 }
+            .onDisappear { KeyboardCloser.holds = max(0, KeyboardCloser.holds - 1) }
+    }
+}
+
 extension UIResponder {
     private static weak var found: UIResponder?
     /// What has the keyboard now, found by asking it to say so.
@@ -243,6 +316,11 @@ extension UIResponder {
     @objc private func foundTyping() { UIResponder.found = self }
 }
 #else
+
+extension View {
+    /// (A Mac has no keyboard on screen to keep.)
+    func holdsKeyboard() -> some View { self }
+}
 
 extension Color {
     /// A card on a Mac's list, whose rows lie on the window's own ground: a fill, lighter on dark and darker on light.

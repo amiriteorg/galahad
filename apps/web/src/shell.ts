@@ -21,7 +21,7 @@ import { rosterNav } from "./views/roster.ts";
 import { chatActivityPill, chatsForPalette, chatView, lookAtWork, startNewChat } from "./views/chat.ts";
 import { filterConversations } from "./lib/chats.ts";
 import { homeOf, type Place, placesFor, railOf, routeOf, tabOf, tabsOf } from "./lib/nav.ts";
-import { keyboardOpen } from "./lib/viewport.ts";
+import { closesKeyboard, keyboardOpen } from "./lib/viewport.ts";
 import { conversationFromHash } from "@galahad/core/notify-payload";
 import { readOpenMessage } from "./lib/push.ts";
 import { badgeMessage, type Badging, showBadge } from "./lib/badge.ts";
@@ -342,6 +342,23 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     window.addEventListener("orientationchange", () => (fullHeight = 0), { signal: lifetime.signal });
     lifetime.signal.addEventListener("abort", () => delete document.documentElement.dataset.keyboard);
   }
+  // A finger's tap on the page that no field, button or link takes puts the keyboard away (lib/viewport.ts closesKeyboard):
+  // iOS leaves it up after such a tap, with the tab bar stepped aside while it's up.
+  const TAKES_A_TAP = "input, textarea, select, button, a[href], label, summary, form, video, audio, iframe, [contenteditable]:not([contenteditable='false']), [role='button'], [role='link'], [role='menuitem'], [role='tab'], [role='option'], [role='switch'], [role='checkbox'], [role='slider'], [tabindex]:not([tabindex='-1'])";
+  let down: { x: number; y: number; at: number; id: number } | null = null;
+  document.addEventListener("pointerdown", (event) => (down = event.isPrimary ? { x: event.clientX, y: event.clientY, at: event.timeStamp, id: event.pointerId } : null), { capture: true, passive: true, signal: lifetime.signal });
+  document.addEventListener(
+    "pointerup",
+    (event) => {
+      const tapped = down;
+      down = null;
+      const typed = document.activeElement;
+      if (!tapped || tapped.id !== event.pointerId || !(event.target instanceof Element) || !(typed instanceof HTMLElement)) return;
+      const tap = { coarse: event.pointerType === "touch", typing: isTyping(typed), takesTap: event.target.closest(TAKES_A_TAP) !== null };
+      if (closesKeyboard({ ...tap, from: [tapped.x, tapped.y], to: [event.clientX, event.clientY], ms: event.timeStamp - tapped.at })) typed.blur();
+    },
+    { capture: true, passive: true, signal: lifetime.signal },
+  );
 
   // Warm what the first moves need once the page has settled: Galahad's kept chats, so a first visit to Chat is instant.
   if (can("chat")) setTimeout(() => !lifetime.signal.aborted && chatsForPalette(base.api, { chat: true, read: false }), 600);

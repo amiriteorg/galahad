@@ -88,6 +88,8 @@ struct KnightTerminalView: View {
         // A terminal is dark whatever the phone's appearance: its bar and keys with it.
         .preferredColorScheme(.dark)
         .task { await terminal.run(with: session.client, on: bridge) }
+        // Its keys (esc, tab, ^C) are pressed between what you type: they keep the keyboard.
+        .holdsKeyboard()
     }
 }
 

@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,8 +53,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -100,6 +103,7 @@ fun Root(app: AppModel) {
     var mac by rememberSaveable { mutableStateOf<String?>(null) }
     val inbox by app.inbox.collectAsState()
     val table by app.table.collectAsState()
+    val focus = LocalFocusManager.current
     val screen = Screen(place, chat, knight, room, keys, connectors, mac)
     // A tablet, or a foldable open (the window's width, as Android's own size classes read it).
     val wide = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() } >= 600.dp
@@ -195,7 +199,9 @@ fun Root(app: AppModel) {
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 label = "screen",
             ) { s ->
-                Column(Modifier.fillMaxSize()) {
+                // A tap that nothing on the page takes (no field, button or row) puts the keyboard away, as Back does (your
+                // word, 23 November 2026: it can always be closed, so you never get stuck under it).
+                Column(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { focus.clearFocus() }) }) {
                     when {
                         s.chat -> ChatScreen(app) { chat = false }
                         s.knight != null -> KnightScreen(app, s.knight) { knight = null }

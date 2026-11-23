@@ -72,6 +72,8 @@ struct KnightScreenView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("\(knight.name)'s screen")
+        // Its keys and the screen itself are pressed between what you type: they keep the keyboard.
+        .holdsKeyboard()
         .inlineTitle()
         .hidingTabBar()
         // Asked again while you're watching, and only then.
