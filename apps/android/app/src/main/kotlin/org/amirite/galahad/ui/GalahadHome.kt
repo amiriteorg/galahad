@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,8 +66,25 @@ fun GalahadHome(app: AppModel, openChat: () -> Unit, showInbox: () -> Unit) {
     // A suggestion pressed: handed to the message box (counted, so the same one pressed again is handed again).
     var offered by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var presses by remember { mutableIntStateOf(0) }
+    val problem by app.problem.collectAsState()
     val brand = LocalBrand.current
     val tone = Orb.tone(table.galahad.state)
+    // His line from the Roundtable this phone kept (app/KeptTable.kt), until the node answers: after a moment, a still
+    // line says so, as the Roundtable's does, so what the home shows is never taken for what the node says now.
+    var waited by remember { mutableStateOf(false) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(table.asOf) {
+        waited = false
+        if (table.asOf != null) {
+            kotlinx.coroutines.delay(1_500)
+            waited = true
+            // (Said again each minute, so how long ago stays true while the node is away.)
+            while (true) {
+                now = System.currentTimeMillis()
+                kotlinx.coroutines.delay(60_000)
+            }
+        }
+    }
 
     // Back here, the next message starts a chat of its own (the one you left stays on your node, under Recent).
     LaunchedEffect(Unit) {
@@ -101,6 +119,13 @@ fun GalahadHome(app: AppModel, openChat: () -> Unit, showInbox: () -> Unit) {
                         },
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
+                }
+            }
+            problem?.let { p -> item { Refused(app, p) } }
+            table.asOf?.takeIf { waited }?.let { at ->
+                item {
+                    val ago = if (now - at < 60_000) "just now" else android.text.format.DateUtils.getRelativeTimeSpanString(at, now, android.text.format.DateUtils.MINUTE_IN_MILLIS)
+                    Text("As your node last said it, $ago. Asking it again.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = Space.margin))
                 }
             }
             item {

@@ -162,6 +162,12 @@ struct GalahadHome: View {
             VStack(spacing: Space.s6) {
                 GalahadHero(tone: session.galahadTone, title: "Galahad", line: session.galahad.text, lineColor: lineColor, size: 196)
                     .padding(.top, Space.s3)
+                // His line from the Roundtable this iPhone kept, or a node that can't be reached: said here, as at the
+                // Roundtable, so what the home shows is never taken for what the node says now.
+                if let trouble = session.trouble {
+                    TroubleRow(trouble: trouble).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let since = session.keptSince { KeptLine(since: since) }
                 Suggestions { text in
                     chat.draft = text
                     composing = true

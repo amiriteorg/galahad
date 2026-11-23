@@ -144,7 +144,7 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
  * out is offered; anything else in the node's own words.
  */
 @Composable
-private fun Refused(app: AppModel, p: NodeError) {
+internal fun Refused(app: AppModel, p: NodeError) {
     val skew = p.serverTime?.let { System.currentTimeMillis() - it }
     when {
         p.status == 401 && skew != null && Math.abs(skew) > 60_000 ->
