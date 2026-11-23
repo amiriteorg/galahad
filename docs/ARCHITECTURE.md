@@ -211,10 +211,10 @@ Add an API key once, and every full node can use it. The key never appears in th
 
 | Role | Default | Effort for a call that names no step |
 |---|---|---|
-| `planner` | `anthropic/claude-opus-5-5` → `openrouter/anthropic/claude-opus-5.5` → `orcarouter/anthropic/claude-opus-5.5` → `openai/gpt-6.2-astra` → `xai/grok-4.7` → `deepseek/deepseek-v4-pro` → `zai/glm-5.3` → `mistral/mistral-large-latest` | high |
-| `engineer` | the same | xhigh |
-| `reviewer` | the same (set a different model family, e.g. DeepSeek) | high |
-| `swift` | `ollama/*` → `llamacpp/*` → `anthropic/claude-haiku-5-5` → `openai/gpt-6.1-terra` → `deepseek/deepseek-flash` → `zai/glm-5.3-flash` → `mistral/mistral-small-latest` | low |
+| `planner` | `deepseek/deepseek-v4-pro` → `zai/glm-5.3` → `mistral/mistral-large-latest` → `anthropic/claude-opus-5-5` → `openrouter/anthropic/claude-opus-5.5` → `orcarouter/anthropic/claude-opus-5.5` → `openai/gpt-6.2-astra` → `xai/grok-4.7`: the cheaper open models first, from China and Europe, the frontier closed ones as fallbacks (your word, 23 November 2026) | high |
+| `engineer` | the coding plans' models first (`opencode-go/deepseek-v4-pro` → `opencode-go/glm-5.3` → `zai-coding/glm-5.3` → `mimo-token/mimo-v2.6-pro`, each asked only what its terms allow), then the same | xhigh |
+| `reviewer` | the planner's (set a different model family, e.g. Mistral) | high |
+| `swift` | `ollama/*` → `llamacpp/*` → `deepseek/deepseek-flash` → `zai/glm-5.3-flash` → `mistral/mistral-small-latest` → `anthropic/claude-haiku-5-5` → `openai/gpt-6.1-terra` | low |
 | `decider` | *none until you hire one*, e.g. `cloudflare-ai/typesafe/jev` | low |
 | `embedder` | *none until you hire one*; `deploy.sh --embedder` hires `ollama/qwen3-embedding:0.6b` on the server (§10⅔) | n/a |
 

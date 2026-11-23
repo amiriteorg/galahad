@@ -42,13 +42,23 @@ export interface RoleSpec {
 }
 
 /*
- * The work's defaults, the strongest first: Anthropic's, then Claude through the two routers, then each other
- * vendor's as its own pages name it (read 21 November 2026: OpenAI's guide calls gpt-6.2-astra "a strong default",
- * xAI's examples use grok-4.7, Mistral's its -latest aliases). Whichever of these providers your first key is for
- * answers at once, with no roster to set (roleModels leaves out the defaults on a provider you haven't set up); a
- * name a vendor retires is a line here. Any other provider's key: `key add` says how to hire one of its models.
+ * The work's defaults, the cheaper open models first (your word, 23 November 2026: "Galahad should mainly use the
+ * coding plans and the cheaper but still near frontier open models from china/or hosted in europe"): DeepSeek's and
+ * Z.ai's from China, Mistral's from Europe; then the frontier closed ones, as fallbacks: Anthropic's, Claude through
+ * the two routers, OpenAI's and xAI's, each as its own pages name it (read 21 November 2026: OpenAI's guide calls
+ * gpt-6.2-astra "a strong default", xAI's examples use grok-4.7, Mistral's its -latest aliases). Whichever of these
+ * providers your first key is for answers at once, with no roster to set (roleModels leaves out the defaults on a
+ * provider you haven't set up); a name a vendor retires is a line here. Any other provider's key: `key add` says how
+ * to hire one of its models.
  */
-const WORK = ["anthropic/claude-opus-5-5", "openrouter/anthropic/claude-opus-5.5", "orcarouter/anthropic/claude-opus-5.5", "openai/gpt-6.2-astra", "xai/grok-4.7", "deepseek/deepseek-v4-pro", "zai/glm-5.3", "mistral/mistral-large-latest"];
+const WORK = ["deepseek/deepseek-v4-pro", "zai/glm-5.3", "mistral/mistral-large-latest", "anthropic/claude-opus-5-5", "openrouter/anthropic/claude-opus-5.5", "orcarouter/anthropic/claude-opus-5.5", "openai/gpt-6.2-astra", "xai/grok-4.7"];
+
+/**
+ * The coding plans' models, first for the engineer's work once you add a plan's key: its allowance is paid for already.
+ * Each is asked only what its vendor's terms allow (providers.ts CodingPlan.allows): OpenCode Go his own coding and the
+ * coding tools', Z.ai's and MiMo's the coding tools' alone, and never his talk with you.
+ */
+const PLANS = ["opencode-go/deepseek-v4-pro", "opencode-go/glm-5.3", "zai-coding/glm-5.3", "mimo-token/mimo-v2.6-pro"];
 
 export const ROLES: Record<string, RoleSpec> = {
   planner: {
@@ -56,7 +66,7 @@ export const ROLES: Record<string, RoleSpec> = {
     defaults: WORK,
     effort: "high",
   },
-  engineer: { description: "writes and changes code", defaults: WORK, effort: "xhigh" },
+  engineer: { description: "writes and changes code", defaults: [...PLANS, ...WORK], effort: "xhigh" },
   reviewer: {
     description: "independent check, ideally a different model family than the author",
     defaults: WORK,
@@ -64,7 +74,7 @@ export const ROLES: Record<string, RoleSpec> = {
   },
   swift: {
     description: "cheap and fast: routing, classification, summaries; local first",
-    defaults: ["ollama/*", "llamacpp/*", "anthropic/claude-haiku-5-5", "openai/gpt-6.1-terra", "deepseek/deepseek-flash", "zai/glm-5.3-flash", "mistral/mistral-small-latest"],
+    defaults: ["ollama/*", "llamacpp/*", "deepseek/deepseek-flash", "zai/glm-5.3-flash", "mistral/mistral-small-latest", "anthropic/claude-haiku-5-5", "openai/gpt-6.1-terra"],
     effort: "low",
   },
   decider: {

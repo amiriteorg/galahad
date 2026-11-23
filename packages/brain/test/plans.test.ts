@@ -263,7 +263,7 @@ describe("a plan whose allowance is spent says so", () => {
     foundFleet(store, identity, { fleetName: "camelot", nodeName: "fresh" });
     const events = await all(chat({ store, vault: new Vault(store, identity), fetch: spentFetch }, { messages: ask }));
     const error = events.find((e) => e.type === "error") as { type: "error"; error: string };
-    expect(error.error).toBe("no model can answer yet: none of anthropic, openrouter, orcarouter, openai, xai, deepseek, zai, mistral is set up here. Add a key for one of them (galahad key add), or hire a model you have a key for (galahad roster set <role> <provider/model>)");
+    expect(error.error).toBe("no model can answer yet: none of deepseek, zai, mistral, anthropic, openrouter, orcarouter, openai, xai is set up here. Add a key for one of them (galahad key add), or hire a model you have a key for (galahad roster set <role> <provider/model>)");
   });
 });
 

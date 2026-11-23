@@ -210,7 +210,7 @@ bun galahad secret list                   # names + …last4 hints only, never v
 
 A key added on any full node is sealed into the vault and usable by every full node. Clients and tools never receive it.
 
-His roles answer on the first key you add for Anthropic, OpenRouter, OrcaRouter, OpenAI, xAI, DeepSeek, Z.ai or Mistral, with no roster to set: their defaults name those providers' models, and a role you haven't set runs on the ones you've set up (§6). For any other provider, `key add` says how to hire one: `bun galahad roster set planner <provider>/<model>` (and the engineer and reviewer as you like).
+His roles answer on the first key you add for DeepSeek, Z.ai, Mistral, Anthropic, OpenRouter, OrcaRouter, OpenAI or xAI, with no roster to set: their defaults name those providers' models, and a role you haven't set runs on the ones you've set up (§6). With several, the cheaper open models answer first and the frontier closed ones after, and a coding plan's key (OpenCode Go, Z.ai's or MiMo's) is first for the engineer's coding. For any other provider, `key add` says how to hire one: `bun galahad roster set planner <provider>/<model>` (and the engineer and reviewer as you like).
 
 **Coding plans** (a flat-rate subscription with a key of its own) are added the same way, each as its own provider:
 

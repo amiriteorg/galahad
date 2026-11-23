@@ -19,17 +19,29 @@ describe("a role you haven't set", () => {
     const { store, setUp } = mind();
     // Nothing set up: every default, so what can't answer says what to add.
     expect(roleModels(store, "planner")).toEqual(ROLES.planner!.defaults);
-    expect(roleModels(store, "planner")[0]).toBe("anthropic/claude-opus-5-5");
+    // The cheaper open models first (your word, 23 November 2026), the frontier closed ones after.
+    expect(roleModels(store, "planner")[0]).toBe("deepseek/deepseek-v4-pro");
     // DeepSeek's key alone: its models play the roles, and no other default is passed over in every answer.
     setUp("deepseek", "https://api.deepseek.com");
     for (const role of ["planner", "engineer", "reviewer"]) expect([role, roleModels(store, role)]).toEqual([role, ["deepseek/deepseek-v4-pro"]]);
     expect(roleModels(store, "swift")).toEqual(["deepseek/deepseek-flash"]);
     expect(roster(store).planner).toMatchObject({ models: ["deepseek/deepseek-v4-pro"], configured: false });
-    // An Anthropic key too: the stronger answers first, the other after it.
+    // An Anthropic key too: the cheaper open model answers first, Claude after it (your word, 23 November 2026: mainly
+    // the coding plans and the cheaper, still near-frontier open models from China or hosted in Europe).
     setUp("anthropic", "https://api.anthropic.com");
-    expect(roleModels(store, "planner")).toEqual(["anthropic/claude-opus-5-5", "deepseek/deepseek-v4-pro"]);
+    expect(roleModels(store, "planner")).toEqual(["deepseek/deepseek-v4-pro", "anthropic/claude-opus-5-5"]);
     // A role nobody hired goes on the engineer's.
-    expect(roleModels(store, "researcher")).toEqual(["anthropic/claude-opus-5-5", "deepseek/deepseek-v4-pro"]);
+    expect(roleModels(store, "researcher")).toEqual(["deepseek/deepseek-v4-pro", "anthropic/claude-opus-5-5"]);
+  });
+
+  test("a coding plan's key puts its models first for the engineer's work, and only there: his talk with you is never a plan's", () => {
+    const { store, setUp } = mind();
+    setUp("deepseek", "https://api.deepseek.com");
+    setUp("opencode-go", "https://opencode.ai/inference/go/openai/v1");
+    setUp("zai-coding", "https://api.z.ai/api/coding/paas/v4");
+    expect(roleModels(store, "engineer")).toEqual(["opencode-go/deepseek-v4-pro", "opencode-go/glm-5.3", "zai-coding/glm-5.3", "deepseek/deepseek-v4-pro"]);
+    expect(roleModels(store, "planner")).toEqual(["deepseek/deepseek-v4-pro"]);
+    expect(roleModels(store, "reviewer")).toEqual(["deepseek/deepseek-v4-pro"]);
   });
 
   test("a role you set runs on what you set, whatever is set up", () => {
