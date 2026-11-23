@@ -121,10 +121,12 @@ fun ChatScreen(app: AppModel, back: () -> Unit) {
 
 /**
  * The chat's message box: your words, and the files they carry (a photo, drawn again smaller and without its metadata;
- * a text file), sent up to the node first and named by the message. While he answers it is Stop.
+ * a text file), sent up to the node first and named by the message. While he answers it is Stop. [offered] puts words
+ * in it (a suggestion pressed, counted so the same one pressed again does it again); [sent] is told once a message has
+ * gone (Galahad's home then shows the chat it began).
  */
 @Composable
-private fun ChatComposer(app: AppModel, live: Boolean) {
+internal fun ChatComposer(app: AppModel, live: Boolean, offered: Pair<Int, String>? = null, sent: (() -> Unit)? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var text by remember { mutableStateOf("") }
@@ -161,6 +163,7 @@ private fun ChatComposer(app: AppModel, live: Boolean) {
         }
     }
     val textFile = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri -> uri?.let { u -> add { Attachments.text(context, u) } } }
+    LaunchedEffect(offered) { offered?.let { text = it.second } }
     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = Space.s3, vertical = Space.s2), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
         if (files.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
@@ -223,6 +226,7 @@ private fun ChatComposer(app: AppModel, live: Boolean) {
                                 text = ""
                                 files = emptyList()
                                 said = null
+                                sent?.invoke()
                             } catch (e: org.amirite.galahad.core.NodeError) {
                                 said = e.message
                             } catch (e: Attachments.Refused) {

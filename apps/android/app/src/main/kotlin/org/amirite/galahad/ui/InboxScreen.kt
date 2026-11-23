@@ -26,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.app.Inbox
+import org.amirite.galahad.app.Table
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.NodeError
 import org.amirite.galahad.core.Roster
@@ -72,9 +74,7 @@ fun InboxScreen(app: AppModel, watch: (node: String) -> Unit) {
             said = e.message
         }
     }
-    val knights = table.snapshot?.teammates ?: emptyList()
-    fun asker(by: String): String = Roster.knightOfCaller(by)?.let { id -> knights.firstOrNull { it.id == id }?.name ?: id }
-        ?: if (by.startsWith("loop:")) "The loop ${by.removePrefix("loop:")}" else if (by == "galahad" || by.startsWith("arm:") || by.startsWith("n_")) "Galahad" else by
+    val asker = askerIn(table)
 
     LazyColumn(Modifier.fillMaxSize()) {
         item { Text("Inbox", style = MaterialTheme.typography.headlineLargeEmphasized, modifier = Modifier.padding(start = Space.margin, top = Space.s4, bottom = Space.s2)) }
@@ -126,6 +126,60 @@ fun InboxScreen(app: AppModel, watch: (node: String) -> Unit) {
         item { Spacer(Modifier.height(Space.s10)) }
     }
 }
+
+/** Who asked, in words: a knight by its name, a loop, or Galahad (his own calls, his tools' and his nodes'). */
+private fun askerIn(table: Table): (String) -> String {
+    val knights = table.snapshot?.teammates ?: emptyList()
+    return { by ->
+        Roster.knightOfCaller(by)?.let { id -> knights.firstOrNull { it.id == id }?.name ?: id }
+            ?: if (by.startsWith("loop:")) "The loop ${by.removePrefix("loop:")}" else if (by == "galahad" || by.startsWith("arm:") || by.startsWith("n_")) "Galahad" else by
+    }
+}
+
+/**
+ * What Galahad asks you, answered where you talk to him (the PWA's views/galahad-asks.ts, the iPhone's GalahadAsks): the
+ * approvals the oath leaves to you (his and the knights', each saying who asked), the keys he asked for, and what
+ * services ask you in the middle of his calls, each as the Inbox has it. At most four; the rest are counted, a press
+ * from the Inbox, which still holds everything else (devices asking to join, facts, notices).
+ */
+@Composable
+fun GalahadAsks(app: AppModel, showInbox: () -> Unit) {
+    val inbox by app.inbox.collectAsState()
+    val table by app.table.collectAsState()
+    var said by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    fun act(block: suspend () -> Unit) = scope.launch {
+        try {
+            block()
+            said = null
+        } catch (e: NodeError) {
+            said = e.message
+        }
+    }
+    val asker = askerIn(table)
+    val now = System.currentTimeMillis()
+    val asks: List<Pair<String, @Composable () -> Unit>> = buildList {
+        for (a in inbox.actions) add("a:${a["id"].string}" to @Composable { Approval(a, asker(a["by"].string ?: "")) { approve -> act { app.decide(a["id"].string!!, approve) } } })
+        for (k in inbox.keys) add("k:${k["name"].string}" to @Composable {
+            KeyAsked(k, asker(k["requestedBy"].string ?: ""), seal = { value -> act { app.sealKey(k["name"].string!!, value, k["provider"].string) } }, dismiss = { act { app.dismissKey(k["name"].string!!) } })
+        })
+        for (q in inbox.questions.filter { (it["expires"].long ?: Long.MAX_VALUE) > now }) add("q:${q["id"].string}" to @Composable {
+            Question(q) { accept, content -> act { app.answerQuestion(q["id"].string!!, accept, content) } }
+        })
+    }
+    if (asks.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(vertical = Space.s2)) {
+        SectionTitle("Galahad asks you")
+        said?.let { Problem(it) }
+        for ((id, ask) in asks.take(SHOWN_ASKS)) key(id) { ask() }
+        if (asks.size > SHOWN_ASKS) {
+            TextButton(onClick = showInbox, modifier = Modifier.padding(horizontal = Space.s2)) { Text("${asks.size - SHOWN_ASKS} more in the Inbox") }
+        }
+    }
+}
+
+/** At most this many asks under his orb; the rest are counted, a press from the Inbox. */
+private const val SHOWN_ASKS = 4
 
 /** An approval as you read it before you answer: who asks, what it would do and to what, why, and the request itself. */
 @Composable

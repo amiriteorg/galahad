@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.amirite.galahad.core.KnightState
+import org.amirite.galahad.core.Orb
 
 /**
  * The knights as the owner drew them: the PWA's own WebP files, packaged as they are (never redrawn or recoloured), read
@@ -50,13 +51,15 @@ private val paused = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturati
 
 /**
  * A face in its state's ring: still, never pulsing. A paused knight is drawn faded (saturation 0.15, opacity 0.62, as
- * the Apple app draws it). [drawing] is the look's name (`gareth`), `galahad`, or `black-knight`.
+ * the Apple app draws it). [drawing] is the look's name (`gareth`), `galahad`, or `black-knight`. Galahad himself is his
+ * orb (your word, 23 November 2026), in the colour of where he stands, as his ring's would be.
  */
 @Composable
 fun Face(drawing: String, state: KnightState?, size: Dp = Space.rowFace, description: String? = null) {
+    if (drawing == "galahad") return GalahadOrb(size, Orb.tone(state), description)
     val context = LocalContext.current
     val brand = LocalBrand.current
-    val name = if (size >= 120.dp && (drawing == "galahad" || drawing == "black-knight")) "$drawing@2x" else drawing
+    val name = if (size >= 120.dp && drawing == "black-knight") "$drawing@2x" else drawing
     val image = remember(name) { Drawings.of(context, name) }
     val ring = state?.tone?.let(brand::of)
     Box(

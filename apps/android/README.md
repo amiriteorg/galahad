@@ -10,6 +10,12 @@ drew them, packaged straight from `apps/web/src/knights` (never copied or redraw
 JSON and the cryptography are what Android ships, and the only libraries are AndroidX's Compose, activity-compose and
 profile installer, and Kotlin's coroutines. Nothing moves by itself: a knight's state is a still ring and a word.
 
+It opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything): his place is the
+first, his home (`ui/GalahadHome.kt`), his orb large in the colour of where he stands, his line, what you might ask,
+what he asks you (the Inbox's own cards), your recent chats and the message box, each chat shown over it. His orb
+(`core/Orb.kt`, drawn by `ui/Orb.kt`) is the PWA's and the iPhone's, part for part, held to them by the parity vectors;
+it is his seat at the Roundtable and the place's icon too.
+
 What it does (21 November 2026): join your node with an invite and the six-digit code; the Roundtable, Galahad first,
 each knight in its state's ring with one line of what it's doing (the same line the PWA and the iPhone show: the roster
 is ported and held to the same parity vectors), and your rooms; Galahad's chat, his answer streamed as he writes it, with
@@ -24,7 +30,7 @@ asks galahad.sh's `android/latest.json` at most once a day, sending nothing of y
 releases; it installs over the last because every build is signed with the same key. Not yet: Google Play.
 
 What it keeps on the phone: its pairing, its device key (in the Keystore, never readable), your notification choices,
-and, so it opens on your Roundtable at once however slow the connection (your word, 21 November 2026), the last
+and, so it shows your Roundtable at once however slow the connection (your word, 21 November 2026), the last
 Roundtable it saw: the team in the fields its roster reads (no knight's instructions or notes, no task's brief), the
 chats' titles, which approvals wait (who asks and for which tool, never what a request holds) and how many things wait
 for you (`app/KeptTable.kt`). It is in the app's own storage, never backed up, drawn only for the node and key it came
