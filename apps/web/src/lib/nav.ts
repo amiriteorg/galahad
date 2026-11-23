@@ -84,9 +84,14 @@ export const primaryOf = (visible: Place[]): Place[] => visible.filter((place) =
  */
 export const homeOf = (visible: Place[], _screen: { narrow: boolean }): Route => primaryOf(visible)[0]?.id ?? "inbox";
 
-/** A phone's bar: Galahad, the Roundtable and More (for a device with no roster, its Inbox and More). */
-export const tabsOf = (visible: Place[]): Place[] =>
-  visible.some((place) => place.id === "team") ? visible.filter((place) => place.id === "chat" || place.id === "team" || place.id === "more") : visible.filter((place) => place.id === "inbox" || place.id === "more");
+/**
+ * A phone's bar: the Roundtable, More, and Galahad at its right end (your word, 23 November 2026: Galahad the right-most
+ * in the bar; the app still opens on him). A device with no roster has its Inbox and More.
+ */
+export function tabsOf(visible: Place[]): Place[] {
+  const order: Route[] = visible.some((place) => place.id === "team") ? ["team", "more", "chat"] : ["inbox", "more"];
+  return order.flatMap((id) => visible.filter((place) => place.id === id));
+}
 
 /** More's index: every other place this device may see, under its heading. */
 export function moreIndex(visible: Place[]): { heading: string; places: Place[] }[] {

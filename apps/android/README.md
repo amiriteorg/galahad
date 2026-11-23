@@ -10,11 +10,11 @@ drew them, packaged straight from `apps/web/src/knights` (never copied or redraw
 JSON and the cryptography are what Android ships, and the only libraries are AndroidX's Compose, activity-compose and
 profile installer, and Kotlin's coroutines. Nothing moves by itself: a knight's state is a still ring and a word.
 
-It opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything): his place is the
-first, his home (`ui/GalahadHome.kt`), his orb large in the colour of where he stands, his line, what you might ask,
-what he asks you (the Inbox's own cards), your recent chats and the message box, each chat shown over it. His orb
-(`core/Orb.kt`, drawn by `ui/Orb.kt`) is the PWA's and the iPhone's, part for part, held to them by the parity vectors;
-it is his seat at the Roundtable and the place's icon too.
+It opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything): his place, at the
+bar's right end, is his home (`ui/GalahadHome.kt`), his orb large in the colour of where he stands, his line, what you
+might ask, what he asks you (the Inbox's own cards), your recent chats and the message box, each chat shown over it. His
+orb (`core/Orb.kt`, drawn by `ui/Orb.kt`) is the PWA's and the iPhone's, part for part, held to them by the parity
+vectors; it is his seat at the Roundtable and the place's icon too.
 
 What it does (21 November 2026): join your node with an invite and the six-digit code; the Roundtable, Galahad first,
 each knight in its state's ring with one line of what it's doing (the same line the PWA and the iPhone show: the roster

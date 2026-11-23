@@ -80,10 +80,12 @@ describe("the app's places", () => {
     for (const shortcut of manifest.shortcuts) expect([shortcut.url, routeOf(shortcut.url.replace(/^\//, ""), device(...OWNER))]).not.toEqual([shortcut.url, null]);
   });
 
-  test("a phone's bar is Galahad, the Roundtable and More; a device with no roster has its Inbox there", () => {
-    expect(ids(tabsOf(device(...OWNER)))).toEqual(["chat", "team", "more"]);
-    expect(ids(tabsOf(device("chat")))).toEqual(["chat", "team", "more"]);
-    expect(tabsOf(device(...OWNER)).map((tab) => tab.label)).toEqual(["Galahad", "Roundtable", "More"]);
+  test("a phone's bar is the Roundtable, More and Galahad at its right end; a device with no roster has its Inbox there", () => {
+    // Your word, 23 November 2026: Galahad the right-most in the bar (the app still opens on him).
+    expect(ids(tabsOf(device(...OWNER)))).toEqual(["team", "more", "chat"]);
+    expect(ids(tabsOf(device("chat")))).toEqual(["team", "more", "chat"]);
+    expect(tabsOf(device(...OWNER)).map((tab) => tab.label)).toEqual(["Roundtable", "More", "Galahad"]);
+    expect(homeOf(device(...OWNER), { narrow: true })).toBe("chat");
     expect(ids(tabsOf(device("mind:read")))).toEqual(["inbox", "more"]);
     expect(ids(tabsOf(device()))).toEqual(["inbox", "more"]);
   });

@@ -5,10 +5,11 @@ and signs every request the way `packages/core` verifies it. The Mac's app is th
 (`GalahadMac`; [docs/MAC.md](../../docs/MAC.md)).
 
 On an iPhone it opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything): his
-first tab is his home (`Galahad/UI/GalahadHome.swift`), his orb large in the colour of where he stands, his line, what
-you might ask, what he asks you, your recent chats and the message box, each chat shown over it; the Roundtable, the
-Inbox and More are the other tabs. His orb (`Core/Orb.swift`, drawn by `UI/OrbView.swift`) is the PWA's, part for part,
-held to it by the parity vectors; it is his seat at the Roundtable and in the sidebar too, and beside each answer.
+tab, at the bar's right end, is his home (`Galahad/UI/GalahadHome.swift`), his orb large in the colour of where he
+stands, his line, what you might ask, what he asks you, your recent chats and the message box, each chat shown over it;
+the Roundtable, the Inbox and More are the tabs before his. A tap anywhere but a field closes the keyboard
+(`KeyboardCloser`). His orb (`Core/Orb.swift`, drawn by `UI/OrbView.swift`) is the PWA's, part for part, held to it by
+the parity vectors; it is his seat at the Roundtable and in the sidebar too, and beside each answer.
 
 On an iPhone or an iPad it keeps, besides its pairing, its key and your choices, the last Roundtable it saw, so it shows
 your Roundtable at once however slow the connection (your word, 21 November 2026). It is the record Galahad for

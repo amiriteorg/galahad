@@ -64,10 +64,10 @@ struct MainView: View {
     }
 }
 
-/// An iPhone's tabs: Galahad first, where it opens (your word, 23 November 2026: he is the one you talk to, for nearly
-/// everything), then the Roundtable with every knight, the Inbox and More.
+/// An iPhone's tabs: the Roundtable with every knight, the Inbox, More, and Galahad at the right end, where the app opens
+/// (your word, 23 November 2026: he is the one you talk to, for nearly everything).
 enum PhoneTab: Hashable {
-    case galahad, roundtable, inbox, more
+    case roundtable, inbox, more, galahad
 }
 
 /// What shows over Galahad's home: the chat on screen.
@@ -84,15 +84,6 @@ struct PhoneTabs: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            Tab(value: PhoneTab.galahad) {
-                NavigationStack(path: $talking) {
-                    GalahadHome(session: session) { talking = [.chat] }
-                        .navigationDestination(for: GalahadPage.self) { _ in ChatView(session: session) }
-                }
-            } label: {
-                // His orb, in the colour of where he stands, as everywhere he is.
-                Label { Text("Galahad") } icon: { OrbIcon.image(session.galahadTone) }
-            }
             Tab("Roundtable", systemImage: "person.3", value: PhoneTab.roundtable) {
                 NavigationStack(path: $path) {
                     RoundtableView(session: session) { path.append($0) }
@@ -105,6 +96,16 @@ struct PhoneTabs: View {
             .badge(session.inboxCount)
             Tab("More", systemImage: "ellipsis.circle", value: PhoneTab.more) {
                 NavigationStack { MoreView(app: app, session: session) }
+            }
+            // At the bar's right end (your word, 23 November 2026: Galahad the right-most in the bar), and where it opens.
+            Tab(value: PhoneTab.galahad) {
+                NavigationStack(path: $talking) {
+                    GalahadHome(session: session) { talking = [.chat] }
+                        .navigationDestination(for: GalahadPage.self) { _ in ChatView(session: session) }
+                }
+            } label: {
+                // His orb, in the colour of where he stands, as everywhere he is.
+                Label { Text("Galahad") } icon: { OrbIcon.image(session.galahadTone) }
             }
         }
         .environment(\.showInbox) { tab = .inbox }

@@ -76,10 +76,11 @@ import org.amirite.galahad.core.get
 import org.amirite.galahad.core.string
 
 /**
- * Where you are: one of the four places, or a page opened from one (Galahad's chat, a knight's page). Galahad first, where
- * the app opens (your word, 23 November 2026: he is the one you talk to, for nearly everything).
+ * Where you are: one of the four places, or a page opened from one (Galahad's chat, a knight's page). Galahad at the bar's
+ * right end (your word, 23 November 2026: Galahad the right-most in the bar), and where the app opens: he is the one you
+ * talk to, for nearly everything.
  */
-private enum class Place(val label: String) { GALAHAD("Galahad"), ROUNDTABLE("Roundtable"), INBOX("Inbox"), MORE("More") }
+private enum class Place(val label: String) { ROUNDTABLE("Roundtable"), INBOX("Inbox"), MORE("More"), GALAHAD("Galahad") }
 
 /** What's on screen, for the way it comes in: a page opened over a place comes in from the side and goes back there. */
 private data class Screen(val place: Place, val chat: Boolean, val knight: String?, val room: String?, val keys: Boolean, val connectors: Boolean, val mac: String?) {
