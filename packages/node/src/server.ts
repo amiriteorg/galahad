@@ -1,6 +1,9 @@
 import {
   ABOUT_YOU_TAG,
   ZONE_HEADER,
+  LOOK_LIMITS,
+  type LookHeld,
+  type UnderwayTask,
   SLACK_APP_MANIFEST,
   type ActionView,
   canonical,
@@ -171,7 +174,8 @@ import type { ComputeService } from "./compute/service.ts";
 import { z, ZodError } from "zod";
 import { ARM_FORBIDDEN_SCOPES, type ArmTokens, armQuest, GALAHAD_ARM } from "./arms.ts";
 import { chatTools, type ToolApi, toolsFor } from "./tools.ts";
-import { type ChatStore, type ChatStory, foldAt, type KeptSummary, type QueuedBy, type Waits } from "./chats.ts";
+import { type ChatStore, type ChatStory, foldAt, type KeptLook, type KeptSummary, type QueuedBy, type Waits } from "./chats.ts";
+import { lookAt, LookLaterError, lookMessage, type LookRunner, lookTime } from "./looks.ts";
 import { type AnswerRecord, asideMessages, broughtBack, keepStep, type LiveTurn, TurnError, type TurnHub, type TurnSpec } from "./turns.ts";
 import { filesFor, UploadError, type Uploads, withAttachments } from "./uploads.ts";
 import { CHANGES_SCRIPT, changesView, fileView, filesView, KEPT_FROM_VIEW, LIST_SCRIPT, LookError, READ_SCRIPT } from "./workspace-look.ts";
@@ -300,6 +304,8 @@ export interface AppContext {
   team?: { store: TeamStore; service?: TeamService; outcomes?: OutcomeRunner; backlog?: BacklogRunner };
   /** The turns this node runs for you: each to its end whoever listens, with what you steer and queue. */
   turns: TurnHub;
+  /** His own looks, taken when they come (looks.ts): each a turn of his in the chat he set it in. */
+  looks?: LookRunner;
   /** The quests in hand, as whoever runs each one reports it. */
   quests: QuestBoard;
   /** The archive: what this node keeps for good, and searches by words and meaning. */
@@ -797,6 +803,8 @@ export function createApp(ctx: AppContext) {
    * and answering a device that may command his team itself: what you couldn't do at the Roundtable there, he doesn't do for you.
    */
   const leadsTeam = (p: Principal) => p.kind === "arm" && p.label === GALAHAD_ARM && p.commandsTeam === true;
+  /** Galahad himself, as he answers in a chat (galahadFor): the label is his alone, never minted for another agent (arms.ts). */
+  const himself = (p: Principal) => p.kind === "arm" && p.label === GALAHAD_ARM;
   /** Whose model calls these are, in this node's count of them: yours, an agent's (a loop's quest is arm:loop.<name>), a node's. */
   const whoOf = (p: Principal): string => (isOwner(p) ? "you" : p.kind === "arm" ? `arm:${p.label ?? "unnamed"}` : `node:${ctx.store.device(p.device)?.name ?? p.device.slice(0, 12)}`);
   /* ---------- the fleet's local models (local-models.ts): one only a peer serves is answered there ---------- */
@@ -975,8 +983,11 @@ export function createApp(ctx: AppContext) {
     // (His own tools, the ones to the knights, only where he may lead them and this node keeps a team; a Mac itself
     // only where a node of the fleet lends him its screen.)
     const lends = ctx.store.devices().some((d) => d.kind === "node" && d.profile?.caps?.screen === true);
-    const tools = toolsFor(agent.scopes, leadsTeam(agent) && !!ctx.team).filter((t) => lends || t.name !== "mac");
-    return kept?.bank ? tools.filter((t) => t.name !== "skill_write") : tools;
+    const tools = toolsFor(agent.scopes, leadsTeam(agent) && !!ctx.team).filter((t) => (lends || t.name !== "mac") && t.name !== "look_later");
+    // A look of his own comes back as a turn in the chat he set it in: only in a kept chat, only for him, on a node that takes them.
+    const looks = kept && himself(agent) && ctx.looks ? toolsFor(agent.scopes, true).filter((t) => t.name === "look_later") : [];
+    const offered = [...tools, ...looks];
+    return kept?.bank ? offered.filter((t) => t.name !== "skill_write") : offered;
   };
   /**
    * Why a call was given others' words by this node itself: untrusted memories recalled for it (the same recall
@@ -1437,12 +1448,13 @@ export function createApp(ctx: AppContext) {
     const recallFor = !yours || wantMemories === false ? undefined : request.coding ? request.messages.find((m) => m.role === "user") : asked.role === "user" ? asked : undefined;
     // What time it is where you are (your device's zone, else your notifications'), last: it changes every minute. Never
     // with coding work, whose prompt stays the same text turn after turn so a provider can read it from its cache.
-    const clock = yours && !request.coding ? nowLine(Date.now(), zone ?? ctx.notify.zone()) : null;
+    const clockZone = zone ?? ctx.notify.zone();
+    const clock = yours && !request.coding ? nowLine(Date.now(), clockZone) : null;
     const known = yours ? [aboutYouContext(), project ? projectContext(project) : null, recallFor ? memoryContext(about ?? said(recallFor), !!request.coding) : null, clock].filter(Boolean).join("\n\n") || undefined : undefined;
     // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
     const fromArchive = yours && (wantArchive ?? wantTools !== false) && asked.role === "user";
     // What it is about, for the archive and his skills: the question, or `about` when the last message holds more (a room's answer).
-    return { request, wantTools, kept, messages, asked, recallFor, project, known, fromArchive, attempt, quest, topic: about ?? said(asked), story, upTo };
+    return { request, wantTools, kept, messages, asked, recallFor, project, known, fromArchive, attempt, quest, topic: about ?? said(asked), story, upTo, zone: clockZone };
   }
 
   /**
@@ -1478,11 +1490,18 @@ export function createApp(ctx: AppContext) {
   }
 
   /** His tools' way into the node, noting what a turn leaves waiting on you: approvals it filed, keys it asked for. */
-  function noting(api: ToolApi, waits: TurnSpec["waits"]): ToolApi {
+  function noting(api: ToolApi, waits: TurnSpec["waits"], turn: { conversation: string | null; by: QueuedBy; zone: string }): ToolApi {
     return {
       ...api,
       async call<T>(name: RouteName, input?: unknown): Promise<T> {
+        // A look is set, or called off, where this turn is: the chat, the device and the zone are the node's to say.
+        if ((name === "lookLater" || name === "cancelLook") && turn.conversation) {
+          input = { ...(input as object), turn: { conversation: turn.conversation, by: turn.by, zone: turn.zone } };
+        }
         const result = await api.call<T>(name, input);
+        // A task he gave a knight from a kept chat: in that chat's row of what is under way while it runs.
+        const given = result as { task?: { id?: unknown } } | null;
+        if (name === "giveToTeam" && turn.conversation && typeof given?.task?.id === "string") ctx.chats.handoff(turn.conversation, given.task.id);
         const filed = result as { status?: unknown; action?: unknown } | null;
         if (name === "callConnector" && filed?.status === "asked" && typeof filed.action === "string") waits.actions.push(filed.action);
         const wanted = input as { name?: unknown } | null;
@@ -1497,8 +1516,8 @@ export function createApp(ctx: AppContext) {
    * the agent he is, the bank's rules in them, his slot, the archive), on the turn's own signal
    * instead of a request's, so nothing about it depends on a connection.
    */
-  function turnSpec(ready: ReturnType<typeof prepareAnswer>, p: Principal): TurnSpec {
-    const { request, messages, asked, project, known, fromArchive, kept, topic } = ready;
+  function turnSpec(ready: ReturnType<typeof prepareAnswer>, p: Principal, opts: { held?: LookHeld | null } = {}): TurnSpec {
+    const { request, messages, asked, project, known, fromArchive, kept, topic, zone } = ready;
     const agent = galahadFor(p);
     const role = request.role ?? "planner";
     const waits: TurnSpec["waits"] = { actions: [], secrets: [] };
@@ -1516,7 +1535,10 @@ export function createApp(ctx: AppContext) {
       waits,
       run: async function* (steering, signal) {
         // One set of tools for the whole turn: what the bank's rules refuse stays refused after a steer.
-        const tools = chatTools(toolsIn(agent, kept), noting(inProcess(agent, signal), waits), explain, project ? { tag: `project:${project.id}` } : {});
+        const tools = chatTools(toolsIn(agent, kept), noting(inProcess(agent, signal), waits, { conversation: kept?.id ?? null, by: byOf(p), zone }), explain, {
+          ...(project ? { tag: `project:${project.id}` } : {}),
+          ...(opts.held ? { held: opts.held } : {}),
+        });
         const shown: AnswerRecord = { content: "", model: null, steps: [], error: null, bank: false };
         let leave: (() => void) | null = null;
         let answered: (() => void) | null = null;
@@ -1590,6 +1612,19 @@ export function createApp(ctx: AppContext) {
     if (!kept || !visibleTo(kept, p)) throw new TurnError(404, "the chat is gone, or the device that queued it may no longer see it", "device");
     const input = routes.chat.input.parse({ role: queued.role ?? kept.role, conversation, messages: [{ role: "user", content: queued.text }] });
     return turnSpec(prepareAnswer(input, p), p);
+  });
+
+  // A look of his, come: a turn of his in the chat he set it in, as the device whose turn set it as that device stands now
+  // (as a queued message's is), with his note as the message that starts it, kept as his. What the answer that set it
+  // held of yours, this turn starts holding.
+  ctx.looks?.setPrepare((look: KeptLook) => {
+    const p = askerNow(look.by);
+    const kept = ctx.chats.summary(look.conversation);
+    if (!kept || !visibleTo(kept, p)) throw new TurnError(404, "the chat is gone, or the device whose turn set it may no longer see it", "device");
+    const text = lookMessage(look, Date.now());
+    guardAgainstSecrets(text);
+    const input = routes.chat.input.parse({ role: kept.role, conversation: look.conversation, messages: [{ role: "user", content: text }] });
+    return turnSpec(prepareAnswer(input, p, undefined, look.zone), p, { held: look.held });
   });
 
   /**
@@ -3007,6 +3042,61 @@ export function createApp(ctx: AppContext) {
       ownerOnly(p);
       const needsOf = needsResolver();
       return { conversations: ctx.chats.list().filter((c) => visibleTo(c, p)).map((c) => chatSummary(c, needsOf)) };
+    },
+    underway: (input, p) => {
+      ownerOnly(p);
+      const kept = ctx.chats.summary(input.id);
+      if (!kept || !visibleTo(kept, p)) throw new HttpError(404, "no such conversation");
+      // The tasks he gave from here that haven't ended, newest first; his looks here that wait, soonest first.
+      const store = ctx.team?.store;
+      const tasks: UnderwayTask[] = [];
+      for (const id of store ? ctx.chats.handoffs(kept.id) : []) {
+        const task = store!.task(id);
+        if (!task || (task.status !== "queued" && task.status !== "running")) continue;
+        tasks.push({ id: task.id, title: task.title, assignee: task.assignee, name: store!.teammate(task.assignee)?.name ?? task.assignee, status: task.status, progress: task.progress, room: task.room, createdAt: task.createdAt, updatedAt: task.updatedAt });
+      }
+      const looks = ctx.chats.looksWaiting(kept.id).map(({ by: _by, held: _held, ...look }) => look);
+      return { tasks, looks };
+    },
+    lookLater: (input, p) => {
+      if (!himself(p) || !input.turn) throw new HttpError(403, "only Galahad himself sets a look later, as he answers in a chat of yours");
+      if (!ctx.looks) throw new HttpError(503, "this node takes no looks");
+      const { conversation, by, zone } = input.turn;
+      if (!ctx.chats.summary(conversation)) throw new HttpError(404, "no such conversation");
+      const now = Date.now();
+      let at: number;
+      try {
+        at = lookAt(input, isTimeZone(zone) ? zone : "UTC", now);
+      } catch (error) {
+        if (error instanceof LookLaterError) throw new HttpError(400, error.message);
+        throw error;
+      }
+      // His note goes back to a model when it comes, and is kept in your chat: no keys in it.
+      guardAgainstSecrets(input.note);
+      if (ctx.chats.looksWaiting(conversation).length >= LOOK_LIMITS.perChat) throw new HttpError(429, `${LOOK_LIMITS.perChat} looks of yours already wait in this chat: call one off first (cancel)`);
+      if (ctx.chats.looksWaiting().length >= LOOK_LIMITS.perNode) throw new HttpError(429, `${LOOK_LIMITS.perNode} looks of yours already wait on this node: call one off first`);
+      const { by: _by, held: _held, ...look } = ctx.chats.lookAdd({ conversation, at, note: input.note, zone: isTimeZone(zone) ? zone : "UTC", by, held: input.held ?? null });
+      return { look, when: lookTime(at, look.zone, now), waiting: ctx.chats.looksWaiting(conversation).length };
+    },
+    looks: (_input, p) => {
+      ownerOnly(p);
+      const looks = ctx.chats.looksWaiting().filter((look) => {
+        const kept = ctx.chats.summary(look.conversation);
+        return !!kept && visibleTo(kept, p);
+      });
+      return { looks: looks.map(({ by: _by, held: _held, ...look }) => look) };
+    },
+    cancelLook: (input, p) => {
+      const kept = ctx.chats.look(input.id);
+      // Yours to call off from a device that may see its chat; his, only in the chat it is in.
+      const chat = kept ? ctx.chats.summary(kept.conversation) : null;
+      const yours = isOwner(p) && !!chat && visibleTo(chat, p);
+      const his = himself(p) && !!kept && input.turn?.conversation === kept.conversation;
+      if (!kept || (!yours && !his)) throw new HttpError(404, "no such look");
+      if (kept.state !== "waiting") throw new HttpError(409, kept.state === "done" ? "it has come already" : `it was ${kept.state} already`);
+      ctx.chats.lookEnd(kept.id, "cancelled", his ? "called off by him" : "called off by you");
+      const { by: _by, held: _held, ...look } = ctx.chats.look(kept.id)!;
+      return { look };
     },
     conversation: (input, p) => {
       ownerOnly(p);

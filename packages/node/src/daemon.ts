@@ -29,6 +29,7 @@ import { ChatStore } from "./chats.ts";
 import { TeamStore } from "./team-store.ts";
 import type { TeamService } from "./team.ts";
 import { type HubLimits, TurnHub } from "./turns.ts";
+import { LookRunner } from "./looks.ts";
 import { Uploads } from "./uploads.ts";
 import { QuestBoard } from "./quests.ts";
 import { skillAsker, SkillsService } from "./skills.ts";
@@ -80,6 +81,10 @@ export interface Daemon {
   compute: ComputeService;
   /** The chat turns this node runs for you, and what you queued behind your chats. */
   turns: TurnHub;
+  /** His own looks, taken when they come (looks.ts). */
+  looks: LookRunner;
+  /** Your chats, on this node. */
+  chats: ChatStore;
   /** The doctor: one look at this node's whole installation (doctor.ts). */
   doctor(opts?: DoctorOptions): Promise<DoctorRun>;
   /** Notifications to your paired devices (notify.ts). */
@@ -98,6 +103,8 @@ export interface DaemonOptions {
   capabilities?: Capabilities;
   /** How often the loop runner wakes (default 15 s). */
   loopIntervalMs?: number;
+  /** How often his looks that came are looked for (ms; false: never, for tests that take them by hand). */
+  lookIntervalMs?: number | false;
   /** How often the pull requests this node shipped have their checks read (false: never, for tests). */
   ciWatchMs?: number | false;
   /** How often what wakes its loops (mail, GitHub) is read (false: never, for tests). */
@@ -417,6 +424,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       ...opts.turnLimits,
     },
   });
+  // His own looks: set as he answers in a chat of yours, each a turn of his there when it comes (looks.ts).
+  const looks = new LookRunner({ chats, turns, log });
   // ---- The archive: node-local, its own database and blob store in the home, never the mind's log.
   const archiveStore = new ArchiveStore(join(home.dir, "archive.db"), new LocalDiskBackend(env.GALAHAD_ARCHIVE_DIR ?? join(home.dir, "archive")));
   const archive = new ArchiveService({
@@ -655,6 +664,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     chats,
     uploads,
     turns,
+    looks,
     team,
     quests,
     archive,
@@ -733,6 +743,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     }
   }
   loops.start(opts.loopIntervalMs);
+  // His own looks (looks.ts): each a turn of his in the chat he set it in, when it comes.
+  if (opts.lookIntervalMs !== false) looks.start(opts.lookIntervalMs);
   // What else wakes its loops (wakes.ts): new mail and GitHub events, read every few minutes as each loop; webhooks
   // come in through the server.
   const wakeWatcher = new WakeWatcher({
@@ -803,6 +815,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     archive,
     compute,
     turns,
+    looks,
+    chats,
     doctor: (options) => runDoctor(doctorDeps, options),
     notify,
     /**
@@ -826,6 +840,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       stopping = true;
       // No new turns from here (nothing queued is sent); the ones under way get the same grace as requests do.
       const turnsEnded = turns.drain();
+      looks.stop();
       governor.close();
       await upkeeping;
       // He tells nobody anything more; a send under way is cut off.

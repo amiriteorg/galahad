@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { closeSync, existsSync, openSync } from "node:fs";
-import { type AnswerStatus, AttachmentRef, type ChatMessage, chatState, type ConversationSummary, type QueueHold, randomId, type StoredMessage, type StoredStep } from "@galahad/core";
+import { type AnswerStatus, AttachmentRef, type ChatMessage, chatState, type ConversationSummary, LookHeld, type LookView, type QueueHold, randomId, type StoredMessage, type StoredStep } from "@galahad/core";
 import { z } from "zod";
 
 /*
@@ -10,7 +10,9 @@ import { z } from "zod";
  * "you" is (see the conversation routes).
  *
  * It also keeps what you queued behind a chat while Galahad worked (your messages,
- * in order, until their turn comes), so a queue survives a reload and a restart.
+ * in order, until their turn comes), so a queue survives a reload and a restart; the
+ * looks he set himself in a chat (looks.ts), until they come; and which knights' tasks
+ * he gave from each chat, for its row of what is under way.
  */
 
 interface ConversationRow {
@@ -45,7 +47,42 @@ interface MessageRow {
   error: string | null;
   created_at: number;
   ended_at: number | null;
+  /** A look of his: when he set it, and his note (null: a message of yours, or his answer). */
+  look_set: number | null;
+  look_note: string | null;
 }
+
+interface LookRow {
+  id: string;
+  conversation: string;
+  at: number;
+  note: string;
+  set_at: number;
+  zone: string;
+  by_kind: "admin" | "client";
+  by_device: string;
+  held: string | null;
+  state: LookView["state"];
+  why: string | null;
+}
+
+/** A look as the node keeps it: who set it going (whose device it runs as when it comes), and what its answer held. */
+export interface KeptLook extends LookView {
+  by: QueuedBy;
+  held: LookHeld | null;
+}
+
+const lookOf = (row: LookRow): KeptLook => {
+  let held: LookHeld | null = null;
+  try {
+    const parsed = row.held ? LookHeld.safeParse(JSON.parse(row.held)) : null;
+    held = parsed?.success ? parsed.data : row.held ? { what: "bank" } : null;
+  } catch {
+    // What it held can't be read back: held as the strictest there is.
+    held = { what: "bank" };
+  }
+  return { id: row.id, conversation: row.conversation, at: row.at, note: row.note, set: row.set_at, zone: row.zone, state: row.state, why: row.why, by: { kind: row.by_kind, device: row.by_device }, held };
+};
 
 /** A row's attachments, read back: what was kept (each still checked to be one), or none. */
 function attachmentsOf(json: string | null): AttachmentRef[] {
@@ -197,7 +234,17 @@ export class ChatStore {
       CREATE INDEX IF NOT EXISTS queue_by_conversation ON queue (conversation, ord, id);
       CREATE TABLE IF NOT EXISTS stories (
         conversation TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
-        text TEXT NOT NULL, through INTEGER NOT NULL, updated_at INTEGER NOT NULL);`);
+        text TEXT NOT NULL, through INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS looks (
+        id TEXT PRIMARY KEY,
+        conversation TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        at INTEGER NOT NULL, note TEXT NOT NULL, set_at INTEGER NOT NULL, zone TEXT NOT NULL,
+        by_kind TEXT NOT NULL, by_device TEXT NOT NULL, held TEXT,
+        state TEXT NOT NULL DEFAULT 'waiting', why TEXT, ended_at INTEGER);
+      CREATE INDEX IF NOT EXISTS looks_waiting ON looks (state, at);
+      CREATE TABLE IF NOT EXISTS handoffs (
+        conversation TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        task TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (conversation, task));`);
     // A database from before queues: two more columns on a conversation (why its queue is held; what waits on you).
     const columns = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().map((c) => c.name));
     if (!columns.has("queue_held")) this.db.exec("ALTER TABLE conversations ADD COLUMN queue_held TEXT");
@@ -215,6 +262,8 @@ export class ChatStore {
     // A database from before attachments: a message of yours may carry files (kept on the node: uploads.ts).
     const fields = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(messages)").all().map((c) => c.name));
     if (!fields.has("attachments")) this.db.exec("ALTER TABLE messages ADD COLUMN attachments TEXT");
+    // A database from before his looks: a message may be one of his, which starts the turn a look of his comes back as.
+    if (!fields.has("look_set")) this.db.exec("ALTER TABLE messages ADD COLUMN look_set INTEGER; ALTER TABLE messages ADD COLUMN look_note TEXT;");
     // An answer the node was writing when it stopped can't finish any more.
     this.db.exec("UPDATE messages SET status = 'stopped' WHERE status = 'streaming'");
     // Nothing is sent just because the node came back: what was queued then is held until you resume it.
@@ -260,6 +309,7 @@ export class ChatStore {
           role: m.role,
           content: m.content,
           ...attachedTo(m),
+          ...(m.look_set !== null && m.look_note !== null ? { look: { set: m.look_set, note: m.look_note } } : {}),
           model: m.model,
           steps: JSON.parse(m.steps) as StoredStep[],
           status: m.status,
@@ -313,11 +363,14 @@ export class ChatStore {
   }
 
   /** A message of yours. Whatever the turn before it left waiting on you is no longer where the chat stands. */
-  addUser(id: string, content: string, attachments?: readonly AttachmentRef[]): number {
+  /** A message that starts a turn: yours, or one of his looks coming back (`look`: when he set it, and his note). */
+  addUser(id: string, content: string, attachments?: readonly AttachmentRef[], look?: { set: number; note: string }): number {
     const at = this.now();
     const row = this.db
-      .query<{ id: number }, [string, string, string | null, number, number]>("INSERT INTO messages (conversation, role, content, attachments, status, created_at, ended_at) VALUES (?, 'user', ?, ?, 'done', ?, ?) RETURNING id")
-      .get(id, content, attachments?.length ? JSON.stringify(attachments) : null, at, at)!;
+      .query<{ id: number }, [string, string, string | null, number, number, number | null, string | null]>(
+        "INSERT INTO messages (conversation, role, content, attachments, status, created_at, ended_at, look_set, look_note) VALUES (?, 'user', ?, ?, 'done', ?, ?, ?, ?) RETURNING id",
+      )
+      .get(id, content, attachments?.length ? JSON.stringify(attachments) : null, at, at, look?.set ?? null, look?.note ?? null)!;
     this.db.query("UPDATE conversations SET waiting = NULL WHERE id = ?").run(id);
     this.touch(id);
     return row.id;
@@ -393,6 +446,49 @@ export class ChatStore {
   /* ---------- the queue: your messages waiting for their turn ---------- */
 
   /** A chat's queued messages, in the order they'll be sent. */
+  /** A look he set in a chat, waiting until it comes. */
+  lookAdd(look: { conversation: string; at: number; note: string; zone: string; by: QueuedBy; held: LookHeld | null }): KeptLook {
+    const id = `lk_${randomId(12)}`;
+    this.db
+      .query("INSERT INTO looks (id, conversation, at, note, set_at, zone, by_kind, by_device, held) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, look.conversation, look.at, look.note, this.now(), look.zone, look.by.kind, look.by.device, look.held ? JSON.stringify(look.held) : null);
+    return this.look(id)!;
+  }
+
+  look(id: string): KeptLook | null {
+    const row = this.db.query<LookRow, [string]>("SELECT * FROM looks WHERE id = ?").get(id);
+    return row ? lookOf(row) : null;
+  }
+
+  /** His looks that wait, soonest first: in one chat, or in all. */
+  looksWaiting(conversation?: string): KeptLook[] {
+    const rows = conversation
+      ? this.db.query<LookRow, [string]>("SELECT * FROM looks WHERE state = 'waiting' AND conversation = ? ORDER BY at, id").all(conversation)
+      : this.db.query<LookRow, []>("SELECT * FROM looks WHERE state = 'waiting' ORDER BY at, id LIMIT 500").all();
+    return rows.map(lookOf);
+  }
+
+  /** His looks whose time has come, soonest first. */
+  looksDue(now: number): KeptLook[] {
+    return this.db.query<LookRow, [number]>("SELECT * FROM looks WHERE state = 'waiting' AND at <= ? ORDER BY at, id LIMIT 50").all(now).map(lookOf);
+  }
+
+  /** A look ended: taken (done), called off, or failed, and why. Only one that still waits. */
+  lookEnd(id: string, state: "done" | "cancelled" | "failed", why: string | null): boolean {
+    return this.db.query("UPDATE looks SET state = ?, why = ?, ended_at = ? WHERE id = ? AND state = 'waiting'").run(state, why, this.now(), id).changes > 0;
+  }
+
+  /** A knight's task he gave from a chat (its row above that chat's message box while it's under way). */
+  handoff(conversation: string, task: string): void {
+    if (!this.summary(conversation)) return;
+    this.db.query("INSERT OR IGNORE INTO handoffs (conversation, task, at) VALUES (?, ?, ?)").run(conversation, task, this.now());
+  }
+
+  /** The tasks he gave from a chat, newest first. */
+  handoffs(conversation: string, limit = 50): string[] {
+    return this.db.query<{ task: string }, [string, number]>("SELECT task FROM handoffs WHERE conversation = ? ORDER BY at DESC, task LIMIT ?").all(conversation, limit).map((row) => row.task);
+  }
+
   queue(conversation: string): Queued[] {
     return this.db.query<QueueRow, [string]>("SELECT * FROM queue WHERE conversation = ? ORDER BY ord, id").all(conversation).map(queuedOf);
   }

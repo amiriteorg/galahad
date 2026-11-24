@@ -30,7 +30,9 @@ import { TOOLS } from "./tools.ts";
  * turn (chat() takes it at a safe point), a queued message waits in the chat store and
  * becomes the next turn when the one before it ends well. A turn that was stopped or
  * failed, and a node that restarted, hold the queue until the owner resumes it:
- * nothing goes on unattended that the owner didn't leave running.
+ * nothing of the owner's goes on unattended that the owner didn't leave running. His
+ * own looks (looks.ts) are his, on the owner's word of 24 November 2026: each comes
+ * back as a turn of his once, its message kept as his.
  *
  * Bounded: so many turns at once, so long each, so many messages queued; each queued
  * message is sent once, and nothing is ever tried again by itself.
@@ -104,8 +106,10 @@ export interface TurnSpec {
   role: string;
   /** The kept chat it belongs to (null: a temporary chat, kept nowhere). */
   conversation: { id: string; title: string; project: string | null } | null;
-  /** The owner's message that starts it. */
+  /** The owner's message that starts it (or, for a look of his coming back, his note as the model is given it). */
   question: string;
+  /** A look of his coming back (looks.ts): when he set it, and his note. Its message is kept as his, not the owner's. */
+  look?: { set: number; note: string };
   /** The files it carries, kept on the node (uploads.ts). */
   attachments?: AttachmentRef[];
   /** What the model is given: what was said before, then the question (a side question is answered from the same). */
@@ -297,7 +301,7 @@ export class TurnHub {
     const c = spec.conversation;
     let answerId: number | null = null;
     if (c) {
-      chats.addUser(c.id, spec.question, spec.attachments);
+      chats.addUser(c.id, spec.question, spec.attachments, spec.look);
       answerId = chats.startAnswer(c.id);
     }
     const startedAt = this.now();

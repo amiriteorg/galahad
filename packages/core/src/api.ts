@@ -16,7 +16,7 @@ import { PricedModel, PriceSchema, SpendLines, type TrialSpent, UsageBudgetInput
 import { type ComputeUsage, EffortAsk, EffortLevel } from "./compute.ts";
 import { DecisionRequest } from "./decisions.ts";
 import { BankBalancesInput, BankCompleteInput, BankTransactionsInput } from "./bank.ts";
-import { ConversationId, ProjectBranchInput, ProjectCommitInput, ProjectGitInput, ProjectId, ProjectInput } from "./chats.ts";
+import { CancelLookInput, ConversationId, LookLaterInput, ProjectBranchInput, ProjectCommitInput, ProjectGitInput, ProjectId, ProjectInput } from "./chats.ts";
 import { TeammateId, TeammateInput, TeamArrangeInput, TeamBacklogInput, TeamChangesInput, TeamCiInput, TeamEngramInput, TeamShipInput, TeamFileInput, TeamFilesInput, TeamRecruitInput, TeamRemoveInput, TeamRoomId, TeamRoomInput, TeamPostInput, TeamSayInput, TeamSeenInput, TeamTaskId, TeamTaskInput, TeamGiveInput, TeamControlInput, TeamOutcomeControlInput, TeamOutcomeInput, TeamWorkspaceQuest, TeammateModels } from "./team.ts";
 import { QuestGates, QuestProgressInput } from "./quests.ts";
 import { type StopReason, TURN_ID } from "./turns.ts";
@@ -773,6 +773,14 @@ export const routes = {
   /** Your chats, kept on this node (yours alone: never an agent's to read). */
   conversations: { method: "GET", path: "/api/conversations", scope: "chat", input: null },
   conversation: { method: "POST", path: "/api/conversations/get", scope: "chat", input: z.strictObject({ id: ConversationId }) },
+  /** What is under way in a chat of yours: his knights' tasks given there that haven't ended (Stop on each), his looks that wait. */
+  underway: { method: "POST", path: "/api/conversations/underway", scope: "chat", input: z.strictObject({ id: ConversationId }) },
+  /** A look he sets himself (his look_later, as he answers in a chat of yours): only Galahad himself, from inside the node. */
+  lookLater: { method: "POST", path: "/api/looks/set", scope: "chat", input: LookLaterInput },
+  /** His looks that wait, in every chat of yours. */
+  looks: { method: "GET", path: "/api/looks", scope: "chat", input: null },
+  /** One of his looks, called off: by you, or by him in the chat it is in. */
+  cancelLook: { method: "POST", path: "/api/looks/cancel", scope: "chat", input: CancelLookInput },
   updateConversation: {
     method: "POST",
     path: "/api/conversations/update",

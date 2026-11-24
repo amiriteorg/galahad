@@ -16,6 +16,10 @@ import {
   type ConnectorView,
   type ExecResult,
   type FleetView,
+  LookHeld,
+  LookId,
+  type LookView,
+  LookWhen,
   type LedgerEntry,
   LoopDraftInput,
   type LoopDraftView,
@@ -77,16 +81,23 @@ export interface GalahadTool {
    * record: writes words or numbers the model chooses into the shared mind (a memory, a
    *   secret request, kept work's label, a sandbox's line in the ledger), which replicates
    *   in plaintext to every node and is read by every agent with mind:read.
+   * chat: writes only into your chat on this node (a look he sets, look_later): nothing leaves Galahad and nothing
+   *   reaches the shared mind, and what the answer held of yours is held by what it leaves (a look's turn starts holding it).
    * In chat, once private data is in an answer, egress and record tools are refused for the
    * rest of it. A tool with no flow only reads the mind (a test holds every tool to this).
    */
-  flow?: "private" | "egress" | "record";
+  flow?: "private" | "egress" | "record" | "chat";
   /**
    * His own: offered only where Galahad himself is the agent (your conversation with him), never to another
    * agent over MCP or to a knight, whatever scopes it holds. Its routes refuse everyone else too.
    */
   own?: boolean;
-  run(api: ToolApi, args: any): Promise<string | ToolResult>;
+  run(api: ToolApi, args: any, turn?: ToolTurn): Promise<string | ToolResult>;
+}
+
+/** What a tool is told of the answer it runs in: what that answer holds of yours, so far (null: nothing private). */
+export interface ToolTurn {
+  held: LookHeld | null;
 }
 
 /** A result with pictures: models that can see get them, the rest each picture's words. */
@@ -99,7 +110,7 @@ export interface ToolResult {
 
 const resultText = (r: string | ToolResult): string => (typeof r === "string" ? r : r.text);
 
-function tool<S extends z.ZodRawShape>(t: Omit<GalahadTool, "input" | "run"> & { input: S; run(api: ToolApi, args: z.infer<z.ZodObject<S>>): Promise<string | ToolResult> }): GalahadTool {
+function tool<S extends z.ZodRawShape>(t: Omit<GalahadTool, "input" | "run"> & { input: S; run(api: ToolApi, args: z.infer<z.ZodObject<S>>, turn?: ToolTurn): Promise<string | ToolResult> }): GalahadTool {
   return t as GalahadTool;
 }
 
@@ -914,6 +925,36 @@ export const TOOLS: GalahadTool[] = [
   }),
 
   tool({
+    name: "look_later",
+    title: "Look again later",
+    description:
+      "Look at something again yourself, later, in this chat: a deploy, a run, a reply, a price, anything not done yet, instead of asking your liege to come back or to remind you. Say when (in: 45m, 2h or 1d; or at: 2026-11-25 09:00, in the time zone you were told it is now) and a note of what to look at and why, as you'd remind yourself. When it comes you get a turn of your own here, with your tools, and your liege reads what you found (they're told on their phone). Say in your answer that you will, and when. At most 10 waiting in a chat, a minute to 30 days ahead. To call one off, cancel with its id.",
+    input: {
+      note: z.string().min(1).max(500).describe("What to look at and why, as you'd remind yourself").optional(),
+      in: LookWhen.in.describe("In a while: 45m, 2h or 1d").optional(),
+      at: LookWhen.at.describe("At a time, in the time zone you were told: 2026-11-25 09:00").optional(),
+      cancel: LookId.describe("A look of yours in this chat to call off, by its id").optional(),
+    },
+    routes: ["lookLater", "cancelLook"],
+    flow: "chat",
+    own: true,
+    async run(api, { note, in: after, at, cancel }, turn) {
+      if (cancel) {
+        const { look } = await api.call<{ look: LookView }>("cancelLook", { id: cancel });
+        return `Called off: ${look.note} (${look.id}).`;
+      }
+      if (!note) return "Say what you will look at (note), and when (in or at).";
+      const { look, when, waiting } = await api.call<{ look: LookView; when: string; waiting: number }>("lookLater", {
+        note,
+        ...(after !== undefined ? { in: after } : {}),
+        ...(at !== undefined ? { at } : {}),
+        held: turn?.held ?? null,
+      });
+      return `I'll look again at ${when} (${look.zone}), here: ${look.note} (${look.id}).${waiting > 1 ? ` ${waiting} looks of yours wait in this chat.` : ""} Your liege sees it above the message box, and may call it off.`;
+    },
+  }),
+
+  tool({
     name: "team_outcome",
     title: "Own an outcome",
     description:
@@ -1262,9 +1303,10 @@ const REFUSED: Record<"egress" | "record", string> = {
  * Galahad, or write it into the shared mind, runs for the rest of it. Mail's own tools
  * aside: a reply drafted from it stays in that mailbox, and sending one still asks.
  */
-export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: unknown) => string, opts: { tag?: string } = {}): ChatTools {
+export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: unknown) => string, opts: { tag?: string; held?: LookHeld | null } = {}): ChatTools {
   const byName = new Map(tools.map((t) => [t.name, t]));
-  let held: { what: "bank" } | { what: "connector"; id: string } | null = null;
+  // (A look of his coming back starts holding what the answer that set it held.)
+  let held: LookHeld | null = opts.held ?? null;
   return {
     specs: tools.map((t) => ({
       name: t.name,
@@ -1295,7 +1337,7 @@ export function chatTools(tools: GalahadTool[], api: ToolApi, explain: (error: u
       // In a project, what he remembers carries the project's tag.
       if (opts.tag && t.name === "remember") parsed.data.tags = [...new Set([...((parsed.data.tags as string[] | undefined) ?? []), opts.tag])];
       try {
-        const result = await t.run(api, parsed.data);
+        const result = await t.run(api, parsed.data, { held });
         const text = resultText(result);
         const images = typeof result === "string" ? undefined : result.images;
         if (t.flow === "private") held = { what: "bank" };

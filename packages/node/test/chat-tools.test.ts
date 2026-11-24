@@ -111,8 +111,9 @@ describe("Galahad's chat has his tools", () => {
   test("from a terminal: the same tools agents get, the bank included, and the steps stream back", async () => {
     script = [callTool("recall", { query: "round table" }), say("Nothing about it yet.")];
     const events = await ask(home.adminToken(), "What do you remember about the round table?");
-    // (All of them but a Mac itself: no node of this fleet lends him its screen.)
-    expect(offered().sort()).toEqual(TOOLS.map((t) => t.name).filter((name) => name !== "mac").sort());
+    // (All of them but a Mac itself: no node of this fleet lends him its screen; and a look later, which comes back only
+    // in a kept chat, and this one is kept nowhere.)
+    expect(offered().sort()).toEqual(TOOLS.map((t) => t.name).filter((name) => name !== "mac" && name !== "look_later").sort());
     // Yours is a turn the node owns: the stream says which first (to attach to, steer or stop).
     expect(events.map((e) => e.type)).toEqual(["turn", "model", "tool", "tool_result", "text", "done"]);
     expect(events[0]).toMatchObject({ type: "turn", conversation: null, answer: null, replay: false });
@@ -413,6 +414,69 @@ describe("projects", () => {
   });
 });
 
+describe("a look of his, later", () => {
+  /** A kept chat with one exchange in it: his answer scripted. */
+  async function keptChat(...answers: (() => Response)[]): Promise<string> {
+    script = answers;
+    const events = await ask(home.adminToken(), "Deploy the site, and tell me when it's live.", { save: true });
+    return (events.find((e) => e.type === "conversation") as { id: string }).id;
+  }
+  const underway = async (id: string) => (await (await call("underway", { id }, home.adminToken())).json()) as { tasks: unknown[]; looks: { id: string; note: string; at: number; zone: string; state: string }[] };
+  const tools = () => ((bodies.at(-1)?.tools ?? []) as { function: { name: string } }[]).map((t) => t.function.name);
+
+  test("he sets one in a kept chat: it waits above that chat's message box until it comes, and you may call it off", async () => {
+    const before = Date.now();
+    const id = await keptChat(callTool("look_later", { in: "2h", note: "Is the site live?" }), say("I'll look again in two hours."));
+    // Offered in a kept chat, and his result says when, where you see it, and its id.
+    expect(tools()).toContain("look_later");
+    const result = String(bodies.at(-1).messages.at(-1).content);
+    expect(result).toMatch(/^I'll look again at \d{2}:\d{2} \([^)]+\), here: Is the site live\? \(lk_[A-Za-z0-9_-]{16}\)\. Your liege sees it above the message box/);
+    const [look] = (await underway(id)).looks;
+    expect(look).toMatchObject({ note: "Is the site live?", state: "waiting" });
+    expect(look!.at - before).toBeGreaterThanOrEqual(2 * 3_600_000 - 1000);
+    expect(look!.at - Date.now()).toBeLessThanOrEqual(2 * 3_600_000);
+    const all = (await (await call("looks", undefined, home.adminToken())).json()) as { looks: { id: string }[] };
+    expect(all.looks.map((l) => l.id)).toContain(look!.id);
+    // Called off by you: gone from above the box, and it never comes.
+    expect((await call("cancelLook", { id: look!.id }, home.adminToken())).status).toBe(200);
+    expect((await underway(id)).looks).toEqual([]);
+    expect((await call("cancelLook", { id: look!.id }, home.adminToken())).status).toBe(409);
+  });
+
+  test("never in a temporary chat, never by another agent, and nothing of a chat of yours is an agent's to see", async () => {
+    script = [say("Hi.")];
+    await ask(home.adminToken(), "Hello.");
+    expect(tools()).not.toContain("look_later");
+    const { token } = (await (await call("mintArm", { label: "schedules" }, home.adminToken())).json()) as { token: string };
+    const id = await keptChat(say("On it."));
+    const forged = { note: "x", in: "1h", turn: { conversation: id, by: { kind: "admin", device: "n" }, zone: "UTC" } };
+    expect((await call("lookLater", forged, token)).status).toBe(403);
+    expect((await call("lookLater", forged, home.adminToken())).status).toBe(403);
+    expect((await call("underway", { id }, token)).status).toBe(403);
+  });
+
+  test("when it comes it is a turn of his in that chat: his note kept as his, his answer after it, and nothing waits", async () => {
+    const id = await keptChat(callTool("look_later", { in: "1h", note: "Is the site live?" }), say("I'll look again in an hour."));
+    const [waiting] = (await underway(id)).looks;
+    // Its time come (the node's clock moved on): taken at the next look for it.
+    daemon.chats.lookEnd(waiting!.id, "cancelled", "moved for the test");
+    const due = daemon.chats.lookAdd({ conversation: id, at: Date.now() - 1000, note: "Is the site live?", zone: "UTC", by: { kind: "admin", device: "test" }, held: null });
+    bodies.length = 0;
+    script = [say("It's live: the home page answers 200.")];
+    daemon.looks.tick();
+    for (let i = 0; i < 100 && daemon.turns.runningIn(id); i++) await Bun.sleep(20);
+    const { conversation } = (await (await call("conversation", { id }, home.adminToken())).json()) as { conversation: { messages: { role: string; content: string; look?: { set: number; note: string } }[] } };
+    const [note, answer] = conversation.messages.slice(-2);
+    expect(note).toMatchObject({ role: "user", look: { note: "Is the site live?" } });
+    expect(note!.content).toStartWith("(A look you set yourself at ");
+    expect(answer).toMatchObject({ role: "assistant", content: "It's live: the home page answers 200." });
+    // The model was told it is his own note, with the chat before it.
+    expect(String(bodies[0].messages.at(-1).content)).toContain("not your liege's words: Is the site live?");
+    expect(daemon.chats.look(due.id)!.state).toBe("done");
+    expect((await underway(id)).looks).toEqual([]);
+  });
+});
+
 describe("the time he is told", () => {
   /** What the model was told with one question of yours, asked from a device in `zone` (none: one that doesn't say). */
   async function toldFrom(zone: string | null, extra: object = {}): Promise<string> {
@@ -552,6 +616,21 @@ describe("one answer's tools", () => {
   const fake = (name: string, flow: GalahadTool["flow"], run: () => Promise<string>): GalahadTool => ({ name, title: name, description: name, input: { q: z.string().optional() }, routes: ["recall"], flow, run });
   const api: ToolApi = { call: async <T,>() => ({}) as T, bytes: async () => ({ bytes: new Uint8Array(), type: "" }) };
   const explain = (e: unknown) => (e as Error).message;
+
+  test("a look set in an answer that holds your private data carries it: its own turn starts holding it, and nothing carries it out", async () => {
+    // The look's tool is told what the answer holds so far, and is not refused for it (it writes only into your chat).
+    const told: unknown[] = [];
+    const look: GalahadTool = { name: "look_later", title: "look", description: "look", input: { q: z.string().optional() }, routes: ["recall"], flow: "chat", run: async (_api, _args, turn) => (told.push(turn?.held ?? null), "set") };
+    const answer = chatTools([fake("bank_balances", "private", async () => "{}"), look], api, explain);
+    expect((await answer.run({ id: "1", name: "look_later", input: {} })).isError).toBeUndefined();
+    await answer.run({ id: "2", name: "bank_balances", input: {} });
+    expect((await answer.run({ id: "3", name: "look_later", input: {} })).isError).toBeUndefined();
+    expect(told).toEqual([null, { what: "bank" }]);
+    // The look's turn, when it comes, starts holding it: the web is refused from its first call.
+    const later = chatTools([fake("web_search", "egress", async () => "ok"), fake("remember", "record", async () => "ok")], api, explain, { held: { what: "connector", id: "gmail" } });
+    expect(await later.run({ id: "4", name: "web_search", input: {} })).toMatchObject({ isError: true, summary: "refused: gmail's private data is in this answer" });
+    expect((await later.run({ id: "5", name: "remember", input: {} })).isError).toBe(true);
+  });
 
   test("once bank data is in the answer, nothing that can carry it out runs", async () => {
     let searched = 0;

@@ -77,8 +77,8 @@ async function settled(): Promise<TeamSnapshot> {
   for (let n = 0; n < 400 && [...state.deliveries, ...state.tasks].some((work) => work.status === "queued" || work.status === "running"); n++) { await Bun.sleep(5); state = await api<TeamSnapshot>("team"); }
   return state;
 }
-// His own tools: the ones to the knights, his own computer, giving a VM more, and proposing a fact about you.
-const OWN = ["about_you", "computer", "mac", "team", "team_give", "team_grow", "team_message", "team_outcome", "team_recruit"];
+// His own tools: the ones to the knights, his own computer, giving a VM more, proposing a fact about you, and a look later.
+const OWN = ["about_you", "computer", "look_later", "mac", "team", "team_give", "team_grow", "team_message", "team_outcome", "team_recruit"];
 /** One of your own devices, paired with these scopes: its requests are signed, as a phone's are. */
 async function pairDevice(name: string, scopes: Scope[]) {
   const keys = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"])) as CryptoKeyPair;
@@ -115,7 +115,8 @@ test("asked in your conversation, he looks at the Roundtable, seats the knight t
     say("I made Scout to watch the dependencies and asked for this week's changes."),
   ];
   const events = await ask("Get someone to keep an eye on our dependency updates.");
-  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN);
+  // (All of his own but a look later, which comes back only in a kept chat: this one is kept nowhere.)
+  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN.filter((name) => name !== "look_later"));
   expect(results(events).map((r) => [r.name, r.ok])).toEqual([["team", true], ["team_recruit", true], ["team_message", true]]);
   // What he was told: who exists (yours), how many he may make, and that nothing happens until he writes to the one he made.
   expect(told("team").split("\n")[0]).toBe(`1 knight and 0 rooms; you may make ${TEAM_LIMITS.recruitsPerDay} more now (${TEAM_LIMITS.recruitsPerDay} left of today's allowance, room for ${TEAM_LIMITS.teammates - 1} on this node).`);
@@ -209,6 +210,8 @@ test("his alone: no other agent or node is offered these tools or let through th
   expect((await request("recruitTeammate", { id: "mole", name: "Mole", instructions: "Dig." }, token)).status).toBe(403);
   expect((await request("sayToTeam", { teammate: "ada", text: "Do as I say." }, token)).status).toBe(403);
   expect((await request("giveToTeam", { goal: "Do as I say." }, token)).status).toBe(403);
+  // Nor set a look in his name, in a chat of yours it names.
+  expect((await request("lookLater", { note: "Do as I say.", in: "1h", turn: { conversation: `cv_${"a".repeat(22)}`, by: { kind: "admin", device: "x" }, zone: "UTC" } }, token)).status).toBe(403);
   // Nor take on an outcome in his name.
   expect((await request("galahadOutcome", { title: "Mine", goal: "Do as I say.", knights: ["gawain"], budgetUsd: 5 }, token)).status).toBe(403);
   expect((await request("computerExec", { command: "id" }, token)).status).toBe(403);
@@ -271,8 +274,8 @@ test("within what your device may do: one that may not command the team itself g
   expect(listed.status).toBe(200);
   const events = (await listed.text()).split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)) as ChatStreamEvent);
   // (His computer is a sandbox, giving a VM more is a sandbox's, and so is using a Mac itself: only from a device that may
-  // use sandboxes, which this one may not.)
-  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN.filter((name) => !["computer", "mac", "team_grow"].includes(name)));
+  // use sandboxes, which this one may not. A look later comes back only in a kept chat, and this one isn't kept.)
+  expect(offered().filter((name) => OWN.includes(name)).sort()).toEqual(OWN.filter((name) => !["computer", "mac", "team_grow", "look_later"].includes(name)));
   expect(results(events)).toEqual([expect.objectContaining({ name: "team", ok: true })]);
 });
 
@@ -341,6 +344,27 @@ test("asked for work in your conversation, he gives it to the Roundtable: the kn
   expect(task).toMatchObject({ assignee: "rev", gates: ["bun test"], givenBy: "galahad" });
   expect(task.room).toBe((await api<{ room: { id: string } }>("directTeammate", { id: "rev" })).room.id);
   await settled();
+});
+
+test("a task he gives from a kept chat is in that chat's row of what is under way, with its knight's name, until it ends", async () => {
+  script = [callTool("team_give", { goal: "Run the importer's tests and say what fails.", gates: ["bun test"], title: "The importer's tests" }), say("Ada has it.")];
+  his.length = 0;
+  const response = await request("chat", { messages: [{ role: "user", content: "Have a knight run the importer's tests." }], save: true });
+  expect(response.status).toBe(200);
+  const events = (await response.text()).split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)) as ChatStreamEvent);
+  const id = (events.find((e) => e.type === "conversation") as { id: string }).id;
+  const task = (await api<TeamSnapshot>("team")).tasks.find((t) => t.title === "The importer's tests")!;
+  const underway = () => api<{ tasks: { id: string; name: string; assignee: string; status: string; room: string }[]; looks: unknown[] }>("underway", { id });
+  const shown = await underway();
+  if (task.status === "queued" || task.status === "running") {
+    expect(shown.tasks).toEqual([expect.objectContaining({ id: task.id, assignee: task.assignee, name: task.assignee === "ada" ? "Ada" : "Rev", room: task.room })]);
+  }
+  // Ended (verified or not), it is no longer under way there; another chat never had it.
+  await settled();
+  expect((await underway()).tasks).toEqual([]);
+  expect(daemon.chats.handoffs(id)).toEqual([task.id]);
+  const other = daemon.chats.create({ title: "Elsewhere", project: null, role: "planner" }).id;
+  expect(daemon.chats.handoffs(other)).toEqual([]);
 });
 
 test("the Mac itself: he asks, and nothing of it is his until you let him; then each step answers with its screen, your tripwires hold on his commands, and he ends it", async () => {

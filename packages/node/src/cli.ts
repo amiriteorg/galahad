@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, type AwayView, b64u, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type SlackView, SLACK_APP_MANIFEST, type TelegramView, type TrialView, type QuestionView, plainLine } from "@galahad/core";
+import { type ArtifactView, type AwayView, b64u, type LookView, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type SlackView, SLACK_APP_MANIFEST, type TelegramView, type TrialView, type QuestionView, plainLine } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -162,6 +162,7 @@ Set up
   status                                                   fleet, peers, capabilities
   away [--since 6h]                                        while you were away: tasks that ended, his outcomes' questions,
                                                            loops that failed, what waits on you (default: the last day)
+  looks [cancel <id>]                                      what he set himself to look at again later, in your chats
 
 Mind
   remember <text> [--tag t]      recall [query]
@@ -978,6 +979,22 @@ Next:
       const scopes = [...new Set([...target.scopes, ...rest])];
       await admin.call("setDeviceScopes", { device: target.id, scopes });
       console.log(`${target.name} may now: ${scopes.join(", ")}`);
+      return;
+    }
+
+    case "looks": {
+      // His own looks (looks.ts): what he set himself to look at again, in your chats, until it comes.
+      const admin = new Admin(home);
+      if (sub === "cancel") {
+        if (!rest[0]) fail("usage: galahad looks cancel <id>");
+        const { look } = await admin.call<{ look: LookView }>("cancelLook", { id: rest[0] });
+        console.log(`Called off: ${look.note}`);
+        return;
+      }
+      if (sub) fail("usage: galahad looks [cancel <id>]");
+      const { looks } = await admin.call<{ looks: LookView[] }>("looks");
+      if (!looks.length) console.log(dim("No looks of his wait. He sets one in a chat when something isn't done yet (a deploy, a reply), and looks again then."));
+      for (const look of looks) console.log(`  ${bold(new Date(look.at).toLocaleString())}  ${look.note}  ${dim(`${look.id} · ${look.zone}`)}`);
       return;
     }
 
