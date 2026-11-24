@@ -98,7 +98,7 @@ private struct ConnectorRow: View {
 struct StateBadge: View {
     let text: String
     let tone: String
-    /// Work in hand: a still dot before the words (nothing in a state spins).
+    /// Work in hand: a live dot before the words, sending out a wave of its light (LiveDot).
     var busy = false
     /// On the row an iPad shows selected, in the list's tint: white, as the row's words are, whatever its tone.
     var selected = false

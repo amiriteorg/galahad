@@ -84,13 +84,13 @@ struct ChatView: View {
             #if os(iOS)
             ToolbarItem(placement: .principal) {
                 HStack(spacing: Space.s2) {
-                    GalahadOrb(size: 30, tone: session.galahadTone)
+                    GalahadOrb(size: 30, tone: session.galahadTone, mood: session.galahadMood)
                     TimelineTitle(title: "Galahad", line: chat.title ?? session.galahad.text, needs: chat.title == nil && session.galahad.tone == .warn, alignment: .leading)
                 }
             }
             #else
             ToolbarItem(placement: .navigation) {
-                GalahadOrb(size: 26, tone: session.galahadTone)
+                GalahadOrb(size: 26, tone: session.galahadTone, mood: session.galahadMood)
             }
             #endif
             ToolbarItemGroup(placement: .barTrailing) {
@@ -239,8 +239,10 @@ struct MessageRow: View {
             }
         case .assistant:
             HStack(alignment: .top, spacing: Space.s2) {
-                // His orb beside each answer of his, still and at rest: the colour of his state is his line's, above.
-                GalahadOrb(size: Metrics.speakerFace)
+                // His orb beside each answer of his, still and at rest, but for the one he is writing, which is at work (an
+                // orb of its own, so it never pulls his header's out of where he stands): the colour of his state is his
+                // line's, above.
+                GalahadOrb(size: Metrics.speakerFace, mood: turn.status == .streaming ? .working : nil, key: "galahad:writing")
                 VStack(alignment: .leading, spacing: Space.s2) {
                     ForEach(Array(turn.steps.enumerated()).filter { $0.element.tool != nil }, id: \.offset) { _, step in
                         StepLine(step: step)

@@ -445,8 +445,9 @@ private struct CardGrid<Content: View>: View {
     }
 }
 
-/// A face at the Roundtable in the ring of where it stands, the one who leads with its mark on the ring's foot. The ring
-/// and the mark are drawn round the drawing, never over it.
+/// A face at the Roundtable in the ring of where it stands, the one who leads with its mark on the ring's foot. The ring,
+/// its lights and the mark are drawn round the drawing, never over it: round the ring, where it stands moves (SeatLights;
+/// your word, 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done").
 struct SeatFace: View {
     let drawing: String
     let size: CGFloat
@@ -462,12 +463,13 @@ struct SeatFace: View {
         Group {
             if drawing == "galahad" {
                 // Galahad himself is his orb (your word, 23 November 2026), in the room a face and its ring take: its
-                // colour is where he stands, as the ring's would be.
-                GalahadOrb(size: size + 2 * ring, tone: Orb.Tone(standing))
+                // colour and its mood are where he stands, as the ring's would be.
+                GalahadOrb(size: size + 2 * ring, tone: Orb.Tone(standing), mood: Orb.Mood(standing))
             } else {
                 Portrait(drawing: drawing, size: size, expression: expression, id: id, temper: temper)
                     .padding(ring)
                     .overlay { StandingRing(kind: standing, width: ring * 0.6, selected: selected) }
+                    .overlay { SeatLights(box: size + 2 * ring, ring: standing == .resting ? 1 : ring * 0.6, standing: standing, key: id) }
             }
         }
         // Its middle on the ring's foot, whatever its size.
@@ -478,6 +480,8 @@ struct SeatFace: View {
 /// The ring round a face, in the colour of where it stands (the PWA's seat): blue at work, amber when it needs you, red
 /// when its work failed, green for what ended and is new to you (verified work among it) until you look, grey while
 /// queued, dashed grey while paused, a hairline at rest. On a row an iPad shows selected, white, as the row's words are.
+/// The ring itself stands still and says it in colour; what moves round it is SeatLights', and none where motion is
+/// reduced.
 struct StandingRing: View {
     let kind: Standing
     let width: CGFloat
@@ -486,7 +490,6 @@ struct StandingRing: View {
     var body: some View {
         switch kind {
         case .working:
-            // Still, as every state's ring is (the owner's word: nothing at the table spins): its colour says it.
             Circle().strokeBorder(selected ? Color.white : .working, lineWidth: width)
         case .needs:
             Circle().strokeBorder(selected ? Color.white : .needs, lineWidth: width)

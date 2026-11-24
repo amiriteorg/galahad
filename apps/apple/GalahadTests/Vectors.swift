@@ -190,10 +190,91 @@ struct Vectors: Decodable {
         }
         struct Size: Decodable { let size: Double; let level: String }
         struct State: Decodable { let state: String; let tone: String }
+        /// How it moves (the PWA's lib/orb-motion.ts): each mood's motion, each state's mood, its times, its stages, how
+        /// a frame moves its parts, when it bursts, its seeds and random numbers, and its clock and frames at given moments.
+        struct Motion: Decodable {
+            struct Mood: Decodable {
+                struct Turn: Decodable { let ring: Double; let ticks: Double; let segments: Double }
+                struct Comet: Decodable { let speed: Double; let tail: Double }
+                struct Motes: Decodable { let count: Int; let speed: Double; let sway: Double; let flow: String }
+                let breath: Double
+                let swell: Double
+                let turn: Turn
+                let comet: Comet?
+                let ripple: Double?
+                let motes: Motes
+                let aura: Double
+            }
+            struct State: Decodable { let state: String; let mood: String }
+            struct Stage: Decodable {
+                struct Track: Decodable { let r: Double; let width: Double }
+                let reach: Double
+                let band: [Double]
+                let mote: Double
+                let share: Double
+                let waves: [Double]
+                let wave: Double
+                let comet: Track?
+            }
+            struct Moves: Decodable { let ring: [String]; let ticks: [String]; let segments: [String]; let swell: [String]; let glow: [String]; let lightsBefore: String }
+            struct Burst: Decodable { let from: String?; let to: String; let bursts: Bool }
+            struct Seed: Decodable { let name: String; let seed: UInt32 }
+            struct Rand: Decodable { let seed: UInt32; let i: Int; let k: Int; let value: Double }
+            struct Clock: Decodable {
+                let ring: Double
+                let ticks: Double
+                let segments: Double
+                let head: Double
+                let ringSpeed: Double
+                let ticksSpeed: Double
+                let segmentsSpeed: Double
+                let headSpeed: Double
+                let tail: Double
+                let breath: Double
+                let swell: Double
+                let light: Double
+                let aura: Double
+            }
+            struct ClockCase: Decodable { let mood: String; let seed: UInt32; let clock: Clock }
+            struct Step: Decodable { let mood: String; let dt: Double; let clock: Clock }
+            struct Mote: Decodable { let angle: Double; let u: Double; let size: Double; let alpha: Double }
+            struct Light: Decodable { let head: Double; let tail: Double; let alpha: Double }
+            struct Frame: Decodable {
+                let scale: Double
+                let glow: Double
+                let aura: Double
+                let ring: Double
+                let ticks: Double
+                let segments: Double
+                let comet: Light?
+                let ripples: [Double]
+                let motes: [Mote]
+                let leaving: [Mote]
+                let sparks: [Mote]
+            }
+            struct FrameCase: Decodable { let mood: String; let seed: UInt32; let t: Double; let since: Double?; let from: String?; let burst: Bool; let clock: Clock; let frame: Frame }
+            let moods: [String: Mood]
+            let states: [State]
+            let arrive: Double
+            let burst: Double
+            let burstMotes: Int
+            let ease: Double
+            let longestStep: Double
+            let stages: [String: Stage]
+            let moves: Moves
+            let bursts: [Burst]
+            let seeds: [Seed]
+            let rands: [Rand]
+            let clocks: [ClockCase]
+            let start: Clock
+            let steps: [Step]
+            let frames: [FrameCase]
+        }
         let palettes: [String: Palette]
         let levels: [String: [Part]]
         let sizes: [Size]
         let states: [State]
+        let motion: Motion
     }
 
     struct NoticeFrom: Decodable {

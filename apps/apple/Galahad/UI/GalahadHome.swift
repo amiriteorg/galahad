@@ -17,11 +17,15 @@ extension EnvironmentValues {
 extension Session {
     /// The colour his orb shows: where he stands.
     var galahadTone: Orb.Tone { Orb.Tone(galahadStanding) }
+    /// How his orb moves (your word, 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done"):
+    /// where he stands, at work while he answers here.
+    var galahadMood: Orb.Mood { Orb.Mood(galahadStanding) }
 }
 
-/// Galahad as you come to him: his orb large, a title, and a line under it.
+/// Galahad as you come to him: his orb large, moving as he is, a title, and a line under it.
 struct GalahadHero: View {
     let tone: Orb.Tone
+    var mood: Orb.Mood? = nil
     let title: String
     let line: String
     var lineColor: Color = .secondary
@@ -29,7 +33,7 @@ struct GalahadHero: View {
 
     var body: some View {
         VStack(spacing: Space.s2) {
-            GalahadOrb(size: size, tone: tone)
+            GalahadOrb(size: size, tone: tone, mood: mood)
                 .padding(.bottom, Space.s2)
             Text(title).font(.title2.bold())
             Text(line)
@@ -135,7 +139,7 @@ struct GalahadWelcome: View {
 
     var body: some View {
         VStack(spacing: Space.s6) {
-            GalahadHero(tone: session.galahadTone, title: "At your service.", line: "Ask anything. Galahad recalls what your fleet remembers, and uses his tools. Keys belong in the vault, never here.", size: 168)
+            GalahadHero(tone: session.galahadTone, mood: session.galahadMood, title: "At your service.", line: "Ask anything. Galahad recalls what your fleet remembers, and uses his tools. Keys belong in the vault, never here.", size: 168)
             Suggestions(fill: fill)
             GalahadAsks(session: session)
         }
@@ -160,7 +164,7 @@ struct GalahadHome: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Space.s6) {
-                GalahadHero(tone: session.galahadTone, title: "Galahad", line: session.galahad.text, lineColor: lineColor, size: 196)
+                GalahadHero(tone: session.galahadTone, mood: session.galahadMood, title: "Galahad", line: session.galahad.text, lineColor: lineColor, size: 196)
                     .padding(.top, Space.s3)
                 // His line from the Roundtable this iPhone kept, or a node that can't be reached: said here, as at the
                 // Roundtable, so what the home shows is never taken for what the node says now.

@@ -9,7 +9,10 @@ tab, at the bar's right end, is his home (`Galahad/UI/GalahadHome.swift`), his o
 stands, his line, what you might ask, what he asks you, your recent chats and the message box, each chat shown over it;
 the Roundtable, the Inbox and More are the tabs before his. A tap anywhere but a field closes the keyboard
 (`KeyboardCloser`). His orb (`Core/Orb.swift`, drawn by `UI/OrbView.swift`) is the PWA's, part for part, held to it by
-the parity vectors; it is his seat at the Roundtable and in the sidebar too, and beside each answer.
+the parity vectors; it is his seat at the Roundtable and in the sidebar too, and beside each answer. It moves as he is
+(your word, 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done"): `Core/OrbMotion.swift`
+is the PWA's `lib/orb-motion.ts`, its clock and frames held to it by the vectors too, and each knight's seat has its
+lights round its still ring (`SeatLights`); nothing moves where the device asks for reduced motion.
 
 On an iPhone or an iPad it keeps, besides its pairing, its key and your choices, the last Roundtable it saw, so it shows
 your Roundtable at once however slow the connection (your word, 21 November 2026). It is the record Galahad for
@@ -66,7 +69,7 @@ The node lets one app in: give each app, and each run of `MacShots` below, a nod
 
 The Mac's window (`Galahad/UI/Places.swift`, shared by both): the places in a sidebar, the Roundtable as the PWA's wide
 screen has it (its mark, which opens its board of cards; the one who leads and the knights in your order, each face in
-its still ring; the rooms; the Inbox and More), and the place chosen beside it. Each window keeps its own place across
+its ring, its lights moving round it; the rooms; the Inbox and More), and the place chosen beside it. Each window keeps its own place across
 launches; a knight, a room or one of Galahad's chats opens in a window of its own (its row's menu); the menus (iPadOS's
 menu bar) have ⌘N a new chat, ⌥⌘N a new window, ⌘K a task for the Roundtable and ⌘1 to ⌘4 the places, acting in the window
 in front. A narrow window (Slide Over, a thin split) is the iPhone's four tabs. One `AppModel` serves every window, and

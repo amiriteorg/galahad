@@ -326,31 +326,64 @@ extension View {
     }
 }
 
-/// The mark on what needs you.
+/// The mark on what needs you: an amber orb, calling with a wave of its light.
 struct NeedsMark: View {
     var body: some View {
-        Circle().fill(Color.needs).frame(width: 10, height: 10).accessibilityLabel("Needs you")
+        OrbPip(color: .needs, size: 10, waves: true).accessibilityLabel("Needs you")
     }
 }
 
-/// The mark on what is new to you (a room where something ended since you looked), until you open it.
+/// The mark on what is new to you (a room where something ended since you looked), until you open it: a green orb.
 struct NewMark: View {
     var body: some View {
-        Circle().fill(Color.done).frame(width: 10, height: 10).accessibilityLabel("Something new")
+        OrbPip(color: .done, size: 10).accessibilityLabel("Something new")
     }
 }
 
-/// Something at work, said without motion (the owner's word: nothing in a state spins): a small dot in its colour with
-/// a soft halo, the PWA's still "live" dot. The words beside it say what is going on.
+/// Something at work (the PWA's "live" dot): a small orb in its colour with a soft halo, sending out a wave of its light
+/// (your word, 24 November 2026: "pulsing/moving when doing a task"). The words beside it say what is going on.
 struct LiveDot: View {
     var color: Color = .ink
 
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 6, height: 6)
+        OrbPip(color: color, size: 6, waves: true)
             .padding(Space.line)
             .background(color.opacity(0.22), in: .circle)
             .accessibilityHidden(true)
+    }
+}
+
+/// A state's dot as a small orb of its colour, lit from above (the PWA's `.dot`; your word, 24 November 2026: everything
+/// orbs). With `waves`, for something going on, it sends out a wave of its light every 2.2 seconds, growing to nearly
+/// three times its size as it fades, unless the device asks for reduced motion. The wave takes nothing of the layout.
+struct OrbPip: View {
+    let color: Color
+    var size: CGFloat = 8
+    var waves = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Circle()
+            // (As the PWA's radial-gradient(circle at 34% 30%, …): out to its farthest corner, 0.96 of its width.)
+            .fill(RadialGradient(stops: [
+                .init(color: color.mix(with: .white, by: 0.55), location: 0),
+                .init(color: color, location: 0.55),
+                .init(color: color.mix(with: .black, by: 0.28), location: 1),
+            ], center: UnitPoint(x: 0.34, y: 0.3), startRadius: 0, endRadius: size * 0.96))
+            .frame(width: size, height: size)
+            .background {
+                if waves && !reduceMotion {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
+                        // Fast, then slowing, as the PWA's ease-out has it.
+                        let gone = 1 - pow(1 - (OrbCourses.seconds(timeline.date) / 2.2).truncatingRemainder(dividingBy: 1), 4)
+                        Circle().fill(color)
+                            .frame(width: size, height: size)
+                            .scaleEffect(1 + 1.9 * gone)
+                            .opacity(0.55 * (1 - gone))
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
     }
 }

@@ -2,10 +2,10 @@ import Foundation
 
 /*
  * Galahad's orb, as data (the PWA's lib/orb.ts, held to it by the vectors; your word, 23 November 2026: he is the one
- * you talk to, "a Jarvis … like visual, the orb graphic"): a sphere of light inside the still rings of a heads-up
- * display, in the colour of his state. The parts it is drawn from, in a square 200 wide centred on its middle (y down),
- * and each state's colours; GalahadOrb draws them. It never moves (your word of 18 November 2026): a new state is a new
- * colour.
+ * you talk to, "a Jarvis … like visual, the orb graphic"): a sphere of light inside the rings of a heads-up display, in
+ * the colour of his state. The parts it is drawn from, in a square 200 wide centred on its middle (y down), and each
+ * state's colours; GalahadOrb draws them. How they move in each of his moods is OrbMotion.swift's (your word, 24
+ * November 2026); still, they are these parts as they stand.
  */
 enum Orb {
     /// His line's tone (GalahadNow.Tone), and red for a failure.
