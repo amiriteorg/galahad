@@ -393,9 +393,9 @@ export function wokenBy(woken: readonly WakeEvent[], scheduled = false): string 
 
 /**
  * Check a schedule and zone the way a runner will read them; returns the next run (null for "never", which only a
- * loop with something else to wake it may have).
+ * loop with something else to wake it may have, and for a time once that has come: only a loop kept as it was may).
  */
-export function checkSchedule(text: string, tz: string, now: number, woken = false): number | null {
+export function checkSchedule(text: string, tz: string, now: number, woken = false, kept = false): number | null {
   let schedule: Schedule;
   try {
     schedule = parseSchedule(text);
@@ -407,6 +407,11 @@ export function checkSchedule(text: string, tz: string, now: number, woken = fal
     return null;
   }
   const next = nextRun(schedule, now, tz);
+  if (next === null && schedule.kind === "once") {
+    // One that has run (or whose time went by) may still be paused, resumed or named again, as it is.
+    if (kept) return null;
+    throw new LoopError(`${schedule.text.slice(3)} in ${tz} has passed: give a time to come`);
+  }
   if (next === null) throw new LoopError("that schedule never runs");
   return next;
 }

@@ -592,7 +592,7 @@ A run records what set it apart in `trial.run` (open in the log): its effort, th
 
 ## 9. Loops and the heartbeat ✅
 
-A **loop** is work Galahad does on a schedule, or when something happens: `every 30m` (aligned to the clock), a five-field cron line read in an IANA time zone (`0 7 * * 1-5` in `Europe/Copenhagen`), or `never` with something else to wake it (below). Loops live in the mind, so every device sees them and their history, and each names **exactly one node** that runs it, so a loop never runs twice.
+A **loop** is work Galahad does on a schedule, or when something happens: `every 30m` (aligned to the clock), a five-field cron line read in an IANA time zone (`0 7 * * 1-5` in `Europe/Copenhagen`), once at a time in that zone (`at 2026-11-25 09:00`, for a reminder or a look later, since 24 November 2026: it runs then, or once when its node is back within a week, and never again; a time gone by is refused unless the loop is kept as it was, paused or named again; a time its clocks skip is as much later as they moved, one they repeat the first), or `never` with something else to wake it (below). Loops live in the mind, so every device sees them and their history, and each names **exactly one node** that runs it, so a loop never runs twice.
 
 | Task | What a run does |
 |---|---|

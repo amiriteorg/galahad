@@ -144,3 +144,19 @@ test("a loop that tells you: --tell, and your words with --say", async () => {
   expect(asked.at(-1)!.input).toMatchObject({ name: "plants", schedule: "0 9 * * 1", task: { kind: "tell" } });
   await expect(loopCommand(api, "add", ["both"], { every: "1h", tell: true, heartbeat: true })).rejects.toThrow(/give one of --heartbeat, --quest, --call, --tell or --bilag/);
 });
+
+test("a reminder once: --at a time in your zone (this terminal's unless --tz), or --in a while from now", async () => {
+  const { api, asked } = node();
+  await printed(() => loopCommand(api, "add", ["call-mum"], { at: "2026-11-25 17:30", tz: "Europe/Copenhagen", say: "Call mum" }));
+  expect(asked.at(-1)!.input).toMatchObject({ name: "call-mum", schedule: "at 2026-11-25 17:30", tz: "Europe/Copenhagen", task: { kind: "tell", text: "Call mum" } });
+  await printed(() => loopCommand(api, "add", ["no-zone"], { at: "2026-11-25 17:30", tell: true }));
+  expect((asked.at(-1)!.input as { tz?: string }).tz).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  // In two hours, to the minute, written as the time it will be there.
+  const now = Date.parse("2026-11-24T20:07:31Z");
+  await printed(() => loopCommand(api, "add", ["look"], { in: "2h", tz: "Europe/Copenhagen", tell: true }, { now: () => now }));
+  expect(asked.at(-1)!.input).toMatchObject({ schedule: "at 2026-11-24 23:08", tz: "Europe/Copenhagen" });
+  await printed(() => loopCommand(api, "add", ["soon"], { in: "45m", tz: "UTC", tell: true }, { now: () => now }));
+  expect(asked.at(-1)!.input).toMatchObject({ schedule: "at 2026-11-24 20:53", tz: "UTC" });
+  await expect(loopCommand(api, "add", ["two"], { at: "2026-11-25 17:30", every: "1h", tell: true })).rejects.toThrow(/one of --every, --cron, --at or --in/);
+  await expect(loopCommand(api, "add", ["bad"], { in: "soon", tell: true })).rejects.toThrow(/--in takes minutes, hours or days/);
+});

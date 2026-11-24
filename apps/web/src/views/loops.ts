@@ -2,7 +2,7 @@ import type { ConnectorView, FindingView, LoopRunView, LoopTask, LoopView, LoopW
 import { findSecrets } from "@galahad/core/secret-scan";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { gatesFromText } from "../lib/quests.ts";
-import { describeSchedule, scheduleProblem } from "../lib/schedule.ts";
+import { describeSchedule, onceSoon, scheduleProblem } from "../lib/schedule.ts";
 import { describeWake, describeWakes } from "../lib/wakes.ts";
 import { shortId } from "../lib/text.ts";
 import { absoluteTime, duration, relativeTime } from "../lib/time.ts";
@@ -176,9 +176,17 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
     });
     return { chip, preset };
   });
+  // Once (a reminder, a look later): an hour from now in its zone, to change to the time you want.
+  const onceChip = h("button", { class: "chip", type: "button", "aria-pressed": "false" }, "Once");
+  onceChip.addEventListener("click", () => {
+    schedule.value = onceSoon(Date.now(), tz.value.trim() || browserZone());
+    syncSchedule();
+    schedule.focus();
+  });
   function syncSchedule(): void {
     const text = schedule.value.trim().replace(/\s+/g, " ");
     for (const { chip, preset } of presetChips) chip.setAttribute("aria-pressed", String(text === preset.schedule));
+    onceChip.setAttribute("aria-pressed", String(/^at\b/i.test(text)));
     const words = describeSchedule(text);
     const problem = text ? scheduleProblem(text) : null;
     preview.textContent = problem ?? (words ? `${words}, ${tz.value.trim() || "UTC"} time.` : "A cron line: minute, hour, day of month, month, day of week.");
@@ -351,7 +359,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
   const tellPanel = h(
     "div",
     { class: "stack" },
-    h("p", { class: "small muted" }, "No model, no sandbox: each run is a notice in your Inbox with what woke it, and your phone says this loop's name. Put it with something to wake it (\"tell me when my boss emails\"), or a schedule for a reminder."),
+    h("p", { class: "small muted" }, "No model, no sandbox: each run is a notice in your Inbox with what woke it, and your phone says this loop's name. Put it with something to wake it (\"tell me when my boss emails\"), or a schedule: Once for a reminder."),
     field("What to say (optional)", tellText),
   );
   const bilagFolder = h("input", { class: "input", type: "text", autocomplete: "off", maxlength: 60, placeholder: "Bilag", value: task0?.kind === "bilag" ? (task0.folder ?? "") : "" });
@@ -472,7 +480,7 @@ export function openLoopSheet(ctx: Ctx, existing?: LoopView): void {
       "div",
       { class: "stack tight" },
       h("div", { class: "label" }, "When"),
-      h("div", { class: "chips", role: "group", "aria-label": "Common schedules" }, ...presetChips.map((p) => p.chip)),
+      h("div", { class: "chips", role: "group", "aria-label": "Common schedules" }, ...presetChips.map((p) => p.chip), onceChip),
       field("Schedule", schedule, { hint: preview }),
     ),
     h(

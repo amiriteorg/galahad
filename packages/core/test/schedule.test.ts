@@ -58,6 +58,31 @@ describe("schedules", () => {
     expect(() => parseSchedule("never ever")).toThrow(ScheduleError);
   });
 
+  test('"at": once, at a time of day in the loop\'s zone; then never again', () => {
+    for (const text of ["at 2026-11-25 09:00", " AT 2026-11-25T09:00 "]) expect(parseSchedule(text)).toMatchObject({ kind: "once", text: "at 2026-11-25 09:00" });
+    // 09:00 in Copenhagen is 08:00 UTC in November, 07:00 in June.
+    expect(next("at 2026-11-25 09:00", "2026-11-24T20:00:00Z", "Europe/Copenhagen")).toBe("2026-11-25T08:00:00.000Z");
+    expect(next("at 2027-06-01 09:00", "2026-11-24T20:00:00Z", "Europe/Copenhagen")).toBe("2027-06-01T07:00:00.000Z");
+    expect(next("at 2026-11-25 09:00", "2026-11-24T20:00:00Z")).toBe("2026-11-25T09:00:00.000Z");
+    // Once it has come, there is no next.
+    expect(next("at 2026-11-25 09:00", "2026-11-25T08:00:00Z", "Europe/Copenhagen")).toBeNull();
+    const once = parseSchedule("at 2026-11-25 09:00");
+    const t = at("2026-11-25T08:00:00Z");
+    expect(dueRun(once, at("2026-11-24T20:00:00Z"), t - 1, "Europe/Copenhagen")).toBeNull();
+    expect(dueRun(once, at("2026-11-24T20:00:00Z"), t, "Europe/Copenhagen")).toBe(t);
+    // A node away at the time runs it when it is back (within a week, as any loop), and never twice.
+    expect(dueRun(once, at("2026-11-24T20:00:00Z"), t + 3 * 3600_000, "Europe/Copenhagen")).toBe(t);
+    expect(dueRun(once, t, t + 3 * 3600_000, "Europe/Copenhagen")).toBeNull();
+    expect(dueRun(once, at("2026-11-24T20:00:00Z"), t + CATCH_UP_MS + 1, "Europe/Copenhagen")).toBeNull();
+    // A time the clocks skip (02:30 on the morning summer time begins) is as much later as they moved: 03:30. One they
+    // repeat (02:30 on the morning it ends), the first.
+    expect(next("at 2027-03-28 02:30", "2027-03-01T00:00:00Z", "Europe/Copenhagen")).toBe("2027-03-28T01:30:00.000Z");
+    expect(next("at 2026-10-25 02:30", "2026-10-01T00:00:00Z", "Europe/Copenhagen")).toBe("2026-10-25T00:30:00.000Z");
+    for (const bad of ["at 2026-02-30 09:00", "at 2026-13-01 09:00", "at 2026-11-25 24:00", "at 2026-11-25 9:00", "at tomorrow 09:00", "at 2026-11-25"]) {
+      expect(() => parseSchedule(bad)).toThrow(ScheduleError);
+    }
+  });
+
   test("malformed cron lines are refused with a reason", () => {
     for (const bad of ["61 * * * *", "* * *", "* * * * * *", "1-x * * * *", "5-1 * * * *", "*/0 * * * *", "0 0 32 * *", "0 0 * 13 *", "0 0 * * 8", ""]) {
       expect(() => parseSchedule(bad)).toThrow(ScheduleError);

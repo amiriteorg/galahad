@@ -327,12 +327,13 @@ Archive (this node's: everything kept for good, searched by words and meaning)
 
 Loops (work on a schedule or when something happens, on one node; every run is recorded in the mind)
   loop ls | loop runs [name] | loop run <name> | loop pause|resume|rm <name>
-  loop add <name> (--every 30m | --cron "0 7 * * 1-5") [--tz Europe/Copenhagen] [--on ultra] [--label text]
+  loop add <name> (--every 30m | --cron "0 7 * * 1-5" | --at "2026-11-25 09:00" | --in 2h) [--tz Europe/Copenhagen]
+       [--on ultra] [--label text]   --at and --in run it once (your terminal's zone unless --tz), then never again
        --heartbeat [--checklist "…"]                    look around; notices in your inbox
      | --quest "<goal>" [--net isolated|gateway|online] [--steps 20] [--gate "<command>" …]
      | --call <connector>.<tool> [--arg key=value …]   outward tools file an approval instead
      | --tell [--say "…"]                              tell you: a notice each run, your loop's name on your phone
-       [--wake …]… [--cooldown 10m]    what else wakes it (no --every or --cron: only that), as data, never orders:
+       [--wake …]… [--cooldown 10m]    what else wakes it (no schedule: only that), as data, never orders:
          --wake webhook                 a POST to /hooks/<name>, signed with its secret (shown once; loop hook <name>: a new one)
          --wake "gmail <search words>"  new mail a search finds (also outlook); read every few minutes
          --wake "github <owner>/<repo> [ci.failed,pushed,issue.opened,pr.opened] [branch]"

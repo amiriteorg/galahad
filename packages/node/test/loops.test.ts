@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { b64u, newNodeIdentity, type NodeIdentity } from "@galahad/core";
 import { enrollDevice, foundFleet, MindStore } from "@galahad/mind";
-import { LoopError, loopRecords, LoopRunner, type RunContext, type RunnableLoop, type RunResult, selfActionOn } from "../src/loops.ts";
+import { checkSchedule, LoopError, loopRecords, LoopRunner, type RunContext, type RunnableLoop, type RunResult, selfActionOn } from "../src/loops.ts";
 
 /*
  * The loop runner on a fake clock: due slots run once, missed slots once, a crash
@@ -121,6 +121,28 @@ describe("the loop runner", () => {
     await restarted.stop();
     release();
     await crashed.settled();
+  });
+
+  test("once: it runs at its time and never again; a time gone by is refused, but one that has run may still be paused", async () => {
+    const w = world();
+    // (Definitions carry the real clock: a time to come is one after it.)
+    const at = Math.ceil((Date.now() + 2 * 60 * MIN) / MIN) * MIN;
+    const wall = new Date(at).toISOString().slice(0, 16).replace("T", " ");
+    w.define("remind", w.a.id, `at ${wall}`);
+    const r = w.runner();
+    w.clock.set(at - MIN);
+    r.tick();
+    await r.settled();
+    expect(w.calls).toEqual([]);
+    for (const later of [at, at + MIN, at + 60 * MIN, at + 3 * 24 * 60 * MIN]) {
+      w.clock.set(later);
+      r.tick();
+      await r.settled();
+    }
+    expect(w.calls).toEqual([{ loop: "remind", slot: at }]);
+    expect(checkSchedule(`at ${wall}`, "UTC", at - MIN)).toBe(at);
+    expect(() => checkSchedule(`at ${wall}`, "UTC", at)).toThrow(`${wall} in UTC has passed: give a time to come`);
+    expect(checkSchedule(`at ${wall}`, "UTC", at, false, true)).toBeNull();
   });
 
   test("by hand: runs now, doesn't count as the scheduled run, and never twice at once", async () => {

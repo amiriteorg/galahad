@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type ActionView, type ArgValue, type ConnectorLibraryView, type ConnectorRequestView, type ConnectorToolDefinition, type ConnectorView, describeWake, type FindingView, GITHUB_WAKE_EVENTS, type LoopDraftView, type LoopRunView, type LoopTask, type LoopView, type LoopWake, type NoticeView, type OrderView, type RouteName, type SelfActionView } from "@galahad/core";
+import { type ActionView, type ArgValue, type ConnectorLibraryView, type ConnectorRequestView, type ConnectorToolDefinition, type ConnectorView, describeWake, type FindingView, GITHUB_WAKE_EVENTS, type LoopDraftView, type LoopRunView, type LoopTask, type LoopView, type LoopWake, type NoticeView, type OrderView, type RouteName, type SelfActionView, zonedParts } from "@galahad/core";
 import { CATALOG } from "@galahad/brain";
 
 /*
@@ -186,7 +186,17 @@ async function taskFrom(api: Api, flags: Flags): Promise<LoopTask | undefined> {
   return undefined;
 }
 
-export async function loopCommand(api: Api, sub: string | undefined, rest: string[], flags: Flags): Promise<void> {
+/** A while from now (`--in 2h`), as the wall-clock time it will be in a zone, to the minute after: `2026-11-24 23:08`. */
+function wallIn(text: string, tz: string, now: number): string {
+  const m = /^(\d{1,4})\s*([mhd])$/.exec(text.trim());
+  if (!m) throw new Error('--in takes minutes, hours or days, such as "45m", "2h" or "1d"');
+  const at = Math.ceil((now + Number(m[1]) * { m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2] as "m" | "h" | "d"]) / 60_000) * 60_000;
+  const p = zonedParts(at, tz);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${p.year}-${two(p.month)}-${two(p.day)} ${two(p.hour)}:${two(p.minute)}`;
+}
+
+export async function loopCommand(api: Api, sub: string | undefined, rest: string[], flags: Flags, opts: { now?: () => number } = {}): Promise<void> {
   const name = rest[0];
   switch (sub) {
     case undefined:
@@ -243,20 +253,25 @@ export async function loopCommand(api: Api, sub: string | undefined, rest: strin
         printSet(loop, hookSecret);
         return;
       }
-      if (!name) throw new Error(`usage: galahad loop ${sub} <name> (--every 30m | --cron "0 7 * * *" | --wake …) [--tz Zone] [--on node] (--heartbeat | --quest "goal" | --call connector.tool [--arg k=v])`);
+      if (!name) throw new Error(`usage: galahad loop ${sub} <name> (--every 30m | --cron "0 7 * * *" | --at "2026-11-25 09:00" | --in 2h | --wake …) [--tz Zone] [--on node] (--heartbeat | --quest "goal" | --call connector.tool [--arg k=v] | --tell)`);
       const every = str(flags, "every");
       const cron = str(flags, "cron");
-      if (every && cron) throw new Error("give --every or --cron, not both");
+      const at = str(flags, "at");
+      const later = str(flags, "in");
+      if ([every, cron, at, later].filter((given) => given !== undefined).length > 1) throw new Error("give one of --every, --cron, --at or --in");
       const wakes = flags["no-wakes"] ? [] : list(flags, "wake").length ? list(flags, "wake").map(parseWake) : undefined;
+      // Once (a reminder, a look later): at a time in your zone, this terminal's unless --tz says another.
+      const tz = str(flags, "tz") ?? (at !== undefined || later !== undefined ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" : undefined);
+      const once = at !== undefined ? `at ${at}` : later !== undefined ? `at ${wallIn(later, tz!, (opts.now ?? Date.now)())}` : undefined;
       // Something to wake it and no schedule: it runs only when woken.
-      const schedule = every ? `every ${every}` : (cron ?? (sub === "add" && wakes?.length ? "never" : undefined));
+      const schedule = every ? `every ${every}` : (cron ?? once ?? (sub === "add" && wakes?.length ? "never" : undefined));
       const task = await taskFrom(api, flags);
-      if (sub === "add" && (!schedule || !task)) throw new Error("a new loop needs --every, --cron or something to wake it (--wake), and --heartbeat, --quest, --call or --tell");
+      if (sub === "add" && (!schedule || !task)) throw new Error("a new loop needs --every, --cron, --at, --in or something to wake it (--wake), and --heartbeat, --quest, --call or --tell");
       const cooldownMs = cooldownFrom(flags);
       const { loop, hookSecret } = await api.call<{ loop: LoopView; hookSecret?: string }>("setLoop", {
         name,
         ...(schedule ? { schedule } : {}),
-        ...(str(flags, "tz") ? { tz: str(flags, "tz") } : {}),
+        ...(tz ? { tz } : {}),
         ...(str(flags, "on") ? { on: str(flags, "on") } : {}),
         ...(task ? { task } : {}),
         ...(wakes ? { wakes } : {}),

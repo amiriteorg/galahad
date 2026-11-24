@@ -3696,7 +3696,8 @@ export function createApp(ctx: AppContext) {
       const wakes: LoopWake[] = input.wakes ?? existing?.wakes ?? [];
       const cooldownMs = input.cooldownMs ?? existing?.cooldownMs ?? DEFAULT_WAKE_COOLDOWN_MS;
       try {
-        checkSchedule(schedule, tz, Date.now(), wakes.length > 0);
+        // A loop kept at the time it had (paused, resumed, named again) isn't refused for a time once that has come.
+        checkSchedule(schedule, tz, Date.now(), wakes.length > 0, !!existing && schedule === existing.scheduleText && tz === existing.tz);
       } catch (error) {
         throw new HttpError(400, (error as Error).message);
       }

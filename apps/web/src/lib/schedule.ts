@@ -17,6 +17,9 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const normal = (text: string) => text.trim().replace(/\s+/g, " ");
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+/** Once: "at 2026-11-25 09:00", a date and a time of day in the loop's zone. */
+const ONCE = /^at (\d{4})-(\d{2})-(\d{2})[ t](\d{2}):(\d{2})$/;
 
 /** The days of week a cron field names (0 = Sunday), or null for anything with steps or nonsense. */
 function days(field: string): Set<number> | null {
@@ -54,6 +57,13 @@ function daysPhrase(set: Set<number>): string {
 export function describeSchedule(input: string): string | null {
   const text = normal(input).toLowerCase();
   if (text === "never") return "Only when woken";
+  const once = text.match(ONCE);
+  if (once) {
+    const [year, month, day, hour, minute] = once.slice(1).map(Number) as [number, number, number, number, number];
+    const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    if (month < 1 || month > 12 || day < 1 || day > days || hour > 23 || minute > 59) return null;
+    return `Once, on ${day} ${MONTH_NAMES[month - 1]} ${year} at ${pad(hour)}:${pad(minute)}`;
+  }
   const every = text.match(/^every (\d{1,4}) ?([mhd])$/);
   if (every) {
     const n = Number(every[1]);
@@ -85,7 +95,16 @@ export function scheduleProblem(input: string): string | null {
   const text = normal(input);
   if (!text) return "Choose when it runs.";
   if (text.toLowerCase() === "never") return null;
+  if (/^at\b/i.test(text)) return ONCE.test(text.toLowerCase()) ? null : 'Write a time once as "at 2026-11-25 09:00".';
   if (/^every\b/i.test(text)) return /^every \d{1,4} ?[mhd]$/i.test(text) ? null : 'Write it as "every 30m", "every 2h" or "every 1d".';
   if (ALIASES[text.toLowerCase()]) return null;
   return text.split(" ").length === 5 ? null : 'Use "every 30m" (m, h or d) or a five-field cron line such as "0 7 * * 1-5".';
+}
+
+/** Once, an hour from now, to the next five minutes, as the time it will be in a zone: "at 2026-11-24 22:10". */
+export function onceSoon(now: number, tz: string): string {
+  const at = Math.ceil((now + 3_600_000) / 300_000) * 300_000;
+  const parts: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(at)) parts[p.type] = p.value;
+  return `at ${parts.year}-${parts.month}-${parts.day} ${pad(Number(parts.hour) % 24)}:${parts.minute}`;
 }

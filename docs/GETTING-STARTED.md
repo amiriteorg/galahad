@@ -535,6 +535,9 @@ bun galahad loop add nightly --cron "0 2 * * *" --tz Europe/Copenhagen \
   --quest "Build the site in /work/site and write the size report" --gate "test -s /work/out/sizes.md"
 # a connector check every hour
 bun galahad loop add ci --every 1h --call github.runs --arg owner=amiriteorg --arg repo=galahad --arg per_page=5
+# once: a reminder at a time (your terminal's zone unless --tz), or in a while; it runs then and never again
+bun galahad loop add call-mum --at "2026-11-25 17:30" --say "Call mum"
+bun galahad loop add look-again --in 2h --say "Did the deploy finish?"
 bun galahad loop run morning               # now, by hand
 bun galahad loop runs morning              # its history
 bun galahad loop pause morning             # resume / rm

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { fuzzyMatch, rank } from "./fuzzy.ts";
 import { type Block, type Inline, inlineText, parseInline, parseMarkdown, safeHref } from "./markdown.ts";
-import { describeSchedule, scheduleProblem } from "./schedule.ts";
+import { describeSchedule, onceSoon, scheduleProblem } from "./schedule.ts";
 import { describeWake as describeWakeHere, describeWakes } from "./wakes.ts";
 import { describeWake, type LoopWake } from "@galahad/core";
 import { detectProvider, detectSignIn, matchRanges, parseCommand, planLine, providerSetup, roleParts } from "./text.ts";
@@ -353,5 +353,20 @@ describe("schedules", () => {
     expect(scheduleProblem("0 7 * * 1-5")).toBeNull();
     expect(scheduleProblem("@daily")).toBeNull();
     expect(scheduleProblem("0 7 * *")).not.toBeNull();
+    expect(scheduleProblem("at 2026-11-25 09:00")).toBeNull();
+    expect(scheduleProblem("at 2026-11-25T09:00")).toBeNull();
+    expect(scheduleProblem("at tomorrow 9")).toBe('Write a time once as "at 2026-11-25 09:00".');
+  });
+
+  test("once, as a date and a time: the time it runs, then never again", () => {
+    expect(describeSchedule("at 2026-11-25 09:00")).toBe("Once, on 25 November 2026 at 09:00");
+    expect(describeSchedule("At 2027-01-03T18:30")).toBe("Once, on 3 January 2027 at 18:30");
+    expect(describeSchedule("at 2026-13-25 09:00")).toBeNull();
+  });
+
+  test("the chip for once fills in an hour from now, to the next five minutes, in the zone it is read in", () => {
+    // 20:07 UTC is 21:07 in Copenhagen: an hour on, 22:07, and up to 22:10.
+    expect(onceSoon(Date.parse("2026-11-24T20:07:31Z"), "Europe/Copenhagen")).toBe("at 2026-11-24 22:10");
+    expect(onceSoon(Date.parse("2026-11-24T23:55:00Z"), "UTC")).toBe("at 2026-11-25 00:55");
   });
 });

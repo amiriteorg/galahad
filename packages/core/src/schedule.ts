@@ -1,6 +1,7 @@
 /*
  * When a loop runs: "every 30m", "every 2h", "every 1d", a five-field cron
- * line ("0 7 * * 1-5") read in an IANA time zone, or "never" (only what wakes
+ * line ("0 7 * * 1-5") read in an IANA time zone, once ("at 2026-11-25 09:00",
+ * read in the same zone: a reminder, a look later), or "never" (only what wakes
  * it: a webhook, new mail, a GitHub event). Pure and deterministic: the
  * same schedule, zone and instant always give the same next run, on any node.
  *
@@ -12,6 +13,8 @@
 export type Schedule =
   | { kind: "never"; text: "never" }
   | { kind: "every"; ms: number; text: string }
+  /** Once, at a wall-clock time in the loop's zone; then never again. */
+  | { kind: "once"; text: string; year: number; month: number; day: number; hour: number; minute: number }
   | {
       kind: "cron";
       text: string;
@@ -77,6 +80,7 @@ function field(text: string, min: number, max: number, names: string[] = [], nam
 export function parseSchedule(input: string): Schedule {
   const text = input.trim().replace(/\s+/g, " ");
   if (/^never$/i.test(text)) return { kind: "never", text: "never" };
+  if (/^at\b/i.test(text)) return parseOnce(text);
   const every = text.match(/^every (\d{1,4}) ?([mhd])$/i);
   if (every) {
     const ms = Number(every[1]) * UNITS[every[2]!.toLowerCase()]!;
@@ -86,7 +90,7 @@ export function parseSchedule(input: string): Schedule {
   }
   const line = ALIASES[text.toLowerCase()] ?? text;
   const parts = line.split(" ");
-  if (parts.length !== 5) throw new ScheduleError('use "every 30m" (m, h or d) or a five-field cron line such as "0 7 * * 1-5"');
+  if (parts.length !== 5) throw new ScheduleError('use "every 30m" (m, h or d), a five-field cron line such as "0 7 * * 1-5", or once: "at 2026-11-25 09:00"');
   const [mi, ho, dm, mo, dw] = parts as [string, string, string, string, string];
   const dow = field(dw, 0, 7, DAYS, 0);
   if (dow.values.delete(7)) dow.values.add(0); // 7 is Sunday too
@@ -102,6 +106,17 @@ export function parseSchedule(input: string): Schedule {
     domRestricted: dom.restricted,
     dowRestricted: dow.restricted,
   };
+}
+
+const pad = (n: number, width = 2) => String(n).padStart(width, "0");
+
+function parseOnce(text: string): Schedule {
+  const m = text.match(/^at (\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/i);
+  if (!m) throw new ScheduleError('write a time once as "at 2026-11-25 09:00" (a date, then the time of day in 24 hours)');
+  const [year, month, day, hour, minute] = m.slice(1).map(Number) as [number, number, number, number, number];
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > days || hour > 23 || minute > 59) throw new ScheduleError(`${text.slice(3)} is not a time there is`);
+  return { kind: "once", text: `at ${pad(year, 4)}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}`, year, month, day, hour, minute };
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
@@ -134,10 +149,11 @@ export function isTimeZone(tz: string): boolean {
 }
 
 /** Wall-clock parts of an instant in a zone. */
-export function zonedParts(ms: number, tz: string): { month: number; day: number; hour: number; minute: number; dow: number } {
+export function zonedParts(ms: number, tz: string): { year: number; month: number; day: number; hour: number; minute: number; dow: number } {
   const parts: Record<string, string> = {};
   for (const p of formatter(tz).formatToParts(ms)) parts[p.type] = p.value;
   return {
+    year: Number(parts.year),
     month: Number(parts.month),
     day: Number(parts.day),
     hour: Number(parts.hour) % 24,
@@ -146,9 +162,35 @@ export function zonedParts(ms: number, tz: string): { month: number; day: number
   };
 }
 
-/** The first run strictly after `after`, or null if the schedule never runs (say, 31 February). */
+/** How far a zone's clocks are ahead of UTC at an instant, in ms. */
+function offsetAt(ms: number, tz: string): number {
+  const p = zonedParts(ms, tz);
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - Math.floor(ms / MINUTE) * MINUTE;
+}
+
+/**
+ * The instant a wall-clock time is in a zone. A time its clocks skip (when summer time begins) is as much later as
+ * they moved; one they repeat (when it ends), the first of the two.
+ */
+export function zonedInstant(wall: { year: number; month: number; day: number; hour: number; minute: number }, tz: string): number {
+  const w = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute);
+  const before = offsetAt(w - UNITS.d!, tz);
+  const after = offsetAt(w + UNITS.d!, tz);
+  const reads = (t: number) => {
+    const p = zonedParts(t, tz);
+    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) === w;
+  };
+  const fits = [w - before, w - after].filter(reads).sort((a, b) => a - b);
+  return fits[0] ?? w - before;
+}
+
+/** The first run strictly after `after`, or null if the schedule never runs (say, 31 February, or once it has run). */
 export function nextRun(schedule: Schedule, after: number, tz = "UTC"): number | null {
   if (schedule.kind === "never") return null;
+  if (schedule.kind === "once") {
+    const at = zonedInstant(schedule, tz);
+    return at > after ? at : null;
+  }
   if (schedule.kind === "every") return Math.floor(after / schedule.ms) * schedule.ms + schedule.ms;
   let t = Math.floor(after / MINUTE) * MINUTE + MINUTE;
   // Skip whole days, then hours, then minutes. Stepping from wall-clock parts each
@@ -178,6 +220,10 @@ export const CATCH_UP_MS = 7 * UNITS.d!;
  */
 export function dueRun(schedule: Schedule, since: number, now: number, tz = "UTC"): number | null {
   if (schedule.kind === "never") return null;
+  if (schedule.kind === "once") {
+    const at = zonedInstant(schedule, tz);
+    return at > Math.max(since, now - CATCH_UP_MS) && at <= now ? at : null;
+  }
   if (schedule.kind === "every") {
     const slot = Math.floor(now / schedule.ms) * schedule.ms;
     return slot > since ? slot : null;
