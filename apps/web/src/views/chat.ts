@@ -727,8 +727,9 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   // ---- Galahad himself: his orb, in the colour of what he's doing, and that in a line. A tap shows what he has in hand. ----
   const face = h("span", { class: "chat-face" });
   // The welcome's orb, the same one large (your word, 23 November 2026: the one you talk to, as an orb), moving as he
-  // is (24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done").
-  const heroOrb = h("div", { class: "hero-galahad" }, orb({ size: 168, mood: "idle" }));
+  // is (24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done"). Drawn by renderNow, as the
+  // header's is, before the view is shown (one drawn here would be drawn again at once, for nothing).
+  const heroOrb = h("div", { class: "hero-galahad" });
   // What he asks you, answered under his orb (made once: the welcome is drawn again, its subscriptions are not), shown
   // once no chat is being opened in its place.
   const asks = canChat ? galahadAsks(ctx, scope, () => opening === 0) : null;
