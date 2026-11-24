@@ -627,6 +627,9 @@ async function main(): Promise<void> {
       "buzz-cli": { type: "string" },
       every: { type: "string" },
       cron: { type: "string" },
+      // A loop once: --at "2026-11-25 09:00" in its zone, or --in 2h from now.
+      at: { type: "string" },
+      in: { type: "string" },
       // What else wakes a loop: --wake webhook | "gmail <words>" | "github owner/repo [ci.failed,pushed,issue.opened,pr.opened]" (repeatable).
       wake: { type: "string", multiple: true },
       "no-wakes": { type: "boolean" },
