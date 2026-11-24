@@ -8,13 +8,16 @@ phone has one) that never leaves it.
 It's small on purpose: a signed release is about 3 MB, nearly all of it the code, the rest the knights as the owner
 drew them, packaged straight from `apps/web/src/knights` (never copied or redrawn). It needs no Google services: HTTP,
 JSON and the cryptography are what Android ships, and the only libraries are AndroidX's Compose, activity-compose and
-profile installer, and Kotlin's coroutines. Nothing moves by itself: a knight's state is a still ring and a word.
+profile installer, and Kotlin's coroutines. A state moves as long as it lasts (your word, 24 November 2026): Galahad's
+orb and every knight's seat in their state's mood (`core/OrbMotion.kt`, the PWA's lib/orb-motion.ts held to it by the
+vectors), only as often as the mood needs, and nothing at all while the phone's animations are off; a knight's state is
+still its ring's colour and a word.
 
 It opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything): his place, at the
 bar's right end, is his home (`ui/GalahadHome.kt`), his orb large in the colour of where he stands, his line, what you
 might ask, what he asks you (the Inbox's own cards), your recent chats and the message box, each chat shown over it. His
 orb (`core/Orb.kt`, drawn by `ui/Orb.kt`) is the PWA's and the iPhone's, part for part, held to them by the parity
-vectors; it is his seat at the Roundtable and the place's icon too.
+vectors, and moves as theirs do; it is his seat at the Roundtable and the place's icon too (still, in the bar).
 
 What it does (21 November 2026): join your node with an invite and the six-digit code; the Roundtable, Galahad first,
 each knight in its state's ring with one line of what it's doing (the same line the PWA and the iPhone show: the roster

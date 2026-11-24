@@ -217,7 +217,7 @@ private fun FenceBlock(b: Part.Fence, choose: ((String) -> Unit)?) {
     val page = lang == "artifact" || (lang == "html" && artifact is Blocks.Read.Ok)
     if ((lang in Blocks.kinds || page) && b.open) {
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-            Dot(LocalBrand.current.working)
+            Dot(LocalBrand.current.working, live = true)
             Text(pendingWords[lang] ?: "Drawing…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return

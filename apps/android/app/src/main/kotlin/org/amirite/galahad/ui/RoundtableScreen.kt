@@ -117,7 +117,7 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
             )
         }
         items(knights, key = { "k:${it.id}" }) { row ->
-            Seat(Looks.of(row.id, row.name, row.avatar), row.name, row.state, row.line, row.needs, row.unread) { openKnight(row.id) }
+            Seat(Looks.of(row.id, row.name, row.avatar), row.name, row.state, row.line, row.needs, row.unread, key = row.id) { openKnight(row.id) }
         }
         if (table.snapshot != null && knights.isEmpty()) {
             item {
@@ -159,7 +159,7 @@ internal fun Refused(app: AppModel, p: NodeError) {
 
 /** One seat at the table: a face in its ring, the name and its state's word, and one line of what it's doing. */
 @Composable
-private fun Seat(drawing: String, name: String, state: KnightState?, line: String, needs: Boolean, unread: Boolean, onClick: () -> Unit) {
+private fun Seat(drawing: String, name: String, state: KnightState?, line: String, needs: Boolean, unread: Boolean, key: String = drawing, onClick: () -> Unit) {
     val brand = LocalBrand.current
     val beside = Roster.besideChip(line, state)
     Row(
@@ -171,7 +171,7 @@ private fun Seat(drawing: String, name: String, state: KnightState?, line: Strin
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
     ) {
-        Face(drawing, state)
+        Face(drawing, state, key = key)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                 Text(name, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis)

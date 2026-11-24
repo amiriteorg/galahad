@@ -37,7 +37,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.core.Json
+import org.amirite.galahad.core.KnightState
 import org.amirite.galahad.core.Orb
+import org.amirite.galahad.core.OrbMotion
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
 import org.amirite.galahad.core.string
@@ -52,8 +54,9 @@ private val SUGGESTIONS = listOf(
 
 /**
  * Galahad, the one you talk to (your word, 23 November 2026: for nearly everything, "a Jarvis … like visual, the orb
- * graphic"): his orb large in the colour of where he stands, what he is doing, what he asks you, your chats with him,
- * and the message box. The app's first place and where it opens, as the iPhone's home is; a chat opens over it
+ * graphic"): his orb large in the colour of where he stands, moving as he is (24 November 2026: "pulsing/moving when
+ * doing a task, sitting idle, waiting, done"), what he is doing, what he asks you, your chats with him, and the message
+ * box. The app's first place and where it opens, as the iPhone's home is; a chat opens over it
  * ([openChat]), and what you send here starts one. The knights are a place away.
  */
 @Composable
@@ -69,6 +72,8 @@ fun GalahadHome(app: AppModel, openChat: () -> Unit, showInbox: () -> Unit) {
     val problem by app.problem.collectAsState()
     val brand = LocalBrand.current
     val tone = Orb.tone(table.galahad.state)
+    // His orb: at work while he answers the chat you left, before the node has said so; else where he stands.
+    val standing = if (live) KnightState.WORKING else table.galahad.state
     // His line from the Roundtable this phone kept (app/KeptTable.kt), until the node answers: after a moment, a still
     // line says so, as the Roundtable's does, so what the home shows is never taken for what the node says now.
     var waited by remember { mutableStateOf(false) }
@@ -103,7 +108,7 @@ fun GalahadHome(app: AppModel, openChat: () -> Unit, showInbox: () -> Unit) {
             }
             item {
                 Column(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s2), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    GalahadOrb(196.dp, tone, "Galahad: ${table.galahad.text}")
+                    GalahadOrb(196.dp, Orb.tone(standing), "Galahad: ${table.galahad.text}", mood = OrbMotion.mood(standing))
                     Spacer(Modifier.height(Space.s1))
                     Text("Galahad", style = MaterialTheme.typography.headlineMediumEmphasized)
                     Text(
@@ -180,7 +185,7 @@ fun GalahadHome(app: AppModel, openChat: () -> Unit, showInbox: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Space.s2),
             ) {
-                Dot(brand.working)
+                Dot(brand.working, live = true)
                 Text(title?.let { "Answering in “$it”" } ?: "Answering", style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 Text("Show", style = MaterialTheme.typography.labelLarge, color = brand.ink)
             }

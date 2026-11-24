@@ -46,6 +46,7 @@ import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.app.Attachments
 import org.amirite.galahad.app.Bubble
 import org.amirite.galahad.core.Json
+import org.amirite.galahad.core.KnightState
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
 import org.amirite.galahad.core.string
@@ -92,7 +93,8 @@ fun ChatScreen(app: AppModel, back: () -> Unit) {
         LazyColumn(Modifier.weight(1f), state = list) {
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s2), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
-                    Face("galahad", table.galahad.state, size = 48.dp)
+                    // His orb, at work while he answers here, before the node has said so.
+                    Face("galahad", if (live) KnightState.WORKING else table.galahad.state, size = 48.dp)
                     Text(table.galahad.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 }
             }
@@ -262,9 +264,9 @@ private fun Message(b: Bubble, choose: ((String) -> Unit)?) {
     Column(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s2), verticalArrangement = Arrangement.spacedBy(Space.s1)) {
         if (b.text.isNotEmpty()) Markdown(b.text, choose = choose)
         for (step in b.steps.takeLast(4)) Text("· $step", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        // Work under way is a still dot and a word, never a spinner.
+        // Work under way is a word beside a live dot in his colour, its light going out, never a spinner.
         if (b.streaming) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-            Dot(brand.working)
+            Dot(brand.working, live = true)
             Text(if (b.text.isEmpty()) "Thinking" else "Writing", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         b.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = brand.failed) }
@@ -293,7 +295,7 @@ private fun Chats(app: AppModel, close: () -> Unit) {
                         state?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = if (it == "working") brand.working else MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                     if (c["unread"].bool == true) Dot(brand.done)
-                    if (state == "working") Dot(brand.working)
+                    if (state == "working") Dot(brand.working, live = true)
                 }
             }
         }

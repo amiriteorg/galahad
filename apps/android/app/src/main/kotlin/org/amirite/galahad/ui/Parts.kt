@@ -2,9 +2,10 @@
 
 package org.amirite.galahad.ui
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonGroupDefaults
@@ -28,7 +28,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.semantics.heading
@@ -54,10 +57,39 @@ fun StateChip(state: KnightState?) {
     )
 }
 
-/** A still dot: something new to you here, or work under way where a spinner would have turned. */
+/** How a live dot's wave goes out (the PWA's --ease-out): fast, then slowing. */
+private val WaveOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+
+/**
+ * A state's dot, a small orb of its colour lit from above (the PWA's `.dot`; your word, 24 November 2026: everything
+ * orbs): something new to you here, a notice's weight, a line's tone. A [live] one is something going on (work under
+ * way, an answer being written, where a spinner would have turned): a ring of its light round it, and a wave of it going
+ * out every 2.2 seconds while the phone's animations are on. It draws past its size without moving anything round it.
+ */
 @Composable
-fun Dot(color: Color, size: Int = 8) {
-    Box(Modifier.size(size.dp).clip(CircleShape).background(color))
+fun Dot(color: Color, size: Int = 8, live: Boolean = false) {
+    // (On the orbs' own clock, 30 frames a second, as the Apple app's: a wave needs no more, and the screen's other
+    // frames aren't woken at its refresh rate for it.)
+    val time = if (live && motionAllowed()) frameTime { 30 } else null
+    Canvas(Modifier.size(size.dp)) {
+        val r = this.size.minDimension / 2
+        if (live) {
+            // (The PWA's box-shadow: a ring 3 wide at 22 %, and a glow fading out 8 past it from 45 %.)
+            drawCircle(color.copy(alpha = 0.22f), radius = r + 3.dp.toPx())
+            val glow = r + 9.dp.toPx()
+            drawCircle(Brush.radialGradient(r / glow to color.copy(alpha = 0.45f), 1f to Color.Transparent, center = center, radius = glow), radius = glow)
+            time?.let { now ->
+                val k = WaveOut.transform(((now.doubleValue / 2.2) % 1.0).toFloat())
+                drawCircle(color.copy(alpha = 0.55f * (1 - k)), radius = r * (1 + 1.9f * k))
+            }
+        }
+        // Lit from a third of the way in and up: white-mixed at its light, its colour, shaded at its edge (in OKLab, as
+        // CSS's color-mix is).
+        drawCircle(
+            Brush.radialGradient(0f to lerp(color, Color.White, 0.55f), 0.55f to color, 1f to lerp(color, Color.Black, 0.28f), center = Offset(this.size.width * 0.34f, this.size.height * 0.3f), radius = this.size.width * 0.962f),
+            radius = r,
+        )
+    }
 }
 
 @Composable

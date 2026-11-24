@@ -3,9 +3,9 @@ package org.amirite.galahad.core
 /**
  * Galahad's orb, as data (the PWA's lib/orb.ts, the Apple app's Orb.swift, held to them by the vectors; your word,
  * 23 November 2026: he is the one you talk to, "a Jarvis … like visual, the orb graphic"): a sphere of light inside the
- * still rings of a heads-up display, in the colour of his state. The parts it is drawn from, in a square 200 wide
- * centred on its middle (y down), and each state's colours; ui/Orb.kt draws them. It never moves (your word of
- * 18 November 2026): a new state is a new colour.
+ * rings of a heads-up display, in the colour of his state. The parts it is drawn from, in a square 200 wide centred on
+ * its middle (y down), and each state's colours; ui/Orb.kt draws them, moved as OrbMotion says where he is doing
+ * something (your word, 24 November 2026), and still otherwise.
  */
 object Orb {
     /** His line's tone (Roster.Now's), and red for a failure. */

@@ -102,7 +102,7 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
     ) {
         val scope = rememberCoroutineScope()
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-            Face(Looks.of(id, person?.name ?: id, person?.avatar), row?.state, size = 120.dp, description = person?.name)
+            Face(Looks.of(id, person?.name ?: id, person?.avatar), row?.state, size = 120.dp, description = person?.name, key = id)
             Text(person?.name ?: id, style = MaterialTheme.typography.headlineSmallEmphasized)
             StateChip(row?.state)
             row?.let { Text(Roster.besideChip(it.line, it.state), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -136,7 +136,7 @@ fun RoomScreen(app: AppModel, id: String, back: () -> Unit) {
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
             Row(horizontalArrangement = Arrangement.spacedBy(-Space.s3)) {
-                for (m in members.take(5)) Face(Looks.of(m.id, m.name, m.avatar), table.rows.firstOrNull { it.kind == "knight" && it.id == m.id }?.state, size = 64.dp, description = m.name)
+                for (m in members.take(5)) Face(Looks.of(m.id, m.name, m.avatar), table.rows.firstOrNull { it.kind == "knight" && it.id == m.id }?.state, size = 64.dp, description = m.name, key = m.id)
             }
             Text(room?.name ?: "A room", style = MaterialTheme.typography.headlineSmallEmphasized)
             row?.let { Text(it.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
