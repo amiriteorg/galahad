@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage, Usage } from "@galahad/core";
 import type { Effort } from "./roster.ts";
-import { conversationSession, keyHeaders, preset, type ResolvedProvider, selfHeaders, withoutRedirects } from "./providers.ts";
+import { conversationSession, effortOf, keyHeaders, preset, type ResolvedProvider, selfHeaders, withoutRedirects } from "./providers.ts";
 
 export interface CompletionInput {
   provider: ResolvedProvider;
@@ -433,12 +433,14 @@ export function openAIConversation(input: CompletionInput): Conversation {
   let reasoned = "";
   // Which conversation this is, for a plan that routes by that: from how it began, so each of its turns says the same.
   const session = conversationSession(input.model, wordsOf(input.messages.find((m) => m.role === "user")?.content));
-  // How hard it thinks, where the provider takes a level (DeepSeek's `reasoning_effort`): the newest message that says
-  // one, else the call's; a provider whose preset takes none is asked as now, with no level.
-  const effortSpec = preset(input.provider.id)?.effort;
+  // How hard it thinks, where the provider takes a level (DeepSeek's `reasoning_effort`, a gateway's model's own): the
+  // newest message that says one, else the call's; a provider or model whose preset takes none is asked as now.
   const effort = input.messages.findLast((m) => m.effort)?.effort ?? input.effort;
-  const effortField = effortSpec?.field;
-  const effortLevel = effortSpec?.levels[effort];
+  const thinking = effortOf(preset(input.provider.id)?.effort, input.model, effort);
+  const effortField = thinking?.field;
+  const effortLevel = thinking?.value;
+  // (A refusal is remembered for the model at that address: a gateway's other models may take it.)
+  const effortKey = `${input.provider.baseUrl} ${input.model}`;
   return {
     spent: () => spent,
     carry: () => carryOf(input.provider.id, input.model, { reasoning: reasoned }),
@@ -464,7 +466,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
           signal: signal ?? input.signal,
         });
       let askUsage = !NO_USAGE_OPTION.has(input.provider.baseUrl);
-      let askEffort = effortField !== undefined && !NO_EFFORT.has(input.provider.baseUrl);
+      let askEffort = effortField !== undefined && !NO_EFFORT.has(effortKey);
       let response = await post(askUsage, askEffort);
       // An endpoint that refuses an option (an older runtime) is asked without it from then on: its usage is unknown,
       // or it thinks at its own level.
@@ -476,8 +478,9 @@ export function openAIConversation(input: CompletionInput): Conversation {
           askUsage = false;
           again = true;
         }
-        if (askEffort && effortField && refusal.toLowerCase().includes(effortField.toLowerCase())) {
-          NO_EFFORT.add(input.provider.baseUrl);
+        // (A refusal names the field, or says it is the effort it can't take: a level a model was said to have and hasn't.)
+        if (askEffort && effortField && (refusal.toLowerCase().includes(effortField.toLowerCase()) || /\beffort\b/i.test(refusal))) {
+          NO_EFFORT.add(effortKey);
           askEffort = false;
           again = true;
         }
@@ -595,7 +598,7 @@ export function openAIConversation(input: CompletionInput): Conversation {
 /** Endpoints that refused `stream_options` (by base URL): asked without it for the rest of this process. */
 const NO_USAGE_OPTION = new Set<string>();
 
-/** Endpoints that refused their thinking level's field (by base URL): asked without it for the rest of this process. */
+/** Models that refused their thinking level's field (by base URL and model): asked without it for the rest of this process. */
 const NO_EFFORT = new Set<string>();
 
 const tokenCount = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.floor(x) : null);

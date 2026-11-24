@@ -8,13 +8,15 @@ export interface ProviderPreset {
   kind: ProviderKind;
   baseUrl: string;
   /**
-   * How it takes a thinking level in an OpenAI-compatible call: the request field, and Galahad's five levels
-   * mapped to its own. Absent (every other provider): asked as now, with no level, and its models choose for
-   * themselves. DeepSeek's chat completions take `reasoning_effort` ("none" disables thinking mode;
-   * low / high / max enable it; V4-Pro and V4-Flash take low, high and max: "use low for simple tasks, high
-   * for daily Agent tasks, and max for more complex scenarios").
+   * How it takes a thinking level in an OpenAI-compatible call: the request field, and Galahad's five levels in its own
+   * words: `levels` where every model it serves takes the same, `models` where they differ (a gateway's), each model's
+   * own from its lowest, a level asked for being the lowest of them at or above it, or their highest (effortOf). A model
+   * not named, or a provider with neither (every other provider), is asked as now, with no level, and chooses for
+   * itself. DeepSeek's chat completions take `reasoning_effort` ("none" disables thinking mode; low / high / max enable
+   * it; V4-Pro and V4-Flash take low, high and max: "use low for simple tasks, high for daily Agent tasks, and max for
+   * more complex scenarios").
    */
-  effort?: { field: string; levels: Record<ThinkingEffort, string> };
+  effort?: { field: string; levels?: Record<ThinkingEffort, string>; models?: Record<string, readonly string[]> };
   /** Key prefixes that identify this provider when you just paste a key. */
   keyPrefixes?: string[];
   /** Runs on the node itself (no key, nothing leaves the machine). */
@@ -82,7 +84,15 @@ export const PRESETS: ProviderPreset[] = [
   { id: "mistral", kind: "openai", baseUrl: "https://api.mistral.ai/v1" },
   { id: "moonshot", kind: "openai", baseUrl: "https://api.moonshot.ai/v1" },
   // (Z.ai's API lists no models: its docs name them.)
-  { id: "zai", kind: "openai", baseUrl: "https://api.z.ai/api/paas/v4", models: ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.2"] },
+  // GLM-5.2 on take `reasoning_effort`, 5.3's models low, high or max (max when none is said; their thinking can't be
+  // turned off), 5.2 high or max (docs.z.ai's core parameters; models.dev, the catalog OpenCode reads, says the same).
+  {
+    id: "zai",
+    kind: "openai",
+    baseUrl: "https://api.z.ai/api/paas/v4",
+    models: ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.2"],
+    effort: { field: "reasoning_effort", models: { "glm-5.3": ["low", "high", "max"], "glm-5.3-flash": ["low", "high", "max"], "glm-5.3-flashx": ["low", "high", "max"], "glm-5.2": ["high", "max"] } },
+  },
   {
     id: "zai-coding",
     kind: "openai",
@@ -150,6 +160,10 @@ export const PRESETS: ProviderPreset[] = [
       allows: { native: true, tools: "unattended" },
       session: "x-opencode-session",
     },
+    // Each of its models takes its own levels, as `reasoning_effort` at this address (models.dev's opencode-go, the
+    // catalog OpenCode itself reads: GLM-5.3 and Kimi K3.1 Pro low, high or max, DeepSeek V4 Pro high or max). Its Qwen
+    // models are served at its Anthropic-compatible address, so they are asked as now.
+    effort: { field: "reasoning_effort", models: { "glm-5.3": ["low", "high", "max"], "kimi-k3.1-pro": ["low", "high", "max"], "deepseek-v4-pro": ["high", "max"] } },
     note: "OpenCode Go ($10 a month; Go Plus $40), on your OpenCode Console key at its own address (pay-as-you-go has another). Each model has a monthly allowance, a fifth of it in any five hours and half in a week. DeepSeek's models want Global chosen under Regions in the Console.",
   },
   {
@@ -267,6 +281,23 @@ export const PRESETS: ProviderPreset[] = [
 ];
 
 export const preset = (id: string): ProviderPreset | undefined => PRESETS.find((p) => p.id === id);
+
+/** Thinking levels from least to most, in the words providers use: Galahad's five among them. */
+const EFFORT_SCALE = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+ * How hard a provider's model is asked to think at Galahad's `level`, in the provider's words: its preset's field, and
+ * its value for the level (one level for all its models, or the model's own: the lowest at or above the one asked for,
+ * else its highest). Null where it takes none (the provider, or this model of it): asked with no level.
+ */
+export function effortOf(spec: ProviderPreset["effort"], model: string, level: ThinkingEffort): { field: string; value: string } | null {
+  if (!spec) return null;
+  if (spec.levels) return { field: spec.field, value: spec.levels[level] };
+  const takes = (spec.models?.[model] ?? []).filter((value) => EFFORT_SCALE.includes(value));
+  if (!takes.length) return null;
+  const asked = EFFORT_SCALE.indexOf(level);
+  return { field: spec.field, value: takes.find((value) => EFFORT_SCALE.indexOf(value) >= asked) ?? takes.at(-1)! };
+}
 
 /** The coding plan a provider is on: one added as a plan's preset. A provider of your own making is yours, and Galahad knows nothing of its terms. */
 export const planOf = (id: string): CodingPlan | null => preset(id)?.plan ?? null;
