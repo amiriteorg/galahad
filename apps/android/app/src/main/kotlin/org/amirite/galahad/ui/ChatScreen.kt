@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,8 +46,12 @@ import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.app.Attachments
 import org.amirite.galahad.app.Bubble
+import kotlinx.coroutines.delay
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.KnightState
+import org.amirite.galahad.core.Looks
+import org.amirite.galahad.core.Underway
+import org.amirite.galahad.core.UnderwayWords
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
 import org.amirite.galahad.core.string
@@ -57,7 +62,7 @@ import org.amirite.galahad.core.string
  * A fresh chat opens with what happened while you were away, from the node's own record (no model writes it).
  */
 @Composable
-fun ChatScreen(app: AppModel, back: () -> Unit) {
+fun ChatScreen(app: AppModel, back: () -> Unit, openKnight: (String) -> Unit = {}) {
     val chat = app.chat
     val bubbles by chat.bubbles.collectAsState()
     val live by chat.live.collectAsState()
@@ -117,7 +122,53 @@ fun ChatScreen(app: AppModel, back: () -> Unit) {
             itemsIndexed(bubbles) { i, b -> Message(b, if (i == bubbles.lastIndex && !live) { choice -> chat.send(choice) } else null) }
             problem?.let { p -> item { Problem(p) } }
         }
+        // What is under way in this chat: his knights' tasks given here (Stop on each), his looks that wait (Cancel).
+        UnderwayBar(app, live, openKnight)
         ChatComposer(app, live)
+    }
+}
+
+/**
+ * Above a chat's message box, what is under way there (your word, 24 November 2026, after OpenMausBot's hand-off rows):
+ * each task he gave a knight from this chat that hasn't ended, its knight's face and how it stands, opened with a tap and
+ * stopped with its own Stop; and each look he set himself here, when it comes and what at, called off with Cancel. Asked
+ * of the node every few seconds while anything is under way or he is answering, else every half minute.
+ */
+@Composable
+private fun UnderwayBar(app: AppModel, live: Boolean, openKnight: (String) -> Unit) {
+    val conversation by app.chat.conversation.collectAsState()
+    val table by app.table.collectAsState()
+    var shown by remember { mutableStateOf(Underway()) }
+    var asked by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(conversation, live, asked) {
+        val id = conversation ?: run { shown = Underway(); return@LaunchedEffect }
+        while (true) {
+            runCatching { app.client?.post("/api/conversations/underway", Json.obj("id" to id)) }.getOrNull()?.let { shown = Underway.of(it) }
+            delay(if (shown.tasks.isNotEmpty() || live) 5_000 else 30_000)
+        }
+    }
+    if (shown.isEmpty) return
+    Panel(Modifier.padding(horizontal = Space.margin, vertical = Space.s1).semantics { contentDescription = "Under way in this chat" }) {
+        for (task in shown.tasks) {
+            val row = table.rows.firstOrNull { it.kind == "knight" && it.id == task.assignee }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                Row(Modifier.weight(1f).clickable { openKnight(task.assignee) }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                    Face(Looks.of(task.assignee, task.name, row?.avatar), KnightState.WORKING, size = 28.dp, description = task.name, key = task.assignee)
+                    Column(Modifier.weight(1f)) {
+                        Text("${task.name} · ${UnderwayWords.state(task)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(task.title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                TextButton(onClick = { scope.launch { runCatching { app.client?.post("/api/team/control", Json.obj("task" to task.id, "action" to "stop")) }; asked++ } }, modifier = Modifier.semantics { contentDescription = "Stop ${task.name}'s work on this" }) { Text("Stop") }
+            }
+        }
+        for (look in shown.looks) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                Text(UnderwayWords.look(look), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { scope.launch { runCatching { app.client?.post("/api/looks/cancel", Json.obj("id" to look.id)) }; asked++ } }, modifier = Modifier.semantics { contentDescription = "He won't look again then" }) { Text("Cancel") }
+            }
+        }
     }
 }
 
@@ -247,6 +298,11 @@ internal fun ChatComposer(app: AppModel, live: Boolean, offered: Pair<Int, Strin
 @Composable
 private fun Message(b: Bubble, choose: ((String) -> Unit)?) {
     val brand = LocalBrand.current
+    // A look of his come back: his own note, never shown as yours.
+    b.look?.let { look ->
+        Text(UnderwayWords.looked(look), Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s1), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        return
+    }
     if (b.mine) {
         Row(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s1), horizontalArrangement = Arrangement.End) {
             Column(Modifier.widthIn(max = 320.dp).clip(MaterialTheme.shapes.large).background(brand.ink).padding(horizontal = Space.s3, vertical = Space.s2)) {

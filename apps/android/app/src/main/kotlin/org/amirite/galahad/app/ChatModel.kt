@@ -5,7 +5,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.amirite.galahad.core.Json
+import org.amirite.galahad.core.LookNote
 import org.amirite.galahad.core.NodeError
+import org.amirite.galahad.core.long
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
 import org.amirite.galahad.core.list
@@ -21,8 +23,10 @@ data class Bubble(
     val error: String? = null,
     /** The files a message of yours carried, by name. */
     val files: List<String> = emptyList(),
+    /** A look of his come back: a "user" message that isn't yours, shown as his own note. */
+    val look: LookNote? = null,
 ) {
-    val mine: Boolean get() = role == "user"
+    val mine: Boolean get() = role == "user" && look == null
     val streaming: Boolean get() = status == "streaming"
 }
 
@@ -109,6 +113,7 @@ class ChatModel(private val app: AppModel) {
                     steps = m["steps"].list.mapNotNull { s -> if (s["kind"].string == "tool") s["title"].string ?: s["name"].string else null },
                     error = m["error"].string,
                     files = m["attachments"].list.mapNotNull { it["name"].string },
+                    look = m["look"].let { l -> l["note"].string?.let { LookNote(l["set"].long ?: 0L, it) } },
                 )
             }
             if (view["unread"].bool == true) runCatching { c.post("/api/conversations/seen", Json.obj("id" to id)) }

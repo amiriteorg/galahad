@@ -204,7 +204,7 @@ fun Root(app: AppModel) {
                 // word, 23 November 2026: it can always be closed, so you never get stuck under it).
                 Column(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { focus.clearFocus() }) }) {
                     when {
-                        s.chat -> ChatScreen(app) { chat = false }
+                        s.chat -> ChatScreen(app, back = { chat = false }, openKnight = { chat = false; knight = it })
                         s.knight != null -> KnightScreen(app, s.knight) { knight = null }
                         s.room != null -> RoomScreen(app, s.room) { room = null }
                         s.keys -> KeysScreen(app) { keys = false }
