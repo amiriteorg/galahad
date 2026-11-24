@@ -833,8 +833,9 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     return bar;
   }
 
+  // (An orb of its own: he can be writing here while something waits on you, and his header's orb says the latter.)
   let writing: { id: number; orb: HTMLElement } | null = null;
-  const writingOrb = (id: number): HTMLElement => (writing?.id === id ? writing : (writing = { id, orb: orb({ size: 28, mood: "working" }) })).orb;
+  const writingOrb = (id: number): HTMLElement => (writing?.id === id ? writing : (writing = { id, orb: orb({ size: 28, mood: "working", key: "galahad:writing" }) })).orb;
 
   function renderTurn(turn: Turn): HTMLElement {
     if (turn.role === "user") {

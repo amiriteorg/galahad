@@ -178,7 +178,8 @@ export function seat(options: WorkerAvatarOptions & { state?: KnightState }): HT
   const box = size + 2 * SEAT_PAD[scale];
   const mood = options.still ? undefined : orbMoodOfState(state);
   if (options.id === "galahad" && options.beast !== true) {
-    return h("span", { class: `seat seat-${scale} seat-orb`, "data-state": state }, orb({ size: box, tone: orbToneOfState(state), label: "Galahad", mood }));
+    // (His seat's orb is its own: the Roundtable's word on where he stands can be a moment behind his chat's.)
+    return h("span", { class: `seat seat-${scale} seat-orb`, "data-state": state }, orb({ size: box, tone: orbToneOfState(state), label: "Galahad", mood, key: "galahad:seat" }));
   }
   const lights = mood ? seatLights({ box, ring: state === "resting" ? 1 : RING_W[scale], state, key: String(options.id) }) : null;
   return h("span", { class: `seat seat-${scale}`, "data-state": state }, workerAvatar(options), lights);
