@@ -68,6 +68,7 @@ class NodeClient(val origin: String, private val signer: Signer) {
         c.connectTimeout = 15_000
         c.readTimeout = readTimeoutMs
         for ((name, value) in RequestAuth.headers(signer, method, path, body ?: ByteArray(0))) c.setRequestProperty(name, value)
+        c.setRequestProperty(RequestAuth.ZONE, java.util.TimeZone.getDefault().id)
         if (body != null) {
             c.doOutput = true
             c.setRequestProperty("content-type", "application/json")

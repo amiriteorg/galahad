@@ -42,6 +42,8 @@ struct NodeClientTests {
         #expect(request.value(forHTTPHeaderField: "content-type") == "application/json")
         #expect(try verifies(request, method: "POST", path: "/api/chat", body: body))
         #expect(try !verifies(request, method: "POST", path: "/api/chat", body: body + Data(" ".utf8)))
+        // This device's time zone goes beside the signature: the time he says it is in an answer to you.
+        #expect(request.value(forHTTPHeaderField: RequestAuth.Header.zone) == TimeZone.current.identifier)
     }
 
     @Test func theNodesErrorsAreSaidInItsOwnWords() {

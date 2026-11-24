@@ -1,5 +1,6 @@
 import {
   ABOUT_YOU_TAG,
+  ZONE_HEADER,
   SLACK_APP_MANIFEST,
   type ActionView,
   canonical,
@@ -159,6 +160,7 @@ import {
   tellsAfter,
   tripOf,
   countable,
+  nowLine,
 } from "@galahad/brain";
 import { answerPush, answerSync, PairingError, type PairingHost, signedFetch, signedPost, type SyncEngine } from "@galahad/link";
 import { type Device, enrollDevice, isFullNode, type MindStore, revokeDevice, type SecretInfo, type Vault } from "@galahad/mind";
@@ -1376,9 +1378,10 @@ export function createApp(ctx: AppContext) {
   /**
    * Everything an answer needs before it starts, for whoever asks (the chat route, and a queued message when
    * its turn comes): the secret check on every message, whose chat it is and whether they may keep one, the
-   * kept history that leads, the project, the memories. Nothing here depends on who's listening.
+   * kept history that leads, the project, the memories. Nothing here depends on who's listening. `zone`: the asking
+   * device's time zone (core's ZONE_HEADER), when it said one.
    */
-  function prepareAnswer(input: ChatInput, p: Principal, about?: string) {
+  function prepareAnswer(input: ChatInput, p: Principal, about?: string, zone?: string | null) {
     // Every message goes to a provider, whoever "said" it, so all of them are scanned: what tools came to and how they
     // were called among them.
     guardAgainstSecrets(...input.messages.flatMap((m) => [m.content, ...(m.results ?? []).map((r) => r.content), ...(m.calls ?? []).map((c) => JSON.stringify(c.input))]));
@@ -1432,7 +1435,10 @@ export function createApp(ctx: AppContext) {
     // that may only chat (an agent in a community others read, docs/BUZZ.md), whatever it asks about.
     const yours = isOwner(p) || p.scopes.includes("mind:read");
     const recallFor = !yours || wantMemories === false ? undefined : request.coding ? request.messages.find((m) => m.role === "user") : asked.role === "user" ? asked : undefined;
-    const known = yours ? [aboutYouContext(), project ? projectContext(project) : null, recallFor ? memoryContext(about ?? said(recallFor), !!request.coding) : null].filter(Boolean).join("\n\n") || undefined : undefined;
+    // What time it is where you are (your device's zone, else your notifications'), last: it changes every minute. Never
+    // with coding work, whose prompt stays the same text turn after turn so a provider can read it from its cache.
+    const clock = yours && !request.coding ? nowLine(Date.now(), zone ?? ctx.notify.zone()) : null;
+    const known = yours ? [aboutYouContext(), project ? projectContext(project) : null, recallFor ? memoryContext(about ?? said(recallFor), !!request.coding) : null, clock].filter(Boolean).join("\n\n") || undefined : undefined;
     // The archive's most relevant entries, fenced as data: with tools by default; quests ask for it at their start.
     const fromArchive = yours && (wantArchive ?? wantTools !== false) && asked.role === "user";
     // What it is about, for the archive and his skills: the question, or `about` when the last message holds more (a room's answer).
@@ -2904,7 +2910,8 @@ export function createApp(ctx: AppContext) {
       // Asked before anything is written: one turn a chat, so many on the node.
       if (owned) turnErrors(() => ctx.turns.admit(asked.conversation ?? null));
       else if (asked.conversation && ctx.turns.runningIn(asked.conversation)) throw new HttpError(409, "he's still working in that chat");
-      const ready = prepareAnswer(asked, p);
+      const said = req.headers.get(ZONE_HEADER);
+      const ready = prepareAnswer(asked, p, undefined, said && isTimeZone(said) ? said : null);
       if (owned) return watchTurn(turnErrors(() => ctx.turns.start(turnSpec(ready, p))), req, true);
 
       const { request, wantTools, kept, messages, project, known, fromArchive, attempt, quest } = ready;

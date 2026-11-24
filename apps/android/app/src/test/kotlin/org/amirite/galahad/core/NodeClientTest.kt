@@ -29,6 +29,25 @@ class NodeClientTest {
     }
 
     @Test
+    fun eachRequestSaysThisDevicesTimeZoneBesideItsSignature() = runBlocking<Unit> {
+        ServerSocket(0).use { server ->
+            var head = ""
+            thread {
+                runCatching {
+                    server.accept().use { socket ->
+                        val bytes = ByteArray(8192)
+                        head = String(bytes, 0, socket.getInputStream().read(bytes))
+                        socket.getOutputStream().write("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}".toByteArray())
+                    }
+                }
+            }
+            NodeClient("http://127.0.0.1:${server.localPort}", signer).get("/api/team")
+            val zone = head.lines().firstOrNull { it.startsWith("x-galahad-tz:", ignoreCase = true) }?.substringAfter(":")?.trim()
+            assertEquals(java.util.TimeZone.getDefault().id, zone)
+        }
+    }
+
+    @Test
     fun nothingListeningIsSaidInWords() = runBlocking<Unit> {
         val port = ServerSocket(0).use { it.localPort }
         val e = runCatching { NodeClient("http://127.0.0.1:$port", signer).get("/api/team") }.exceptionOrNull() as NodeError

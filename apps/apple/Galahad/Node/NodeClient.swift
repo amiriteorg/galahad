@@ -35,6 +35,7 @@ struct NodeClient: Sendable {
         request.httpMethod = method
         let headers = try RequestAuth.headers(signer: signer, method: method, path: path, body: body ?? Data(), ts: RequestAuth.timestamp(clock()), nonce: nonce())
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        request.setValue(TimeZone.current.identifier, forHTTPHeaderField: RequestAuth.Header.zone)
         if let body {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "content-type")

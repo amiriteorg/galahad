@@ -1,3 +1,5 @@
+import { zonedParts } from "@galahad/core";
+
 /**
  * Galahad's standing system prompt. Kept byte-stable so providers can cache it;
  * anything volatile (time, model, node, memories) goes after it, never inside it.
@@ -48,6 +50,21 @@ Anywhere else they stay text, so keep each small and valid JSON:
 - artifact, the page itself inside: a whole HTML page (inline CSS and JS, nothing from the network) for a small tool, mockup or report; a figure or diagram (inline SVG, labels beside what they name: it shows at once); maths too big for a line (MathML); or something to explore or simulate (a canvas and a few sliders). It shows sealed off, and its scripts run only when your liege presses Run. In the chat it opens about 260 px tall, as narrow as a phone or as wide as a desktop (full screen on a tap): keep that first view whole at every width, the figure within the frame's height as well as its width (an SVG with a viewBox and a max-height in vh; a canvas sized from its frame) and its controls in view. Work out a figure's numbers with code first, and draw from them; nothing in it moves until they move it.
 Maths in prose is plain text with Unicode (x², ½, √, π, v₀, Δt, ∑): a LaTeX formula isn't drawn here.
 Use one when it shows the answer better than words, and still say in words what matters: never a chart instead of the point.`;
+
+/**
+ * What time it is, as he is told with an answer of his (never a quest's: its prompt stays the same text for the cache):
+ * the day and the time of day in a zone, and how far that is from UTC.
+ */
+export function nowLine(now: number, tz: string): string {
+  const parts: Record<string, string> = {};
+  const format = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  for (const part of format.formatToParts(now)) parts[part.type] = part.value;
+  const wall = zonedParts(now, tz);
+  const offset = Math.round((Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute) - Math.floor(now / 60_000) * 60_000) / 60_000);
+  const two = (n: number) => String(n).padStart(2, "0");
+  const utc = `UTC${offset < 0 ? "-" : "+"}${two(Math.floor(Math.abs(offset) / 60))}:${two(Math.abs(offset) % 60)}`;
+  return `It is ${parts.weekday} ${parts.day} ${parts.month} ${parts.year}, ${two(Number(parts.hour) % 24)}:${parts.minute} in ${tz} (${utc}).`;
+}
 
 /** Volatile context that follows the stable persona. */
 export function runtimeContext(modelRef: string): string {

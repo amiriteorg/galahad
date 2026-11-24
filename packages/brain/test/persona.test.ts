@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { MAX_PROPOSED_GATES } from "@galahad/core";
 import { BLOCK_KINDS, CHART_TYPES, readChoices, STEP_STATES } from "@galahad/core/blocks";
-import { GALAHAD_SYSTEM, SHOW_GUIDE, TOOL_GUIDE } from "../src/persona.ts";
+import { GALAHAD_SYSTEM, nowLine, SHOW_GUIDE, TOOL_GUIDE } from "../src/persona.ts";
 
 /*
  * What he is told about himself. Asked on ultra what a quest gate is, he recalled
@@ -89,3 +89,12 @@ test("his guide shows a block as a whole fence, the JSON inside, since a model w
   expect(SHOW_GUIDE).not.toMatch(/```[a-z]+[ \t]+[[{]/);
 });
 
+
+test("the time he is told: the day and the time of day in a zone, with how far it is from UTC", () => {
+  const at = Date.parse("2026-11-24T20:07:31Z");
+  expect(nowLine(at, "Europe/Copenhagen")).toBe("It is Tuesday 24 November 2026, 21:07 in Europe/Copenhagen (UTC+01:00).");
+  expect(nowLine(at, "UTC")).toBe("It is Tuesday 24 November 2026, 20:07 in UTC (UTC+00:00).");
+  // Past midnight there already, and half an hour off the hour.
+  expect(nowLine(at, "Asia/Kolkata")).toBe("It is Wednesday 25 November 2026, 01:37 in Asia/Kolkata (UTC+05:30).");
+  expect(nowLine(Date.parse("2027-06-01T07:00:00Z"), "America/New_York")).toBe("It is Tuesday 1 June 2027, 03:00 in America/New_York (UTC-04:00).");
+});

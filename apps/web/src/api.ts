@@ -1,6 +1,6 @@
 import type { ChatStreamEvent } from "@galahad/core";
 import { utf8 } from "@galahad/core/bytes";
-import { signRequest } from "@galahad/core/request-auth";
+import { signRequest, ZONE_HEADER } from "@galahad/core/request-auth";
 import { type BrowserIdentity, signerFor } from "./identity.ts";
 
 /*
@@ -41,6 +41,16 @@ export const setNetworkHandler = (handler: (ok: boolean) => void): void => {
 const fromProxy = (response: Response): boolean =>
   (response.status === 502 || response.status === 503 || response.status === 504) && !(response.headers.get("content-type") ?? "").includes("application/json");
 
+/** This device's time zone as the node reads it (core's ZONE_HEADER), or nothing where the browser doesn't say. */
+function zoneHeader(): Record<string, string> {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return zone ? { [ZONE_HEADER]: zone } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function signedFetch(identity: BrowserIdentity, method: "GET" | "POST", path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
   const bytes = body === undefined ? new Uint8Array() : utf8(JSON.stringify(body));
   const headers = await signRequest(identity.device, signerFor(identity), method, path, bytes);
@@ -48,7 +58,8 @@ async function signedFetch(identity: BrowserIdentity, method: "GET" | "POST", pa
   try {
     response = await fetch(`${location.origin}${path}`, {
       method,
-      headers: { ...headers, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      // This device's time zone, for the time he says it is in an answer to you (beside the signature: only a hint).
+      headers: { ...headers, ...zoneHeader(), ...(body === undefined ? {} : { "content-type": "application/json" }) },
       body: method === "GET" ? undefined : bytes,
       signal,
       cache: "no-store",

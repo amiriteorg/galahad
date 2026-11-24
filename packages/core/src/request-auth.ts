@@ -16,6 +16,13 @@ export const AUTH = {
 
 export const MAX_REQUEST_SKEW_MS = 60_000;
 
+/**
+ * The asking device's time zone (an IANA name), sent with each request beside the signature: what time it is where you
+ * are, in an answer of his. Only a hint, outside what is signed, and trusted for nothing else; a node from before it
+ * ignores it, and one with none, or a name that isn't a zone, reads your day in your notifications' zone.
+ */
+export const ZONE_HEADER = "x-galahad-tz";
+
 export const requestSigningInput = (
   method: string,
   path: string,

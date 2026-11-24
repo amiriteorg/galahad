@@ -458,6 +458,11 @@ export class NotifyService {
     return this.o.db.remove(device);
   }
 
+  /** The zone your day is read in: quiet hours' (the node's own until you set one). */
+  zone(): string {
+    return this.o.db.prefs().quiet.tz;
+  }
+
   setPrefs(input: NotifyPrefsInput): NotifyPrefs {
     const current = this.o.db.prefs();
     const next: NotifyPrefs = {

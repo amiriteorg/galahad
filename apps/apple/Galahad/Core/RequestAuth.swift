@@ -32,6 +32,9 @@ enum RequestAuth {
         static let ts = "x-galahad-ts"
         static let nonce = "x-galahad-nonce"
         static let sig = "x-galahad-sig"
+        /// This device's time zone, beside the signature (core's ZONE_HEADER): the time he says it is in an answer to
+        /// you. Only a hint; a node from before it ignores it.
+        static let zone = "x-galahad-tz"
     }
 
     /// The bytes signed. `path` is the path and query exactly as the request carries them.

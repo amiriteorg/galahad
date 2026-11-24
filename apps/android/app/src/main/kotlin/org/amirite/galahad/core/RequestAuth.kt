@@ -22,6 +22,8 @@ object RequestAuth {
     const val TS = "x-galahad-ts"
     const val NONCE = "x-galahad-nonce"
     const val SIG = "x-galahad-sig"
+    /** This device's time zone, beside the signature (core's ZONE_HEADER): the time he says it is in an answer to you. Only a hint. */
+    const val ZONE = "x-galahad-tz"
     const val MAX_SKEW_MS = 60_000L
 
     private val random = SecureRandom()
