@@ -296,23 +296,38 @@ function waves(g: CanvasRenderingContext2D, frame: OrbFrame, stage: OrbStage, pa
   for (const gone of frame.ripples) stroke(g, stage.waves[0] + gone * (stage.waves[1] - stage.waves[0]), stage.wave * (1 - 0.6 * gone), rgba(palette.tint, 0.6 * (1 - gone) ** 2));
 }
 
-/** Its light: a head of white running round `r`, its tail in the lit tint, fading and thinning behind it. */
+/**
+ * Its light: a head of white running round `r`, its tail in the lit tint, fading (as how far along it is to the power
+ * 1.6) and thinning (to 0.35 of its width) behind it. The tail is one shape, its light laid round the middle (a conic
+ * gradient): drawn as 18 strokes, as it was, each was a draw of its own, every frame.
+ */
 const TAIL_STEPS = 18;
+const FADE = [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1];
 function comet(g: CanvasRenderingContext2D, light: { head: number; tail: number; alpha: number }, r: number, width: number, palette: OrbPalette): void {
-  g.lineCap = "round";
-  for (let j = 0; j < TAIL_STEPS; j++) {
-    const along = (j + 1) / TAIL_STEPS;
-    const from = light.head - light.tail + (j * light.tail) / TAIL_STEPS;
+  const from = light.head - light.tail;
+  if (light.tail > 0.5 && light.alpha > 0.005) {
+    const half = (along: number) => (width * (0.35 + 0.65 * along)) / 2;
     g.beginPath();
-    g.arc(0, 0, r, radians(from - 90), radians(from + light.tail / TAIL_STEPS - 90));
-    g.lineWidth = width * (0.35 + 0.65 * along);
-    g.strokeStyle = rgba(palette.light, light.alpha * along ** 1.6);
-    g.stroke();
+    for (let j = 0; j <= TAIL_STEPS; j++) g.lineTo(...at(r + half(j / TAIL_STEPS), from + (j * light.tail) / TAIL_STEPS));
+    for (let j = TAIL_STEPS; j >= 0; j--) g.lineTo(...at(r - half(j / TAIL_STEPS), from + (j * light.tail) / TAIL_STEPS));
+    g.closePath();
+    g.fillStyle = typeof g.createConicGradient === "function" ? fade(g, from, light, palette) : rgba(palette.light, light.alpha * 0.4);
+    g.fill();
   }
   const [x, y] = at(r, light.head);
   g.globalAlpha = light.alpha;
   g.drawImage(sprite(palette), x - width * 2.2, y - width * 2.2, width * 4.4, width * 4.4);
   g.globalAlpha = 1;
+}
+
+/** A tail's light round the middle, from its end clockwise: fading in along it, then none, so its end never takes the
+ * head's light. */
+function fade(g: CanvasRenderingContext2D, from: number, light: { tail: number; alpha: number }, palette: OrbPalette): CanvasGradient {
+  const made = g.createConicGradient(radians(from - 90), 0, 0);
+  for (const along of FADE) made.addColorStop((along * light.tail) / 360, rgba(palette.light, light.alpha * along ** 1.6));
+  made.addColorStop(Math.min(1, (light.tail + 2) / 360), rgba(palette.light, light.alpha));
+  made.addColorStop(1, rgba(palette.light, 0));
+  return made;
 }
 
 /** Its motes, each a point of light with a glow round it, where the frame puts them in the stage's band. */

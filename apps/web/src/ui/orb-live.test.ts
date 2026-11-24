@@ -186,6 +186,8 @@ describe("a knight's seat, moving", () => {
     // Its seat is the face and its ring (40 + 2 × 4); the lights reach a quarter past it.
     expect(lights.style.width).toBe(`${Math.ceil(48 * 1.24)}px`);
     expect(live.children[0]!.attrs.class).toContain("worker-avatar");
+    // Drawn at once: its ring's glow (two strokes) and the light running round it, its tail one shape.
+    expect([count(lights.calls, "stroke"), count(lights.calls, "createConicGradient"), count(lights.calls, "fill")]).toEqual([2, 1, 1]);
     const still = seat({ id: "gareth", name: "Gareth", state: "working", size: 40, still: true }) as unknown as Node_;
     expect(still.children.map((child) => child.className)).not.toContain("seat-lights");
   });
