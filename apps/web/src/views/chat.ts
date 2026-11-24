@@ -10,6 +10,7 @@ import { questInHand } from "../lib/quests.ts";
 import { galahadNeeds } from "../lib/roster.ts";
 import { plural } from "../lib/text.ts";
 import { duration, relativeTime } from "../lib/time.ts";
+import { lookedWords } from "../lib/underway.ts";
 import { applyEvent, asideOf, beginTurn, composerAction, composerHint, connectorsAskedIn, endTurn, failTurn, keysAskedIn, shownAgain, stateBadge, type Step, type Thread, type Turn, turnOf } from "../lib/turns.ts";
 import { awaySince, chatEnter, lastRole, markAwaySeen, openChatId, rememberOpenChat, rememberRole } from "../prefs.ts";
 import type { RoleSpec } from "../types.ts";
@@ -27,6 +28,7 @@ import { toast } from "../ui/toast.ts";
 import { attachedView, attachTray, type Waiting } from "./attach-tray.ts";
 import { openAside } from "./chat-aside.ts";
 import { openComputer } from "./computer.ts";
+import { underway } from "./underway.ts";
 import { queuePanel } from "./chat-queue.ts";
 import { openInHand } from "./in-hand.ts";
 import { openAddKey, secretRequestCard } from "./vault.ts";
@@ -839,6 +841,10 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const writingOrb = (id: number): HTMLElement => (writing?.id === id ? writing : (writing = { id, orb: orb({ size: 28, mood: "working", key: "galahad:writing" }) })).orb;
 
   function renderTurn(turn: Turn): HTMLElement {
+    // A look of his come back: his own note, never shown as yours.
+    if (turn.role === "user" && turn.look) {
+      return h("article", { class: "turn look", "aria-label": "He looked again" }, icon("clock", { size: 16, class: "subtle" }), h("span", {}, lookedWords(turn.look, Date.now())));
+    }
     if (turn.role === "user") {
       return h(
         "article",
@@ -1020,6 +1026,17 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const stopButton = button("Stop", { icon: "stop", iconOnly: true, label: "Stop him", title: "Stop him (Esc)", onClick: () => stopChat() });
   stopButton.classList.add("send");
   const panel = queuePanel(queueActions(ctx.api));
+  // What is under way in this chat: his knights' tasks given here (Stop on each), his looks that wait (Cancel).
+  const going = underway(ctx);
+  scope.add(() => going.stop());
+  let wasAnswering = false;
+  function syncUnderway(): void {
+    const answering = live !== null;
+    going.show(current && !temporary ? current.id : null, answering);
+    // His answer just ended: what he gave or set in it is asked for now.
+    if (wasAnswering && !answering) going.refresh();
+    wasAnswering = answering;
+  }
   const elsewhere = h("div", { class: "composer-alerts" });
   let shownElsewhere = "";
   // A key he asked for in this chat: its sealed field here, above the message box, as well as in the Inbox. What you
@@ -1064,6 +1081,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   }
 
   function syncComposer(): void {
+    syncUnderway();
     const busy = live !== null;
     const files = tray.carried().length > 0;
     const has = (Boolean(input.value.trim()) || files) && !blocked && !tray.going();
@@ -1477,7 +1495,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
       h("div", { class: "chat-head" }, back, who, computer, inbox, options.el),
       subHead,
       threadEl,
-      h("div", { class: "composer-wrap" }, h("div", { class: "jump-anchor" }, jump), alerts, elsewhere, keyAsks, connectorAsks, panel.el, form),
+      h("div", { class: "composer-wrap" }, h("div", { class: "jump-anchor" }, jump), alerts, elsewhere, keyAsks, connectorAsks, going.el, panel.el, form),
     ),
   );
 

@@ -1451,6 +1451,20 @@
       .btn.jump { position: absolute; left: 50%; top: -40px; transform: translateX(-50%); box-shadow: var(--shadow-2); }
       .btn.jump:active:not(:disabled) { transform: translateX(-50%) scale(0.97); }
       /* A key he asked for in this chat, sealed right here (views/chat.ts). */
+      /* What is under way in a chat (views/underway.ts): his knights' tasks given there, his looks that wait. */
+      .underway { display: flex; flex-direction: column; margin-bottom: var(--sp-2); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-2); overflow: hidden; }
+      .underway[hidden] { display: none; }
+      .underway-row { display: flex; align-items: center; gap: var(--sp-2); padding: 6px 8px 6px 10px; min-height: 44px; }
+      .underway-row + .underway-row { border-top: 1px solid var(--border); }
+      .underway-main { display: flex; align-items: center; gap: var(--sp-2); flex: 1; min-width: 0; background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; }
+      button.underway-main { cursor: pointer; border-radius: 8px; }
+      button.underway-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .underway-words { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+      .underway-who { font-size: var(--fs-13); font-weight: 600; }
+      .underway-what { font-size: var(--fs-12); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .underway-row[data-kind="look"] .underway-what { color: var(--text-2); font-size: var(--fs-13); white-space: normal; }
+      /* A look of his come back: his own note in the thread, not a message of yours. */
+      .turn.look { justify-content: center; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-13); text-align: center; padding: 2px var(--sp-4); }
       .key-asks { display: flex; flex-direction: column; gap: var(--sp-2); }
       .key-asks:not(:empty) { margin-bottom: var(--sp-2); }
       .key-asks .card { box-shadow: var(--shadow-2); }

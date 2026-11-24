@@ -111,6 +111,8 @@ export interface Turn {
   content: string;
   /** Your files with it (your turns), as the node keeps them. */
   attachments?: AttachmentRef[];
+  /** A look of his come back (a "user" turn that isn't yours): when he set it, and his note. */
+  look?: { set: number; note: string };
   /** The roster role that answered (assistant turns). */
   as?: string;
   model?: string;
@@ -175,6 +177,7 @@ export function turnOf(m: StoredMessage, role: string, id: number): Turn {
     role: m.role,
     content: m.content,
     ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+    ...(m.look ? { look: m.look } : {}),
     as: role,
     ...(m.model ? { model: m.model } : {}),
     steps,
