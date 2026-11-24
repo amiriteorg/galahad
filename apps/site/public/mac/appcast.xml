@@ -4,12 +4,12 @@
     <title>Galahad for Mac</title>
     <link>https://galahad.sh</link>
     <item>
-      <title>Galahad 0.1.0 (202611231400)</title>
-      <pubDate>Mon, 23 Nov 2026 14:06:27 +0000</pubDate>
-      <sparkle:version>202611231400</sparkle:version>
+      <title>Galahad 0.1.0 (202611240046)</title>
+      <pubDate>Tue, 24 Nov 2026 00:49:50 +0000</pubDate>
+      <sparkle:version>202611240046</sparkle:version>
       <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/amiriteorg/galahad/releases/download/mac-202611231400/Galahad-for-Mac-202611231400.zip" sparkle:edSignature="iBkemKXF+86Id3F4NrbXkdODmGgHPDFrHth8+IcCIr0KoMxrmcClNaGSoGtVh9ptizaPbqf6u01SD4D608mnDw==" length="69395972" type="application/octet-stream"/>
+      <enclosure url="https://github.com/amiriteorg/galahad/releases/download/mac-202611240046/Galahad-for-Mac-202611240046.zip" sparkle:edSignature="88sAIPKDCroDZz66Qq/uJ0g+e0AMBz4pKBeBHu7qmu2M5BDI6XN6k6CY4EyE2Jt5GfLxVFLyUHMWh9IiC+KsAQ==" length="69526198" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
