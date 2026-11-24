@@ -384,7 +384,10 @@ export function loopExecutor(deps: LoopTaskDeps) {
         if (!mails.length) return { status: "ok", summary: "Nothing to copy: it copies the bilag in the mail that wakes it (to copy older mail's: galahad bilag copy)." };
         if (!deps.local) return { status: "failed", summary: "This node keeps no record of bilag copied, so it copies none." };
         const report = await copyBilag({ transfer: (connector, step) => deps.connectors.transfer(connector, step), local: deps.local, tz: loop.tz }, mails, task.folder);
-        return { status: report.failed.length ? "attention" : "ok", summary: bilagSummary(report) };
+        // A mail it couldn't copy goes back to be tried again (loops.ts giveBack): what was copied never is twice.
+        const left = new Set(report.left.map((mail) => `mail:${mail}`));
+        const giveBack = ctx.woken.filter((event) => left.has(event.id)).map((event) => event.id);
+        return { status: report.failed.length ? "attention" : "ok", summary: bilagSummary(report), ...(giveBack.length ? { giveBack } : {}) };
       }
       case "call": {
         const outcome = await deps.connectors.call(

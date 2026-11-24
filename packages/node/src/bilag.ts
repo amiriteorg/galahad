@@ -51,6 +51,8 @@ export interface BilagReport {
   skipped: number;
   /** A mail that couldn't be read or copied, and why. */
   failed: string[];
+  /** Those mails, as `<mailbox>:<id>`: to be tried again (a loop gives them back; what was copied is never copied twice). */
+  left: string[];
 }
 
 export interface Attached {
@@ -274,7 +276,7 @@ async function upload(deps: BilagDeps, parent: string, name: string, type: strin
 /** The bilag of these mails, copied to Drive; what came of each said. A mail that fails doesn't stop the rest. */
 export async function copyBilag(deps: BilagDeps, mails: readonly { mailbox: Mailbox; id: string }[], folder = BILAG_FOLDER): Promise<BilagReport> {
   tables(deps.local);
-  const report: BilagReport = { copied: [], already: 0, skipped: 0, failed: [] };
+  const report: BilagReport = { copied: [], already: 0, skipped: 0, failed: [], left: [] };
   const seen = deps.local.query<{ sha256: string }, [string]>("SELECT sha256 FROM bilag_seen WHERE part = ?");
   const copied = deps.local.query<{ file: string }, [string]>("SELECT file FROM bilag_copied WHERE sha256 = ?");
   const mark = deps.local.query("INSERT OR REPLACE INTO bilag_seen (part, sha256, at) VALUES (?, ?, ?)");
@@ -315,6 +317,7 @@ export async function copyBilag(deps: BilagDeps, mails: readonly { mailbox: Mail
       }
     } catch (error) {
       report.failed.push(`${mail.mailbox} ${mail.id.slice(0, 12)}…: ${String((error as Error).message ?? error).slice(0, 200)}`);
+      report.left.push(`${mail.mailbox}:${mail.id}`);
     }
   }
   return report;

@@ -37,7 +37,11 @@ function world() {
     });
   const define = (name: string, on: string, schedule = "every 30m", extra: Record<string, unknown> = {}) =>
     store.emit(a, "loop.set", { name, schedule, tz: "UTC", on, enabled: true, task: { kind: "heartbeat" }, ...extra });
-  return { a, b, store, clock, calls, local, runner, define, setBehaviour: (f: typeof behaviour) => void (behaviour = f) };
+  const execute = (loop: RunnableLoop, ctx: RunContext) => {
+    calls.push({ loop: loop.name, slot: ctx.slot });
+    return behaviour(loop, ctx);
+  };
+  return { a, b, store, clock, calls, local, runner, define, execute, setBehaviour: (f: typeof behaviour) => void (behaviour = f) };
 }
 
 describe("the loop runner", () => {
@@ -249,6 +253,69 @@ describe("what wakes a loop (a webhook, new mail, a GitHub event)", () => {
     expect(w.seen).toEqual([["x1"], ["x2"]]);
     expect(w.calls.at(-1)!.slot).not.toBeNull();
     expect(w.store.loopRuns("both")[0]!.body.summary).toBe("With a webhook x2. fine");
+  });
+
+  test("what a run couldn't do and gives back waits for the next, after the cooldown: tried again three times at most, said each time", async () => {
+    const w = woken();
+    // d1 is done at once; d2 fails every time, and its run says it may be tried again (as a bilag's mail does).
+    w.setBehaviour(async (_loop, ctx) => {
+      w.seen.push(ctx.woken.map((e) => e.id));
+      const left = ctx.woken.filter((e) => e.id === "d2").map((e) => e.id);
+      return left.length ? { status: "attention", summary: "d2 failed.", giveBack: left } : { status: "ok", summary: "fine" };
+    });
+    const told: boolean[] = [];
+    const r = new LoopRunner({ store: w.store, identity: w.a, local: w.local, log: () => {}, now: w.clock.now, execute: (loop, ctx) => w.execute(loop, ctx), onFinished: (_l, _r, _run, after) => void told.push(after.again) });
+    r.wake("hook", [event("d1"), event("d2")]);
+    await r.settled();
+    expect(r.waiting("hook").map((e) => e.id)).toEqual(["d2"]);
+    expect(w.store.loopRuns("hook")[0]!.body).toMatchObject({ status: "attention", summary: "Woken by a webhook d1 (and 1 more). d2 failed. Tried again in 10 min (1 of 3)." });
+    // Not before the cooldown has passed, and not by a wake of its own: then once a cooldown, with what's left alone.
+    w.clock.set(T0 + 5 * MIN);
+    r.tick();
+    await r.settled();
+    expect(w.seen).toEqual([["d1", "d2"]]);
+    for (const at of [10, 20, 30]) {
+      w.clock.set(T0 + at * MIN);
+      r.tick();
+      await r.settled();
+    }
+    expect(w.seen).toEqual([["d1", "d2"], ["d2"], ["d2"], ["d2"]]);
+    // Tried three times more, it isn't given back again: said, and nothing waits.
+    expect(w.store.loopRuns("hook").map((x) => x.body.summary)).toEqual([
+      "Woken by a webhook d2. d2 failed. Tried 4 times: not again.",
+      "Woken by a webhook d2. d2 failed. Tried again in 10 min (3 of 3).",
+      "Woken by a webhook d2. d2 failed. Tried again in 10 min (2 of 3).",
+      "Woken by a webhook d1 (and 1 more). d2 failed. Tried again in 10 min (1 of 3).",
+    ]);
+    expect(r.waiting("hook")).toEqual([]);
+    w.clock.set(T0 + 60 * MIN);
+    r.tick();
+    await r.settled();
+    expect(w.seen).toHaveLength(4);
+    // A run that will be tried again says so to whoever is told of it (the daemon raises no notice for it); the last doesn't.
+    expect(told).toEqual([true, true, true, false]);
+  });
+
+  test("only what the run took is given back; a run that gives back nothing leaves what it took taken", async () => {
+    const w = woken();
+    w.setBehaviour(async (_loop, ctx) => {
+      w.seen.push(ctx.woken.map((e) => e.id));
+      return { status: "failed", summary: "no.", giveBack: ["d9", ...(ctx.woken.some((e) => e.id === "d1") ? [] : ["d2"])] };
+    });
+    const r = w.runner();
+    r.wake("hook", [event("d1")]);
+    await r.settled();
+    expect(r.waiting("hook")).toEqual([]);
+    expect(w.store.loopRuns("hook")[0]!.body.summary).toBe("Woken by a webhook d1. no.");
+  });
+
+  test("a node's own database from before tries were counted takes them up as it starts", () => {
+    const local = new Database(":memory:");
+    local.exec("CREATE TABLE loop_wakes (loop TEXT NOT NULL, id TEXT NOT NULL, at INTEGER NOT NULL, event TEXT NOT NULL, taken TEXT, PRIMARY KEY (loop, id))");
+    local.query("INSERT INTO loop_wakes (loop, id, at, event, taken) VALUES ('hook', 'old', 1, '{}', NULL)").run();
+    const w = woken();
+    w.runner(w.a, local);
+    expect(local.query<{ id: string; tries: number }, []>("SELECT id, tries FROM loop_wakes").all()).toEqual([{ id: "old", tries: 0 }]);
   });
 
   test("what waits is kept through a restart; a flood keeps its newest", async () => {

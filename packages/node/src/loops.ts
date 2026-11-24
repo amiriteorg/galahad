@@ -147,7 +147,16 @@ export interface RunContext {
 export interface RunResult {
   status: "ok" | "attention" | "failed";
   summary: string;
+  /**
+   * What woke this run that it couldn't do, by its events' ids, to be tried again: each waits for the next run, once the
+   * loop's cooldown has passed, WAKE_RETRIES times at most. Only a task whose runs are safe to repeat gives any back (a
+   * bilag's mail: what was copied is never copied twice), and only when that is all that went wrong.
+   */
+  giveBack?: string[];
 }
+
+/** What woke a run and it gave back is tried again this many times at most. */
+export const WAKE_RETRIES = 3;
 
 export type RunnableLoop = LoopRecord & { task: LoopTask; schedule: Schedule };
 
@@ -162,8 +171,8 @@ export interface LoopRunnerOptions {
   maxConcurrent?: number;
   /** No run lasts longer than this. */
   deadlineMs?: number;
-  /** After each run is recorded (e.g. to tell you when a loop needs a look). */
-  onFinished?: (loop: RunnableLoop, result: RunResult, run: string) => void;
+  /** After each run is recorded (e.g. to tell you when a loop needs a look); `again`: all it gave back is tried again. */
+  onFinished?: (loop: RunnableLoop, result: RunResult, run: string, after: { again: boolean }) => void;
 }
 
 export class LoopError extends Error {}
@@ -180,8 +189,12 @@ export class LoopRunner {
   constructor(private readonly o: LoopRunnerOptions) {
     this.now = o.now ?? Date.now;
     o.local.exec("CREATE TABLE IF NOT EXISTS loop_runs (loop TEXT NOT NULL, run TEXT NOT NULL, slot INTEGER, started INTEGER NOT NULL, PRIMARY KEY (loop, run))");
-    // What woke a loop and waits for a run (taken: the run that took it), and when each loop was last woken.
-    o.local.exec("CREATE TABLE IF NOT EXISTS loop_wakes (loop TEXT NOT NULL, id TEXT NOT NULL, at INTEGER NOT NULL, event TEXT NOT NULL, taken TEXT, PRIMARY KEY (loop, id))");
+    // What woke a loop and waits for a run (taken: the run that took it; tries: how often a run gave it back), and when
+    // each loop was last woken.
+    o.local.exec("CREATE TABLE IF NOT EXISTS loop_wakes (loop TEXT NOT NULL, id TEXT NOT NULL, at INTEGER NOT NULL, event TEXT NOT NULL, taken TEXT, tries INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (loop, id))");
+    if (!o.local.query<{ name: string }, []>("PRAGMA table_info(loop_wakes)").all().some((column) => column.name === "tries")) {
+      o.local.exec("ALTER TABLE loop_wakes ADD COLUMN tries INTEGER NOT NULL DEFAULT 0");
+    }
     o.local.exec("CREATE TABLE IF NOT EXISTS loop_woke (loop TEXT PRIMARY KEY, at INTEGER NOT NULL)");
   }
 
@@ -307,17 +320,46 @@ export class LoopRunner {
       } finally {
         clearTimeout(deadline);
       }
-      if (woken.length) result = { ...result, summary: `${wokenBy(woken, slot !== null)} ${result.summary}` };
+      const back = this.giveBack(loop, run, woken, result.giveBack ?? []);
+      if (woken.length) result = { ...result, summary: `${wokenBy(woken, slot !== null)} ${result.summary}${back.said}` };
       this.record(loop.name, run, slot, started, result);
       this.active.delete(loop.name);
       try {
-        this.o.onFinished?.(loop, result, run);
+        this.o.onFinished?.(loop, result, run, { again: back.again });
       } catch (error) {
         this.o.log(`loop ${loop.name}: ${(error as Error).message}`);
       }
     })();
     this.active.set(loop.name, { run, controller, done });
     return run;
+  }
+
+  /**
+   * What a run took and gave back waits again for the next run (after the cooldown, as a wake's run does), unless it has
+   * been tried WAKE_RETRIES times more already. Returns what to say of it, and whether all of it is tried again.
+   */
+  private giveBack(loop: RunnableLoop, run: string, woken: readonly WakeEvent[], ids: readonly string[]): { said: string; again: boolean } {
+    const took = new Set(woken.map((event) => event.id));
+    const back = [...new Set(ids)].filter((id) => took.has(id));
+    if (!back.length) return { said: "", again: false };
+    const tries = this.o.local.query<{ tries: number }, [string, string, string]>("SELECT tries FROM loop_wakes WHERE loop = ? AND id = ? AND taken = ?");
+    const give = this.o.local.query("UPDATE loop_wakes SET taken = NULL, tries = tries + 1 WHERE loop = ? AND id = ? AND taken = ?");
+    let given = 0;
+    let spent = 0;
+    let most = 0;
+    for (const id of back) {
+      const before = tries.get(loop.name, id, run)?.tries;
+      if (before === undefined) continue;
+      if (before >= WAKE_RETRIES) spent += 1;
+      else if (give.run(loop.name, id, run).changes) {
+        given += 1;
+        most = Math.max(most, before + 1);
+      }
+    }
+    const later = `again in ${inWords(loop.cooldownMs)} (${most} of ${WAKE_RETRIES})`;
+    const done = `tried ${WAKE_RETRIES + 1} times: not again`;
+    const said = given && spent ? ` Some tried ${later}; the rest ${done}.` : given ? ` Tried ${later}.` : spent ? ` ${done[0]!.toUpperCase()}${done.slice(1)}.` : "";
+    return { said, again: given > 0 && spent === 0 };
   }
 
   private record(loop: string, run: string, slot: number | null, started: number, result: { status: RunResult["status"] | "interrupted"; summary: string }): void {
@@ -336,6 +378,11 @@ export class LoopRunner {
     }
     this.o.local.query("DELETE FROM loop_runs WHERE loop = ? AND run = ?").run(loop, run);
   }
+}
+
+/** A wait, as a run's summary says it: "10 min", "2 h". */
+function inWords(ms: number): string {
+  return ms < 120 * 60_000 ? `${Math.max(1, Math.round(ms / 60_000))} min` : `${Math.round(ms / 3_600_000)} h`;
 }
 
 /** One line naming what woke a run (or what a scheduled run took with it): the first event, and how many came with it. */

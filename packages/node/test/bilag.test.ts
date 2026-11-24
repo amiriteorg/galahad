@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { LoopWake } from "@galahad/core";
 import type { Transferred } from "@galahad/brain";
 import { BILAG_QUERY, bilagPlace, bilagSummary, copyBilag, findMail, forwardedFrom, isBilag, renameForwarded, senderOf, type Transfer } from "../src/bilag.ts";
+import { loopExecutor, type LoopTaskDeps } from "../src/loop-tasks.ts";
+import type { RunnableLoop } from "../src/loops.ts";
 
 /*
  * Bilag to Google Drive (bilag.ts): what counts as one, where it goes and under what name, and the copying itself,
@@ -246,6 +248,20 @@ describe("copying them", () => {
     const report = await copyBilag(s.deps, [{ mailbox: "gmail", id: "gone" }, { mailbox: "gmail", id: "g1" }]);
     expect(report.copied).toHaveLength(1);
     expect(report.failed).toEqual(["gmail gone…: gmail answered 404: Requested entity was not found."]);
+  });
+
+  test("a loop's run gives back the mail it couldn't copy, to be tried again; what it copied, or had before, it keeps", async () => {
+    const s = services();
+    s.gmail.g1 = { from: "a@b.dk", at: LATE, parts: [{ name: "a.pdf", type: "application/pdf", size: 20_000, data: pdf("a") }] };
+    const run = loopExecutor({ local: s.deps.local, connectors: { transfer: s.deps.transfer } } as unknown as LoopTaskDeps);
+    const loop = { name: "bilag", tz: "Europe/Copenhagen", task: { kind: "bilag" } } as unknown as RunnableLoop;
+    const woken = (id: string) => ({ id, source: "mail" as const, at: LATE, text: `new Gmail mail ${id}` });
+    const result = await run(loop, { run: "w1", slot: null, signal: new AbortController().signal, woken: [woken("mail:gmail:gone"), woken("mail:gmail:g1")] });
+    expect(result).toMatchObject({ status: "attention", giveBack: ["mail:gmail:gone"] });
+    expect(result.summary).toStartWith("Copied 1 bilag to Drive");
+    // Copied, it is given back no more: the next run reads nothing more of it.
+    const again = await run(loop, { run: "w2", slot: null, signal: new AbortController().signal, woken: [woken("mail:gmail:g1")] });
+    expect(again).toEqual({ status: "ok", summary: "1 copied before." });
   });
 
   test("what came before: a search's mail, a batch at a time, and where it goes on", async () => {

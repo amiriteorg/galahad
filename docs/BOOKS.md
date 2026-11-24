@@ -27,7 +27,7 @@ It is the node's own work, and no model is in it. The bytes go from Gmail's or M
    - **Gmail**: Install, Seal the app, Sign in with Google.
    - **Outlook**: Install, Seal the app, Sign in with the device code.
    - **Google Drive**: Install, Seal the app with the *same* Google client ID and secret, Sign in with Google again. Google's page has a box for each thing it asks (to see all your Drive's files, and to make files of his own): tick both. If one was left unticked, the page you come back to says so.
-4. **Turn it on:** `galahad bilag on`. This makes a loop that new mail in either mailbox wakes; its bilag go to Drive on their own.
+4. **Turn it on:** `galahad bilag on`. This makes a loop that new mail in either mailbox wakes; its bilag go to Drive on their own. A mail whose bilag couldn't be copied (Drive or the mailbox didn't answer) is tried again ten minutes later, three times at most, and you hear of it only if the last try fails too (since 24 November 2026; before, it waited for `galahad bilag copy`).
 5. **Mail that came before:** `galahad bilag copy --from gmail`, and again `--from outlook`. It goes a batch at a time until none is left, and can be stopped and run again at any time: nothing is copied twice.
 
 `galahad bilag` says how many have been copied, the latest, and what is not connected yet.

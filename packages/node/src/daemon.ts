@@ -504,8 +504,10 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     local,
     log,
     execute: loopExecutor(taskDeps),
-    onFinished: (loop, result, run) => {
-      // A loop that tells you leaves a notice each run; the rest leave one when a run needs a look (cleared by a good one).
+    onFinished: (loop, result, run, { again }) => {
+      // A loop that tells you leaves a notice each run; the rest leave one when a run needs a look (cleared by a good one),
+      // but not for a run whose trouble is all tried again (loops.ts giveBack): only if that fails too.
+      if (again) return;
       if (loop.task.kind === "tell" && result.status === "ok") tellNotice(store, identity, loop, run, result.summary, Date.now());
       else if (loop.task.kind !== "heartbeat") loopNotice(store, identity, loop.name, result.status, result.summary, Date.now());
     },
