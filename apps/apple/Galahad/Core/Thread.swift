@@ -39,8 +39,16 @@ struct StoredMessage: Decodable, Sendable, Equatable {
     let content: String
     /// Your files with it (a message of yours), as the node keeps them.
     let attachments: [AttachmentRef]?
+    /// A look of his come back (core's `look`): a "user" message that isn't yours, with when he set it and his note.
+    let look: Look?
     let model: String?
     let steps: [Step]
+
+    struct Look: Decodable, Sendable, Equatable {
+        /// When he set it (ms since 1970).
+        let set: Double
+        let note: String
+    }
     /// done · error · stopped · steered · streaming
     let status: String
     let error: String?
@@ -78,6 +86,8 @@ struct ChatThread: Equatable, Sendable {
         var error: String?
         /// Your files with it (your messages).
         var attachments: [AttachmentRef]? = nil
+        /// A look of his come back: shown as his own note, never as yours.
+        var look: StoredMessage.Look? = nil
     }
 
     private(set) var turns: [Turn] = []
@@ -102,7 +112,7 @@ struct ChatThread: Equatable, Sendable {
     /// Turns kept from what was on screen (a send the node never took), after the kept chat: as they were, with ids of this thread.
     mutating func keep(_ kept: [Turn]) {
         for turn in kept {
-            turns.append(Turn(id: take(), sid: turn.sid, role: turn.role, content: turn.content, answeredAs: turn.answeredAs, model: turn.model, steps: turn.steps, status: turn.status, error: turn.error, attachments: turn.attachments))
+            turns.append(Turn(id: take(), sid: turn.sid, role: turn.role, content: turn.content, answeredAs: turn.answeredAs, model: turn.model, steps: turn.steps, status: turn.status, error: turn.error, attachments: turn.attachments, look: turn.look))
         }
     }
 
@@ -225,7 +235,8 @@ struct ChatThread: Equatable, Sendable {
             steps: assistant ? steps(of: message, role: role) : [],
             status: Turn.Status(rawValue: message.status) ?? .done,
             error: message.error.flatMap { $0.isEmpty ? nil : $0 },
-            attachments: message.attachments.flatMap { $0.isEmpty ? nil : $0 }
+            attachments: message.attachments.flatMap { $0.isEmpty ? nil : $0 },
+            look: message.look
         )
     }
 

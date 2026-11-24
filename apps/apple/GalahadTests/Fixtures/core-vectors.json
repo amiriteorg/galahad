@@ -10228,6 +10228,32 @@
           "error": null,
           "createdAt": 1763199940000,
           "endedAt": 1763199970000
+        },
+        {
+          "id": 9,
+          "role": "user",
+          "content": "(A look you set yourself at 21:07, not your liege's words: Is the site live?) Look now, with your tools, and say what you found and what comes next: your liege reads it here.",
+          "model": null,
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000,
+          "look": {
+            "set": 1763196400000,
+            "note": "Is the site live?"
+          }
+        },
+        {
+          "id": 10,
+          "role": "assistant",
+          "content": "It's live: the home page answers 200.",
+          "model": "stand-in/planner",
+          "steps": [],
+          "status": "done",
+          "error": null,
+          "createdAt": 1763199940000,
+          "endedAt": 1763199970000
         }
       ],
       "question": null,
@@ -10240,7 +10266,8 @@
           "status": "done",
           "error": null,
           "sid": 1,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10285,7 +10312,8 @@
               "state": "done",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         },
         {
           "role": "user",
@@ -10293,7 +10321,8 @@
           "status": "done",
           "error": null,
           "sid": 3,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10326,7 +10355,8 @@
               "state": "error",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         },
         {
           "role": "user",
@@ -10334,7 +10364,8 @@
           "status": "done",
           "error": null,
           "sid": 5,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10361,7 +10392,8 @@
               "state": "warn",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         },
         {
           "role": "user",
@@ -10369,7 +10401,8 @@
           "status": "done",
           "error": null,
           "sid": 7,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10396,7 +10429,42 @@
               "state": "done",
               "tool": null
             }
-          ]
+          ],
+          "look": null
+        },
+        {
+          "role": "user",
+          "content": "(A look you set yourself at 21:07, not your liege's words: Is the site live?) Look now, with your tools, and say what you found and what comes next: your liege reads it here.",
+          "status": "done",
+          "error": null,
+          "sid": 9,
+          "steps": [],
+          "look": {
+            "set": 1763196400000,
+            "note": "Is the site live?"
+          }
+        },
+        {
+          "role": "assistant",
+          "content": "It's live: the home page answers 200.",
+          "status": "done",
+          "error": null,
+          "sid": 10,
+          "steps": [
+            {
+              "text": "Asked as planner",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            },
+            {
+              "text": "Answering",
+              "detail": null,
+              "state": "done",
+              "tool": null
+            }
+          ],
+          "look": null
         }
       ]
     },
@@ -10529,7 +10597,8 @@
           "status": "done",
           "error": null,
           "sid": 1,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10574,7 +10643,8 @@
               "state": "done",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         },
         {
           "role": "user",
@@ -10582,7 +10652,8 @@
           "status": "done",
           "error": null,
           "sid": null,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10615,7 +10686,8 @@
               "state": "done",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         }
       ]
     },
@@ -10651,7 +10723,8 @@
           "status": "done",
           "error": null,
           "sid": null,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10684,7 +10757,8 @@
               "state": "error",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         }
       ]
     },
@@ -10832,7 +10906,8 @@
           "status": "done",
           "error": null,
           "sid": 1,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10877,7 +10952,8 @@
               "state": "done",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         },
         {
           "role": "user",
@@ -10885,7 +10961,8 @@
           "status": "done",
           "error": null,
           "sid": 3,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10924,7 +11001,8 @@
               "state": "done",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         },
         {
           "role": "user",
@@ -10932,7 +11010,8 @@
           "status": "done",
           "error": null,
           "sid": null,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -10959,7 +11038,8 @@
               "state": "warn",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         }
       ]
     },
@@ -10996,7 +11076,8 @@
           "status": "done",
           "error": null,
           "sid": null,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -11029,7 +11110,8 @@
               "state": "error",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         }
       ]
     },
@@ -11060,7 +11142,8 @@
           "status": "done",
           "error": null,
           "sid": null,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "user",
@@ -11068,7 +11151,8 @@
           "status": "done",
           "error": null,
           "sid": null,
-          "steps": []
+          "steps": [],
+          "look": null
         },
         {
           "role": "assistant",
@@ -11089,7 +11173,8 @@
               "state": "done",
               "tool": null
             }
-          ]
+          ],
+          "look": null
         }
       ]
     }

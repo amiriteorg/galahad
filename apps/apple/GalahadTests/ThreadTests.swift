@@ -26,7 +26,8 @@ struct ThreadTests {
                 status: turn.status.rawValue,
                 error: turn.error,
                 sid: turn.sid,
-                steps: turn.steps.map { .init(text: $0.text, detail: $0.detail, state: $0.state.rawValue, tool: $0.tool) }
+                steps: turn.steps.map { .init(text: $0.text, detail: $0.detail, state: $0.state.rawValue, tool: $0.tool) },
+                look: turn.look
             )
         }
         #expect(shown == scenario.turns)

@@ -305,6 +305,8 @@ struct Vectors: Decodable {
             let error: String?
             let sid: Int?
             let steps: [Step]
+            /// A look of his come back (nil: a message of yours, or his answer).
+            let look: StoredMessage.Look?
         }
 
         struct Step: Decodable, Equatable {

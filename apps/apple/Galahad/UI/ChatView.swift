@@ -69,7 +69,11 @@ struct ChatView: View {
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
-            Composer(chat: chat, client: session.client, composing: $composing)
+            VStack(spacing: Space.s2) {
+                // What is under way in this chat: his knights' tasks given here (Stop on each), his looks that wait.
+                UnderwayBar(session: session, chat: chat)
+                Composer(chat: chat, client: session.client, composing: $composing)
+            }
         }
         .navigationTitle(build?.project ?? "Galahad")
         .inlineTitle()
@@ -222,6 +226,14 @@ struct MessageRow: View {
 
     var body: some View {
         switch turn.role {
+        case .user where turn.look != nil:
+            // A look of his come back: his own note, never shown as yours.
+            Label(UnderwayWords.looked(turn.look!), systemImage: "clock")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel(UnderwayWords.looked(turn.look!))
         case .user:
             VStack(alignment: .trailing, spacing: Space.s2) {
                 // What it carried, above its words (a message may be files alone).

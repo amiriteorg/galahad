@@ -561,6 +561,9 @@ const kept: core.StoredMessage[] = [
   stored(6, "assistant", "Halfway", { status: "stopped" }),
   stored(7, "user", "Go on"),
   stored(8, "assistant", "First part", { status: "steered" }),
+  // A look of his come back: a "user" message that isn't yours, shown as his own note.
+  stored(9, "user", "(A look you set yourself at 21:07, not your liege's words: Is the site live?) Look now, with your tools, and say what you found and what comes next: your liege reads it here.", { look: { set: NOW - 3_600_000, note: "Is the site live?" } }),
+  stored(10, "assistant", "It's live: the home page answers 200."),
 ];
 type ThreadTurn = import("../../web/src/lib/turns.ts").Turn;
 const shown = (turns: ThreadTurn[]) =>
@@ -571,6 +574,7 @@ const shown = (turns: ThreadTurn[]) =>
     error: t.error ?? null,
     sid: t.sid ?? null,
     steps: t.steps.map((s) => ({ text: s.text, detail: s.detail ?? null, state: s.state, tool: s.tool ?? null })),
+    look: t.look ?? null,
   }));
 const freshThread = (): import("../../web/src/lib/turns.ts").Thread => ({ turns: [], nextId: 1, target: null, base: null });
 /** A thread from kept messages, then events (null: the stream ends; a string: the watching was cut with it). */
