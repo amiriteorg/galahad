@@ -28,6 +28,7 @@
  *                   cumulative layout shift), with what moved. --shift-runs n opens each that many times (default 3).
  *     --places a,b  only these places (their names as the report gives them: overview, knight, sheet-add-key…), for
  *                   --shots and --shifts
+ *     --rest        only what Chat and the Roundtable cost at rest (below): no page loads are measured
  *
  * It starts a throwaway node on loopback (a temp home, the file keystore, a stand-in Docker and
  * stand-in models: nothing leaves this machine, and ~/.galahad is never touched), fills it with a
@@ -50,7 +51,9 @@
  * and for the first visit: every request, with its bytes on the wire, each of the app's files as
  * the node sends it (raw, gzip, brotli), and where the main thread's time went (script, style,
  * layout, paint, parsing), from Chrome's own trace. For Chat and the Roundtable it also says what the page
- * costs while nothing changes: main-thread time per second over ten seconds.
+ * costs while nothing changes, over ten seconds: the page's main thread's time a second, and the processor time a
+ * second of the page's whole renderer (its main thread, compositor, raster and workers) and of every process of the
+ * browser (its GPU process drawing the frames among them).
  *
  * Timings move with the machine's load: compare two checkouts measured one after the other, and
  * trust a difference only when the ranges don't overlap. Bytes, requests and nodes don't move.
@@ -78,6 +81,8 @@ const ONLY = flag("places")?.split(",").map((name) => name.trim());
 /** Whether a place named so is to be shot or watched (--places). */
 const wanted = (name: string): boolean => !ONLY || ONLY.includes(name);
 const MOVES = Math.max(0, Number(flag("moves") ?? 0));
+/** Only the cost at rest (--rest): no loads. */
+const REST = process.argv.includes("--rest");
 /** Chrome, wherever this machine keeps it (CHROME names another). */
 const CHROME =
   process.env.CHROME ??
@@ -823,7 +828,7 @@ try {
     for (const target of PAGES) {
       const cold: Load[] = [];
       const warm: Load[] = [];
-      if (!RUNS) continue;
+      if (!RUNS || REST) continue;
       for (let run = 0; run < RUNS; run++) {
         await forget();
         cold.push(await open(target.hash, true));
@@ -841,12 +846,20 @@ try {
   // (On this machine as it is: a slowed processor drops frames, and so hides the work an animation asks for.)
   await setProfile("laptop");
   const work = async (): Promise<Record<string, number>> => Object.fromEntries((await browser.send("Performance.getMetrics", {}, page)).metrics.map((metric: { name: string; value: number }) => [metric.name, metric.value]));
+  /** Processor seconds so far: of the renderers (the page's, and any other open) and of every process. */
+  const processors = async (): Promise<{ renderer: number; all: number }> => {
+    const { processInfo } = (await browser.send("SystemInfo.getProcessInfo")) as { processInfo: { type: string; cpuTime: number }[] };
+    const sum = (list: { cpuTime: number }[]) => list.reduce((total, process) => total + process.cpuTime, 0);
+    return { renderer: sum(processInfo.filter((process) => process.type === "renderer")), all: sum(processInfo) };
+  };
   const rest = async (hash: string) => {
     await open(hash, false);
     await sleep(1500);
     const before = await work();
+    const cpuBefore = await processors();
     await sleep(10_000);
     const after = await work();
+    const cpuAfter = await processors();
     const perSecond = (metric: string) => Math.round((after[metric]! - before[metric]!) * 1000) / 10;
     return {
       animations: await evaluate<number>(`document.getAnimations().filter((a) => a.playState === "running").length`),
@@ -854,10 +867,13 @@ try {
       script: perSecond("ScriptDuration"),
       style: perSecond("RecalcStyleDuration"),
       layout: perSecond("LayoutDuration"),
+      // (Processor seconds over ten seconds, as ms a second.)
+      renderer: Math.round((cpuAfter.renderer - cpuBefore.renderer) * 1000) / 10,
+      browser: Math.round((cpuAfter.all - cpuBefore.all) * 1000) / 10,
     };
   };
-  const chatAtRest = RUNS ? await rest("#/chat") : null;
-  const atRest = RUNS
+  const chatAtRest = RUNS || REST ? await rest("#/chat") : null;
+  const atRest = RUNS || REST
     ? {
         ...(await rest("#/team")),
         avatars: await evaluate<number>(`document.querySelectorAll(".worker-avatar").length`),
@@ -1137,7 +1153,16 @@ try {
   }
 
   // ---------- the report ----------
-  if (!RUNS) console.log(`${shots.length} screenshots in ${resolve(SHOTS ?? ".")}, nothing measured${MOVES || SHIFTS ? ` but ${[MOVES ? "the moves" : "", SHIFTS ? "the shifts" : ""].filter(Boolean).join(" and ")}` : ""} (--runs 0).`);
+  const restLines = () => [
+    `The Roundtable at rest (laptop, ten seconds): ${atRest!.avatars} avatars of ${atRest!.avatarElements} elements, ${atRest!.animations} animations running;`,
+    `the main thread works ${atRest!.mainThread} ms a second (script ${atRest!.script}, style ${atRest!.style}, layout ${atRest!.layout}); the page's renderer ${atRest!.renderer} ms, the whole browser ${atRest!.browser} ms of processor a second.`,
+    `Chat at rest: ${chatAtRest!.animations} animations running; the main thread works ${chatAtRest!.mainThread} ms a second (script ${chatAtRest!.script}, style ${chatAtRest!.style}, layout ${chatAtRest!.layout}); the page's renderer ${chatAtRest!.renderer} ms, the whole browser ${chatAtRest!.browser} ms of processor a second.`,
+  ];
+  if (REST) {
+    console.log(`\nThe PWA at ${revision}${dirty} (${REPO}), in ${(await browser.send("Browser.getVersion")).product}.`);
+    console.log(restLines().join("\n"));
+    if (JSON_OUT) writeFileSync(JSON_OUT, `${JSON.stringify({ revision: `${revision}${dirty}`, chatAtRest, roundtableAtRest: atRest }, null, 2)}\n`);
+  } else if (!RUNS) console.log(`${shots.length} screenshots in ${resolve(SHOTS ?? ".")}, nothing measured${MOVES || SHIFTS ? ` but ${[MOVES ? "the moves" : "", SHIFTS ? "the shifts" : ""].filter(Boolean).join(" and ")}` : ""} (--runs 0).`);
   else {
   // (The browser fetches /sw.js itself, outside what the protocol shows of the page and the worker: it is counted here.)
   const files = await Promise.all([...new Set([...firstVisit.filter((w) => !w.path.startsWith("/api/") && !w.path.startsWith("/link/")).map((w) => w.path), "/sw.js"])].map(sizeOf));
@@ -1181,9 +1206,7 @@ try {
   console.log(table(rows));
   console.log("\nThe main thread's work on a first visit, up to usable (ms, the median of three traced loads):");
   console.log(table([["page · profile", ...Object.keys(Object.values(results)[0]!.work)], ...Object.entries(results).map(([name, r]) => [name, ...Object.values(r.work).map((n) => n.toFixed(1))])]));
-  console.log(`\nThe Roundtable at rest (laptop, ten seconds): ${atRest!.avatars} avatars of ${atRest!.avatarElements} elements, ${atRest!.animations} animations running;`);
-  console.log(`the main thread works ${atRest!.mainThread} ms a second (script ${atRest!.script}, style ${atRest!.style}, layout ${atRest!.layout}).`);
-  console.log(`Chat at rest: ${chatAtRest!.animations} animations running; the main thread works ${chatAtRest!.mainThread} ms a second (script ${chatAtRest!.script}, style ${chatAtRest!.style}, layout ${chatAtRest!.layout}).`);
+  console.log(`\n${restLines().join("\n")}`);
   if (shots.length) console.log(`\n${shots.length} screenshots in ${resolve(SHOTS!)}`);
   if (JSON_OUT) console.log(`Everything measured: ${resolve(JSON_OUT)}`);
   }
