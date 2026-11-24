@@ -45,9 +45,13 @@ class Node_ {
 }
 
 let frames: FrameRequestCallback[] = [];
+let timers: (() => void)[] = [];
 let made: Node_[] = [];
-/** Runs the frames asked for, at `ms`. */
-const run = (ms: number) => { for (const frame of frames.splice(0)) frame(ms); };
+/** Runs the timers set and then the frames asked for, at `ms`. */
+const run = (ms: number) => {
+  for (const timer of timers.splice(0)) timer();
+  for (const frame of frames.splice(0)) frame(ms);
+};
 const root = { dataset: {} as Record<string, string> };
 const saved = new Map<string, PropertyDescriptor | undefined>();
 function stub(name: string, value: unknown) {
@@ -69,12 +73,15 @@ beforeEach(() => {
   stub("window", { devicePixelRatio: 2 });
   stub("matchMedia", () => ({ matches: false, addEventListener() {} }));
   stub("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+  // (The clock waits by a timer for a frame that isn't due yet: here, until the next run.)
+  stub("setTimeout", (callback: () => void) => timers.push(callback));
+  stub("clearTimeout", (id: number) => (timers[id - 1] = () => {}));
 });
 afterEach(() => {
   // Everything drawn leaves the page, and the page's clock, with nothing left on it, stops.
   for (const node of made) node.isConnected = false;
-  for (let i = 0; i < 300 && frames.length; i++) run(60_000 + 20 * i);
-  expect(frames).toEqual([]);
+  for (let i = 0; i < 300 && (frames.length || timers.length); i++) run(60_000 + 20 * i);
+  expect([frames, timers]).toEqual([[], []]);
   for (const [name, descriptor] of saved) {
     if (descriptor) Object.defineProperty(globalThis, name, descriptor);
     else Reflect.deleteProperty(globalThis, name);
@@ -124,11 +131,11 @@ describe("his orb, moving", () => {
     const first = canvas.calls.length;
     run(5000);
     expect(canvas.calls.length).toBeGreaterThan(first);
-    // (A frame sooner than its next is due draws nothing: it is drawn at 30 a second.)
+    // (A frame sooner than its next is due draws nothing: at work it is drawn at 30 a second.)
     const drawn = canvas.calls.length;
     run(5010);
     expect(canvas.calls.length).toBe(drawn);
-    run(5040);
+    run(5034);
     expect(canvas.calls.length).toBeGreaterThan(drawn);
     canvas.isConnected = false;
     const gone = canvas.calls.length;

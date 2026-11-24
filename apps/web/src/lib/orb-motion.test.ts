@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { STATES, type KnightState } from "./knight-state.ts";
 import {
   ORB_ARRIVE, ORB_BURST, ORB_BURST_MOTES, ORB_LONGEST_STEP, ORB_MOODS, ORB_MOTION, ORB_STAGES, ORB_STILL,
-  orbBursts, orbClock, orbFrame, orbMoodOfState, orbRand, orbSeed, orbStep, shownMotes, type OrbClock, type OrbMood,
+  orbBursts, orbClock, orbFps, orbFrame, orbMoodOfState, orbRand, orbSeed, orbStep, shownMotes, type OrbClock, type OrbMood,
 } from "./orb-motion.ts";
 
 /** A clock run on for `seconds`, a frame at a time (60 a second), in one mood. */
@@ -159,6 +159,11 @@ describe("how the orb moves", () => {
     expect(shownMotes(frame, ORB_STAGES.badge)).toEqual([]);
     expect(shownMotes(frame, ORB_STAGES.full)).toHaveLength(frame.motes.length + frame.leaving.length);
     expect(shownMotes(frame, ORB_STAGES.seat)).toHaveLength(Math.round(frame.motes.length * 0.6) + Math.round(frame.leaving.length * 0.6));
+  });
+
+  test("it is drawn as few times a second as look smooth: fast at work or arriving, slow otherwise, twice as often on his welcome", () => {
+    expect([orbFps("working", "ring", null), orbFps("idle", "ring", null), orbFps("waiting", "seat", null), orbFps("done", "badge", 0.4), orbFps("done", "badge", ORB_BURST)]).toEqual([30, 15, 15, 30, 15]);
+    expect([orbFps("working", "full", null), orbFps("idle", "full", null), orbFps("failed", "full", 1)]).toEqual([60, 30, 60]);
   });
 
   test("its random numbers are the same in every app: a 32-bit hash, spread evenly from 0 up to 1", () => {

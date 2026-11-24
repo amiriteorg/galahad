@@ -322,6 +322,17 @@ export const ORB_MOVES = {
   lightsBefore: "body",
 } as const;
 
+/**
+ * How many frames a second an orb is drawn at: as few as look smooth, since every frame costs a phone its battery and a
+ * page its other animations' work (a knight's eyes are redrawn with every frame the page draws). At work, or arriving
+ * at a mood (a burst, a fade), the light runs fast: 30. A slow breath and drifting motes look the same at 15. His
+ * welcome's orb, the largest, at twice these.
+ */
+export function orbFps(mood: OrbMood, level: OrbLevel | "ring", since: number | null): number {
+  const lively = mood === "working" || (since !== null && since < ORB_BURST);
+  return (lively ? 30 : 15) * (level === "full" ? 2 : 1);
+}
+
 /** Which of a frame's motes a stage shows: its share of the mood's own and of the last mood's while they fade, and every
  * spark; none on a stage too small for motes. */
 export function shownMotes(frame: OrbFrame, stage: OrbStage): OrbMote[] {

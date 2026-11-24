@@ -1,4 +1,4 @@
-import { ORB_MOVES, ORB_STAGES, ORB_STILL, orbBursts, orbClock, orbFrame, orbMoodOfState, orbSeed, orbStep, shownMotes, type OrbClock, type OrbFrame, type OrbMood, type OrbStage } from "../lib/orb-motion.ts";
+import { ORB_MOVES, ORB_STAGES, ORB_STILL, orbBursts, orbClock, orbFps, orbFrame, orbMoodOfState, orbSeed, orbStep, shownMotes, type OrbClock, type OrbFrame, type OrbMood, type OrbStage } from "../lib/orb-motion.ts";
 import { orbLevel, orbPalette, orbParts, orbTone, orbToneOfState, type OrbInk, type OrbPalette, type OrbPart, type OrbStop, type OrbTone } from "../lib/orb.ts";
 import { h, svg } from "./dom.ts";
 import { motionAllowed, move } from "./motion.ts";
@@ -82,7 +82,7 @@ export function seatLights(options: { box: number; ring: number; state: string |
     motes(g, shownMotes(frame, stage), stage, palette);
   };
   draw(now(), motionAllowed());
-  move(canvas, draw, 30);
+  move(canvas, draw, () => orbFps(kept.mood, "ring", since(kept)));
   return canvas;
 }
 
@@ -120,9 +120,11 @@ function advance(course: Kept, t: number, seed: number): OrbFrame {
     course.clock = orbStep(course.clock, course.mood, t - course.last);
     course.last = t;
   }
-  const since = Number.isFinite(course.at) ? t - course.at : null;
-  return orbFrame(course.mood, course.clock, t, { seed, since, from: course.from, burst: course.burst });
+  return orbFrame(course.mood, course.clock, t, { seed, since: since(course, t), from: course.from, burst: course.burst });
 }
+
+/** Seconds since it arrived at its mood; null on first sight, settled. */
+const since = (course: Kept, t = now()): number | null => (Number.isFinite(course.at) ? t - course.at : null);
 
 // ---- drawing on a canvas -------------------------------------------------------------------------------------------
 
@@ -154,8 +156,8 @@ function liveCanvas(size: number, tone: OrbTone, mood: OrbMood, key: string): HT
   if (!prepared) return null;
   const { canvas, g, k } = prepared;
   canvas.className = "orb-canvas";
-  const parts = orbParts(size);
   const palette = orbPalette(tone);
+  const parts = orbParts(size).map((part) => prepare(g, part, palette));
   const seed = key === "galahad" ? 0 : orbSeed(key);
   const course = keep(key, mood, seed);
   const draw = (t: number, moving: boolean) => {
@@ -163,89 +165,130 @@ function liveCanvas(size: number, tone: OrbTone, mood: OrbMood, key: string): HT
     paint(g, parts, palette, moving ? advance(course, t, seed) : ORB_STILL, stage);
   };
   draw(now(), motionAllowed());
-  // His welcome's at every frame; a smaller one needs no more than half.
-  move(canvas, draw, level === "full" ? 60 : 30);
+  move(canvas, draw, () => orbFps(course.mood, level, since(course)));
   return canvas;
 }
 
+/**
+ * A part ready to draw a frame at a time: its shape and its paint made once (a path, a gradient in the orb's units), so
+ * a frame only turns, swells and fills them. What brightens with the glow (the halo, the core) is painted anew with
+ * each frame's glow.
+ */
+interface Ready {
+  name: string;
+  turn: "ring" | "ticks" | "segments" | null;
+  swells: boolean;
+  draw: (g: CanvasRenderingContext2D, glow: number) => void;
+}
+
+function prepare(g: CanvasRenderingContext2D, part: OrbPart, palette: OrbPalette): Ready {
+  const has = (list: readonly string[]) => list.includes(part.name);
+  const turn = has(ORB_MOVES.ring) ? "ring" : has(ORB_MOVES.ticks) ? "ticks" : has(ORB_MOVES.segments) ? "segments" : null;
+  const ink = (name: OrbInk) => (name === "white" ? "#ffffff" : palette[name]);
+  const gradient = (made: CanvasGradient, stops: readonly OrbStop[], glow: number) => {
+    for (const s of stops) made.addColorStop(s.at, rgba(ink(s.ink), Math.min(1, s.opacity * glow)));
+    return made;
+  };
+  const ready = (draw: Ready["draw"]): Ready => ({ name: part.name, turn, swells: has(ORB_MOVES.swell), draw });
+  switch (part.kind) {
+    case "disc": {
+      // As SVG's radial gradient in its box: lit from (cx, cy) of the box, reaching `spread` of its width.
+      const [cx, cy] = [-part.r + part.cx * 2 * part.r, -part.r + part.cy * 2 * part.r];
+      const shape = path((p) => p.arc(0, 0, part.r, 0, 2 * Math.PI));
+      const paint = (glow: number) => gradient(g.createRadialGradient(cx, cy, 0, cx, cy, part.spread * 2 * part.r), part.stops, glow);
+      const still = paint(1);
+      return ready((g, glow) => {
+        g.fillStyle = has(ORB_MOVES.glow) && glow !== 1 ? paint(glow) : still;
+        fill(g, shape);
+      });
+    }
+    case "ring": {
+      const shape = path((p) => {
+        if (!part.arcs) return p.arc(0, 0, part.r, 0, 2 * Math.PI);
+        // (Degrees from the top, clockwise: the canvas's own start at three o'clock, y down.)
+        for (const [from, to] of part.arcs) {
+          p.moveTo(...at(part.r, from));
+          p.arc(0, 0, part.r, radians(from - 90), radians(to - 90));
+        }
+      });
+      const color = rgba(ink(part.ink), part.opacity);
+      return ready((g) => strokeWith(g, shape, part.width, color, "butt"));
+    }
+    case "ticks": {
+      const shape = path((p) => {
+        for (let i = 0; i < part.count; i++) {
+          const angle = part.offset + (360 * i) / part.count;
+          p.moveTo(...at(part.r - part.length / 2, angle));
+          p.lineTo(...at(part.r + part.length / 2, angle));
+        }
+      });
+      const color = rgba(ink(part.ink), part.opacity);
+      return ready((g) => strokeWith(g, shape, part.width, color, "butt"));
+    }
+    case "rim": {
+      const shape = path((p) => p.arc(0, 0, part.r, 0, 2 * Math.PI));
+      const lit = gradient(g.createLinearGradient(part.from[0], part.from[1], part.to[0], part.to[1]), part.stops, 1);
+      return ready((g) => strokeWith(g, shape, part.width, lit, "butt"));
+    }
+    case "shine": {
+      const shape = path((p) => p.ellipse(part.cx, part.cy, part.rx, part.ry, radians(part.rotate), 0, 2 * Math.PI));
+      const color = rgba("#ffffff", part.opacity);
+      return ready((g) => {
+        g.fillStyle = color;
+        fill(g, shape);
+      });
+    }
+  }
+}
+
 /** The orb's parts as a frame moves them, with its lights among them (lib/orb-motion.ts' ORB_MOVES). */
-function paint(g: CanvasRenderingContext2D, parts: readonly OrbPart[], palette: OrbPalette, frame: OrbFrame, stage: OrbStage): void {
-  const has = (list: readonly string[], name: string) => list.includes(name);
+function paint(g: CanvasRenderingContext2D, parts: readonly Ready[], palette: OrbPalette, frame: OrbFrame, stage: OrbStage): void {
   if (!parts.some((part) => part.name === "halo")) waves(g, frame, stage, palette);
   for (const part of parts) {
     if (part.name === ORB_MOVES.lightsBefore) {
       if (frame.comet && stage.comet) comet(g, frame.comet, stage.comet.r, stage.comet.width, palette);
       motes(g, shownMotes(frame, stage), stage, palette);
     }
-    g.save();
-    const turn = has(ORB_MOVES.ring, part.name) ? frame.ring : has(ORB_MOVES.ticks, part.name) ? frame.ticks : has(ORB_MOVES.segments, part.name) ? frame.segments : 0;
-    if (turn) g.rotate((turn * Math.PI) / 180);
-    if (has(ORB_MOVES.swell, part.name) && frame.scale !== 1) g.scale(frame.scale, frame.scale);
-    paintPart(g, part, palette, has(ORB_MOVES.glow, part.name) ? frame.glow : 1);
-    g.restore();
+    const turn = part.turn ? frame[part.turn] : 0;
+    const swell = part.swells && frame.scale !== 1;
+    if (turn || swell) {
+      g.save();
+      if (turn) g.rotate(radians(turn));
+      if (swell) g.scale(frame.scale, frame.scale);
+    }
+    part.draw(g, frame.glow);
+    if (turn || swell) g.restore();
     if (part.name === "halo") waves(g, frame, stage, palette);
   }
 }
 
-/** One part, as the SVG has it: a radial gradient in its box, a ring's arcs from the top, ticks, a lit rim, a shine. */
-function paintPart(g: CanvasRenderingContext2D, part: OrbPart, palette: OrbPalette, glow: number): void {
-  const ink = (name: OrbInk) => (name === "white" ? "#ffffff" : palette[name]);
-  const gradient = (made: CanvasGradient, stops: readonly OrbStop[]) => {
-    for (const s of stops) made.addColorStop(s.at, rgba(ink(s.ink), Math.min(1, s.opacity * glow)));
+/** A shape made once: a Path2D where the page has them, else drawn again each time on the context's own path. */
+type Shape = Path2D | ((g: CanvasRenderingContext2D) => void);
+function path(trace: (p: Path2D | CanvasRenderingContext2D) => void): Shape {
+  if (typeof Path2D === "function") {
+    const made = new Path2D();
+    trace(made);
     return made;
-  };
-  switch (part.kind) {
-    case "disc": {
-      // As SVG's radial gradient in its box: lit from (cx, cy) of the box, reaching `spread` of its width.
-      const [cx, cy] = [-part.r + part.cx * 2 * part.r, -part.r + part.cy * 2 * part.r];
-      g.fillStyle = gradient(g.createRadialGradient(cx, cy, 0, cx, cy, part.spread * 2 * part.r), part.stops);
-      g.beginPath();
-      g.arc(0, 0, part.r, 0, 2 * Math.PI);
-      g.fill();
-      return;
-    }
-    case "ring":
-      g.beginPath();
-      if (!part.arcs) g.arc(0, 0, part.r, 0, 2 * Math.PI);
-      // (Degrees from the top, clockwise: the canvas's own start at three o'clock, y down.)
-      else for (const [from, to] of part.arcs) {
-        const [x, y] = at(part.r, from);
-        g.moveTo(x, y);
-        g.arc(0, 0, part.r, radians(from - 90), radians(to - 90));
-      }
-      g.lineCap = "butt";
-      g.lineWidth = part.width;
-      g.strokeStyle = rgba(ink(part.ink), part.opacity);
-      g.stroke();
-      return;
-    case "ticks":
-      g.beginPath();
-      for (let i = 0; i < part.count; i++) {
-        const angle = part.offset + (360 * i) / part.count;
-        g.moveTo(...at(part.r - part.length / 2, angle));
-        g.lineTo(...at(part.r + part.length / 2, angle));
-      }
-      g.lineCap = "butt";
-      g.lineWidth = part.width;
-      g.strokeStyle = rgba(ink(part.ink), part.opacity);
-      g.stroke();
-      return;
-    case "rim":
-      g.beginPath();
-      g.arc(0, 0, part.r, 0, 2 * Math.PI);
-      g.lineWidth = part.width;
-      g.strokeStyle = gradient(g.createLinearGradient(part.from[0], part.from[1], part.to[0], part.to[1]), part.stops);
-      g.stroke();
-      return;
-    case "shine":
-      g.translate(part.cx, part.cy);
-      g.rotate(radians(part.rotate));
-      g.beginPath();
-      g.ellipse(0, 0, part.rx, part.ry, 0, 0, 2 * Math.PI);
-      g.fillStyle = rgba("#ffffff", part.opacity);
-      g.fill();
-      return;
   }
+  return (g) => {
+    g.beginPath();
+    trace(g);
+  };
+}
+function fill(g: CanvasRenderingContext2D, shape: Shape): void {
+  if (typeof shape === "function") {
+    shape(g);
+    g.fill();
+  } else g.fill(shape);
+}
+function strokeWith(g: CanvasRenderingContext2D, shape: Shape, width: number, style: string | CanvasGradient, cap: CanvasLineCap): void {
+  g.lineCap = cap;
+  g.lineWidth = width;
+  g.strokeStyle = style;
+  if (typeof shape === "function") {
+    shape(g);
+    g.stroke();
+  } else g.stroke(shape);
 }
 
 /** Its waves: rings of its light going out from its edge, thinning and fading as they go. */

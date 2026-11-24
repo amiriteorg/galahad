@@ -14,8 +14,8 @@ export type Draw = (t: number, moving: boolean) => void;
 interface Mover {
   el: Element;
   draw: Draw;
-  /** Milliseconds between two frames of it. */
-  every: number;
+  /** How many frames a second it needs now. */
+  fps: () => number;
   last: number;
   /** Whether it has been on the page; one that leaves it is forgotten. */
   seen: boolean;
@@ -27,6 +27,7 @@ interface Mover {
 
 const movers = new Map<Element, Mover>();
 let request = 0;
+let timer: ReturnType<typeof setTimeout> | 0 = 0;
 let watching = false;
 let observer: IntersectionObserver | null = null;
 
@@ -35,11 +36,11 @@ export function motionAllowed(): boolean {
   return typeof document !== "undefined" && typeof matchMedia === "function" && !prefersReducedMotion();
 }
 
-/** Draws `el` with `draw` at most `fps` times a second while it is on the page and on screen; forgets it once it has
- * left the page (drawn again, or its page left). Its first moment is drawn already, as it was made: still, where
- * motion is reduced. */
-export function move(el: Element, draw: Draw, fps = 60): void {
-  movers.set(el, { el, draw, every: 1000 / fps - 1.5, last: Number.NEGATIVE_INFINITY, seen: false, waited: 0, onScreen: true, still: !motionAllowed() });
+/** Draws `el` with `draw` `fps()` times a second while it is on the page and on screen; forgets it once it has left
+ * the page (drawn again, or its page left). Its first moment is drawn already, as it was made: still, where motion is
+ * reduced. */
+export function move(el: Element, draw: Draw, fps: () => number): void {
+  movers.set(el, { el, draw, fps, last: Number.NEGATIVE_INFINITY, seen: false, waited: 0, onScreen: true, still: !motionAllowed() });
   if (typeof IntersectionObserver === "function") {
     observer ??= new IntersectionObserver((entries) => {
       for (const entry of entries) {
@@ -54,9 +55,23 @@ export function move(el: Element, draw: Draw, fps = 60): void {
   wake();
 }
 
+/** Asks for a frame now (something new to draw, or to look at again). */
 function wake(): void {
+  if (timer) clearTimeout(timer);
+  timer = 0;
   if (request || !movers.size || typeof requestAnimationFrame !== "function" || document.hidden) return;
   request = requestAnimationFrame(tick);
+}
+
+/** Asks for the frame `delay` ms from now: by a timer until it is nearly due, so the page draws no frame between (a
+ * frame asked for at every refresh of the screen would make the page do its other animations' work at every one). */
+function later(delay: number): void {
+  if (delay <= 20) return wake();
+  if (timer || request) return;
+  timer = setTimeout(() => {
+    timer = 0;
+    wake();
+  }, delay - 12);
 }
 
 function tick(now: number): void {
@@ -64,6 +79,7 @@ function tick(now: number): void {
   const moving = motionAllowed();
   const t = now / 1000;
   let again = false;
+  let next = Number.POSITIVE_INFINITY;
   for (const mover of movers.values()) {
     if (!mover.el.isConnected) {
       // One that was on the page and has left it is forgotten; one not yet put on it is waited for, a few seconds.
@@ -82,12 +98,16 @@ function tick(now: number): void {
     mover.still = false;
     if (!mover.onScreen) continue;
     again = true;
-    if (now - mover.last < mover.every) continue;
-    mover.last = now;
-    mover.draw(t, true);
+    // (A frame early by less than a refresh of the screen is drawn now, not a whole refresh late.)
+    const every = 1000 / mover.fps();
+    if (now - mover.last >= every - 6) {
+      mover.last = now;
+      mover.draw(t, true);
+    }
+    next = Math.min(next, mover.last + every);
   }
   // Still, or nothing on screen: the clock waits for motion to be allowed, for one to come on screen, or a new one.
-  if (again) wake();
+  if (again) later(next - now);
 }
 
 function watch(): void {
