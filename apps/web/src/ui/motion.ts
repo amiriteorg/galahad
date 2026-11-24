@@ -16,16 +16,20 @@ interface Mover {
   draw: Draw;
   /** How many frames a second it needs now. */
   fps: () => number;
+  /** When it was last drawn (or, not yet on the page, looked for), in ms. */
   last: number;
   /** Whether it has been on the page; one that leaves it is forgotten. */
   seen: boolean;
-  /** Frames waited for it to be put on the page. */
+  /** How many times it has been looked for on the page, not yet there. */
   waited: number;
   onScreen: boolean;
   still: boolean;
 }
 
 const movers = new Map<Element, Mover>();
+/** One not yet on the page is looked for this often (ms), this many times. */
+const LOOK_EVERY = 100;
+const LOOKS = 50;
 let request = 0;
 let timer: ReturnType<typeof setTimeout> | 0 = 0;
 let watching = false;
@@ -82,11 +86,20 @@ function tick(now: number): void {
   let next = Number.POSITIVE_INFINITY;
   for (const mover of movers.values()) {
     if (!mover.el.isConnected) {
-      // One that was on the page and has left it is forgotten; one not yet put on it is waited for, a few seconds.
-      if (mover.seen || ++mover.waited > 240) {
+      // One that was on the page and has left it is forgotten. One not yet put on it is looked for ten times a second
+      // for five seconds, not at every frame: each frame the page draws runs its other animations too (the knights'
+      // eyes, on every seat).
+      if (!mover.seen && now - mover.last >= LOOK_EVERY - 6) {
+        mover.last = now;
+        mover.waited++;
+      }
+      if (mover.seen || mover.waited > LOOKS) {
         movers.delete(mover.el);
         observer?.unobserve(mover.el);
-      } else again = true;
+      } else {
+        again = true;
+        next = Math.min(next, mover.last + LOOK_EVERY);
+      }
       continue;
     }
     mover.seen = true;

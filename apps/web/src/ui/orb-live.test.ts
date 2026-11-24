@@ -45,11 +45,19 @@ class Node_ {
 }
 
 let frames: FrameRequestCallback[] = [];
-let timers: (() => void)[] = [];
+/** Frames asked for since the test began. */
+let asked = 0;
+let timers: { at: number; callback: () => void; id: number }[] = [];
+let clock = 0;
+let ids = 0;
 let made: Node_[] = [];
-/** Runs the timers set and then the frames asked for, at `ms`. */
+/** Runs, at `ms`, the timers due by then and then the frames asked for. */
 const run = (ms: number) => {
-  for (const timer of timers.splice(0)) timer();
+  clock = ms;
+  for (const timer of timers.filter((timer) => timer.at <= ms)) {
+    timers = timers.filter((other) => other !== timer);
+    timer.callback();
+  }
   for (const frame of frames.splice(0)) frame(ms);
 };
 const root = { dataset: {} as Record<string, string> };
@@ -60,6 +68,7 @@ function stub(name: string, value: unknown) {
 }
 beforeEach(() => {
   made = [];
+  asked = 0;
   root.dataset = {};
   stub("document", {
     createElement: (tag: string) => new Node_(tag),
@@ -72,10 +81,14 @@ beforeEach(() => {
   });
   stub("window", { devicePixelRatio: 2 });
   stub("matchMedia", () => ({ matches: false, addEventListener() {} }));
-  stub("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
-  // (The clock waits by a timer for a frame that isn't due yet: here, until the next run.)
-  stub("setTimeout", (callback: () => void) => timers.push(callback));
-  stub("clearTimeout", (id: number) => (timers[id - 1] = () => {}));
+  stub("requestAnimationFrame", (callback: FrameRequestCallback) => (asked++, frames.push(callback)));
+  // (The clock waits by a timer for a frame that isn't due yet. As a browser does, a delay that isn't a finite number
+  // of ms is none.)
+  stub("setTimeout", (callback: () => void, ms?: number) => {
+    timers.push({ at: clock + (Number.isFinite(ms) ? Math.max(0, ms!) : 0), callback, id: ++ids });
+    return ids;
+  });
+  stub("clearTimeout", (id: number) => (timers = timers.filter((timer) => timer.id !== id)));
 });
 afterEach(() => {
   // Everything drawn leaves the page, and the page's clock, with nothing left on it, stops.
@@ -105,6 +118,26 @@ describe("his orb, moving", () => {
     expect(count(canvas.calls, "drawImage")).toBeGreaterThan(10);
     // Then a frame at a time.
     expect(frames.length).toBeGreaterThan(0);
+  });
+
+  test("one made before it is put on the page is looked for ten times a second, not at every frame, and forgotten after five", () => {
+    const canvas = canvasOf(orb({ size: 36, mood: "working", key: "test:unplaced" }) as unknown as Node_)!;
+    canvas.isConnected = false;
+    // (Each frame the page draws runs its other animations too: the knights' eyes, on every seat.)
+    const before = asked;
+    for (let ms = 1000; ms < 2000; ms += 1000 / 60) run(ms);
+    expect(asked - before).toBeWithin(8, 13);
+    // Put on the page, it moves at its own pace.
+    canvas.isConnected = true;
+    const drawn = canvas.calls.length;
+    for (let ms = 2000; ms < 3000; ms += 1000 / 60) run(ms);
+    expect(canvas.calls.length).toBeGreaterThan(drawn);
+    // One never put on the page is forgotten.
+    const other = canvasOf(orb({ size: 36, mood: "working", key: "test:never" }) as unknown as Node_)!;
+    other.isConnected = false;
+    canvas.isConnected = false;
+    for (let ms = 3000; ms < 9000; ms += 1000 / 60) run(ms);
+    expect([frames, timers]).toEqual([[], []]);
   });
 
   test("still where motion is reduced: the same parts, with no light, motes or waves, and nothing more drawn", () => {
