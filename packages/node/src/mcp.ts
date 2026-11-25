@@ -70,13 +70,18 @@ export interface McpOptions {
   version: string;
   /** The arm's scopes (from whoami): tools that need more aren't offered at all. Unknown: an arm's defaults. */
   scopes?: string[];
+  /**
+   * These tools alone (`galahad mcp --tools a,b`), of those its scopes allow: a grant to an agent on another machine
+   * (qamp-grants.ts), whose arm's mind:read would otherwise offer your memories too. Absent: every tool they allow.
+   */
+  only?: readonly string[];
 }
 
 export function createMcpServer(opts: McpOptions): McpServer {
   const api = new ArmClient(opts.base, opts.token);
   const server = new McpServer({ name: "galahad", title: "Galahad", version: opts.version }, { instructions: INSTRUCTIONS });
 
-  for (const t of toolsFor(opts.scopes ?? ARM_DEFAULT_SCOPES)) {
+  for (const t of toolsFor(opts.scopes ?? ARM_DEFAULT_SCOPES).filter((t) => !opts.only || opts.only.includes(t.name))) {
     server.registerTool(t.name, { title: t.title, description: t.description, inputSchema: t.input, ...(t.annotations ? { annotations: t.annotations } : {}) }, async (args: unknown, extra: { signal?: AbortSignal }) => {
       try {
         // Its requests to the node go with the call's signal, so a caller's cancel stops them there.

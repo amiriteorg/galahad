@@ -417,7 +417,8 @@ Bank (read-only: balances and transactions of your own accounts, through Enable 
 Agents (MCP, ACP)
   mcp install claude|opencode|codex|hermes [--label name] [--apply]
                                   give a coding agent Galahad's mind and sandboxes (least privilege)
-  mcp --arm <label>               the MCP server itself (stdio; started by the agent, not by you)
+  mcp --arm <label> [--tools a,b] the MCP server itself (stdio; started by the agent, not by you); --tools: those
+                                  tools alone, of what the arm may use
   acp install buzz [--label name] Galahad in a Buzz community: a credential that may only chat (nothing of yours in his
                                   answers there), and how Buzz's harness runs him (docs/BUZZ.md)
   acp --arm <label> [--buzz]      Galahad himself as an ACP agent (stdio; started by the harness, not by you); --buzz
@@ -1943,7 +1944,10 @@ Evidence: galahad artifact ${i!.artifact}`));
         const label = str("arm") ?? "default";
         const config = home.readConfig();
         const base = `http://127.0.0.1:${loadEnv().GALAHAD_PORT ?? config.port}`;
-        await runMcpServer({ base, token: home.readArmToken(label), version: VERSION });
+        // --tools a,b: those alone, of what the arm's scopes allow (a Q-AMP grant's bridge runs it so). Named, and none: none.
+        const tools = str("tools");
+        const only = tools === undefined ? undefined : tools.split(",").map((t) => t.trim()).filter(Boolean);
+        await runMcpServer({ base, token: home.readArmToken(label), version: VERSION, ...(only ? { only } : {}) });
         return;
       }
       const target = rest[0];
