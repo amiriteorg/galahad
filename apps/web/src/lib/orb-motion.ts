@@ -71,7 +71,7 @@ export const ORB_BURST_MOTES = 12;
  * is waiting. Verified and new are done. Failed, paused and queued are their own moods. At rest is idle.
  */
 const STATE_MOODS: Readonly<Record<string, OrbMood>> = { working: "working", needs: "waiting", failed: "failed", paused: "paused", queued: "queued", verified: "done", unread: "done" };
-export const orbMoodOfState = (state: string | undefined): OrbMood => STATE_MOODS[state ?? ""] ?? "idle";
+export const orbMoodOfState = (state: string | undefined): OrbMood => (state && Object.hasOwn(STATE_MOODS, state) ? STATE_MOODS[state]! : "idle");
 
 /**
  * What a knight is doing where only that is known (core's avatarExpression), as its orb's mood: thinking, at work,
@@ -82,7 +82,8 @@ const EXPRESSION_MOODS: Readonly<Record<string, OrbMood>> = {
   idle: "idle", thinking: "working", working: "working", reading: "working", browsing: "working", checking: "working",
   waiting: "queued", asking: "waiting", pleased: "done", concerned: "failed", resting: "paused",
 };
-export const orbMoodOfExpression = (expression: string | undefined): OrbMood => EXPRESSION_MOODS[expression ?? ""] ?? "idle";
+// (Only its own keys: an object answers to "constructor" and "toString" too.)
+export const orbMoodOfExpression = (expression: string | undefined): OrbMood => (expression && Object.hasOwn(EXPRESSION_MOODS, expression) ? EXPRESSION_MOODS[expression]! : "idle");
 
 /** Whether a change of mood bursts: arriving at done from any other mood, or at idle straight from work (a task's end
  * you watched). Never on first sight (`from` null): opening a page shows where things stand, settled. */

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { orbToneOfState } from "./orb.ts";
 import { STATES, type KnightState } from "./knight-state.ts";
 import {
   ORB_ARRIVE, ORB_BURST, ORB_BURST_MOTES, ORB_LONGEST_STEP, ORB_MOODS, ORB_MOTION, ORB_STAGES, ORB_STILL,
-  orbBursts, orbClock, orbFps, orbFrame, orbMoodOfState, orbRand, orbSeed, orbStep, shownMotes, type OrbClock, type OrbMood,
+  orbBursts, orbClock, orbFps, orbFrame, orbMoodOfExpression, orbMoodOfState, orbRand, orbSeed, orbStep, shownMotes, type OrbClock, type OrbMood,
 } from "./orb-motion.ts";
 
 /** A clock run on for `seconds`, a frame at a time (60 a second), in one mood. */
@@ -177,4 +178,12 @@ describe("how the orb moves", () => {
     expect(orbRand(0, 0, 0)).toBe(orbRand(0, 0, 0));
     expect(orbRand(0, 0, 0)).not.toBe(orbRand(0, 0, 1));
   });
+});
+
+test("a word that is no state, expression or tone is at rest, even one every object answers to (constructor, toString, __proto__)", () => {
+  for (const word of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) {
+    expect([word, orbMoodOfExpression(word)]).toEqual([word, "idle"]);
+    expect([word, orbMoodOfState(word)]).toEqual([word, "idle"]);
+    expect([word, orbToneOfState(word)]).toEqual([word, "neutral"]);
+  }
 });

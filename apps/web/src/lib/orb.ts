@@ -117,7 +117,7 @@ export const orbTone = (tone: unknown): OrbTone => (ORB_TONES.includes(tone as O
  * when he needs you, red when his work failed, green for what's new to you, his calm blue otherwise.
  */
 const STATE_TONES: Readonly<Record<string, OrbTone>> = { working: "accent", needs: "warn", failed: "danger", verified: "ok", unread: "ok" };
-export const orbToneOfState = (state: string | undefined): OrbTone => STATE_TONES[state ?? ""] ?? "neutral";
+export const orbToneOfState = (state: string | undefined): OrbTone => (state && Object.hasOwn(STATE_TONES, state) ? STATE_TONES[state]! : "neutral");
 
 const PALETTES = Object.fromEntries(
   ORB_TONES.map((tone) => [tone, { tint: TINTS[tone], light: mix(TINTS[tone], "#ffffff", 0.45), deep: mix(TINTS[tone], "#000000", 0.52) }]),

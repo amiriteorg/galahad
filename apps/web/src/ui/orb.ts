@@ -160,7 +160,8 @@ export function knightFace(options: KnightFaceOptions): HTMLElement {
     move(canvas, draw, () => orbFps(course.mood, level, since(course)));
     return h("span", box, canvas);
   }
-  const ink = inks(paper());
+  const stillPaper = paper();
+  const ink = inks(stillPaper);
   const glowId = `orb-${++drawn}`;
   const heartId = `orb-${++drawn}`;
   return h(
@@ -172,13 +173,14 @@ export function knightFace(options: KnightFaceOptions): HTMLElement {
       svg(
         "defs",
         {},
-        svg("radialGradient", { id: glowId }, svg("stop", { offset: "0", "stop-color": colors.tint, "stop-opacity": "0.42" }), svg("stop", { offset: "0.55", "stop-color": colors.tint, "stop-opacity": "0.16" }), svg("stop", { offset: "1", "stop-color": colors.tint, "stop-opacity": "0" })),
+        // (On a light page its light is 0.6 as strong, as the canvas draws it.)
+        svg("radialGradient", { id: glowId }, svg("stop", { offset: "0", "stop-color": colors.tint, "stop-opacity": stillPaper ? "0.252" : "0.42" }), svg("stop", { offset: "0.55", "stop-color": colors.tint, "stop-opacity": stillPaper ? "0.096" : "0.16" }), svg("stop", { offset: "1", "stop-color": colors.tint, "stop-opacity": "0" })),
         svg("radialGradient", { id: heartId }, svg("stop", { offset: "0", "stop-color": ink.heart, "stop-opacity": "0.95" }), svg("stop", { offset: "0.3", "stop-color": colors.tint, "stop-opacity": "0.65" }), svg("stop", { offset: "1", "stop-color": colors.tint, "stop-opacity": "0" })),
       ),
       svg("circle", { r: "96", fill: `url(#${glowId})` }),
       ...arcs.map((arc) => svg("path", { d: `M${point(arc.r, arc.from)}A${arc.r} ${arc.r} 0 ${arc.length > 180 ? 1 : 0} 1 ${point(arc.r, arc.from + arc.length)}`, fill: "none", stroke: ink.line, "stroke-width": String(arc.width), "stroke-linecap": "round", opacity: "0.5" })),
       svg("circle", { r: String(look.nucleus * 2.2), fill: `url(#${heartId})` }),
-      ...stillGlyphs(sphereFrame(sphere, points, { angle: 0, radius: look.r, scale: 1, glyph: look.glyph, t: 0, mood: "idle", paper: paper() }), ink),
+      ...stillGlyphs(sphereFrame(sphere, points, { angle: 0, radius: look.r, scale: 1, glyph: look.glyph, t: 0, mood: "idle", paper: stillPaper }), ink),
     ),
   );
 }
