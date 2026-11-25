@@ -50,7 +50,7 @@ struct RoomView: View {
                 ForEach(items) { item in
                     switch item {
                     case .message(let message):
-                        TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), look: look(of: message), named: true, client: session.client) { text in
+                        TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), profile: session.teammate(message.speaker)?.avatar, named: true, client: session.client) { text in
                             room.quote(text, by: Timeline.speaker(message, teammates: session.team?.teammates ?? []))
                             composing = true
                         }
@@ -143,16 +143,10 @@ struct RoomView: View {
         TimelineWelcome(title: name, words: "Say what you need: Galahad sits here, answers, and brings in whichever of \(ListFormatter.localizedString(byJoining: members.map(\.name))) the work needs. Name a knight with @ to ask it yourself.") {
             HStack(spacing: -14) {
                 ForEach(members.prefix(5)) { member in
-                    Portrait(drawing: AvatarLook.of(id: member.id, name: member.name, profile: member.avatar), size: 72, expression: session.rows.first { $0.id == member.id }?.expression ?? "idle", id: member.id, temper: AvatarLook.temperament(id: member.id, profile: member.avatar))
+                    WorkerFace(id: member.id, profile: member.avatar, size: 72, expression: session.rows.first { $0.id == member.id }?.expression ?? "idle")
                 }
             }
         }
-    }
-
-    private func look(of message: TeamMessage) -> String {
-        if message.speaker == "galahad" { return "galahad" }
-        let knight = session.teammate(message.speaker)
-        return AvatarLook.of(id: message.speaker, name: knight?.name ?? message.speakerName, profile: knight?.avatar)
     }
 
     private func act(_ action: TaskCard.Action, on task: TeamTask) {
@@ -177,19 +171,25 @@ struct RoomView: View {
     }
 }
 
-/// A room on the Roundtable: who is in it (up to three faces, centred where a knight's face stands), its name, and one
-/// line of where it stands.
+/// One of a room's members, as its face is drawn: its handle, and the colour you chose for its orb, if you did.
+struct MemberFace {
+    let id: String
+    let profile: JSONValue?
+}
+
+/// A room on the Roundtable: who is in it (up to three faces, still, centred where a knight's face stands), its name, and
+/// one line of where it stands.
 struct RoomRowView: View {
     let row: RoomRow
-    let looks: [String]
+    let faces: [MemberFace]
     var selected = false
 
     var body: some View {
         RosterLine(name: row.name, line: row.line, needs: row.needs, fresh: row.unread, selected: selected) {
-            let shown = Array(looks.prefix(3))
+            let shown = Array(faces.prefix(3))
             ZStack {
-                ForEach(Array(shown.enumerated()), id: \.offset) { index, look in
-                    Portrait(drawing: look, size: Metrics.rowFace * 0.6)
+                ForEach(Array(shown.enumerated()), id: \.offset) { index, face in
+                    WorkerFace(id: face.id, profile: face.profile, size: Metrics.rowFace * 0.6)
                         .offset(x: (CGFloat(index) - CGFloat(shown.count - 1) / 2) * Metrics.rowFace * 0.2, y: index % 2 == 0 ? -Space.s1 : Space.s1)
                 }
             }

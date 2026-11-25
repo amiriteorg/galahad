@@ -93,7 +93,7 @@ struct GiveSheet: View {
         GroupedList {
             Section {
                 HStack(spacing: Space.s3) {
-                    Portrait(drawing: look(given.choice.id, given.choice.name), size: Metrics.rowFace)
+                    WorkerFace(id: given.choice.id, profile: session.teammate(given.choice.id)?.avatar, size: Metrics.rowFace)
                     VStack(alignment: .leading, spacing: Space.s1) {
                         Text("\(given.choice.name) took it").font(.headline)
                         Text(given.choice.reasons.joined(separator: " · ")).font(.subheadline).foregroundStyle(.secondary)
@@ -117,10 +117,6 @@ struct GiveSheet: View {
                 }
             }
         }
-    }
-
-    private func look(_ id: String, _ name: String) -> String {
-        AvatarLook.of(id: id, name: name, profile: session.teammate(id)?.avatar)
     }
 
     private func give() async {

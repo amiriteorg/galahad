@@ -81,6 +81,7 @@ struct PhoneTabs: View {
     @State private var tab: PhoneTab = .galahad
     @State private var path: [Route] = []
     @State private var talking: [GalahadPage] = []
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         TabView(selection: $tab) {
@@ -105,7 +106,7 @@ struct PhoneTabs: View {
                 }
             } label: {
                 // His orb, in the colour of where he stands, as everywhere he is.
-                Label { Text("Galahad") } icon: { OrbIcon.image(session.galahadTone) }
+                Label { Text("Galahad") } icon: { OrbIcon.image(session.galahadTone, scheme) }
             }
         }
         .environment(\.showInbox) { tab = .inbox }

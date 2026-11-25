@@ -54,8 +54,7 @@ struct KnightsTests {
     }
 
     @Test func aKnightsModelsAreSentOnlyToANodeThatKnowsThem() throws {
-        let look = AvatarLook.profile(look: "bors", temperament: "lively")
-        var input = KnightInput(id: "ada", name: "Ada", instructions: "", repository: nil, harness: "native", role: "engineer", enabled: true, dailyTurns: 40, avatar: look)
+        var input = KnightInput(id: "ada", name: "Ada", instructions: "", repository: nil, harness: "native", role: "engineer", enabled: true, dailyTurns: 40)
         let without = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any]
         #expect(without?["models"] == nil)
         input.sendModels = true
@@ -101,27 +100,33 @@ struct KnightsTests {
         }
     }
 
-    @Test func aLookIsSavedAsCoreSavesIt() throws {
-        for item in vectors.knightForms.profiles {
-            #expect(AvatarLook.profile(look: item.look, temperament: item.temperament) == item.profile, "\(item.look)")
-        }
-        // And chosen again from what was saved: the drawing it names is the one chosen.
-        for look in AvatarLook.looks.map(\.id) {
-            let saved = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(AvatarLook.profile(look: look, temperament: "calm")))
-            #expect(AvatarLook.of(id: "someone", name: "Someone", profile: saved) == look)
-        }
-    }
-
-    @Test func howLivelyAKnightIsAtRestIsCores() {
-        for item in vectors.knightForms.temperaments {
-            #expect(AvatarLook.temperament(id: item.id, profile: item.avatar) == item.temperament, "\(item.id)")
-        }
-    }
-
     @Test func aKnightIsSentWithAnEmptiedRepositoryAsNull() throws {
-        let input = KnightInput(id: "ada", name: "Ada", instructions: "", repository: nil, harness: "native", role: "engineer", enabled: true, dailyTurns: 40, avatar: AvatarLook.profile(look: "bors", temperament: "calm"))
+        let input = KnightInput(id: "ada", name: "Ada", instructions: "", repository: nil, harness: "native", role: "engineer", enabled: true, dailyTurns: 40)
         let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any])
         #expect(json["repository"] is NSNull)
-        #expect(Set(json.keys) == ["id", "name", "instructions", "repository", "harness", "role", "enabled", "dailyTurns", "avatar"])
+        // Its colour untouched is left out: the node keeps what it has (a new knight takes its handle's).
+        #expect(Set(json.keys) == ["id", "name", "instructions", "repository", "harness", "role", "enabled", "dailyTurns"])
+    }
+
+    @Test func itsOrbsColourIsSentAsCoreSavesItAndNullGivesItsHandlesBack() throws {
+        // (The PWA's avatarEditor: { v: 2, color } when you chose, null to reset, nothing when untouched.)
+        var input = KnightInput(id: "ada", name: "Ada", instructions: "", repository: nil, harness: "native", role: "engineer", enabled: true, dailyTurns: 40, avatar: .chosen("#3abeff"))
+        let chosen = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any])
+        let profile = try #require(chosen["avatar"] as? [String: Any])
+        #expect(Set(profile.keys) == ["v", "color"])
+        #expect(profile["v"] as? Int == 2)
+        #expect(profile["color"] as? String == "#3abeff")
+        // What was sent is what core takes as a chosen colour, and the colour the orb then has.
+        let sent = try JSONDecoder().decode(JSONValue.self, from: JSONSerialization.data(withJSONObject: profile))
+        #expect(KnightOrb.chosenColor(sent) == "#3abeff")
+        let colors = KnightOrb.colors(id: "ada", profile: sent)
+        #expect([colors.tint, colors.light, colors.deep] == ["#3abeff", "#93dbff", "#1c5b7a"] && colors.chosen)
+        input.avatar = .handle
+        let reset = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any])
+        #expect(reset.keys.contains("avatar"))
+        #expect(reset["avatar"] is NSNull)
+        input.avatar = nil
+        let untouched = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any])
+        #expect(untouched["avatar"] == nil)
     }
 }

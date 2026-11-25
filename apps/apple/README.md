@@ -9,10 +9,17 @@ tab, at the bar's right end, is his home (`Galahad/UI/GalahadHome.swift`), his o
 stands, his line, what you might ask, what he asks you, your recent chats and the message box, each chat shown over it;
 the Roundtable, the Inbox and More are the tabs before his. A tap anywhere but a field closes the keyboard
 (`KeyboardCloser`). His orb (`Core/Orb.swift`, drawn by `UI/OrbView.swift`) is the PWA's, part for part, held to it by
-the parity vectors; it is his seat at the Roundtable and in the sidebar too, and beside each answer. It moves as he is
-(your word, 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done"): `Core/OrbMotion.swift`
-is the PWA's `lib/orb-motion.ts`, its clock and frames held to it by the vectors too, and each knight's seat has its
-lights round its still ring (`SeatLights`); nothing moves where the device asks for reduced motion.
+the parity vectors: the rings of a heads-up display, a ring of data turning in them, and a sphere of glyphs round a
+bright nucleus (`Core/OrbSphere.swift`, the PWA's `lib/orb-sphere.ts`; your words, 25 November 2026: "use glyph and
+randomness on the orbs, like Jarvis/Ultron in the movies, and my other project Phren"). It is his seat at the Roundtable
+and in the sidebar too, and beside each answer. Every knight is an orb as well (your word, 25 November 2026: "drop the
+knight avatars, and just use custom/procedurally generated colored particle orbs"): its own sphere of glyphs, in the
+colour you chose for it or one of 24 its handle picks (`Core/KnightOrb.swift`, core's `avatar.ts`), drawn by
+`KnightFace`. They move as they are (your words, 24 and 25 November 2026: "pulsing/moving when doing a task, sitting
+idle, waiting, done", "slow and calming movement"): `Core/OrbMotion.swift` is the PWA's `lib/orb-motion.ts`, its clock
+and frames held to it by the vectors too, and each knight's seat has its lights round its still ring (`SeatLights`), its
+orb turning on the same course; one still frame is drawn where the device asks for reduced motion. On a light page the
+glyphs are ink on paper.
 
 On an iPhone or an iPad it keeps, besides its pairing, its key and your choices, the last Roundtable it saw, so it shows
 your Roundtable at once however slow the connection (your word, 21 November 2026). It is the record Galahad for
@@ -177,8 +184,8 @@ bun apps/apple/scripts/vectors.ts --check   # exits 1 if the file isn't what cor
 
 The app is Apple's own components; what is Galahad's comes from the PWA, never copied by hand:
 
-- **The knights** are the owner's drawings, `apps/web/src/knights/*.webp`, bundled as they are (`project.yml`): never
-  redrawn, recoloured, outlined or moved.
+- **The knights** are orbs drawn in code, as the PWA draws them (core's `avatar.ts` for their colours, `lib/orb-sphere.ts`
+  for their spheres of glyphs), held to them by the vectors. The owner's drawings of them are no longer bundled.
 - **The icon, the Roundtable's mark and the colours** (Galahad's red for what needs you and his seat, the cream ink,
   the black tile) are written from `apps/web/src/brand.ts` by `bun apps/apple/scripts/brand.ts`, which renders
   `appIcon()` with headless Chrome and ImageMagick. iOS rounds an icon's corners itself, so the icon is the tile edge

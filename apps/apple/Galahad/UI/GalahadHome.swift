@@ -302,17 +302,19 @@ struct GalahadHome: View {
     }
 }
 
-/// His orb as an iPhone's tab shows it: drawn once for each state, in its own colours rather than the bar's.
+/// His orb as an iPhone's tab shows it: drawn once for each state and each colour scheme (on a light bar his glyphs are
+/// ink on paper), in its own colours rather than the bar's.
 @MainActor enum OrbIcon {
-    private static var kept: [Orb.Tone: Image] = [:]
+    private static var kept: [String: Image] = [:]
 
-    static func image(_ tone: Orb.Tone) -> Image {
-        if let image = kept[tone] { return image }
-        let renderer = ImageRenderer(content: GalahadOrb(size: 26, tone: tone))
+    static func image(_ tone: Orb.Tone, _ scheme: ColorScheme) -> Image {
+        let key = "\(tone.rawValue) \(scheme == .light ? "light" : "dark")"
+        if let image = kept[key] { return image }
+        let renderer = ImageRenderer(content: GalahadOrb(size: 26, tone: tone).environment(\.colorScheme, scheme))
         renderer.scale = 3
         // (Its colours kept by the image itself: the bar tints an image SwiftUI marks original all the same.)
         let image = renderer.uiImage.map { Image(uiImage: $0.withRenderingMode(.alwaysOriginal)) } ?? Image(systemName: "circle.circle.fill")
-        kept[tone] = image
+        kept[key] = image
         return image
     }
 }

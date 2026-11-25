@@ -2,8 +2,7 @@ import Foundation
 import Testing
 @testable import Galahad
 
-/// The Roundtable says what the PWA says (`apps/web/src/lib/roster.ts`, `lib/now.ts`), and draws each knight as core
-/// chooses (`avatarLook`): checked against their own output.
+/// The Roundtable says what the PWA says (`apps/web/src/lib/roster.ts`, `lib/now.ts`): checked against its own output.
 struct RosterTests {
     let vectors = Vectors.shared
     var roundtable: Vectors.Roundtable { vectors.roundtable }
@@ -78,11 +77,5 @@ struct RosterTests {
         #expect(Roster.knightOfCaller("arm:team.0123456789.max") == "max")
         #expect(Roster.knightOfCaller("arm:team.012345678.max") == nil)
         #expect(Roster.knightOfCaller("loop:morning") == nil)
-    }
-
-    @Test func eachKnightWearsTheDrawingCoreChooses() {
-        for item in vectors.looks {
-            #expect(AvatarLook.of(id: item.id, name: item.name, profile: item.avatar) == item.look, "\(item.id) \(item.name)")
-        }
     }
 }

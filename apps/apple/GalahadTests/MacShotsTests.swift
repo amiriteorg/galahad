@@ -110,13 +110,13 @@ struct MacShots {
         let session = try await pair(tag: tag)
         try await until(30) { session.team != nil && session.inboxLoaded }
 
-        // Files with a message, sent up to the node as the paperclip sends them: the owner's drawing of Kay, and a log.
+        // Files with a message, sent up to the node as the paperclip sends them: a picture of Kay's orb, and a log.
         try await openSettings().close()
         main.makeKeyAndOrderFront(nil)
         MacApp.shared.place = .galahad
         NSApp.appearance = NSAppearance(named: .aqua)
-        let drawing = try Data(contentsOf: try #require(Bundle.main.url(forResource: "kay", withExtension: "webp", subdirectory: "knights")))
-        session.chat.outbox.attach([(name: "kay.webp", data: drawing), (name: "test.log", data: Data("FAIL db.test.ts\n  connect ECONNREFUSED 127.0.0.1:5432\n".utf8))], with: session.client)
+        let picture = try #require(png(KnightFace(id: "kay", size: 240).environment(\.colorScheme, .dark)))
+        session.chat.outbox.attach([(name: "kay.png", data: picture), (name: "test.log", data: Data("FAIL db.test.ts\n  connect ECONNREFUSED 127.0.0.1:5432\n".utf8))], with: session.client)
         try await until(30) { session.chat.outbox.waiting.count == 2 && session.chat.outbox.waiting.allSatisfy { $0.state == .up } }
         session.chat.draft = "Why does this fail?"
         try await Task.sleep(for: .seconds(1.5))
@@ -196,6 +196,13 @@ struct MacShots {
     }
 
     /// Pairs as you would with the dev node's invite: asks, compares the node's code with this Mac's, then approves.
+    /// A view as a PNG, as SwiftUI draws it alone.
+    private func png(_ view: some View) -> Data? {
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        return renderer.cgImage.flatMap { NSBitmapImageRep(cgImage: $0).representation(using: .png, properties: [:]) }
+    }
+
     private func pair(tag: String) async throws -> Session {
         let link = try String(contentsOf: node.appending(path: "invite.txt"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         let invite = try Invite.decode(link)

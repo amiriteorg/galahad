@@ -45,7 +45,7 @@ struct UnderwayBar: View {
         return HStack(spacing: Space.s2) {
             Button { opened = OpenedRoom(id: task.room) } label: {
                 HStack(spacing: Space.s2) {
-                    Portrait(drawing: AvatarLook.of(id: task.assignee, name: knight?.name ?? task.name, profile: knight?.avatar), size: 26, id: task.assignee)
+                    WorkerFace(id: task.assignee, profile: knight?.avatar, size: 26)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("\(task.name) · \(UnderwayWords.state(of: task))").font(.footnote.weight(.semibold)).lineLimit(1)
                         Text(task.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)

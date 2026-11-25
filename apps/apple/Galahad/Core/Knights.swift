@@ -2,8 +2,8 @@ import Foundation
 
 /*
  * Seating and keeping knights and rooms, as the PWA's forms do it (apps/web/src/views/team-forms.ts, lib/team.ts and
- * core's avatar.ts): a new knight's handle from its name, the look it is saved with, what removing one does, and the
- * shapes the node takes. The node checks everything again; these only say it here first, the PWA's way.
+ * core's avatar.ts): a new knight's handle from its name, its orb's colour as it is saved, what removing one does, and
+ * the shapes the node takes. The node checks everything again; these only say it here first, the PWA's way.
  */
 
 /// `POST /api/team/teammates`: a knight as you save it (core's `TeammateInput`).
@@ -28,8 +28,21 @@ struct KnightInput: Encodable, Sendable, Equatable {
     var sendKeys = false
     var enabled: Bool
     var dailyTurns: Int
-    /// The drawing it wears (`AvatarLook.profile`).
-    var avatar: AvatarProfile
+    /// Its orb's colour, as you chose it in its form (the PWA's avatarEditor): one of yours, or back to the one its handle
+    /// gives it; nil, untouched: left as it is, and not sent (a new knight takes its handle's).
+    var avatar: OrbColor? = nil
+
+    /// A colour you chose for a knight's orb, sent as core's OrbProfile (`{ v: 2, color }`); or its handle's again, sent as
+    /// null, which the node keeps as no colour chosen.
+    enum OrbColor: Equatable, Sendable {
+        case chosen(String)
+        case handle
+    }
+
+    private struct OrbProfile: Encodable {
+        var v = 2
+        let color: String
+    }
 
     enum CodingKeys: String, CodingKey { case id, name, instructions, repository, harness, role, models, sensitive, acp, keys, enabled, dailyTurns, avatar }
 
@@ -47,19 +60,12 @@ struct KnightInput: Encodable, Sendable, Equatable {
         if sendKeys { try c.encode(keys, forKey: .keys) }
         try c.encode(enabled, forKey: .enabled)
         try c.encode(dailyTurns, forKey: .dailyTurns)
-        try c.encode(avatar, forKey: .avatar)
+        switch avatar {
+        case .chosen(let color)?: try c.encode(OrbProfile(color: color), forKey: .avatar)
+        case .handle?: try c.encodeNil(forKey: .avatar)
+        case nil: break
+        }
     }
-}
-
-/// A knight's look as the node saves it (core's `AvatarProfile`): the drawing's colour names the drawing.
-struct AvatarProfile: Codable, Sendable, Equatable {
-    var v = 1
-    let form: String
-    let color: String
-    let accent: String
-    var eyes = "oval"
-    var accessory = "none"
-    let temperament: String
 }
 
 /// `POST /api/team/rooms`: a room as you save it (core's `TeamRoomInput`); `id` and `direct` only when it exists.
@@ -211,36 +217,5 @@ enum Knights {
         if !maySandbox { return Removal(blocked: "\(name) has a VM, and removing \(name) destroys it. That takes a device that may manage sandboxes; this one may not.", lines: lines, destroyWorkspace: true) }
         let vm = workspace ? "\(name)'s VM is destroyed with it, and everything in its /work." : "A VM was being made for \(name): if there is one, it is destroyed with it, and everything in its /work."
         return Removal(blocked: nil, lines: lines + ["\(vm) This can't be undone."], destroyWorkspace: true)
-    }
-}
-
-extension AvatarLook {
-    /// Each drawing's helmet shape and its accent (core's `AVATAR_LOOKS` and `matchingAccent`), for saving a look.
-    private static let saved: [String: (form: String, accent: String)] = [
-        "kay": ("hooded", "#dab188"), "gaheris": ("armored", "#4a2b2d"), "percival": ("armored", "#a46d91"),
-        "palamedes": ("armored", "#493237"), "gawain": ("round", "#404032"), "tristan": ("armored", "#636371"),
-        "lancelot": ("armored", "#5c6a87"), "bedivere": ("armored", "#667367"), "bors": ("round", "#6b4536"),
-        "gareth": ("round", "#cb9226"),
-    ]
-
-    /// The drawings' names, as they were drawn (core's `AVATAR_LOOKS`).
-    static func title(_ look: String) -> String { look.prefix(1).uppercased() + look.dropFirst() }
-
-    /// A look as the node saves it (core's `lookProfile`): the drawing's colour names it.
-    static func profile(look: String, temperament: String) -> AvatarProfile {
-        let chosen = looks.first { $0.id == look } ?? looks[0]
-        let kept = saved[chosen.id] ?? ("armored", chosen.color)
-        return AvatarProfile(form: kept.form, color: chosen.color, accent: kept.accent, temperament: temperament)
-    }
-
-    /// How lively a knight is at rest: its saved profile's word, else the one its handle seeds (core's `resolveAvatar`).
-    static func temperament(id: String, profile: JSONValue?) -> String {
-        if savedColor(profile) != nil, case .object(let p)? = profile, case .string(let word)? = p["temperament"] { return word }
-        // core's defaultAvatar: the handle's seed, then one draw each for palette, form, eyes and headwear before this one.
-        var seed: UInt32 = 2_166_136_261
-        for unit in id.utf16 { seed = (seed ^ UInt32(unit)) &* 16_777_619 }
-        let next = { (count: UInt32) -> UInt32 in seed = seed &* 1_664_525 &+ 1_013_904_223; return seed % count }
-        _ = (next(8), next(3), next(3), next(4))
-        return ["calm", "curious", "lively"][Int(next(3))]
     }
 }

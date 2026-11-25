@@ -23,7 +23,8 @@ struct RosterRow: Sendable, Equatable, Identifiable {
     let line: String
     /// Only you can move this on: a failure to read, an approval to give, work waiting on a pause.
     let needs: Bool
-    /// What its face shows (KnightEyes): asking when it asks your leave or your approval, else what it is doing.
+    /// What it is doing, as its orb shows it (KnightOrb.expression): asking when it asks your leave or your approval, else
+    /// what it is doing.
     var expression = "idle"
     /// Where it stands at a glance: the ring round its face, and the word beside its name.
     var standing = Standing.resting
@@ -175,7 +176,7 @@ enum Roster {
         let asked = asks.filter { knightOfCaller($0.by) == person.id }
         // Its face says what its line says: asking your leave or your approval, over whatever else it has in hand.
         let asking = !asked.isEmpty || jobs.contains { $0.status == "proposed" && $0.task != nil }
-        let expression = asking ? "asking" : KnightEyes.expression(of: person, in: snapshot, now: now)
+        let expression = asking ? "asking" : KnightOrb.expression(of: person, in: snapshot, now: now)
         // New to you: what ended on its page (its tasks, its replies to you) since you last looked at it there.
         let fresh = endedSince(jobs.filter { $0.task != nil || $0.room == room?.id }, seen: snapshot.seen?["knight:\(person.id)"], keeps: snapshot.seen != nil)
         // At rest, its ring is green while something that ended there is new to you (verified work says so) and until you
@@ -335,53 +336,5 @@ struct GalahadNow: Equatable, Sendable {
         let fresh = work.unread.count > 1 ? "\(work.unread.count) new answers" : work.unread.first.map { title in title.flatMap { $0.isEmpty ? nil : "New answer in “\($0)”" } ?? "A new answer" }
         text = doing.map { [$0, needs].compactMap { $0 }.joined(separator: " · ") } ?? needs ?? fresh ?? (work.needs == 0 ? "Idle · nothing needs you" : "Idle")
         tone = needs != nil ? .warn : doing != nil ? .accent : fresh != nil ? .ok : .neutral
-    }
-}
-
-/**
- * Which of the owner's ten drawings a knight wears (core's `avatarLook`): a look chosen for it (its saved profile has one
- * of the drawings' colours) is the one; else the drawing its first name is (a knight called Gareth is drawn as Gareth);
- * else, for an older profile, the drawing nearest its colour; else one of the ten from its handle alone, the same on
- * every device. Galahad's own drawing is his alone.
- */
-enum AvatarLook {
-    static let looks: [(id: String, color: String)] = [
-        ("kay", "#f9e9d9"), ("gaheris", "#9c494f"), ("percival", "#d5adc7"), ("palamedes", "#945764"), ("gawain", "#84845e"),
-        ("tristan", "#999aab"), ("lancelot", "#93a2c0"), ("bedivere", "#9dac9e"), ("bors", "#be7153"), ("gareth", "#fbc866"),
-    ]
-
-    static func of(id: String, name: String, profile: JSONValue?) -> String {
-        let saved = savedColor(profile)
-        if let chosen = looks.first(where: { $0.color == saved }) { return chosen.id }
-        let first = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
-        if let named = looks.first(where: { $0.id == first }) { return named.id }
-        if let saved { return looks.dropFirst().reduce(looks[0]) { apart($1.color, saved) < apart($0.color, saved) ? $1 : $0 }.id }
-        var seed: UInt32 = 2_166_136_261
-        for unit in id.utf16 { seed = (seed ^ UInt32(unit)) &* 16_777_619 }
-        return looks[Int(seed % UInt32(looks.count))].id
-    }
-
-    /// A saved profile's colour (lowercased) when it is exactly a profile's seven fields, each valid (core's
-    /// `isAvatarProfile`); anything else is old or malformed, and names no colour.
-    static func savedColor(_ profile: JSONValue?) -> String? {
-        guard case .object(let p)? = profile, Set(p.keys) == ["v", "form", "color", "accent", "eyes", "accessory", "temperament"],
-              p["v"] == .number(1), case .string(let color)? = p["color"], case .string(let accent)? = p["accent"], isHex(color), isHex(accent),
-              oneOf(p["form"], ["round", "armored", "hooded"]), oneOf(p["eyes"], ["oval", "round", "visor"]),
-              oneOf(p["accessory"], ["none", "plume", "ears", "crown"]), oneOf(p["temperament"], ["calm", "curious", "lively"]) else { return nil }
-        return color.lowercased()
-    }
-
-    private static func isHex(_ text: String) -> Bool { text.wholeMatch(of: #/#[0-9a-fA-F]{6}/#) != nil }
-
-    private static func oneOf(_ value: JSONValue?, _ allowed: [String]) -> Bool {
-        if case .string(let text)? = value { allowed.contains(text) } else { false }
-    }
-
-    /// How far apart two colours look: RGB weighted by how much red there is ("redmean"), plenty for a nearest.
-    private static func apart(_ a: String, _ b: String) -> Double {
-        let channels = { (hex: String) in [1, 3, 5].map { Double(Int(hex.dropFirst($0).prefix(2), radix: 16) ?? 0) } }
-        let (x, y) = (channels(a), channels(b))
-        let red = (x[0] + y[0]) / 2
-        return ((2 + red / 256) * pow(x[0] - y[0], 2) + 4 * pow(x[1] - y[1], 2) + (2 + (255 - red) / 256) * pow(x[2] - y[2], 2)).squareRoot()
     }
 }

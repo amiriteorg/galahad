@@ -2,8 +2,8 @@ import SwiftUI
 
 /*
  * Galahad's accents, and nothing more: his red for what needs you and for his seat, the cream ink and the black tile
- * (scripts/brand.ts writes them from apps/web/src/brand.ts), the Roundtable's mark, and the knights as the owner drew
- * them; and the one scale every screen is spaced on. Everything else is the system's own.
+ * (scripts/brand.ts writes them from apps/web/src/brand.ts), the Roundtable's mark, and a face as it stands alone (an
+ * orb: OrbView.swift); and the one scale every screen is spaced on. Everything else is the system's own.
  */
 
 /// The app's one spacing scale: the PWA's (`--sp-*` in apps/web/src/index.html; each step named as there), in points.
@@ -31,7 +31,7 @@ enum Metrics {
     static let cardRing = Space.s2
     /// The column the faces of the Roundtable's rows stand in, ring and all, so every name starts at one edge.
     static let rowSeat = rowFace + 2 * rowRing
-    /// A face on a card of the Roundtable: large enough for its eyes to follow its work (`KnightEyes.wandersFrom`).
+    /// A face on a card of the Roundtable: large enough for its sphere's glyphs to be read, and its arcs round it.
     static let cardFace: CGFloat = 104
     /// The narrowest a card of the Roundtable is: its face in its ring, and room either side.
     static let cardWidth = cardFace + 2 * cardRing + 2 * Space.s4
@@ -76,144 +76,33 @@ extension Color {
     static let cream = Color(.cream)
 }
 
-/// The owner's drawings of the knights, from the app's bundle by fixed names (apps/web/src/knights, bundled as they
-/// are). Nothing from the node reaches a file name: a knight's look is one of ten known names.
-@MainActor enum Drawings {
-    private static var kept: [String: PlatformImage] = [:]
-    /// The drawings that come at twice the size too, for showing big.
-    private static let large: Set<String> = ["galahad", "black-knight"]
-
-    static func image(_ name: String, large wantLarge: Bool) -> PlatformImage? {
-        let file = wantLarge && large.contains(name) ? "\(name)@2x" : name
-        if let image = kept[file] { return image }
-        guard let path = Bundle.main.path(forResource: file, ofType: "webp", inDirectory: "knights"), let image = PlatformImage(contentsOfFile: path) else { return nil }
-        kept[file] = image
-        return image
-    }
-}
-
-/// A knight as the owner drew it: the drawing exactly, with nothing drawn round it. Given what it is doing, its eyes
-/// are live (KnightEyes): they blink, look and change with its state, and nothing else of the drawing moves. Without,
-/// it is still: a speaker in a conversation's history keeps no state of its own.
-struct Portrait: View {
-    /// `galahad`, or the look `AvatarLook` chose.
-    let drawing: String
-    var size: CGFloat = 48
-    /// What it is doing (KnightEyes.shown's states); nil: still.
+/// A face as it stands alone, beside its words, in a header or a pick list (the PWA's workerAvatar; your word, 25 November
+/// 2026: "drop the knight avatars, and just use custom/procedurally generated colored particle orbs"): a knight's orb
+/// (KnightFace), or Galahad's own (`galahad`), moving as what it is doing does (`expression`, as KnightOrb.expression
+/// says it), on its own course (`face:<handle>`, his `galahad:face`). Without an expression it is still: a speaker in a
+/// conversation's history keeps no state of its own. Decorative beside its name; named (`label`) where it stands alone.
+struct WorkerFace: View {
+    /// A knight's handle, or `galahad` for Galahad himself (a handle no knight can have).
+    let id: String
+    /// Its saved avatar: a colour you chose for it (core's OrbProfile); anything else is its handle's colour.
+    var profile: JSONValue? = nil
+    var size: CGFloat = 40
+    /// What it is doing (KnightOrb.expression); nil: still.
     var expression: String? = nil
-    /// Its handle, for its own moment in the blink.
-    var id = ""
-    /// How lively it is at rest: calm, curious or lively.
-    var temper = "calm"
+    var label: String? = nil
 
     var body: some View {
-        Group {
-            if let image = Drawings.image(drawing, large: size >= 120) {
-                Image(platformImage: image).resizable().interpolation(.high).scaledToFit()
-                    // Paused, its colour is drained, as on the PWA.
-                    .saturation(expression == "resting" ? 0.15 : 1)
-                    .opacity(expression == "resting" ? 0.62 : 1)
-                    .overlay {
-                        if let expression, KnightEyes.art[drawing] != nil {
-                            LiveEyes(art: drawing, expression: expression, size: size, beat: KnightEyes.beat(id.isEmpty ? drawing : id), temper: temper)
-                        }
-                    }
-            } else {
-                Image(systemName: "person.crop.circle").resizable().scaledToFit().foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
-    }
-}
-
-/// A drawing's two eyes, live: each drawn eye covered in its slit's own dark, and drawn again as the state has it, at
-/// the place its gaze puts it, blinking at the knight's own moment. Drawn a frame at a time while on screen; still when
-/// the device asks for reduced motion.
-struct LiveEyes: View {
-    let art: String
-    let expression: String
-    let size: CGFloat
-    let beat: Int
-    let temper: String
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        TimelineView(EyeFrames(moments: KnightEyes.moments(expression: expression, temper: temper, beat: beat, size: size), still: reduceMotion)) { context in
-            let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
-            Canvas { canvas, box in
-                draw(in: &canvas, scale: box.width / KnightEyes.canvas, t: t)
-            }
-        }
-        .frame(width: size, height: size)
-        .allowsHitTesting(false)
-    }
-
-    private func draw(in canvas: inout GraphicsContext, scale k: Double, t: Double) {
-        guard let eyes = KnightEyes.art[art], let shown = KnightEyes.shown[expression] else { return }
-        let blink = KnightEyes.blinks(expression) && !reduceMotion ? KnightEyes.blink(at: t, beat: beat) : 1
-        let moved = reduceMotion || size < KnightEyes.wandersFrom ? (x: 0.0, y: 0.0) : KnightEyes.gaze(at: t, expression: expression, temper: temper, beat: beat)
-        for eye in eyes {
-            let r = eye.r * k
-            // The drawn eye, covered in the dark of its own slit.
-            canvas.fill(Path(ellipseIn: CGRect(x: eye.x * k - 1.3 * r, y: eye.y * k - 1.3 * r, width: 2.6 * r, height: 2.6 * r)), with: .color(Color(hex: eye.slit)))
-            let cx = eye.x * k + shown.gaze.x * r + moved.x * k
-            let cy = eye.y * k + shown.gaze.y * r + moved.y * k
-            var eyeContext = canvas
-            // A blink shuts it about its own middle.
-            eyeContext.translateBy(x: cx, y: cy)
-            eyeContext.scaleBy(x: 1, y: blink)
-            switch shown.eyes {
-            case .happy:
-                var arc = Path()
-                arc.move(to: CGPoint(x: -1.1 * r, y: 0.42 * r))
-                arc.addQuadCurve(to: CGPoint(x: 1.1 * r, y: 0.42 * r), control: CGPoint(x: 0, y: -1.15 * r))
-                eyeContext.stroke(arc, with: .color(.white), style: StrokeStyle(lineWidth: 0.62 * r, lineCap: .round))
-            case .shut:
-                var arc = Path()
-                arc.move(to: CGPoint(x: -1.1 * r, y: 0))
-                arc.addQuadCurve(to: CGPoint(x: 1.1 * r, y: 0), control: CGPoint(x: 0, y: 0.8 * r))
-                eyeContext.stroke(arc, with: .color(.white), style: StrokeStyle(lineWidth: 0.55 * r, lineCap: .round))
-            case .ember:
-                for (radius, color, opacity) in [(2.3, "#ff3b4e", 0.16), (1.6, "#ff3b4e", 0.32), (1.12, "#ff4a5a", 1), (0.55, "#fff1f2", 1)] {
-                    eyeContext.fill(Path(ellipseIn: CGRect(x: -radius * r, y: -radius * r, width: 2 * radius * r, height: 2 * radius * r)), with: .color(Color(hex: color).opacity(opacity)))
-                }
-            case .open, .wide, .low:
-                let size = shown.eyes == .wide ? 1.18 : shown.eyes == .low ? 0.86 : 1
-                let drop = shown.eyes == .low ? 0.12 * r : 0
-                eyeContext.fill(Path(ellipseIn: CGRect(x: -size * r, y: drop - size * r, width: 2 * size * r, height: 2 * size * r)), with: .color(.white))
-            }
-        }
-    }
-}
-
-/// The frames live eyes are drawn at: 30 a second through a blink or a glance and none between (a blink every few
-/// seconds asks for a handful), and 12 a second for eyes that follow the work, which move all the time.
-struct EyeFrames: TimelineSchedule {
-    let moments: [(period: Double, offset: Double, from: Double, to: Double)]?
-    let still: Bool
-
-    func entries(from start: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
-        var next = start
-        var first = true
-        return AnyIterator {
-            if first { first = false; return next }
-            if still { return nil }
-            // Eyes that follow the work drift slowly (a third of an eye in half a second): a dozen frames a second
-            // draw that as smoothly as thirty, for less than half the work. A blink is quick, and gets thirty.
-            let step = mode == .lowFrequency ? 1.0 : moments == nil ? 1.0 / 12 : 1.0 / 30
-            let t = next.timeIntervalSinceReferenceDate + step
-            guard let moments else { next = Date(timeIntervalSinceReferenceDate: t); return next }
-            guard let move = KnightEyes.nextMove(after: t, in: moments) else { return nil }
-            // At rest the eyes are drawn open again once, then not until they next move.
-            next = Date(timeIntervalSinceReferenceDate: move)
-            return next
+        let mood = expression.map { Orb.Mood(expression: $0) }
+        if id == "galahad" {
+            GalahadOrb(size: size, label: label, mood: mood, key: "galahad:face")
+        } else {
+            KnightFace(id: id, profile: profile, size: size, mood: mood, label: label, key: "face:\(id)")
         }
     }
 }
 
 extension Color {
-    /// A colour from its six hex digits (the drawings' own slits; nothing from a profile).
+    /// A colour from its six hex digits (an orb's: a colour from a profile is checked to be six hex digits first).
     init(hex: String) {
         let value = Int(hex.dropFirst(), radix: 16) ?? 0
         self.init(red: Double((value >> 16) & 0xff) / 255, green: Double((value >> 8) & 0xff) / 255, blue: Double(value & 0xff) / 255)

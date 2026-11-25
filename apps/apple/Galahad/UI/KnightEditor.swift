@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// A knight, new or changed (the PWA's knight form): the drawing it wears, its name and handle, its job, its repository,
-/// the harness and model role it works with, and its day's allowance. The node checks it all again when it is saved.
+/// A knight, new or changed (the PWA's knight form): its orb's colour, its name and handle, its job, its repository, the
+/// harness and model role it works with, and its day's allowance. The node checks it all again when it is saved.
 struct KnightEditor: View {
     let session: Session
     var existing: Teammate?
@@ -12,8 +12,10 @@ struct KnightEditor: View {
     @State private var handle: String
     /// A handle you typed yourself stops following the name.
     @State private var handleTyped: Bool
-    /// The drawing you chose; nil: the one its name and handle give it.
-    @State private var chosenLook: String?
+    /// The colour you chose for its orb (one of the 24, or one it was given elsewhere); nil: the one its handle gives it.
+    @State private var chosenColor: String?
+    /// Whether its colour was chosen here: untouched, what is saved stays as it is (the PWA's avatarEditor).
+    @State private var colorTouched = false
     @State private var instructions: String
     @State private var repository: String
     @State private var harness: String
@@ -43,7 +45,7 @@ struct KnightEditor: View {
         _name = State(initialValue: existing?.name ?? "")
         _handle = State(initialValue: existing?.id ?? "")
         _handleTyped = State(initialValue: existing != nil)
-        _chosenLook = State(initialValue: existing.map { AvatarLook.of(id: $0.id, name: $0.name, profile: $0.avatar) })
+        _chosenColor = State(initialValue: KnightOrb.chosenColor(existing?.avatar))
         _instructions = State(initialValue: existing?.instructions ?? "")
         _repository = State(initialValue: existing?.repository ?? "")
         _harness = State(initialValue: existing?.harness ?? "native")
@@ -58,7 +60,6 @@ struct KnightEditor: View {
     }
 
     private var taken: [String] { (session.team?.teammates.map(\.id) ?? []) + (session.team?.removed?.map(\.id) ?? []) }
-    private var look: String { chosenLook ?? AvatarLook.of(id: handle, name: name, profile: nil) }
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// What stops it being saved, in words; nil: nothing.
@@ -81,31 +82,13 @@ struct KnightEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    VStack(spacing: 14) {
-                        Portrait(drawing: look, size: 120, expression: "idle", id: handle, temper: AvatarLook.temperament(id: handle, profile: existing?.avatar))
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
-                                ForEach(AvatarLook.looks, id: \.id) { each in
-                                    Button { chosenLook = each.id } label: {
-                                        VStack(spacing: 4) {
-                                            Portrait(drawing: each.id, size: 56)
-                                                .padding(4)
-                                                .background(Circle().strokeBorder(each.id == look ? Color.ink : .clear, lineWidth: 2))
-                                            Text(AvatarLook.title(each.id)).font(.caption2).foregroundStyle(each.id == look ? .primary : .secondary)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(AvatarLook.title(each.id))
-                                    .accessibilityAddTraits(each.id == look ? .isSelected : [])
-                                }
-                            }
-                            .padding(.horizontal, 4)
-                        }
+                    OrbColorPicker(handle: handle, chosen: chosenColor) { color in
+                        chosenColor = color
+                        colorTouched = true
                     }
-                    .frame(maxWidth: .infinity)
                     .listRowBackground(Color.clear)
                 } header: {
-                    Text("Which knight")
+                    Text("Colour")
                 }
 
                 Section {
@@ -284,7 +267,8 @@ struct KnightEditor: View {
         var input = KnightInput(
             id: handle, name: trimmedName, instructions: instructions, repository: address.isEmpty ? nil : address,
             harness: harness, role: role, enabled: enabled, dailyTurns: dailyTurns,
-            avatar: AvatarLook.profile(look: look, temperament: AvatarLook.temperament(id: handle, profile: existing?.avatar))
+            // Its colour, when you chose here: the one you chose, or its handle's again. Untouched, it is left as it is.
+            avatar: colorTouched ? (chosenColor.map(KnightInput.OrbColor.chosen) ?? .handle) : nil
         )
         // Its own models, to a node that knows them: none is its role's again.
         input.models = own.isEmpty ? nil : own
@@ -315,6 +299,61 @@ struct KnightEditor: View {
         }
         saved(knight)
         dismiss()
+    }
+}
+
+/// A knight's colour as you choose it (the PWA's avatarEditor): its orb as it will be, the 24 colours to choose from, each
+/// named, the one you chose ringed in the ink, and the one its handle gives it.
+struct OrbColorPicker: View {
+    /// Its handle: its orb's own sphere, and the colour it gives it until you choose one.
+    let handle: String
+    /// The colour you chose (one of the 24, or one it was given elsewhere); nil: its handle's.
+    let chosen: String?
+    /// A colour chosen, or (nil) its handle's again.
+    let choose: (String?) -> Void
+
+    private var id: String { handle.isEmpty ? "knight" : handle }
+
+    /// What its orb's colour is, in words.
+    private var note: String {
+        guard chosen == nil else { return "The colour you chose." }
+        let tint = KnightOrb.colors(id: id, profile: nil).tint
+        return "Its handle gives it \(KnightOrb.tints.firstIndex(of: tint).map { KnightOrb.tintNames[$0] } ?? "this colour"): change its handle and its colour comes with it, until you choose one."
+    }
+
+    var body: some View {
+        VStack(spacing: Space.s3) {
+            HStack(spacing: Space.s4) {
+                // Its orb as it will be: the colour you chose (as its saved avatar would say it), or its handle's.
+                WorkerFace(id: id, profile: chosen.map { .object(["v": .number(2), "color": .string($0)]) }, size: 96, expression: "idle")
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    Text(note).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("Its handle's colour") { choose(nil) }
+                        .buttonStyle(.borderless)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.touch), spacing: Space.s1)], spacing: Space.s1) {
+                ForEach(KnightOrb.tints.indices, id: \.self) { n in
+                    let tint = KnightOrb.tints[n]
+                    Button { choose(tint) } label: {
+                        Circle()
+                            .fill(Color(hex: tint))
+                            .overlay(Circle().strokeBorder(.black.opacity(0.14), lineWidth: 1))
+                            .frame(width: 30, height: 30)
+                            .padding(Space.s1)
+                            .overlay(Circle().strokeBorder(chosen == tint ? Color.ink : .clear, lineWidth: 2))
+                            .frame(width: Metrics.touch, height: Metrics.touch)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(KnightOrb.tintNames[n])
+                    .accessibilityAddTraits(chosen == tint ? .isSelected : [])
+                    .help(KnightOrb.tintNames[n])
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -355,7 +394,7 @@ struct RoomEditor: View {
                             if members.contains(knight.id) { members.remove(knight.id) } else { members.insert(knight.id) }
                         } label: {
                             HStack(spacing: 12) {
-                                Portrait(drawing: AvatarLook.of(id: knight.id, name: knight.name, profile: knight.avatar), size: 36)
+                                WorkerFace(id: knight.id, profile: knight.avatar, size: 36)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(knight.name).foregroundStyle(.primary)
                                     Text(knight.role).font(.caption).foregroundStyle(.secondary)

@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import Galahad
 
-/// Galahad's orb, as the PWA draws it (`lib/orb.ts`): the same colours and the same parts at every size, checked against
-/// its own output.
+/// Galahad's orb, as the PWA draws it (`lib/orb.ts`): the same colours and the same parts at every size (his rings, his
+/// data ring, his nucleus and his sphere of glyphs), checked against its own output.
 struct OrbTests {
     let orb = Vectors.shared.orb
 
@@ -39,18 +39,35 @@ struct OrbTests {
         }
     }
 
+    @Test func hisFullOrbHasItsDataRingNucleusAndSphereOfGlyphs() {
+        // (Your words, 25 November 2026: "also update Galahad's orb", "use glyph and randomness on the orbs".)
+        let full = Orb.parts(168).map(\.name)
+        for name in ["data", "nucleus", "sphere"] { #expect(full.contains(name), "\(name)") }
+        // The sphere is drawn last, over its nucleus and the light it sits in; the data ring turns inside the ticks.
+        #expect(full.suffix(3) == ["glow", "nucleus", "sphere"])
+        #expect(full.firstIndex(of: "data")! > full.firstIndex(of: "marks")!)
+        // Every level has its sphere round a nucleus; only the full one its data ring.
+        for size in [28.0, 64] {
+            let names = Orb.parts(size).map(\.name)
+            #expect(names.suffix(3) == ["glow", "nucleus", "sphere"], "\(size)")
+            #expect(!names.contains("data"), "\(size)")
+        }
+    }
+
     /// A part as lib/orb.ts wrote it, as the app's own (what it doesn't carry is NaN, which equals nothing).
     private static func part(_ given: Vectors.OrbCases.Part) -> Orb.Part {
         let number = { (value: Double?) in value ?? .nan }
         let ink = { (name: String?) in Orb.Ink(rawValue: name ?? "") ?? .white }
         let stops = (given.stops ?? []).map { Orb.Stop(at: $0.at, ink: ink($0.ink), opacity: $0.opacity) }
-        let point = { (xy: [Double]?) in Orb.Point(x: xy?.first ?? .nan, y: xy?.last ?? .nan) }
         let kind: Orb.Kind = switch given.kind {
         case "disc": .disc(r: number(given.r), cx: number(given.cx), cy: number(given.cy), spread: number(given.spread), stops: stops)
         case "ring": .ring(r: number(given.r), width: number(given.width), ink: ink(given.ink), opacity: number(given.opacity), arcs: given.arcs.map { $0.map { Orb.Arc(from: $0.first ?? .nan, to: $0.last ?? .nan) } })
         case "ticks": .ticks(r: number(given.r), count: given.count ?? -1, offset: number(given.offset), length: number(given.length), width: number(given.width), ink: ink(given.ink), opacity: number(given.opacity))
-        case "rim": .rim(r: number(given.r), width: number(given.width), from: point(given.from), to: point(given.to), stops: stops)
-        default: .shine(cx: number(given.cx), cy: number(given.cy), rx: number(given.rx), ry: number(given.ry), rotate: number(given.rotate), opacity: number(given.opacity))
+        case "glyphs": .glyphs(r: number(given.r), count: given.count ?? -1, size: number(given.size), share: number(given.share), ink: ink(given.ink))
+        // (A kind the app doesn't know is a sphere of nothing: it equals none of the app's parts.)
+        default: given.kind == "sphere"
+            ? .sphere(r: number(given.r), count: given.count ?? -1, glyph: number(given.glyph), second: ink(given.second))
+            : .sphere(r: .nan, count: -1, glyph: .nan, second: .white)
         }
         return Orb.Part(name: given.name, kind: kind)
     }

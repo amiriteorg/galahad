@@ -57,7 +57,8 @@ struct Teammate: Decodable, Sendable, Identifiable {
     let dailyTurns: Int
     let turnsToday: Int
     let repository: String?
-    /// The saved look, checked field by field before it names a drawing (`AvatarLook`).
+    /// Its saved avatar: the colour you chose for its orb (core's OrbProfile, read by KnightOrb.chosenColor), or a look
+    /// from before the orbs, which colours nothing. Checked field by field before it colours anything.
     let avatar: JSONValue?
     /// Who made it: `owner` (also what its absence means), `galahad`, or the knight that did.
     let createdBy: String?

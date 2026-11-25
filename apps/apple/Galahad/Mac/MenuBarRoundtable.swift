@@ -68,15 +68,11 @@ struct MenuBarRoundtable: View {
                 ForEach(session.seats, id: \.self) { id in
                     if id == "galahad" {
                         MenuRow(action: { show(.galahad) }) {
-                            SidebarSeat(name: "Galahad", line: session.galahad.text, needs: session.galahad.tone == .warn, standing: session.galahadStanding,
-                                        drawing: "galahad", expression: session.galahadExpression, id: id, leads: session.primary == id)
+                            SidebarSeat(id: id, name: "Galahad", line: session.galahad.text, needs: session.galahad.tone == .warn, standing: session.galahadStanding, leads: session.primary == id)
                         }
                     } else if let row = rows[id] {
-                        let knight = session.teammate(id)
                         MenuRow(action: { show(.knight(id)) }) {
-                            SidebarSeat(name: row.name, line: row.line, needs: row.needs, standing: row.standing,
-                                        drawing: AvatarLook.of(id: id, name: row.name, profile: knight?.avatar), expression: row.expression, id: id,
-                                        temper: AvatarLook.temperament(id: id, profile: knight?.avatar), leads: session.primary == id)
+                            SidebarSeat(id: id, profile: session.teammate(id)?.avatar, name: row.name, line: row.line, needs: row.needs, standing: row.standing, leads: session.primary == id)
                         }
                     }
                 }

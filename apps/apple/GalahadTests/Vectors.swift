@@ -59,11 +59,20 @@ struct Vectors: Decodable {
         let approvalProof: String
     }
 
-    struct Look: Decodable {
-        let id: String
-        let name: String
-        let avatar: JSONValue?
-        let look: String
+    /// A knight's orb's colours (core's avatar.ts): the 24 tints and their names, knights' colours from their handles and
+    /// saved avatars, handles' seeds, blends and the nearest tints.
+    struct KnightOrbs: Decodable {
+        struct Colors: Decodable { let tint: String; let light: String; let deep: String; let second: String; let chosen: Bool }
+        struct Knight: Decodable { let id: String; let avatar: JSONValue?; let colors: Colors }
+        struct Seed: Decodable { let id: String; let seed: UInt32 }
+        struct Blend: Decodable { let from: String; let to: String; let t: Double; let blend: String }
+        struct Nearest: Decodable { let color: String; let at: Int }
+        let tints: [String]
+        let names: [String]
+        let knights: [Knight]
+        let seeds: [Seed]
+        let blends: [Blend]
+        let nearest: [Nearest]
     }
 
     struct Roundtable: Decodable {
@@ -104,8 +113,6 @@ struct Vectors: Decodable {
             let maySandbox: Bool
             let plan: Plan
         }
-        struct Profile: Decodable { let look: String; let temperament: String; let profile: AvatarProfile }
-        struct Temperament: Decodable { let id: String; let avatar: JSONValue?; let temperament: String }
         struct RoleCase: Decodable { let roster: [String: Knights.RoleInfo]; let current: String?; let roles: [String] }
         struct RoleLine: Decodable { let role: String; let spec: Knights.RoleInfo?; let line: String }
         struct Budget: Decodable { let text: String; let usd: Double?; let error: String? }
@@ -115,8 +122,6 @@ struct Vectors: Decodable {
         struct WorksOn: Decodable { let role: String; let models: [String]?; let sensitive: Bool?; let words: String }
         let handles: [Handle]
         let removals: [Removal]
-        let profiles: [Profile]
-        let temperaments: [Temperament]
         let roles: [RoleCase]
         let roleLines: [RoleLine]
         let budgets: [Budget]
@@ -152,14 +157,12 @@ struct Vectors: Decodable {
         let shots: [Shot]
     }
 
-    struct EyeCases: Decodable {
-        struct Eye: Decodable { let x: Double; let y: Double; let r: Double; let slit: String }
-        struct Shown: Decodable { let eyes: String; let gaze: [Double] }
+    /// A knight's face (core's taskStep, and the mood its orb takes from what it is doing: lib/orb-motion.ts').
+    struct Faces: Decodable {
         struct Step: Decodable { let line: String; let step: String }
-        let canvas: Double
-        let art: [String: [Eye]]
-        let shown: [String: Shown]
+        struct Mood: Decodable { let expression: String; let mood: String }
         let steps: [Step]
+        let moods: [Mood]
     }
 
     /// Galahad's orb (the PWA's lib/orb.ts): each state's colours, the parts of each level, and the level of each size.
@@ -182,11 +185,10 @@ struct Vectors: Decodable {
             let count: Int?
             let offset: Double?
             let length: Double?
-            let from: [Double]?
-            let to: [Double]?
-            let rx: Double?
-            let ry: Double?
-            let rotate: Double?
+            let size: Double?
+            let share: Double?
+            let glyph: Double?
+            let second: String?
         }
         struct Size: Decodable { let size: Double; let level: String }
         struct State: Decodable { let state: String; let tone: String }
@@ -270,11 +272,53 @@ struct Vectors: Decodable {
             let steps: [Step]
             let frames: [FrameCase]
         }
+        /// The spheres of glyphs (the PWA's lib/orb-sphere.ts): each handle's sphere, its points, its glyphs as they
+        /// change, what is seen of them in given frames, the shades, a knight's arcs and Galahad's data ring.
+        struct Spheres: Decodable {
+            struct Look: Decodable { let count: Int; let glyph: Double; let r: Double; let nucleus: Double }
+            struct Sphere: Decodable { let seed: UInt32; let tilt: Double; let spin: Double; let phase: Double; let share: Double }
+            struct Handle: Decodable { let handle: String; let sphere: Sphere }
+            struct Point: Decodable { let x: Double; let y: Double; let z: Double; let second: Bool; let size: Double }
+            struct Points: Decodable { let handle: String; let count: Int; let points: [Point] }
+            struct Glyph: Decodable { let char: String; let data: Bool; let fade: Double }
+            struct GlyphCase: Decodable { let seed: UInt32; let i: Int; let level: Int; let t: Double; let flash: Double; let glyph: Glyph }
+            struct Shown: Decodable { let x: Double; let y: Double; let near: Double; let size: Double; let alpha: Double; let shade: Int; let second: Bool; let char: String; let data: Bool }
+            struct Frame: Decodable {
+                let handle: String
+                let count: Int
+                let angle: Double
+                let scale: Double
+                let radius: Double
+                let glyph: Double
+                let t: Double
+                let mood: String
+                let paper: Bool
+                let shown: [Shown]
+            }
+            struct Shades: Decodable { let ink: String; let light: String; let deep: String; let shades: [String]; let paper: [String] }
+            struct Arc: Decodable { let r: Double; let width: Double; let from: Double; let length: Double; let speed: Double }
+            struct Arcs: Decodable { let handle: String; let level: String; let arcs: [Arc] }
+            struct Place: Decodable { let char: String; let alpha: Double }
+            struct Ring: Decodable { let seed: UInt32; let t: Double; let share: Double; let places: [Place?] }
+            let knight: [String: Look]
+            let turn: Double
+            let ladder: [[String]]
+            let data: String
+            let flash: [String: Double]
+            let spheres: [Handle]
+            let points: [Points]
+            let glyphs: [GlyphCase]
+            let frames: [Frame]
+            let shades: [Shades]
+            let arcs: [Arcs]
+            let ring: [Ring]
+        }
         let palettes: [String: Palette]
         let levels: [String: [Part]]
         let sizes: [Size]
         let states: [State]
         let motion: Motion
+        let sphere: Spheres
     }
 
     struct NoticeFrom: Decodable {
@@ -448,14 +492,14 @@ struct Vectors: Decodable {
     let requests: [Request]
     let canonical: [Canonical]
     let pairing: Pairing
-    let looks: [Look]
+    let knightOrbs: KnightOrbs
     let roundtable: Roundtable
     let unread: Unread
     let rooms: Rooms
     let knightForms: KnightForms
     let keys: KeyCases
     let desktop: DesktopCases
-    let eyes: EyeCases
+    let faces: Faces
     let orb: OrbCases
     let connectorStates: [ConnectorState]
     let threads: [Thread]

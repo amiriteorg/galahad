@@ -114,8 +114,6 @@ import Observation
         ))
     }
 
-    /// What Galahad's face shows: thinking while he answers here, asking while something waits for you.
-    var galahadExpression: String { chat.answering ? "thinking" : galahad.tone == .warn ? "asking" : "idle" }
     /// Where he stands at a glance: the ring round his face, and his word.
     var galahadStanding: Standing { .of(galahad, answering: chat.answering) }
 

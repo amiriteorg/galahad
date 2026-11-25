@@ -94,7 +94,7 @@ struct PlacesSidebar<Foot: View>: View {
             if !session.roomRows.isEmpty {
                 Section("Rooms", isExpanded: $roomsShown) {
                     ForEach(session.roomRows) { row in
-                        SidebarRoom(row: row, looks: looks(of: row)).tag(Place.room(row.id))
+                        SidebarRoom(row: row, faces: row.members.map { MemberFace(id: $0, profile: session.drawn($0)?.avatar) }).tag(Place.room(row.id))
                     }
                 }
             }
@@ -157,14 +157,10 @@ struct PlacesSidebar<Foot: View>: View {
     /// A seat: Galahad's chat, or a knight's page.
     @ViewBuilder private func seat(_ id: String, _ rows: [String: RosterRow]) -> some View {
         if id == "galahad" {
-            SidebarSeat(name: "Galahad", line: session.galahad.text, needs: session.galahad.tone == .warn, standing: session.galahadStanding,
-                        drawing: "galahad", expression: session.galahadExpression, id: id, leads: session.primary == id)
+            SidebarSeat(id: id, name: "Galahad", line: session.galahad.text, needs: session.galahad.tone == .warn, standing: session.galahadStanding, leads: session.primary == id)
                 .tag(Place.galahad)
         } else if let row = rows[id] {
-            let knight = session.drawn(id)
-            SidebarSeat(name: row.name, line: row.line, needs: row.needs, standing: row.standing,
-                        drawing: AvatarLook.of(id: id, name: row.name, profile: knight?.avatar), expression: row.expression, id: id,
-                        temper: AvatarLook.temperament(id: id, profile: knight?.avatar), leads: session.primary == id)
+            SidebarSeat(id: id, profile: session.drawn(id)?.avatar, name: row.name, line: row.line, needs: row.needs, standing: row.standing, leads: session.primary == id)
                 .tag(Place.knight(id))
         }
     }
@@ -212,13 +208,6 @@ struct PlacesSidebar<Foot: View>: View {
             do { try await change() } catch { refused = (what, error.localizedDescription) }
         }
     }
-
-    private func looks(of row: RoomRow) -> [String] {
-        row.members.map { id in
-            let knight = session.drawn(id)
-            return AvatarLook.of(id: id, name: knight?.name ?? id, profile: knight?.avatar)
-        }
-    }
 }
 
 /// A seat in the sidebar: its face in the ring of where it stands (the one who leads with its mark on the ring's foot), its
@@ -226,21 +215,21 @@ struct PlacesSidebar<Foot: View>: View {
 /// than an iPhone's row, as a sidebar is; on the row a focused sidebar shows selected, it is all in the selection's white,
 /// its line's red too (the chip still says it needs you).
 struct SidebarSeat: View {
+    /// A knight's handle, or `galahad`.
+    let id: String
+    /// Its saved avatar: the colour you chose for its orb, if you did.
+    var profile: JSONValue? = nil
     let name: String
     let line: String
     let needs: Bool
     let standing: Standing
-    let drawing: String
-    var expression: String? = nil
-    var id = ""
-    var temper = "calm"
     var leads = false
     @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         let selected = prominence == .increased
         HStack(spacing: Space.s2) {
-            SeatFace(drawing: drawing, size: Metrics.sidebarFace, expression: expression, id: id, temper: temper, standing: standing, leads: leads, selected: selected)
+            SeatFace(id: id, profile: profile, size: Metrics.sidebarFace, standing: standing, leads: leads, selected: selected)
                 .frame(width: Metrics.sidebarSeat, height: Metrics.sidebarSeat)
             VStack(alignment: .leading, spacing: Space.line) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
@@ -267,20 +256,20 @@ struct SidebarSeat: View {
     }
 }
 
-/// A room in the sidebar: who is in it (up to three faces, where a knight's face stands), its name, and where it stands in
-/// a line, with the mark of what needs you.
+/// A room in the sidebar: who is in it (up to three faces, still, where a knight's face stands), its name, and where it
+/// stands in a line, with the mark of what needs you.
 private struct SidebarRoom: View {
     let row: RoomRow
-    let looks: [String]
+    let faces: [MemberFace]
     @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         let selected = prominence == .increased
         HStack(spacing: Space.s2) {
-            let shown = Array(looks.prefix(3))
+            let shown = Array(faces.prefix(3))
             ZStack {
-                ForEach(Array(shown.enumerated()), id: \.offset) { index, look in
-                    Portrait(drawing: look, size: Metrics.sidebarFace * 0.62)
+                ForEach(Array(shown.enumerated()), id: \.offset) { index, face in
+                    WorkerFace(id: face.id, profile: face.profile, size: Metrics.sidebarFace * 0.62)
                         .offset(x: (CGFloat(index) - CGFloat(shown.count - 1) / 2) * Metrics.sidebarFace * 0.24, y: index % 2 == 0 ? -Space.line : Space.line)
                 }
             }

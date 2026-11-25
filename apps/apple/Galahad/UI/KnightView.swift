@@ -30,8 +30,8 @@ struct KnightView: View {
 
     private var knight: Teammate? { session.teammate(id) }
     private var row: RosterRow? { session.rows.first { $0.id == id } }
-    /// Its face and name as the Roundtable draws them, the kept one's until the node has answered.
-    private var look: String { AvatarLook.of(id: id, name: session.drawn(id)?.name ?? id, profile: session.drawn(id)?.avatar) }
+    /// Its orb's colour and its name as the Roundtable draws them, the kept one's until the node has answered.
+    private var profile: JSONValue? { session.drawn(id)?.avatar }
     private var name: String { session.drawn(id)?.name ?? "Knight" }
 
     private var items: [Timeline.Item] {
@@ -56,7 +56,7 @@ struct KnightView: View {
                 ForEach(items) { item in
                     switch item {
                     case .message(let message):
-                        TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), look: message.speaker == "galahad" ? "galahad" : look, client: session.client) { text in
+                        TeamBubble(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []), profile: session.drawn(message.speaker)?.avatar, client: session.client) { text in
                             room.quote(text, by: Timeline.speaker(message, teammates: session.team?.teammates ?? []))
                             composing = true
                         }
@@ -148,7 +148,7 @@ struct KnightView: View {
         }
         .sheet(isPresented: $inWorkspace) { WorkspaceView(session: session, id: id, name: name) }
         .sheet(isPresented: $about) {
-            KnightAbout(session: session, id: id, row: row, look: look) { leave() }
+            KnightAbout(session: session, id: id, row: row) { leave() }
         }
         .confirmationDialog("Stop this task?", isPresented: .init(get: { stopping != nil }, set: { if !$0 { stopping = nil } }), titleVisibility: .visible, presenting: stopping) { task in
             Button("Stop it", role: .destructive) { Task { await room.control(task, "stop", with: session.client) } }
@@ -172,7 +172,7 @@ struct KnightView: View {
 
     private var welcome: some View {
         TimelineWelcome(title: name, words: "Say something to \(name), or give it a task: it works in its own workspace, and its commands and an independent review say whether the work is done.") {
-            Portrait(drawing: look, size: Metrics.welcomeFace, expression: row?.expression ?? "idle", id: id, temper: AvatarLook.temperament(id: id, profile: session.drawn(id)?.avatar))
+            WorkerFace(id: id, profile: profile, size: Metrics.welcomeFace, expression: row?.expression ?? "idle")
         }
     }
 
@@ -191,12 +191,14 @@ struct KnightView: View {
     static let harness = ["native": "Galahad", "opencode": "OpenCode", "hermes": "Hermes Agent", "claude": "Claude Code", "codex": "Codex", "acp": "Any ACP agent"]
 }
 
-/// A word in a knight's room: yours on the right in the ink, the knight's and Galahad's on the left beside their
-/// drawings, the Roundtable's own notes in the middle. `named`: in a room of several, every knight's name is said.
+/// A word in a knight's room: yours on the right in the ink, the knight's and Galahad's on the left beside their orbs
+/// (still: a conversation's history keeps no state of its own), the Roundtable's own notes in the middle. `named`: in a
+/// room of several, every knight's name is said.
 struct TeamBubble: View {
     let message: TeamMessage
     let speaker: String
-    let look: String
+    /// The speaker's saved avatar: the colour you chose for its orb, if you did.
+    var profile: JSONValue? = nil
     var named = false
     /// Where a picture you sent is read from, to show it (nil: shown only once it is known here).
     var client: NodeClient? = nil
@@ -229,7 +231,7 @@ struct TeamBubble: View {
                 .frame(maxWidth: .infinity)
         default:
             HStack(alignment: .top, spacing: Space.s2) {
-                Portrait(drawing: look, size: Metrics.speakerFace)
+                WorkerFace(id: message.speaker, profile: profile, size: Metrics.speakerFace)
                 VStack(alignment: .leading, spacing: Space.s1) {
                     if named || message.speaker == "galahad" { Text(speaker).font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
                     MarkdownView(message.text)
@@ -553,7 +555,6 @@ private struct KnightAbout: View {
     let session: Session
     let id: String
     let row: RosterRow?
-    let look: String
     /// It was taken off the Roundtable: its page closes too.
     let removed: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -570,7 +571,7 @@ private struct KnightAbout: View {
                 if let knight {
                     Section {
                         HStack(spacing: Space.s4) {
-                            Portrait(drawing: look, size: 96, expression: row?.expression ?? "idle", id: knight.id, temper: AvatarLook.temperament(id: knight.id, profile: knight.avatar))
+                            WorkerFace(id: knight.id, profile: knight.avatar, size: 96, expression: row?.expression ?? "idle")
                             VStack(alignment: .leading, spacing: Space.s1) {
                                 Text(knight.name).font(.title2.bold())
                                 Text(knight.models?.isEmpty == false ? Knights.worksOn(role: knight.role.capitalized, models: knight.models, sensitive: knight.sensitive == true) : knight.role.capitalized).font(.subheadline).foregroundStyle(.secondary)

@@ -25,6 +25,26 @@ struct OrbMotionTests {
         }
     }
 
+    @Test func whatAKnightIsDoingIsItsOrbsMoodAsThePWAs() {
+        let faces = Vectors.shared.faces
+        #expect(!faces.moods.isEmpty)
+        for item in faces.moods { #expect(Orb.Mood(expression: item.expression).rawValue == item.mood, "\(item.expression)") }
+        // One it doesn't know, or none, is at rest.
+        #expect(Orb.Mood(expression: "dancing") == .idle)
+        #expect(Orb.Mood(expression: nil) == .idle)
+    }
+
+    @Test func everyMoodIsSlowAndCalm() {
+        // (Your word, 25 November 2026: "slow and calming movement": a breath of 4 to 12 seconds, rings a few degrees a
+        // second, a mood arriving over more than a second.)
+        for mood in Orb.Mood.allCases {
+            let m = Orb.motion(mood)
+            #expect(m.breath >= 4 && m.breath <= 12, "\(mood)")
+            #expect(abs(m.turn.ring) <= 10 && abs(m.turn.segments) <= 15, "\(mood)")
+        }
+        #expect(Orb.arrive > 1)
+    }
+
     @Test func eachStateHasThePWAsMood() {
         for item in motion.states { #expect(Orb.Mood(state: item.state).rawValue == item.mood, "\(item.state)") }
         // Where someone stands at the Roundtable is the same as the state the node names.
@@ -127,7 +147,9 @@ struct OrbMotionTests {
         #expect(Orb.fps(.idle, nil, since: nil) == 15)
         #expect(Orb.fps(.waiting, .seat, since: nil) == 15)
         #expect(Orb.fps(.done, .badge, since: 0.4) == 30)
-        #expect(Orb.fps(.done, .badge, since: 1.6) == 15)
+        // A burst is soft and slow now (your word, 25 November 2026: "slow and calming movement"): lively for its 2.6 s.
+        #expect(Orb.fps(.done, .badge, since: 1.6) == 30)
+        #expect(Orb.fps(.done, .badge, since: Orb.burstLength) == 15)
         // His welcome's orb, the largest, at twice these.
         #expect(Orb.fps(.working, .full, since: nil) == 60)
         #expect(Orb.fps(.idle, .full, since: nil) == 30)
@@ -144,8 +166,9 @@ struct OrbMotionTests {
         #expect(courses.pace(key: key, mood: .done, level: nil, at: 11) == 30)
         _ = courses.frame(key: key, mood: .done, seed: 0, at: 11)
         #expect(courses.pace(key: key, mood: .done, level: nil, at: 11.8) == 30)
-        // (A moment past it: 12.6 − 11 is a hair under 1.6 in binary floating point.)
-        #expect(courses.pace(key: key, mood: .done, level: nil, at: 12.61) == 15)
+        #expect(courses.pace(key: key, mood: .done, level: nil, at: 12.61) == 30)
+        // (A moment past it: 13.6 − 11 is a hair under 2.6 in binary floating point.)
+        #expect(courses.pace(key: key, mood: .done, level: nil, at: 13.61) == 15)
         #expect(courses.pace(key: key, mood: .done, level: .full, at: 14) == 30)
     }
 
@@ -157,8 +180,8 @@ struct OrbMotionTests {
         let frame = Orb.frame(.done, Orb.clock(.working), 30, since: 0.4, from: .working, burst: true)
         #expect(Orb.shownMotes(frame, Orb.stage(.badge)).isEmpty)
         #expect(Orb.shownMotes(frame, Orb.stage(.full)).count == frame.motes.count + frame.leaving.count + frame.sparks.count)
-        // A knight's seat: about a third of each mood's own (10 → 4, 26 → 9), and all sixteen sparks.
-        #expect(Orb.shownMotes(frame, Orb.ringStage).count == 4 + 9 + Orb.burstMotes)
+        // A knight's seat: about a third of each mood's own (8 → 3, 16 → 6), and all twelve sparks.
+        #expect(Orb.shownMotes(frame, Orb.ringStage).count == 3 + 6 + Orb.burstMotes)
     }
 
     // ---- within a billionth ----

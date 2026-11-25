@@ -12,7 +12,9 @@ import Foundation
  * - done: a burst, then green with a glint going round.
  * - failed: the turning stops and the motes run down its sides.
  *
- * GalahadOrb and SeatLights draw a frame of it. Nothing moves where the device asks for reduced motion: the still orb
+ * All of it slow and calm (your word, 25 November 2026: "slow and calming movement"): a breath takes 4 to 12 seconds, a
+ * ring turns a few degrees a second, and a mood arrives over more than a second. GalahadOrb, KnightFace and SeatLights
+ * draw a frame of it. Nothing moves where the device asks for reduced motion: the still orb
  * is drawn then, which is this function's frame with nothing under way. Nothing here comes from a name's meaning, a
  * profile or a model; a knight's handle only seeds where its motes start. Worked in the PWA's own order, step for step,
  * so the two compute the same numbers.
@@ -47,22 +49,23 @@ extension Orb {
     }
 
     static let motions: [Mood: Motion] = [
-        .idle: Motion(breath: 6.5, swell: 0.012, turn: .init(ring: 3, ticks: 0, segments: -4.5), comet: nil, ripple: nil, motes: .init(count: 14, speed: 7, sway: 0.25, flow: .orbit), aura: 0.12),
-        .working: Motion(breath: 2.6, swell: 0.022, turn: .init(ring: 24, ticks: 6, segments: -40), comet: .init(speed: 160, tail: 90), ripple: nil, motes: .init(count: 26, speed: 30, sway: 0, flow: .inward), aura: 0.34),
-        .waiting: Motion(breath: 2.2, swell: 0.03, turn: .init(ring: 6, ticks: 0, segments: -8), comet: nil, ripple: 2.2, motes: .init(count: 12, speed: 10, sway: 0.45, flow: .orbit), aura: 0.42),
-        .queued: Motion(breath: 4.5, swell: 0.012, turn: .init(ring: 10, ticks: 0, segments: -10), comet: .init(speed: 40, tail: 50), ripple: nil, motes: .init(count: 8, speed: 14, sway: 0.15, flow: .orbit), aura: 0.16),
-        .paused: Motion(breath: 9, swell: 0.006, turn: .init(ring: 0, ticks: 0, segments: 0), comet: nil, ripple: nil, motes: .init(count: 0, speed: 0, sway: 0, flow: .orbit), aura: 0.06),
-        .done: Motion(breath: 5, swell: 0.015, turn: .init(ring: 2, ticks: 0, segments: -3), comet: .init(speed: 50, tail: 30), ripple: nil, motes: .init(count: 10, speed: 9, sway: 0.3, flow: .orbit), aura: 0.3),
-        .failed: Motion(breath: 3.4, swell: 0.018, turn: .init(ring: 0, ticks: 0, segments: 0), comet: nil, ripple: nil, motes: .init(count: 8, speed: 0, sway: 0, flow: .fall), aura: 0.3),
+        .idle: Motion(breath: 9, swell: 0.01, turn: .init(ring: 1.6, ticks: 0, segments: -2.4), comet: nil, ripple: nil, motes: .init(count: 10, speed: 3.5, sway: 0.2, flow: .orbit), aura: 0.1),
+        .working: Motion(breath: 5.2, swell: 0.016, turn: .init(ring: 9, ticks: 2.2, segments: -14), comet: .init(speed: 55, tail: 110), ripple: nil, motes: .init(count: 16, speed: 9, sway: 0, flow: .inward), aura: 0.26),
+        .waiting: Motion(breath: 4.2, swell: 0.024, turn: .init(ring: 2.5, ticks: 0, segments: -3.5), comet: nil, ripple: 4.2, motes: .init(count: 10, speed: 4, sway: 0.35, flow: .orbit), aura: 0.34),
+        .queued: Motion(breath: 7, swell: 0.01, turn: .init(ring: 4, ticks: 0, segments: -4), comet: .init(speed: 18, tail: 60), ripple: nil, motes: .init(count: 6, speed: 5, sway: 0.12, flow: .orbit), aura: 0.14),
+        .paused: Motion(breath: 12, swell: 0.005, turn: .init(ring: 0, ticks: 0, segments: 0), comet: nil, ripple: nil, motes: .init(count: 0, speed: 0, sway: 0, flow: .orbit), aura: 0.05),
+        .done: Motion(breath: 8, swell: 0.012, turn: .init(ring: 1, ticks: 0, segments: -1.5), comet: .init(speed: 20, tail: 40), ripple: nil, motes: .init(count: 8, speed: 4, sway: 0.25, flow: .orbit), aura: 0.24),
+        .failed: Motion(breath: 6, swell: 0.014, turn: .init(ring: 0, ticks: 0, segments: 0), comet: nil, ripple: nil, motes: .init(count: 6, speed: 0, sway: 0, flow: .fall), aura: 0.24),
     ]
 
     static func motion(_ mood: Mood) -> Motion { motions[mood]! }
 
-    /// Seconds a new mood takes to arrive: its motes, its light and its waves fade in over them.
-    static let arrive: Double = 0.8
-    /// Seconds a burst takes (done, and a task's end), and how many motes fly out in it.
-    static let burstLength: Double = 1.6
-    static let burstMotes = 16
+    /// Seconds a new mood takes to arrive: its motes, its light and its waves fade in over them (slowly: your word, 25
+    /// November 2026, "slow and calming movement").
+    static let arrive: Double = 1.6
+    /// Seconds a burst takes (done, and a task's end), and how many motes drift out in it: a soft one.
+    static let burstLength: Double = 2.6
+    static let burstMotes = 12
     /// Seconds a speed, the swell, the light and the aura take to ease most of the way (63 %) to a new mood's.
     static let ease: Double = 0.35
     /// The longest step a frame takes: one late by more (the app coming back) turns nothing a long way at once.
@@ -232,19 +235,19 @@ extension Orb {
         for i in 0..<m.motes.count {
             let a = rand(seed, i, 0), s = rand(seed, i, 1), u0 = rand(seed, i, 2), p = rand(seed, i, 3), z = rand(seed, i, 4)
             let speed = m.motes.speed * (0.5 + s)
-            // Each twinkles on a breath of its own, between 1.8 and 4.2 seconds.
-            let twinkle = 0.5 + 0.5 * sin(2 * .pi * (t / (1.8 + 2.4 * s) + p))
+            // Each twinkles on a slow breath of its own, between 3 and 7 seconds.
+            let twinkle = 0.5 + 0.5 * sin(2 * .pi * (t / (3 + 4 * s) + p))
             let angle: Double, u: Double, alpha: Double
             switch m.motes.flow {
             case .inward:
-                // From the band's outer edge to its inner one, turning as it comes, 2.2 to 3.8 seconds a pass, then again.
-                let phase = fract(t / (2.2 + 1.6 * s) + p)
+                // From the band's outer edge to its inner one, turning as it comes, 4 to 7 seconds a pass, then again.
+                let phase = fract(t / (4 + 3 * s) + p)
                 angle = 360 * a + speed * t + 120 * phase
                 u = 1 - phase
                 alpha = sin(.pi * phase) * (0.55 + 0.45 * twinkle)
             case .fall:
-                // Down one side, from high on it to the foot, faster as it goes, fading, 3.5 to 6 seconds a run.
-                let phase = fract(t / (3.5 + 2.5 * s) + p)
+                // Down one side, from high on it to the foot, faster as it goes, fading, 6 to 10 seconds a run.
+                let phase = fract(t / (6 + 4 * s) + p)
                 let side: Double = a < 0.5 ? -1 : 1
                 let from = side * (20 + 70 * u0)
                 angle = from + (side * 180 - from) * phase * phase
@@ -291,17 +294,18 @@ extension Orb {
     static var ringStage: Stage { stages["ring"]! }
 
     /// How a frame moves the orb's parts (by their names), and where its lights are drawn among them: the outer ring and
-    /// its notches turn with the frame's `ring`, the ticks and their marks with its `ticks`, the segments with its
-    /// `segments`; the sphere swells with its `scale`, and its glow (the halo, the core) brightens with its `glow`. The
-    /// waves are drawn after the halo (first, where there is none), under every ring; the light and the motes after the
-    /// rings, just before the sphere, which they pass behind.
+    /// its notches turn with the frame's `ring`, the ticks and their marks with its `ticks`, the segments and the data
+    /// ring with its `segments`; the sphere, its nucleus and the light it sits in swell with its `scale`, and its glows
+    /// (the halo, the light round the sphere, the nucleus) brighten with its `glow`. The sphere turns with its `ring`,
+    /// three times as far (Orb.sphereTurn). The waves are drawn after the halo (first, where there is none), under every
+    /// ring; the light and the motes after the rings, just before the sphere's light, which they pass behind.
     enum Moves {
         static let ring = ["ring", "notches"]
         static let ticks = ["ticks", "marks"]
-        static let segments = ["segments"]
-        static let swell = ["body", "rim", "core", "shine", "glint"]
-        static let glow = ["halo", "core"]
-        static let lightsBefore = "body"
+        static let segments = ["segments", "data"]
+        static let swell = ["glow", "nucleus", "sphere"]
+        static let glow = ["halo", "glow", "nucleus"]
+        static let lightsBefore = "glow"
     }
 
     /// How many frames a second an orb is drawn at (lib/orb-motion.ts' orbFps): as few as look smooth, since every frame
@@ -364,4 +368,19 @@ extension Orb.Mood {
 
     /// A state as the node and the PWA name it; one it doesn't know is idle.
     init(state: String?) { self = Standing(rawValue: state ?? "").map(Orb.Mood.init) ?? .idle }
+
+    /// What a knight is doing where only that is known (KnightOrb.expression), as its orb's mood (lib/orb-motion.ts'
+    /// orbMoodOfExpression): thinking, at work, reading, browsing and checking are work; waiting is queued; asking your
+    /// leave waits on you; pleased is done; concerned is failed; resting is paused; idle, and anything else, is idle.
+    init(expression: String?) {
+        switch expression {
+        case "thinking", "working", "reading", "browsing", "checking": self = .working
+        case "waiting": self = .queued
+        case "asking": self = .waiting
+        case "pleased": self = .done
+        case "concerned": self = .failed
+        case "resting": self = .paused
+        default: self = .idle
+        }
+    }
 }

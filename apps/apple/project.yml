@@ -27,12 +27,9 @@ targets:
     type: application
     platform: iOS
     sources:
+      # (The knights are orbs, drawn in code: the owner's drawings of them are no longer bundled, since 25 November 2026.)
       - path: Galahad
         excludes: ["Mac/**"]
-      # The knights as the owner drew them: the PWA's own files, bundled as they are (never copied, redrawn or recoloured).
-      - path: ../web/src/knights
-        type: folder
-        buildPhase: resources
     info:
       path: Galahad/Info.plist
       properties:
@@ -92,9 +89,6 @@ targets:
       # The iPhone's Info.plist and entitlements are XcodeGen's, written there for the iOS target.
       - path: Galahad
         excludes: ["Info.plist", "Galahad.entitlements"]
-      - path: ../web/src/knights
-        type: folder
-        buildPhase: resources
     info:
       path: GalahadMac/Info.plist
       properties:
