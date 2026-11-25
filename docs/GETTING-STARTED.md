@@ -510,6 +510,39 @@ The agent gets these tools: `recall`, `remember`, `web_search`, `decide`, `fleet
 - **Local only:** the credential works on the loopback listener only.
 - **Connectors, never keys:** it can call your connectors' tools; anything outward or destructive is filed for your approval.
 
+### An agent on another of your machines (Q-AMP)
+
+The credential above works only beside a node. An agent on a machine of yours that runs no node (Claude Code on a laptop, say) reaches a node's tools over [Q-AMP](https://sovware.io/wckdboy/qamp) instead. You grant its own key a few tools for a while, and the node runs a bridge for it on its tailnet address. So far a grant may hold the read-only tools `fleet`, `compute`, `place` and `ledger` (none of your memories, nothing that writes), for 24 hours at most.
+
+1. **The node needs Q-AMP 0.1.0.** Fetch the binary for the server from its release (the forge needs a sign-in) and ship it with a deploy. The deploy checks it against `scripts/qamp-pin.sh` and installs it as `<home>/bin/qamp`. `--open-qamp` lets UDP 7781–7789 in on `tailscale0` alone, where UFW is on:
+
+   ```sh
+   scripts/deploy.sh root@ultra --qamp ~/Downloads/qamp-0.1.0-x86_64-unknown-linux-gnu --open-qamp
+   ```
+
+2. **The agent's machine gets a key of its own,** from the same release's binary for that machine (check its SHA-256 too):
+
+   ```sh
+   qamp keygen --out ~/.qamp/agent.qamp-key   # prints its did:key:z6Mk…; the file stays there (0600)
+   ```
+
+3. **On the node, grant that key some tools:**
+
+   ```sh
+   galahad qamp grant did:key:z6Mk… --tools fleet,compute --ttl 1h
+   ```
+
+   It prints what the agent's machine runs, `qamp mcp qamp://…@<tailnet ip>:7781 --key <its key file> --proof qdt1.…`, and the same command as an MCP config. For Claude Code:
+
+   ```sh
+   claude mcp add galahad -- qamp mcp qamp://…@100.x.y.z:7781 --key ~/.qamp/agent.qamp-key --proof qdt1.…
+   ```
+
+   The agent then has `galahad.fleet` and `galahad.compute`.
+4. **List and end grants.** `galahad qamp grants` lists them. A grant ends by itself; `galahad qamp revoke <id>` (or `--all`, or Revoke beside it on the Fleet page) ends it at once, and the agent's next call is refused.
+
+The agent holds no Galahad credential: only its own key and the chain (`qdt1.…`), which is useless without that key. Keep the chain out of chats anyway. Its machine must be on your tailnet. How it is held to all this: [SECURITY](SECURITY.md) ("Q-AMP grants").
+
 The other way round, a harness that runs ACP agents runs Galahad himself (`galahad acp`). That is how he joins a [Buzz](BUZZ.md) community: `bun galahad acp install buzz` mints a credential that may only chat and prints how Buzz's harness runs him. Others read a community, so nothing of yours goes into his answers there.
 
 ## 11. Loops and the heartbeat

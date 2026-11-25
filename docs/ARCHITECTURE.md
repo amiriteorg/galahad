@@ -156,6 +156,11 @@ What still grows with the log: a replay (a late memory, notice or action, a revo
   | **tailnet** | `<tailnet ip>:<port>` | Node-to-node link traffic |
 
   Proxied traffic arrives from `127.0.0.1` but is remote, so that listener refuses the admin token and the gateway (tested).
+- **Q-AMP bridges, for agents on your other machines** (PLAN #58, its first phase; §8¾). Each grant you make runs one bridge, `qamp serve --mcp-stdio`, as a process of its own beside the node.
+  - It listens on the node's tailnet address (never `0.0.0.0`), on one UDP port of 7781–7789.
+  - It lets the agent's key alone finish the handshake: QUIC and TLS 1.3 with raw Ed25519 keys, `X25519MLKEM768` offered first.
+  - It reaches the node only as a local arm does, over loopback, with its grant's arm token.
+  - Nothing listens there until you grant something.
 - **Every request is signed** by the caller's device key over `(method, path+query, time, nonce, sha256(body))`, with a 60-second skew window and a nonce cache against replay. WireGuard already encrypts the wire; the signature proves *which enrolled device* is calling.
 - **Credentials by caller:**
 
@@ -164,6 +169,7 @@ What still grows with the log: a replay (a late memory, notice or action, a revo
   | Node | Ed25519 key | Link and API |
   | Client (PWA) | Non-extractable WebCrypto P-256 key, verified with `lowS: false` because WebCrypto doesn't normalize signatures | API only |
   | CLI | Local admin token | Loopback listener only |
+  | An agent on another of your machines | Its own Ed25519 key in Q-AMP's handshake, and a delegation chain bound to that key; its grant's bridge then calls the node with the grant's arm token | Its grant's bridge (UDP, the tailnet address) |
 - **Per-method authorization:** authenticating a request doesn't authorize every route. Each route names exactly one scope (`mind:read`, `mind:write`, `chat`, `vault:read`, `vault:write`, `brain:write`, `gateway:mint`, `fleet:admin`, `sandbox`, `connect`, `bank:read`), and the server checks it when the route executes.
 - **The PWA** is served over HTTPS by `tailscale serve`, with a strict CSP (`script-src 'self'`, `frame-ancestors 'none'` and so on).
 - **One live stream to each of your devices** (`GET /api/live`, `mind:read`; core's `live.ts`, PLAN #61). One signed answer that stays open says, as server-sent events, which routes' answers changed: the fleet, the Inbox's parts, the team, the turns and your chats, the quests in hand. It never says what they hold, so a device reads each through its own signed route and every scope check and filter stays where it is.
@@ -422,6 +428,24 @@ Network reachability was verified on ultra before it was built. From an internal
 | **Asks, never sees** | `request_secret` files a request you fill in the vault; the agent never sees the value. Keys pasted into `remember` are refused. |
 
 Tools: `recall` (a long memory, such as a quest's whole report, comes shortened to its first 600 characters with how much is left; `full=true` gives it whole: twelve whole reports were twelve thousand characters carried through every later step of an answer), `remember`, `web_search`, `decide`, `fleet`, `compute` (the census, read-only: no tool raises a ceiling, changes the budget or makes a node measure itself), `place`, `sandbox_run` / `create` / `exec` / `destroy` / `save`, `artifacts`, `artifact_read`, `archive_search`, `archive_read`, `note_idea`, `ledger`, `request_secret`, `connectors`, `connector_tool`, `connector_call`, `connector_request`, `loops`, `loop_draft`, `notices`, `skills` and `skill_read` (his skills, read-only, as data: one that waits for your approval shows no words) and `skill_write` (a proposal that waits for you: his own when asked to write up how he did something, or an outside agent's; §9½), and the four bank tools for an agent granted `bank:read`. They're Galahad's own tools (`packages/node/src/tools.ts`), the same ones his chat uses (§6); each names the routes it calls, and an agent is offered the tools whose routes' scopes it holds. Resource: `galahad://oath`. Server instructions tell the agent when to use each. A real MCP client exercises this end to end in `packages/node/test/mcp.test.ts`.
+
+**An agent on another of your machines, over Q-AMP** (PLAN #58, its first phase; `packages/node/src/qamp-grants.ts`). `galahad mcp` runs beside a node, and arm tokens work on loopback alone, so an agent on a machine that runs no node (Claude Code on a laptop) had no way in. A grant gives it one, on your word:
+
+| Part | What it is |
+|---|---|
+| **What you name** | The agent's Ed25519 `did:key` (`qamp keygen` prints it on its machine). The tools come from `fleet`, `compute`, `place` and `ledger`: read-only, none of your memories, nothing that writes (your word of 25 November 2026), and any other tool is refused by name. The lifetime runs from a minute to a day, an hour unless you say; longer is refused, never cut short. |
+| **An arm, `qamp.<id>`** | It holds the union of its tools' route scopes: `mind:read` for these four. A scope no arm may hold, or one the device you grant from doesn't, is refused, never trimmed. Its token is a 0600 file in the node's home, held by the bridge's MCP server, so the agent never holds a Galahad credential. Only a grant makes such an arm, and none is widened by hand. |
+| **A chain** | `qamp delegate` from the node's bridge key to the agent's key, for `/tool/galahad`, ending with the grant. The chain is useless without the agent's private key. The bridge key is made once (`<home>/qamp/bridge.qamp-key`, 0600) and is never the node's own key, which stays in the daemon. |
+| **A bridge** | `qamp serve --mcp-stdio --allow <agent> --only <tools> --prefix galahad -- galahad mcp --arm qamp.<id> --tools <tools>`. The agent's key alone may connect and the granted tools alone are served. `galahad mcp --tools` offers those tools alone too, so `recall` and the archive stay out even if the bridge's allow-list failed. |
+
+- **The agent's side.** `galahad qamp grant` prints it: `qamp mcp qamp://<bridge key>@<tailnet ip>:<port> --key <its key> --proof qdt1.…`. That command is an MCP server for any client, and the tools appear in it as `galahad.fleet` and so on.
+- **The end.** A grant ends when its time is up or when you revoke it: with `galahad qamp revoke`, or with Revoke wherever arms are listed (`galahad arms revoke`, the Fleet page).
+  - Its arm is deleted first, so the agent's next call is refused at the door.
+  - Then its bridge is told to stop. It drains, and is killed if it won't stop.
+- **With the daemon.** The daemon keeps each bridge running and starts it again if it stops. It stops them when it stops, and when it starts it starts those of grants still in force.
+- **Kept where.** Each step is a line in the ledger (resource `qamp`). Grants are node-local, as arm tokens are.
+- **A cancel.** The bridge passes an agent's cancel to the MCP server as `notifications/cancelled` (as Q-AMP documents and tests), which aborts the tool's requests to the node (`mcp-cancel.test.ts`). A route that finishes its work after its caller leaves still finishes it. This path hasn't been run end to end through the bridge: the four tools answer too fast to cancel.
+- **Tested** in `qamp-grants.test.ts` (with a stand-in for the binary) and `qamp-routes.test.ts` (over the node's API). `qamp.e2e.test.ts` runs Q-AMP's real, pinned binary (`scripts/qamp-pin.sh`); without `GALAHAD_QAMP_BIN` it is skipped, and says so.
 
 **Galahad himself as an agent (ACP).** `galahad acp` turns the other way round. A harness that runs ACP agents (JSON-RPC on stdio: Buzz's `buzz-acp`, editors) runs Galahad himself, and each turn goes to the node's chat route with an arm token of its own (`packages/node/src/acp-agent.ts`).
 - His words stream back as message chunks, his tools as tool calls.

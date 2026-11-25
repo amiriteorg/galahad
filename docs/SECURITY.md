@@ -326,6 +326,49 @@ Your rules on the commands his work runs ([ARCHITECTURE](ARCHITECTURE.md) §8⅞
 - **Bank text is data.** Merchant names, remittance lines and notes come back cleaned, cut to 200 characters and wrapped as `untrusted_data`, with a test that an injection comes through inert.
 - **Residual risk:** whoever is root or the node's user on that node can read the key and the session. Details and the full table: [BANK](BANK.md#threat-model).
 
+## Q-AMP grants: an agent on another of your machines (tested)
+
+PLAN #58, its first phase (`packages/node/src/qamp-grants.ts`; how it works: [ARCHITECTURE](ARCHITECTURE.md) §8¾). This is a new door: a UDP port on the tailnet, through which an agent on a machine that runs no node calls a few of Galahad's tools.
+
+- **What it admits.** Each grant you make runs one bridge (`qamp serve --mcp-stdio`, Q-AMP 0.1.0, pinned by SHA-256 in `scripts/qamp-pin.sh`).
+  - It listens on the node's tailnet address and one port of 7781–7789, never `0.0.0.0`.
+  - It lets one key finish the handshake: the agent's own Ed25519 key, by its `did:key`. A stranger's key fails the TLS handshake.
+  - A call needs a delegation chain from the node's bridge key, bound to the agent's key and ending with the grant. An expired chain, one from another key, one for another command, or none at all is refused (`UNAUTHORIZED`).
+  - It serves the granted tools alone. Any other is `UNKNOWN_TOOL`.
+  - Nothing listens until you grant something, and the firewall rule (`deploy.sh --open-qamp`) admits UDP 7781–7789 on `tailscale0` alone.
+- **What a grant may hold, by your word (25 November 2026).** The read-only tools `fleet`, `compute`, `place` and `ledger`, for a minute to a day (an hour unless you say).
+  - Any other tool is refused by name: none of your memories, nothing that writes.
+  - A longer lifetime is refused, never cut short.
+  - The grant's arm holds the union of those tools' route scopes (`mind:read`). A scope no arm may hold, or one the device you grant from lacks, is refused, never trimmed.
+- **Who grants.** You alone: a terminal, or a paired device of yours that holds `fleet:admin` (the routes' scope). The handlers also refuse anyone who isn't you, as for your rules.
+  - An agent's arm never holds `fleet:admin`, and Galahad's own principal and the knights' are arms.
+  - Another full node holds every scope and is still refused.
+  - A grant's arm (`qamp.<id>`) is made by a grant alone and is never widened by hand.
+- **Two layers keep the other tools out.** The bridge serves only its `--only` list, and the MCP server behind it (`galahad mcp --tools`) offers only the same tools. `recall`, the archive and skills, which `mind:read` would reach, stay out if either layer holds.
+- **Ending it.** Revoking (from `galahad qamp revoke`, `galahad arms revoke` or the app's Revoke) or reaching the end deletes the arm first: its token no longer opens the door, so the agent's very next call is refused. Then the bridge is stopped. It drains, and is killed if it won't stop.
+- **What stays as it was** (the design's §3.7):
+  - **The node's door.** A grant's calls reach it as any local arm's do: over loopback, with an arm token stored as a hash, the route's one scope checked. Arm tokens are still refused on every other listener.
+  - **Where things listen.** Nothing binds `0.0.0.0`. The sandbox listener still serves only `/gw`, `/git`, `/key` and `/search`.
+  - **Keys.** The node key never leaves the daemon; the bridge key is its own (0600, made once). Provider keys stay in the vault and its brokers, and Q-AMP's `qamp-llm` isn't used.
+  - **Pairing** is still the only way to become a device: an agent's `did:key` never becomes one, and a grant is not an enrollment.
+  - **The oath gate.** No granted tool approves or decides anything, and the bridge never serves a `fleet:admin` route.
+  - **Convergence.** Grants are node-local and add no event kind; their steps are ordinary ledger lines.
+  - **Secret scanning and redaction** stay at the same doors. The ledger lines carry the agent's public key and the grant's tools, never a token or a chain.
+- **Tests.**
+  - `qamp-grants.test.ts`: who may grant, the scopes computed and the forbidden one refused, the bridge's arguments and environment, revoke and expiry, the ledger lines, supervision and the daemon's restarts. Four mutations each turn a test red.
+  - `qamp-routes.test.ts`: the routes over real HTTP, refusals by principal, the arm's token refused after a revoke.
+  - `qamp-pin.test.ts` and `deploy-setup.test.ts`: the pin, and a deploy refusing a binary that isn't the pinned one.
+  - `qamp.e2e.test.ts`: Q-AMP's real binary, each refusal above where Q-AMP makes it. With the bridge's `--allow` removed, the stranger test fails. Without `GALAHAD_QAMP_BIN` it is skipped, and says so.
+- **Residual risk.**
+  - **The handshake works before it knows the caller.** Q-AMP's default allows 4,096 connections, so a peer on your tailnet can make a bridge do a TLS handshake's work before being refused.
+  - **`mind:read` is the arm's floor.** If both layers above failed, the arm's token would read what `mind:read` reads, your memories included, though never write.
+  - **Read-only isn't harmless.** `ledger` shows what Galahad did across the fleet (targets and details), and `fleet` and `place` show your machines.
+  - **The bridge and its MCP server run as the node's user** and hold the grant's token. Code running as that user already has everything (#5 below).
+  - **A revoked chain stays valid on paper until it expires**, but nothing serves it.
+  - **Q-AMP 0.1 has one implementation.** Its fuzzing and review figures are its own.
+  - **A cancel stops the route's request.** A route that finishes its work after its caller leaves still finishes it.
+  - **Not yet run on a server.** The Linux binary, the firewall rule and a Tailscale ACL haven't been exercised on one: everything above ran on a Mac, on loopback.
+
 ## Known limitations
 
 **The model gateway forwards any path.** A gateway token reaches every method and path under its provider's base URL with the real key: not only model calls but, for an OpenAI-style key, files, batches, fine-tuning, assistants and deletes, and whatever an admin-capable key allows. It is bounded by the token (its providers, expiry, request cap, revocation), and the key itself never leaves the node. An allowlist like the bank's was weighed in November 2026 and not added: Galahad's own model calls never use the gateway (they go to providers directly), its clients are other tools (OpenCode in sandboxes, any code in a sandbox, whatever runs under `galahad run`) whose endpoints are theirs and change with their versions, and a path missed would break a tool. A list of model-call paths per provider kind, which you could extend per provider, is the likely next step.
