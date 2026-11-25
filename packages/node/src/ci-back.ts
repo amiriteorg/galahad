@@ -33,10 +33,21 @@ export interface CiBackDeps {
 
 const OUTCOME_ENDED: Record<Exclude<TeamOutcomeStatus, "active">, string> = { paused: "paused", done: "done", stopped: "stopped", spent: "out of budget" };
 
-const given = (task: TeamTask) =>
+/**
+ * What became of a failure: what its notice says, and whether a knight's fix is under way (then it isn't yours to look
+ * at yet: the notice is a note for the day's digest, not a warning that needs you; PLAN #59).
+ */
+export interface GivenBack {
+  said: string;
+  fixing: boolean;
+}
+
+const yours = (said: string): GivenBack => ({ said, fixing: false });
+
+const given = (task: TeamTask): GivenBack =>
   task.status === "failed" || task.status === "stopped"
-    ? `Given back to @${task.assignee} as task ${task.id}, which ended without a verified fix: it's yours now.`
-    : `Given back to @${task.assignee} as task ${task.id}: once its fix is verified, pushing it waits for your approval.`;
+    ? yours(`Given back to @${task.assignee} as task ${task.id}, which ended without a verified fix: it's yours now.`)
+    : { said: `Given back to @${task.assignee} as task ${task.id}: once its fix is verified, pushing it waits for your approval.`, fixing: true };
 
 const where = (pull: ShippedPull) => `${pull.owner}/${pull.repo}${pull.pr ? `#${pull.pr}` : ""}`;
 
@@ -60,7 +71,7 @@ function mayGive(deps: CiBackDeps, pull: ShippedPull, work: TeamTask): { why: st
 }
 
 /** The fix, given to the knight whose work it was in the work's room, and said in the work's trail. */
-function give(deps: CiBackDeps, pull: ShippedPull, work: TeamTask, budgetUsd: number | undefined, fix: Pick<TeamTaskFix, "head" | "review" | "conflict">, title: string, goal: string, said: string): string | null {
+function give(deps: CiBackDeps, pull: ShippedPull, work: TeamTask, budgetUsd: number | undefined, fix: Pick<TeamTaskFix, "head" | "review" | "conflict">, title: string, goal: string, said: string): GivenBack | null {
   const service = deps.service();
   if (!service) return null;
   try {
@@ -82,21 +93,21 @@ function give(deps: CiBackDeps, pull: ShippedPull, work: TeamTask, budgetUsd: nu
     service.noteTask(work.id, `${said}: given back to @${work.assignee} as task ${task.id}`);
     return given(task);
   } catch (error) {
-    return `Not given back to @${work.assignee}: ${(error as Error).message}`;
+    return yours(`Not given back to @${work.assignee}: ${(error as Error).message}`);
   }
 }
 
 /** What the notice says of a failure: whether it went back to the knight whose work it was (null: no knight's work here). */
-export function giveBack(deps: CiBackDeps, pull: ShippedPull, failure: CiFailure): string | null {
+export function giveBack(deps: CiBackDeps, pull: ShippedPull, failure: CiFailure): GivenBack | null {
   const work = deps.store.taskOfWork(pull.artifact);
   if (!work) return null;
   if (failure.conflict) return conflictBack(deps, pull, { base: failure.conflict });
   const fixes = deps.store.fixesOf(pull.owner, pull.repo, pull.branch);
   const already = fixes.find((task) => task.fix?.head === failure.head && task.fix.review === undefined && task.fix.conflict === undefined);
   if (already) return given(already);
-  if (fixes.length >= CI_FIXES) return `${CI_FIXES} fixes went back to @${work.assignee} and its checks still fail: it's yours now.`;
+  if (fixes.length >= CI_FIXES) return yours(`${CI_FIXES} fixes went back to @${work.assignee} and its checks still fail: it's yours now.`);
   const may = mayGive(deps, pull, work);
-  if ("why" in may) return may.why;
+  if ("why" in may) return may.why === null ? null : yours(may.why);
   const goal = [
     `The checks failed on the pull request of your work "${work.title}" (${where(pull)}, branch ${pull.branch}, at ${failure.head.slice(0, 12)}): make them pass. Your worktree starts on that branch as it stands. Find why each check failed, reproduce it here where you can, and fix the cause in the code, never the check.`,
     `Failed: ${failure.failing.join(", ")}.`,
@@ -110,15 +121,15 @@ export function giveBack(deps: CiBackDeps, pull: ShippedPull, failure: CiFailure
  * (null: no knight's work here), as a fix on its branch that merges the base branch in and resolves the conflicts. Once
  * for each base commit, counted with the other fixes toward CI_FIXES for that pull request, under the same word.
  */
-function conflictBack(deps: CiBackDeps, pull: ShippedPull, conflict: { base: string }): string | null {
+function conflictBack(deps: CiBackDeps, pull: ShippedPull, conflict: { base: string }): GivenBack | null {
   const work = deps.store.taskOfWork(pull.artifact);
   if (!work) return null;
   const fixes = deps.store.fixesOf(pull.owner, pull.repo, pull.branch);
   const already = fixes.find((task) => task.fix?.conflict === conflict.base);
   if (already) return given(already);
-  if (fixes.length >= CI_FIXES) return `${CI_FIXES} fixes went back to @${work.assignee} and its pull request still conflicts: it's yours now.`;
+  if (fixes.length >= CI_FIXES) return yours(`${CI_FIXES} fixes went back to @${work.assignee} and its pull request still conflicts: it's yours now.`);
   const may = mayGive(deps, pull, work);
-  if ("why" in may) return may.why;
+  if ("why" in may) return may.why === null ? null : yours(may.why);
   const goal = [
     `The pull request of your work "${work.title}" (${where(pull)}, branch ${pull.branch}) conflicts with its base branch (at ${conflict.base.slice(0, 12)}). Your worktree starts on that branch as it stands.`,
     `Merge the base branch into ${pull.branch} and resolve the conflicts, keeping what your work does and what the base changed; never drop either side to make it merge. Then run the work's gates. Don't rebase or force anything: the merge goes on top as one commit, pushed onto the branch only by approval (github.ship.update).`,

@@ -59,7 +59,7 @@ describe("a pull request of a knight's work fails its checks", () => {
   test("outside an outcome it stays yours until you say otherwise, and the notice says how", () => {
     const w = world();
     w.shipped();
-    expect(giveBack(w.deps, pull, failure())).toBe("@kay did this work. To give failing checks back to the knight whose work it was: galahad roundtable ci on");
+    expect(giveBack(w.deps, pull, failure())?.said).toBe("@kay did this work. To give failing checks back to the knight whose work it was: galahad roundtable ci on");
     expect(w.fixes()).toEqual([]);
     expect(w.store.snapshot().ciBack).toBeUndefined();
   });
@@ -70,8 +70,10 @@ describe("a pull request of a knight's work fails its checks", () => {
     w.store.setCiBack(true);
     expect(w.store.snapshot().ciBack).toBe(true);
     const said = giveBack(w.deps, pull, failure());
+    // A knight's fix is under way: the failure's notice is a note for the digest, not a warning that needs you (PLAN #59).
+    expect(said?.fixing).toBe(true);
     const [fix] = w.fixes();
-    expect(said).toBe(`Given back to @kay as task ${fix!.id}: once its fix is verified, pushing it waits for your approval.`);
+    expect(said?.said).toBe(`Given back to @kay as task ${fix!.id}: once its fix is verified, pushing it waits for your approval.`);
     expect(fix).toMatchObject({
       room: work.room,
       assignee: "kay",
@@ -94,14 +96,14 @@ describe("a pull request of a knight's work fails its checks", () => {
     const w = world();
     w.shipped();
     w.store.setCiBack(true);
-    const first = giveBack(w.deps, pull, failure(1));
+    const first = giveBack(w.deps, pull, failure(1))?.said;
     // The same failure seen again on the next look: the same words, and no second task.
-    expect(giveBack(w.deps, pull, failure(1))).toBe(first);
+    expect(giveBack(w.deps, pull, failure(1))?.said).toBe(first);
     expect(w.fixes()).toHaveLength(1);
     giveBack(w.deps, pull, failure(2));
     giveBack(w.deps, pull, failure(3));
     expect(w.fixes().map((t) => t.fix?.head)).toEqual([head(1), head(2), head(3)]);
-    expect(giveBack(w.deps, pull, failure(4))).toBe(`${CI_FIXES} fixes went back to @kay and its checks still fail: it's yours now.`);
+    expect(giveBack(w.deps, pull, failure(4))).toEqual({ said: `${CI_FIXES} fixes went back to @kay and its checks still fail: it's yours now.`, fixing: false });
     expect(w.fixes()).toHaveLength(3);
   });
 
@@ -112,7 +114,7 @@ describe("a pull request of a knight's work fails its checks", () => {
     giveBack(w.deps, pull, failure());
     const [fix] = w.fixes();
     w.store.finish(fix!.id, "done", null, { verified: false, output: "" });
-    expect(giveBack(w.deps, pull, failure())).toBe(`Given back to @kay as task ${fix!.id}, which ended without a verified fix: it's yours now.`);
+    expect(giveBack(w.deps, pull, failure())).toEqual({ said: `Given back to @kay as task ${fix!.id}, which ended without a verified fix: it's yours now.`, fixing: false });
   });
 
   test("not to a knight that is gone, or that works on another repository now", () => {
@@ -120,12 +122,12 @@ describe("a pull request of a knight's work fails its checks", () => {
     moved.shipped();
     moved.store.setCiBack(true);
     moved.store.saveTeammate({ id: "kay", name: "Kay", repository: "https://github.com/amiriteorg/elsewhere" });
-    expect(giveBack(moved.deps, pull, failure())).toBe("@kay works on another repository now: it's yours.");
+    expect(giveBack(moved.deps, pull, failure())?.said).toBe("@kay works on another repository now: it's yours.");
     const gone = world();
     gone.shipped();
     gone.store.setCiBack(true);
     gone.store.remove("kay");
-    expect(giveBack(gone.deps, pull, failure())).toBe("@kay, whose work it was, is no longer seated: it's yours.");
+    expect(giveBack(gone.deps, pull, failure())?.said).toBe("@kay, whose work it was, is no longer seated: it's yours.");
     expect([...moved.fixes(), ...gone.fixes()]).toEqual([]);
   });
 
@@ -134,7 +136,7 @@ describe("a pull request of a knight's work fails its checks", () => {
     const work = w.shipped();
     w.store.setCiBack(true);
     for (let i = 0; i < TEAM_LIMITS.givesPerDay; i++) w.store.createTask({ room: work.room, assignee: "kay", title: `Chore ${i}`, goal: "Tidy." }, { givenBy: TEAM_GALAHAD });
-    expect(giveBack(w.deps, pull, failure())).toStartWith(`Not given back to @kay: Galahad has given the Roundtable ${TEAM_LIMITS.givesPerDay} tasks in the last day`);
+    expect(giveBack(w.deps, pull, failure())?.said).toStartWith(`Not given back to @kay: Galahad has given the Roundtable ${TEAM_LIMITS.givesPerDay} tasks in the last day`);
     expect(w.fixes()).toEqual([]);
   });
 
@@ -148,11 +150,11 @@ describe("a pull request of a knight's work fails its checks", () => {
     expect(fix).toMatchObject({ room: outcome.room, outcome: outcome.id, budgetUsd: 4 });
     // What a waiting fix holds counts against the outcome: $10, less its $4, leaves $6, more than the work's budget.
     w.runner.control({ id: outcome.id, action: "pause" });
-    expect(giveBack(w.deps, pull, failure(2))).toBe("Not given back to @kay: its outcome is paused.");
+    expect(giveBack(w.deps, pull, failure(2))?.said).toBe("Not given back to @kay: its outcome is paused.");
     w.runner.control({ id: outcome.id, action: "resume" });
     // Too little left: another task of the outcome's holds most of what remains.
     w.store.createTask({ room: outcome.room, assignee: "kay", title: "Docs", goal: "Write them.", budgetUsd: 5.8, outcome: outcome.id }, { givenBy: TEAM_GALAHAD });
-    expect(giveBack(w.deps, pull, failure(2))).toBe("Not given back to @kay: its outcome has $0.20 of its budget left.");
+    expect(giveBack(w.deps, pull, failure(2))?.said).toBe("Not given back to @kay: its outcome has $0.20 of its budget left.");
     expect(w.fixes()).toHaveLength(1);
   });
 });
@@ -213,8 +215,9 @@ describe("a pull request of a knight's work conflicts with its base", () => {
     const work = w.shipped();
     w.store.setCiBack(true);
     const said = giveBack(w.deps, pull, conflict());
+    expect(said?.fixing).toBe(true);
     const [fix] = w.fixes();
-    expect(said).toBe(`Given back to @kay as task ${fix!.id}: once its fix is verified, pushing it waits for your approval.`);
+    expect(said?.said).toBe(`Given back to @kay as task ${fix!.id}: once its fix is verified, pushing it waits for your approval.`);
     expect(fix).toMatchObject({
       room: work.room,
       assignee: "kay",
@@ -234,20 +237,20 @@ describe("a pull request of a knight's work conflicts with its base", () => {
     const w = world();
     w.shipped();
     w.store.setCiBack(true);
-    const first = giveBack(w.deps, pull, conflict(1));
-    expect(giveBack(w.deps, pull, conflict(1))).toBe(first);
+    const first = giveBack(w.deps, pull, conflict(1))?.said;
+    expect(giveBack(w.deps, pull, conflict(1))?.said).toBe(first);
     expect(w.fixes().map((f) => f.fix?.conflict)).toEqual([head(1)]);
     giveBack(w.deps, pull, failure(2));
     giveBack(w.deps, pull, conflict(3));
     expect(w.fixes().map((f) => f.fix?.conflict)).toEqual([head(1), undefined, head(3)]);
-    expect(giveBack(w.deps, pull, conflict(4))).toBe(`${CI_FIXES} fixes went back to @kay and its pull request still conflicts: it's yours now.`);
+    expect(giveBack(w.deps, pull, conflict(4))?.said).toBe(`${CI_FIXES} fixes went back to @kay and its pull request still conflicts: it's yours now.`);
     expect(w.fixes()).toHaveLength(3);
   });
 
   test("(e) outside an outcome it stays yours while roundtable ci is off; in an outcome it goes back on its own within its budget", () => {
     const w = world();
     w.shipped();
-    expect(giveBack(w.deps, pull, conflict())).toBe("@kay did this work. To give failing checks back to the knight whose work it was: galahad roundtable ci on");
+    expect(giveBack(w.deps, pull, conflict())?.said).toBe("@kay did this work. To give failing checks back to the knight whose work it was: galahad roundtable ci on");
     expect(w.fixes()).toEqual([]);
     const inOutcome = world();
     const outcome = inOutcome.runner.create({ title: "Units", goal: "Parse SI units everywhere.", knights: ["kay"], budgetUsd: 10 });
@@ -256,7 +259,7 @@ describe("a pull request of a knight's work conflicts with its base", () => {
     const [fix] = inOutcome.fixes();
     expect(fix).toMatchObject({ room: outcome.room, outcome: outcome.id, budgetUsd: 4, ...merge(1) });
     inOutcome.runner.control({ id: outcome.id, action: "pause" });
-    expect(giveBack(inOutcome.deps, pull, conflict(2))).toBe("Not given back to @kay: its outcome is paused.");
+    expect(giveBack(inOutcome.deps, pull, conflict(2))?.said).toBe("Not given back to @kay: its outcome is paused.");
   });
 });
 

@@ -130,8 +130,11 @@ export interface CiWatchOptions {
   call: (tool: "checks" | "check.annotations" | "pull" | "pull.reviews" | "pull.comments", args: Record<string, string | number>, connector: string) => Promise<{ ok: boolean; status: number; body: string }>;
   /** A review that asks for changes on a knight's work (ci-back.ts): whether a pull request's are worth reading, and each one read. */
   reviews?: { wanted: (pull: ShippedPull) => boolean; asked: (pull: ShippedPull, review: CiReview) => void };
-  /** Whether its failure goes back to the knight whose work it was: what the notice says of that (ci-back.ts), or nothing. */
-  back?: (pull: ShippedPull, failure: CiFailure) => string | null;
+  /**
+   * Whether its failure goes back to the knight whose work it was: what the notice says of that (ci-back.ts), or nothing,
+   * and whether a fix is under way (then the notice is a note, for the day's digest: a knight is on it; PLAN #59).
+   */
+  back?: (pull: ShippedPull, failure: CiFailure) => { said: string; fixing: boolean } | null;
   now?: () => number;
   log: (message: string) => void;
 }
@@ -202,14 +205,14 @@ export class CiWatch {
       const key = `${pull.owner.toLowerCase()}/${pull.repo.toLowerCase()}/${pull.branch}#${pull.pr}`;
       if (this.o.local.query("SELECT 1 FROM ci_conflicts WHERE pull = ? AND base = ?").get(key, base)) return;
       this.o.local.query("INSERT OR IGNORE INTO ci_conflicts (pull, base, at) VALUES (?, ?, ?)").run(key, base, now);
-      let back: string | null = null;
+      let back: { said: string; fixing: boolean } | null = null;
       try {
         back = this.o.back(pull, { head: base, failing: [], lines: [], conflict: base });
       } catch (error) {
         this.o.log(`ci: ${pull.owner}/${pull.repo} ${pull.branch}: not given back (${(error as Error).message})`);
       }
-      const body = [`It conflicts with its base branch (at ${base.slice(0, 12)}): merge the base in and resolve the conflicts.`, ...(back ? [back] : [])].join("\n").slice(0, 600);
-      this.o.store.emit(this.o.identity, "notice.raised", { key: `ci-conflict:${pull.action}`, severity: "warn", title: `Conflicts on ${pull.owner}/${pull.repo}#${pull.pr}`, body, source: "ci", at: this.now() });
+      const body = [`It conflicts with its base branch (at ${base.slice(0, 12)}): merge the base in and resolve the conflicts.`, ...(back ? [back.said] : [])].join("\n").slice(0, 600);
+      this.o.store.emit(this.o.identity, "notice.raised", { key: `ci-conflict:${pull.action}`, severity: back?.fixing ? "info" : "warn", title: `Conflicts on ${pull.owner}/${pull.repo}#${pull.pr}`, body, source: "ci", at: this.now() });
     } catch (error) {
       const message = (error as Error).message;
       if (/has no tool "pull"/.test(message)) {
@@ -321,16 +324,18 @@ export class CiWatch {
     const lines = await this.annotations(pull, failing);
     // (What became of it comes before what CI said, so a long report never cuts it off.)
     const head = failing.find((run) => run.head)?.head;
-    let back: string | null = null;
+    let back: { said: string; fixing: boolean } | null = null;
     try {
       if (head) back = this.o.back?.(pull, { head, failing: names, lines }) ?? null;
     } catch (error) {
       this.o.log(`ci: ${pull.owner}/${pull.repo} ${pull.branch}: not given back (${(error as Error).message})`);
     }
-    const body = [`${failing.length} of ${total} checks failed: ${names.join(", ")}.`, ...(back ? [back] : []), ...lines].join("\n").slice(0, 600);
+    const body = [`${failing.length} of ${total} checks failed: ${names.join(", ")}.`, ...(back ? [back.said] : []), ...lines].join("\n").slice(0, 600);
+    // A knight is fixing it: a note (the day's digest counts it), not a warning that needs you. Yours: a warning.
+    const severity = back?.fixing ? "info" : "warn";
     const current = this.o.store.lww<{ title: string; body: string; severity: string } | null>(`notice:${key}`)?.value;
-    if (current && current.title === title && current.body === body && current.severity === "warn") return;
-    this.o.store.emit(this.o.identity, "notice.raised", { key, severity: "warn", title, body, source: "ci", at: this.now() });
+    if (current && current.title === title && current.body === body && current.severity === severity) return;
+    this.o.store.emit(this.o.identity, "notice.raised", { key, severity, title, body, source: "ci", at: this.now() });
   }
 
   private clear(pull: ShippedPull): void {

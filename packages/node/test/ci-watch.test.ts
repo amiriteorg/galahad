@@ -111,12 +111,14 @@ describe("following the checks", () => {
     const asked: unknown[] = [];
     const h = harness([{ ...pull, connector: "github-amiriteorg" }], (shippedPull, failure) => {
       asked.push({ shippedPull, failure });
-      return "Given back to @kay as task task_1: once its fix is verified, pushing it waits for your approval.";
+      return { said: "Given back to @kay as task task_1: once its fix is verified, pushing it waits for your approval.", fixing: true };
     });
     h.set({ total_count: 2, check_runs: [failed(7, "test", "a".repeat(40)), run(8, "lint", "completed", "success")] });
     h.annotate(7, [{ path: "src/importer.ts", start_line: 14, message: "Expected 3, received 2" }]);
     await h.watch.tick();
     expect(h.notices()[0]!.body).toBe("1 of 2 checks failed: test.\nGiven back to @kay as task task_1: once its fix is verified, pushing it waits for your approval.\nsrc/importer.ts:14 Expected 3, received 2");
+    // A knight is fixing it: a note for the day's digest, not a warning that needs you (PLAN #59).
+    expect(h.notices()[0]!.severity).toBe("info");
     expect(asked).toEqual([{ shippedPull: expect.objectContaining({ action: "a_ship1" }), failure: { head: "a".repeat(40), failing: ["test"], lines: ["src/importer.ts:14 Expected 3, received 2"] } }]);
     // Every read went through the connector it was shipped by.
     expect([...h.through]).toEqual(["github-amiriteorg"]);
@@ -171,7 +173,7 @@ describe("following the checks", () => {
 
   test("a failure is told however its giving back goes: without the commit nothing is asked, and a giving back that breaks is logged", async () => {
     let asked = 0;
-    const quiet = harness([pull], () => (asked++, "never said"));
+    const quiet = harness([pull], () => (asked++, { said: "never said", fixing: false }));
     quiet.set({ total_count: 1, check_runs: [run(7, "test", "completed", "failure")] });
     await quiet.watch.tick();
     expect(asked).toBe(0);
@@ -269,7 +271,7 @@ describe("following the checks", () => {
     const other: ShippedPull = { ...pull, action: "a_ship2", branch: "galahad/other", artifact: "art_y", pr: 13 };
     const h = harness([pull, other], (shippedPull, failure) => {
       asked.push({ action: shippedPull.action, base: failure.conflict! });
-      return "Given back to @kay.";
+      return { said: "Given back to @kay.", fixing: true };
     });
     const baseA = "d".repeat(40);
     h.github.pull = { mergeable: false, mergeable_state: "dirty", base: { sha: baseA } };
@@ -297,7 +299,7 @@ describe("following the checks", () => {
     const reviewsAsked: number[] = [];
     const h = harness([pull], (_shippedPull, failure) => {
       conflicts.push(failure.conflict!);
-      return "Given back to @kay.";
+      return { said: "Given back to @kay.", fixing: true };
     }, { wanted: () => true, asked: (_shippedPull, review) => reviewsAsked.push(review.id) });
     h.github.refuse = "pull";
     h.github.pull = { mergeable: false, mergeable_state: "dirty", base: { sha: "d".repeat(40) } };
