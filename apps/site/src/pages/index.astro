@@ -1,13 +1,13 @@
 ---
 import Base from "../layouts/Base.astro";
 import Install from "../components/Install.astro";
-import Knight from "../components/Knight.astro";
+import Orb from "../components/Orb.astro";
 import RoundTable from "../components/RoundTable.astro";
 import Swing from "../components/Swing.astro";
 import { ANDROID, BUN_VERSION, COMPARE, HEAD_TO_HEAD, INSTALLER_SHA256, MAC, PHASING, RELEASES, REPO, SIZE, TRIALS, TRIALS_HARD, compact, doc } from "../lib/facts.ts";
 
-/* An example Roundtable at work: six knights, each in its room (its VM), each showing in its eyes what it is doing,
-   with one line of it as the app's roster says it. Illustrative, and the caption says so. */
+/* An example Roundtable at work: six knights, each in its room (its VM), each an orb of its own colour, its ring saying
+   what it is doing, with one line of it as the app's roster says it. Illustrative, and the caption says so. */
 const rooms = [
   { art: "lancelot", name: "Lancelot", vm: "1 CPU, 2 GB", expression: "checking", line: "Running gate 3 of 4: bun test", label: "Lancelot, running its gates" },
   { art: "percival", name: "Percival", vm: "1 CPU, 2 GB", expression: "reading", line: "Reading why the upload test fails", label: "Percival, reading" },
@@ -16,7 +16,6 @@ const rooms = [
   { art: "bors", name: "Bors", vm: "1 CPU, 2 GB", expression: "pleased", line: "Verified: the flaky test is fixed", tone: "ok", label: "Bors, its task verified" },
   { art: "gareth", name: "Gareth", vm: "1 CPU, 2 GB", expression: "resting", line: "Paused by you", label: "Gareth, paused" },
 ] as const;
-const follows = (expression: string) => expression === "idle" || expression === "asking" || expression === "pleased";
 
 /* Section D draws every footprint to one scale: the longest takes 80 % of the row, and the scale bar under them is cut
    at every 250,000 lines on the same scale. */
@@ -71,7 +70,7 @@ const TUTOR_INSTALL = "curl -fsSL https://galahad.sh/TUTOR.md -o TUTOR.md && gal
                     <span class="sr-only">Its VM: </span>
                     {room.vm}
                   </p>
-                  <Knight art={room.art} label={room.label} expression={room.expression} follow={follows(room.expression)} />
+                  <Orb who={room.art} label={room.label} expression={room.expression} />
                   <p class="room-line">{room.line}</p>
                   <span class="door" aria-hidden="true" />
                   <Swing class="room-swing" />
@@ -93,7 +92,7 @@ const TUTOR_INSTALL = "curl -fsSL https://galahad.sh/TUTOR.md -o TUTOR.md && gal
           <div class="hall">
             <div class="table-place">
               <RoundTable />
-              <Knight art="galahad" label="Galahad, at the Round Table" size="l" follow />
+              <Orb who="galahad" label="Galahad, at the Round Table" size="l" />
             </div>
             <div class="hall-label">
               <p class="room-name">The Round Table</p>
@@ -160,7 +159,7 @@ const TUTOR_INSTALL = "curl -fsSL https://galahad.sh/TUTOR.md -o TUTOR.md && gal
       </div>
       <div class="detail-drawing big-room">
         <div class="big-room-walls">
-          <Knight art="lancelot" label="Lancelot, at work in its room" size="xl" expression="working" />
+          <Orb who="lancelot" label="Lancelot, at work in its room" size="xl" expression="working" />
           <ul class="fixtures">
             <li>
               <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect x="3" y="5" width="26" height="17" rx="2" /><path d="M11 27h10M16 22v5" /></svg>
@@ -497,19 +496,19 @@ const TUTOR_INSTALL = "curl -fsSL https://galahad.sh/TUTOR.md -o TUTOR.md && gal
           <div class="handset-screen" aria-hidden="true">
             <p class="handset-title">Roundtable</p>
             <div class="row">
-              <Knight art="galahad" label="" size="s" />
+              <Orb who="galahad" label="" size="s" />
               <span><b>Galahad</b><span class="needs">1 thing needs you</span></span>
             </div>
             <div class="row">
-              <Knight art="gawain" label="" size="s" expression="asking" />
+              <Orb who="gawain" label="" size="s" expression="asking" />
               <span><b>Gawain</b><span>Asks you: Bump zod to 4.2</span></span>
             </div>
             <div class="row">
-              <Knight art="lancelot" label="" size="s" expression="checking" />
+              <Orb who="lancelot" label="" size="s" expression="checking" />
               <span><b>Lancelot</b><span>Gate 3 of 4: bun test</span></span>
             </div>
             <div class="row">
-              <Knight art="bors" label="" size="s" expression="pleased" />
+              <Orb who="bors" label="" size="s" expression="pleased" />
               <span><b>Bors</b><span>Verified: the flaky test is fixed</span></span>
             </div>
             <div class="handset-card">

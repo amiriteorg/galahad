@@ -1,0 +1,105 @@
+---
+/*
+ * A knight, or Galahad, as the app draws them (your words, 25 November 2026: knights as "custom/procedurally generated
+ * colored particle orbs", with "glyph and randomness … like Jarvis/Ultron in the movies, and my other project Phren"):
+ * an orb of glyphs round a bright nucleus, drawn here once, at build time, from the app's own model
+ * (apps/web/src/lib/orb.ts and orb-sphere.ts, core's knightColors), still. It is drawn twice, as ink on the light page
+ * and as light on the dark one, and the stylesheet shows the page's. A knight's state is the ring round it, as in the
+ * app; Galahad's is his colour.
+ */
+import { blendHex, knightColors } from "@galahad/core/avatar";
+import { orbPalette, orbParts, type OrbInk, type OrbPart, type OrbTone } from "../../../web/src/lib/orb.ts";
+import { dataGlyph, KNIGHT_SPHERE, knightArcs, orbSphere, paperShades, sphereFrame, spherePoints, sphereShades, type ShownGlyph } from "../../../web/src/lib/orb-sphere.ts";
+import { orbMoodOfExpression, orbSeed } from "../../../web/src/lib/orb-motion.ts";
+
+interface Props {
+  /** "galahad", or a knight's handle (its colour and its sphere are its handle's). */
+  who: string;
+  /** What a screen reader hears: who it is and what it is doing. */
+  label: string;
+  expression?: string;
+  size?: "s" | "m" | "l" | "xl";
+}
+
+const { who, label, expression = "idle", size = "m" } = Astro.props;
+const px = { s: 40, m: 84, l: 112, xl: 176 }[size];
+const level = px >= 120 ? "full" : px >= 48 ? "seat" : "badge";
+const mood = orbMoodOfExpression(expression);
+// The ring a knight's state wears in the app (lib/knight-state.ts' colours), and Galahad's colour for the same.
+const STATE: Record<string, { ring: string; tone: OrbTone }> = { working: { ring: "#58a6ff", tone: "accent" }, waiting: { ring: "#f0b549", tone: "warn" }, done: { ring: "#4cc38a", tone: "ok" }, failed: { ring: "#ff6b6b", tone: "danger" } };
+const state = STATE[mood];
+const n = (value: number) => String(Math.round(value * 100) / 100);
+const esc = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+let ids = 0;
+const id = (variant: string) => `orb-${who.replace(/[^a-z0-9-]/gi, "")}-${size}-${variant}-${++ids}`;
+const at = (r: number, angle: number) => [r * Math.sin((angle * Math.PI) / 180), -r * Math.cos((angle * Math.PI) / 180)] as const;
+const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+
+const glyphs = (shown: readonly ShownGlyph[], shades: { tint: readonly string[]; second: readonly string[] }) =>
+  shown
+    .filter((g) => g.alpha >= 0.02)
+    .map((g) => `<text x="${n(g.x)}" y="${n(g.y)}" font-size="${n(g.size)}" text-anchor="middle" dominant-baseline="central" font-family="${MONO}" font-weight="${g.data ? 600 : 500}" fill="${g.data ? shades.second[Math.max(3, g.shade)] : (g.second ? shades.second : shades.tint)[g.shade]}" opacity="${n(Math.min(1, g.alpha))}">${esc(g.char)}</text>`)
+    .join("");
+const gradient = (gid: string, stops: [number, string, number][]) => `<radialGradient id="${gid}">${stops.map(([offset, color, opacity]) => `<stop offset="${offset}" stop-color="${color}" stop-opacity="${opacity}"/>`).join("")}</radialGradient>`;
+
+function galahad(paper: boolean): string {
+  const palette = orbPalette(state?.tone ?? "neutral");
+  const ink = (name: OrbInk) => (name === "white" ? (paper ? palette.deep : "#ffffff") : palette[name]);
+  const defs: string[] = [];
+  const parts = orbParts(px).map((part: OrbPart) => {
+    switch (part.kind) {
+      case "disc": {
+        const gid = id(paper ? "l" : "d");
+        defs.push(gradient(gid, part.stops.map((s) => [s.at, ink(s.ink), s.opacity * (paper && part.name !== "nucleus" ? 0.6 : 1)])));
+        return `<circle r="${part.r}" fill="url(#${gid})"/>`;
+      }
+      case "ring":
+        return part.arcs
+          ? `<path d="${part.arcs.map(([from, to]) => `M${n(at(part.r, from)[0])} ${n(at(part.r, from)[1])}A${part.r} ${part.r} 0 ${to - from > 180 ? 1 : 0} 1 ${n(at(part.r, to)[0])} ${n(at(part.r, to)[1])}`).join("")}" fill="none" stroke="${ink(part.ink)}" stroke-width="${part.width}" opacity="${part.opacity}"/>`
+          : `<circle r="${part.r}" fill="none" stroke="${ink(part.ink)}" stroke-width="${part.width}" opacity="${part.opacity}"/>`;
+      case "ticks":
+        return `<path d="${Array.from({ length: part.count }, (_, i) => part.offset + (360 * i) / part.count).map((a) => `M${n(at(part.r - part.length / 2, a)[0])} ${n(at(part.r - part.length / 2, a)[1])}L${n(at(part.r + part.length / 2, a)[0])} ${n(at(part.r + part.length / 2, a)[1])}`).join("")}" fill="none" stroke="${ink(part.ink)}" stroke-width="${part.width}" opacity="${part.opacity}"/>`;
+      case "glyphs": {
+        const seed = orbSeed("galahad");
+        return Array.from({ length: part.count }, (_, k) => {
+          const lit = dataGlyph(seed, k, 0, part.share);
+          if (!lit) return "";
+          const a = (360 * k) / part.count;
+          const [x, y] = at(part.r, a);
+          return `<text x="${n(x)}" y="${n(y)}" font-size="${part.size}" text-anchor="middle" dominant-baseline="central" font-family="${MONO}" font-weight="600" fill="${paper ? palette.deep : ink(part.ink)}" opacity="${n(lit.alpha)}" transform="rotate(${n(a)} ${n(x)} ${n(y)})">${lit.char}</text>`;
+        }).join("");
+      }
+      case "sphere": {
+        const sphere = orbSphere("galahad");
+        const shades = paper ? { tint: paperShades(palette.tint, palette.deep), second: paperShades(palette.deep, blendHex(palette.deep, "#000000", 0.4)) } : { tint: sphereShades(palette.tint, palette.light, palette.deep), second: sphereShades("#ffffff", "#ffffff", palette.light) };
+        return glyphs(sphereFrame(sphere, spherePoints(sphere, part.count), { angle: 0, radius: part.r, scale: 1, glyph: part.glyph, t: 0, mood, paper }), shades);
+      }
+    }
+  });
+  return `<defs>${defs.join("")}</defs>${parts.join("")}`;
+}
+
+function knight(paper: boolean): string {
+  const colors = knightColors(who);
+  const look = KNIGHT_SPHERE[level];
+  const sphere = orbSphere(who);
+  const shades = paper
+    ? { tint: paperShades(colors.tint, colors.deep), second: paperShades(colors.second, blendHex(colors.second, "#000000", 0.52)) }
+    : { tint: sphereShades(colors.tint, colors.light, colors.deep), second: sphereShades(colors.second, blendHex(colors.second, "#ffffff", 0.45), blendHex(colors.second, "#000000", 0.52)) };
+  const [glow, heart] = [id(paper ? "l" : "d"), id(paper ? "l" : "d")];
+  const line = paper ? colors.deep : colors.light;
+  const arcs = knightArcs(sphere, level).map((arc) => `<path d="M${n(at(arc.r, arc.from)[0])} ${n(at(arc.r, arc.from)[1])}A${arc.r} ${arc.r} 0 ${arc.length > 180 ? 1 : 0} 1 ${n(at(arc.r, arc.from + arc.length)[0])} ${n(at(arc.r, arc.from + arc.length)[1])}" fill="none" stroke="${line}" stroke-width="${arc.width}" stroke-linecap="round" opacity="0.5"/>`);
+  return [
+    `<defs>${gradient(glow, [[0, colors.tint, paper ? 0.25 : 0.42], [0.55, colors.tint, paper ? 0.1 : 0.16], [1, colors.tint, 0]])}${gradient(heart, [[0, paper ? colors.deep : "#fff8eb", 0.95], [0.3, colors.tint, 0.65], [1, colors.tint, 0]])}</defs>`,
+    `<circle r="96" fill="url(#${glow})"/>`,
+    ...arcs,
+    `<circle r="${look.nucleus * 2.2}" fill="url(#${heart})"/>`,
+    glyphs(sphereFrame(sphere, spherePoints(sphere, look.count), { angle: 0, radius: look.r, scale: 1, glyph: look.glyph, t: 0, mood, paper }), shades),
+    state ? `<circle r="98.5" fill="none" stroke="${state.ring}" stroke-width="${level === "badge" ? 3 : 2}"/>` : "",
+  ].join("");
+}
+
+const draw = (paper: boolean) => `<svg class="orb-${paper ? "light" : "dark"}" viewBox="-100 -100 200 200" aria-hidden="true" focusable="false">${who === "galahad" ? galahad(paper) : knight(paper)}</svg>`;
+---
+
+<span class:list={["orb", `orb-${size}`]} role="img" aria-label={label} data-mood={mood} set:html={draw(true) + draw(false)} />
