@@ -9,7 +9,8 @@
  * your leave for an outward call, has Galahad ask for a key, and has a rule of yours tell you of a command he ran. Then it makes a client invite
  * and prints its link: paste it into the app. The stand-in streams Galahad's answer a word at a time; asked to show
  * something, his answer holds everything an answer can (headings, a list, a table, code, a chart, figures, steps, a page,
- * choices).
+ * choices). Asked to hand work over, he gives a knight a task that stays at its first command; asked to look again, he
+ * sets himself a look a minute ahead: both are under way above that chat's message box, and the look comes back as his.
  *
  * Pairing waits for you as a node does: the app's request is printed with its code, and approved only once you write
  * that code into <dir>/approve (`echo 482913 > <dir>/approve`), having compared it with the app's.
@@ -186,10 +187,10 @@ const stream = (text: string, delayMs: number): Response => {
   );
 };
 /** A tool call, streamed as an OpenAI-compatible model streams one. */
-const toolCall = (name: string, args: unknown): Response =>
+const toolCall = (name: string, args: unknown, id = "call_dev_1"): Response =>
   new Response(
     [
-      { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_dev_1", type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }] },
       { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
     ].map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n",
     { headers: { "content-type": "text/event-stream" } },
@@ -206,7 +207,8 @@ const model = Bun.serve({
     if (goal.includes("TASK_")) {
       let text = "1. Make the change.\n2. Run the required gate.\nDone when: the gate and independent review pass.";
       const write = goal.includes("TASK_KEEP") ? "write-keep" : "write-sync";
-      if (body.model === "engineer") {
+      // Whoever works it: an engineer, or a knight offered its tools on its own role's models (Kay works on the planner's).
+      if (body.model === "engineer" || (body.model !== "reviewer" && !!body.tools?.length)) {
         if (goal.includes("TASK_FAIL")) text = "GIVE UP\nThe gate needs a Postgres this VM does not have: `bun test db/` exits 1 before any work, with ECONNREFUSED on 127.0.0.1:5432.";
         else if (turns.some((message) => message.role === "assistant")) text = "DONE\nVerified.";
         // Offered its own tools (a knight on the roster's models: quest.ts tools), it calls bash, as a real one does.
@@ -228,6 +230,20 @@ const model = Bun.serve({
     }
     // Galahad himself answers with his tools at hand.
     const asked = JSON.stringify(turns.filter((message) => message.role === "user").at(-1) ?? "");
+    // Asked to hand work over, he gives it to a knight, who stays at its first command: a task under way above the
+    // message box, with its Stop. Asked to look again, he sets himself a look a minute ahead: there too, with its Cancel.
+    // Each done, he says what his tools said; and a look of his that comes is answered with what he found.
+    const offered = new Set((body.tools ?? []).map((t) => (t as { function?: { name?: string } }).function?.name));
+    if (asked.includes("A look you set yourself")) return stream("I looked again, as I said I would: the importer check is still at its first command. Nothing needs you yet.", 30);
+    const plan: [string, unknown][] = [];
+    if (/\b(hand|give)\b/i.test(asked) && offered.has("team_give")) plan.push(["team_give", { title: "Check the importer's dates", goal: "TASK_HOLD: check that the importer reads ISO 8601 dates, with a test.", gates: ["bun test importer # gate-hold"] }]);
+    if (/\blook again\b/i.test(asked) && offered.has("look_later")) plan.push(["look_later", { note: "Is the importer check still going?", in: "1m" }]);
+    if (plan.length) {
+      const since = turns.slice(turns.findLastIndex((message) => message.role === "user") + 1);
+      const said = since.filter((message) => message.role === "tool").map((message) => String(message.content).split("\n")[0]);
+      const next = plan[said.length];
+      return next ? toolCall(next[0], next[1], `call_dev_${said.length + 1}`) : stream(said.join(" "), 30);
+    }
     if (Array.isArray(body.tools) && body.tools.length) return stream(/\bshow\b/i.test(asked) ? SHOWN : GALAHAD, /\bshow\b/i.test(asked) ? 15 : 70);
     return stream("Understood. I will take the part that is mine and say when it is done.", 0);
   },
