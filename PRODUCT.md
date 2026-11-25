@@ -54,10 +54,9 @@ completed task.
 
 ## Brand Commitments
 
-- **The knights** are ten hand-drawn knights (`apps/web/src/knights/*.webp`), used exactly as drawn: never redrawn,
-  traced or generated, and on the site never recoloured (the app alone drains a paused knight's colour). Galahad is his
-  own drawing with a red cross on his helm; the Black Knight is his beast mode. Their live eyes
-  (`apps/web/src/lib/knight-eyes.ts`) are the only thing ever drawn over them.
+- **The knights** are orbs of glyphs (25 November 2026: the drawings gave way to them): each a sphere of monospace glyphs
+  round a bright nucleus, in a colour you chose or one of 24 its handle picks, turning slowly; Galahad's is his state's
+  colour inside his heads-up rings (`apps/web/src/lib/orb.ts`, `orb-sphere.ts`; core's `knightColors`).
 - **The marks**: Galahad's helm and the Roundtable seen from above (`apps/web/src/brand.ts`, `assets/icon.svg`).
 - **Colours with meaning**: Galahad's red is his seat and what needs you; ink and cream are the rest (`brand.ts`).
 - **Voice**: courteous and candid (`docs/OATH.md`): say plainly what it does and what it doesn't.

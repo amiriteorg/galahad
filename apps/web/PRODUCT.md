@@ -38,7 +38,7 @@ The phone in one hand, often in short glances; work runs for minutes to hours un
 - The Inbox: approvals and secret requests.
 - A knight's Workspace: its desktop (watch, take over) and a terminal into its VM.
 - Beast mode: Galahad engages it when a task demands it, raising his compute and model access and acting more without asking. Not built yet; its autonomy limits are an open decision for the owner.
-- Knights are drawn as the owner's ten drawings (`AVATAR_LOOKS` in `packages/core`, the pictures in `apps/web/src/knights/`); a profile (the same v1 schema of fixed vocabulary) names its drawing by that drawing's colour. What a knight is doing comes from the node (`avatarExpression`) and shows in its eyes.
+- Knights are orbs of glyphs (`lib/orb-sphere.ts`, `ui/orb.ts` `knightFace`): a colour you chose (`{ v: 2, color }`) or one of core's 24 `KNIGHT_TINTS` its handle picks, its sphere, glyphs and arcs its handle's. What a knight is doing comes from the node (`avatarExpression`, its state) and shows in how its orb moves and its seat's ring.
 - Technical: vanilla TypeScript with an `h()` DOM helper, no framework; served by the node with a strict CSP (self-hosted assets and fonts, no third-party requests); every request signed; offline-capable service worker; first load measured by `apps/web/measure/first-load.ts`.
 - Terminology: Galahad, knights, the Roundtable, rooms, tasks, the Inbox, beast mode.
 
@@ -46,9 +46,8 @@ The phone in one hand, often in short glances; work runs for minutes to hours un
 
 - The name Galahad, and the Arthurian vocabulary above.
 - Galahad's colours are oxblood, navy and off-white, used as accents only (binding). Oxblood marks what waits on the owner.
-- The knights are the owner's own drawings, shown exactly as drawn (cut out of their paper, never redrawn, recoloured or restyled), with live eyes over the drawn ones; no dot matrix (binding, 14–15 November 2026).
-- Galahad is his drawing with the oxblood Templar cross on his helm, not the nose brace; his helm is his emblem in the app and the website's crest (binding). The app's icon and favicon are the Roundtable, Galahad's seat in red (the owner's choice, 15 November 2026).
-- In beast mode, Galahad becomes the Black Knight; the Black Knight is no knight of his own (binding).
+- The knights are orbs of glyphs, each its own colour, moving slowly and calmly; Galahad's orb is his state's colour inside the rings of a heads-up display, with a ring of data (the owner's words, 25 November 2026: "custom/procedurally generated colored particle orbs", "glyph and randomness … like Jarvis/Ultron … and my other project Phren", "slow and calming movement"; this replaces the drawings of 14–15 November).
+- Galahad's helm, with the oxblood Templar cross, stays his emblem in the app and the website's crest (binding). The app's icon and favicon are the Roundtable, Galahad's seat in red (the owner's choice, 15 November 2026).
 - The look around them takes after Vercel/shadcn (Geist, neutral greys, 1 px borders), Benji Taylor's trays and live pills, and T3 Code's composer (the owner's references).
 
 ## Evidence on Hand
