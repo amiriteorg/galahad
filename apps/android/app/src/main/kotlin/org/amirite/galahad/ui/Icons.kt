@@ -85,6 +85,14 @@ val PlusIcon: ImageVector = icon("Add") {
     line { moveTo(12f, 5f); lineTo(12f, 19f); moveTo(5f, 12f); lineTo(19f, 12f) }
 }
 
+/** When he looks again: a clock, its hands at ten past. */
+val ClockIcon: ImageVector = icon("Clock") {
+    line {
+        moveTo(20.5f, 12f); arcTo(8.5f, 8.5f, 0f, true, true, 3.5f, 12f); arcTo(8.5f, 8.5f, 0f, true, true, 20.5f, 12f); close()
+        moveTo(12f, 7.5f); lineTo(12f, 12f); lineTo(15f, 13.8f)
+    }
+}
+
 /** Send: an arrow up, as the iPhone's message box has it. */
 val SendIcon: ImageVector = icon("Send") {
     path(stroke = SolidColor(Color.Black), strokeLineWidth = 2.2f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) {

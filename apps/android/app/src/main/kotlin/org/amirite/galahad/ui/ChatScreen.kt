@@ -166,6 +166,8 @@ private fun UnderwayBar(app: AppModel, live: Boolean, openKnight: (String) -> Un
         }
         for (look in shown.looks) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                // In the column the knights' faces take (28 dp), as the iPhone's and the web's rows have it.
+                Icon(ClockIcon, null, Modifier.padding(horizontal = 4.dp).size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(UnderwayWords.look(look), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = { scope.launch { runCatching { app.client?.post("/api/looks/cancel", Json.obj("id" to look.id)) }; asked++ } }, modifier = Modifier.semantics { contentDescription = "He won't look again then" }) { Text("Cancel") }
             }
@@ -301,7 +303,10 @@ private fun Message(b: Bubble, choose: ((String) -> Unit)?) {
     val brand = LocalBrand.current
     // A look of his come back: his own note, never shown as yours.
     b.look?.let { look ->
-        Text(UnderwayWords.looked(look), Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s1), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Row(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s1), horizontalArrangement = Arrangement.spacedBy(Space.s1, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+            Icon(ClockIcon, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(UnderwayWords.looked(look), Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
         return
     }
     if (b.mine) {
