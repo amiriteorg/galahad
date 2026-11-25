@@ -13,8 +13,8 @@ export * from "./notify-payload.ts";
  * hours and the day's limits, what a notification may say (a short title, one line, where
  * it opens: fixed words only, never a secret, never your own words or a model's, which a
  * push service could read), how loudly (three tiers, chosen by rules, never by a model),
- * the small payload the service worker turns into a notification, and which push services
- * a node may call.
+ * reminders before an ask lapses, the daily digest, the small payload the service worker
+ * turns into a notification, and which push services a node may call.
  *
  * No zod here: the PWA and its service worker read from this file. What the node takes
  * from a device is checked in notify-input.ts.
@@ -44,6 +44,8 @@ export interface NotifyPrefs {
   quiet: QuietHours;
   /** At most this many notifications a day; when it's reached, one last message says so. */
   perDay: number;
+  /** One quiet message a day of what happened that he didn't tell you of, at `at` in your own time (your word, 25 November 2026: 08:00). */
+  digest: { on: boolean; at: string };
 }
 
 export const NOTIFY_PER_DAY = { min: 1, max: 50, default: 12 } as const;
@@ -52,6 +54,7 @@ export const NOTIFY_DEFAULTS: NotifyPrefs = {
   kinds: { "needs-you": true, approval: true, finished: true, question: true, told: true },
   quiet: { on: true, from: "22:00", to: "07:00", tz: "UTC" },
   perDay: NOTIFY_PER_DAY.default,
+  digest: { on: true, at: "08:00" },
 };
 
 export const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -60,7 +63,7 @@ export const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
  * which quiet hours are read in until you set one. */
 export function readNotifyPrefs(raw: unknown, zone: string = NOTIFY_DEFAULTS.quiet.tz): NotifyPrefs {
   const ownZone = isTimeZone(zone) ? zone : NOTIFY_DEFAULTS.quiet.tz;
-  const r = (raw && typeof raw === "object" ? raw : {}) as { kinds?: Record<string, unknown>; quiet?: Record<string, unknown>; perDay?: unknown };
+  const r = (raw && typeof raw === "object" ? raw : {}) as { kinds?: Record<string, unknown>; quiet?: Record<string, unknown>; perDay?: unknown; digest?: Record<string, unknown> };
   const kinds = { ...NOTIFY_DEFAULTS.kinds };
   for (const kind of NOTIFY_KINDS) if (typeof r.kinds?.[kind] === "boolean") kinds[kind] = r.kinds[kind] as boolean;
   const q = r.quiet ?? {};
@@ -74,6 +77,7 @@ export function readNotifyPrefs(raw: unknown, zone: string = NOTIFY_DEFAULTS.qui
       tz: typeof q.tz === "string" && isTimeZone(q.tz) ? q.tz : ownZone,
     },
     perDay: typeof r.perDay === "number" && Number.isInteger(r.perDay) && r.perDay >= NOTIFY_PER_DAY.min && r.perDay <= NOTIFY_PER_DAY.max ? r.perDay : NOTIFY_DEFAULTS.perDay,
+    digest: { on: typeof r.digest?.on === "boolean" ? r.digest.on : NOTIFY_DEFAULTS.digest.on, at: clock(r.digest?.at, NOTIFY_DEFAULTS.digest.at) },
   };
 }
 
@@ -134,7 +138,7 @@ export interface NotifyItem {
   model?: boolean;
   /** What the digest counts it as, when it goes there. */
   topic?: DigestTopic;
-  /** When an ask lapses, no answer being no. */
+  /** When an ask lapses, no answer being no: its last reminder comes before (`reminderDue`). */
   expires?: number;
 }
 
@@ -518,6 +522,139 @@ export function tagOf(key: string, salt = ""): string {
   return isNotifyTag(tag) ? tag : "galahad";
 }
 
+/* ---------- reminders, before an ask lapses ---------- */
+
+/** An ask still unanswered this long after it was told is told again, once, in your waking hours. */
+export const REMIND_AFTER_MS = 4 * 3_600_000;
+/** The last reminder comes this long before an ask lapses (before your night, when it lapses in it). */
+export const REMIND_BEFORE_LAPSE_MS = 3_600_000;
+/** Never two reminders closer than this. */
+export const REMIND_SPACING_MS = 2 * 3_600_000;
+/** At most this many reminders for one ask. */
+export const REMINDERS_MAX = 2;
+/**
+ * At most this many reminder messages a day, a budget of their own: reminders never spend what a new ask needs (they
+ * once did, and an approval asked at 21:00 waited for the morning), and a flood of asks can't become a flood of reminders.
+ */
+export const REMINDERS_PER_DAY = 6;
+
+const quietSpan = (quiet: QuietHours): number => {
+  const from = minutes(quiet.from);
+  const to = minutes(quiet.to);
+  return ((to - from + 1440) % 1440) * 60_000;
+};
+
+/**
+ * Whether an ask still waiting is told again now (PLAN #59): never in quiet hours, never past its lapse, at most twice,
+ * two hours apart at least. The first when it has waited four hours since it was told; the last an hour before it
+ * lapses, or, when it lapses in the night, in the hour before the night begins. An ask that doesn't lapse (a key or a
+ * connector he needs) has the first alone.
+ */
+export function reminderDue(ask: { toldAt: number; expires: number | null; reminded: number; lastRemindedAt: number | null }, now: number, quiet: QuietHours): boolean {
+  if (ask.reminded >= REMINDERS_MAX) return false;
+  if (ask.expires !== null && now >= ask.expires) return false;
+  if (ask.lastRemindedAt !== null && now - ask.lastRemindedAt < REMIND_SPACING_MS) return false;
+  // (What's cheap first: a clock in a zone is read only when a reminder would otherwise be due.)
+  const last = ask.expires !== null && now >= ask.expires - REMIND_BEFORE_LAPSE_MS;
+  const first = ask.reminded === 0 && now - ask.toldAt >= REMIND_AFTER_MS;
+  // It lapses in the night: the last word before the night begins (within the hour before it, and the night lasts until then).
+  const beforeNight = ask.expires !== null && !last && ask.expires - now <= REMIND_BEFORE_LAPSE_MS + quietSpan(quiet) && inQuietHours(quiet, now + REMIND_BEFORE_LAPSE_MS) && inQuietHours(quiet, ask.expires);
+  return (last || first || beforeNight) && !inQuietHours(quiet, now);
+}
+
+const WAITS: Record<string, string> = {
+  action: "An approval still waits for your answer.",
+  screen: "His ask to use a Mac still waits for your answer.",
+  question: "A service's question still waits for your answer.",
+  secret: "He still needs a key to go on. The Inbox says which.",
+  connector: "He still needs a connector to go on. The Inbox says which.",
+};
+
+/** A time of day as a reminder says it: "14:05" today in your zone, "Thu 09:05" on another day. */
+export function lapseTime(at: number, now: number, tz: string): string {
+  const zone = isTimeZone(tz) ? tz : "UTC";
+  const a = zonedParts(at, zone);
+  const n = zonedParts(now, zone);
+  const clock = `${String(a.hour).padStart(2, "0")}:${String(a.minute).padStart(2, "0")}`;
+  if (a.year === n.year && a.month === n.month && a.day === n.day) return clock;
+  return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][a.dow] ?? ""} ${clock}`.trim();
+}
+
+/**
+ * A reminder: fixed words, when it lapses (no answer is no), and the ask's own tag, so it replaces the notification that
+ * told of it. No buttons: a reminder opens the Inbox.
+ */
+export function reminderMessage(item: Pick<NotifyItem, "key" | "kind" | "expires">, now: number, tz: string, salt = ""): NotifyPayload {
+  const what = WAITS[item.key.slice(0, item.key.indexOf(":"))] ?? "Something still waits for your answer.";
+  const lapse = item.expires && item.expires > now ? ` No answer by ${lapseTime(item.expires, now, tz)} means no.` : "";
+  return { v: 1, kind: item.kind, title: "Galahad: still waiting", body: notifyClean(`${what}${lapse}`, NOTIFY_BODY_MAX), open: "inbox", tag: tagOf(item.key, salt) };
+}
+
+/**
+ * What's reminded at one look, as one message: the reminder itself when it's one; otherwise how many asks still wait and
+ * when the first of them lapses, with a tag of its own. Never buttons.
+ */
+export function remindersMessage(items: readonly Pick<NotifyItem, "key" | "kind" | "expires">[], now: number, tz: string, salt = ""): NotifyPayload | null {
+  if (!items.length) return null;
+  if (items.length === 1) return reminderMessage(items[0]!, now, tz, salt);
+  const lapses = items.map((item) => item.expires).filter((at): at is number => typeof at === "number" && at > now);
+  const first = lapses.length ? ` The first lapses at ${lapseTime(Math.min(...lapses), now, tz)}; no answer is no.` : " The Inbox has them.";
+  return { v: 1, kind: "summary", title: "Galahad: still waiting", body: notifyClean(`${items.length} asks still wait for your answer.${first}`, NOTIFY_BODY_MAX), open: "inbox", tag: tagOf(`reminders:${items[0]!.key}`, salt) };
+}
+
+/* ---------- the day's digest ---------- */
+
+/** What the digest counts, since the last one. Knights' tasks are read from the node at send time; the rest is what went to the digest instead of buzzing. */
+export interface DigestCounts {
+  topics: Partial<Record<DigestTopic, number>>;
+  /** Knights' tasks that ended: verified, and not. */
+  verified: number;
+  unverified: number;
+  /** Asks that stand now. */
+  open: number;
+}
+
+/** Whether the day's digest is due: it's on, it's past its time in your zone today, it wasn't said today, and it isn't quiet hours. */
+export function digestDue(prefs: NotifyPrefs, now: number, saidOn: string | null): boolean {
+  if (!prefs.digest.on || !CLOCK.test(prefs.digest.at)) return false;
+  if (saidOn === notifyDay(now, prefs.quiet.tz)) return false;
+  const p = zonedParts(now, isTimeZone(prefs.quiet.tz) ? prefs.quiet.tz : "UTC");
+  return p.hour * 60 + p.minute >= minutes(prefs.digest.at) && !inQuietHours(prefs.quiet, now);
+}
+
+/**
+ * The digest: one quiet message a day of what happened that he didn't buzz you for, in counts and fixed words, most
+ * telling first, and what still waits. Nothing happened, nothing is said (null). It opens the Overview, and replaces
+ * yesterday's.
+ */
+export function digestMessage(c: DigestCounts, salt = ""): NotifyPayload | null {
+  const t = c.topics;
+  const parts: string[] = [];
+  const add = (n: number | undefined, one: string, many: string) => {
+    if (n) parts.push(counted(n, one, many));
+  };
+  add(t.lapsed, "1 ask lapsed unanswered", "% asks lapsed unanswered");
+  add(c.verified, "1 task verified", "% tasks verified");
+  add(c.unverified, "1 task didn't pass", "% tasks didn't pass");
+  add(t.asked, "1 more question of his", "% more questions of his");
+  add((t.chat ?? 0) + (t.quest ?? 0) + (t.tell ?? 0), "1 more piece of news", "% more pieces of news");
+  add(t.look, "1 look of his", "% looks of his");
+  add(t.report, "1 outcome report", "% outcome reports");
+  add(t.ci, "1 CI fix under way", "% CI fixes under way");
+  add(t.backlog, "1 backlog proposal", "% backlog proposals");
+  add(t.note, "1 note", "% notes");
+  if (!parts.length) return null;
+  const waits = c.open ? ` ${counted(c.open, "1 ask still waits for you.", "% asks still wait for you.")}` : "";
+  let list = "";
+  for (const part of parts) {
+    const next = list ? `${list}, ${part}` : part;
+    if (`${next}.${waits}`.length > NOTIFY_BODY_MAX) break;
+    list = next;
+  }
+  if (!list) list = parts[0]!;
+  return { v: 1, kind: "finished", title: "Galahad: while you were away", body: notifyClean(`${list.charAt(0).toUpperCase()}${list.slice(1)}.${waits}`, NOTIFY_BODY_MAX), open: "overview", tag: tagOf("digest", salt) };
+}
+
 /* ---------- what waited while nobody could be reached ---------- */
 
 /**
@@ -641,8 +778,8 @@ export interface NotifyDeviceView {
 
 export interface NotifySentView {
   at: number;
-  /** A payload's kind, or the day's digest (which doesn't count against the day's limit). */
-  kind: NotifyPayload["kind"] | "digest";
+  /** A payload's kind, or the day's digest or a reminder (which don't count against the day's limit: they have their own). */
+  kind: NotifyPayload["kind"] | "digest" | "reminder";
   /** The devices it went to, by name. */
   devices: string[];
   ok: boolean;
@@ -662,6 +799,9 @@ export interface NotifyView {
   node: string;
   /** The zone your day is read in now (quiet hours, the day's count, the digest's time): the one your devices last said, else the setting's. */
   zone?: string;
+  /** Tags of notifications whose matter was answered, dismissed or cleared, or lapsed, in the last two days: each app takes them
+   * down where it still shows them (the same thing answered on one device is gone from the others). */
+  withdrawn?: string[];
   /** This node's public key for subscribing (a browser's applicationServerKey). Public by nature. */
   key: string;
   prefs: NotifyPrefs;

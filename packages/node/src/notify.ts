@@ -4,6 +4,8 @@ import {
   type ApplePushInput,
   catchUpMessage,
   connectorItem,
+  digestDue,
+  digestMessage,
   inQuietHours,
   isP256Point,
   isTimeZone,
@@ -17,6 +19,7 @@ import {
   type NotifyDeviceView,
   type NotifyItem,
   notifyMessage,
+  NOTIFY_GAP_MS,
   type NotifyPayload,
   type NotifyPrefs,
   type NotifyPrefsInput,
@@ -30,6 +33,9 @@ import {
   type QuestView,
   randomId,
   redact,
+  reminderDue,
+  REMINDERS_PER_DAY,
+  remindersMessage,
   secretItem,
   tagOf,
   testMessage,
@@ -54,7 +60,8 @@ const appleService = (environment: ApplePushEnvironment): string => (environment
  * that ended unwatched, a quest you started), asks the pure rules in
  * core's notify.ts what may be told now and how loudly, and delivers that as one message a
  * device: what needs you now to every device, news quietly to the device you used last, the
- * rest counted for the day's digest.
+ * rest in the day's digest. An ask still unanswered is reminded before it lapses, and what was
+ * answered anywhere is taken down everywhere (each app reads `withdrawn`).
  *
  * Nothing else raises one. There is no route, tool or event that carries a title or a
  * line: every word comes from the typed builders in notify.ts, from records this node
@@ -78,6 +85,8 @@ export interface NotifySources {
   questions?(): { id: string; connector: string; askedAt: number; expires: number }[];
   /** His asks to use a Mac itself, where each stands (core's screen.ts), and by when an answer is due. */
   screenSessions?(): { id: string; nodeName: string; minutes: number; state: string; askedAt: number; answerBy?: number }[];
+  /** Knights' tasks that ended since then, verified and not: what the day's digest counts first. */
+  tasksEnded?(since: number): { verified: number; unverified: number };
   /** The keys he's waiting for, by name. */
   secretRequests(): string[];
   /** The connectors agents asked for and you haven't added, by request id. */
@@ -159,6 +168,8 @@ const hlcMs = (hlc: string): number => Number(hlc.split(".")[0]);
  * connector, a question or a Mac's ask once wasn't, so a connector request standing for days was told again every 49 hours.)
  */
 const standsFor = (key: string): boolean => /^(notice|action|secret|connector|question|screen):/.test(key);
+/** The asks that are reminded before they lapse. */
+const isAsk = (item: NotifyItem): boolean => itemTier(item) === "now" && (item.kind === "approval" || item.kind === "question");
 
 export class NotifyService {
   private readonly now: () => number;
@@ -178,6 +189,8 @@ export class NotifyService {
   private tagSalt: string | null = null;
   /** When each device's presence was last written, and from which zone (so every request doesn't write it). */
   private readonly lastSeen = new Map<string, { at: number; zone: string | null }>();
+  /** The digest's day it was last said, and since when it counts (push.db settings, read once). */
+  private digestState: { saidOn: string | null; since: string | null } | null = null;
 
   constructor(private readonly o: NotifyOptions) {
     this.now = o.now ?? Date.now;
@@ -338,8 +351,10 @@ export class NotifyService {
       if (standsFor(key)) {
         if (standingKeys.has(key)) {
           if (row.goneAt !== null) db.setGone(key, null);
-        } else if (row.goneAt === null) db.setGone(key, now);
-        else if (now - row.goneAt > (key.startsWith("notice:") ? NOTICE_COOLDOWN_MS : 0)) {
+        } else if (row.goneAt === null) {
+          db.setGone(key, now);
+          this.wentAway(key, now);
+        } else if (now - row.goneAt > (key.startsWith("notice:") ? NOTICE_COOLDOWN_MS : 0)) {
           db.forget(key);
           told.delete(key);
         }
@@ -357,11 +372,13 @@ export class NotifyService {
 
     const devices = this.devices();
     // Nobody to tell: what stands is told to nobody (it isn't told one by one later: the device that comes back is told
-    // what still stands and needs you, once, as one message), and news goes to the digest.
+    // what still stands and needs you, once, as one message, and an ask is reminded before it lapses), and news goes to
+    // the digest.
     if (!devices.length) {
       const fresh = items.filter((item) => !told.has(item.key));
       if (fresh.length) {
         db.tell(fresh);
+        db.asked(fresh.filter(isAsk));
         this.toDigest(fresh.filter((item) => itemTier(item) !== "now"));
       }
       db.dropPending(fresh.map((item) => item.key));
@@ -370,9 +387,16 @@ export class NotifyService {
 
     const day = notifyDay(now, prefs.quiet.tz);
     await this.catchUp(now, prefs, day, standing, told, devices);
-    const plan = planNotifications({ now, prefs, items, told, sentToday: db.countOn(day), lastSentAt: db.lastSentAt(), newsToday: db.newsOn(day), lastNewsAt: db.lastNewsAt(), modelToday: db.modelOn(day) });
-    if (plan.digest.length) this.toDigest(plan.digest);
-    if (plan.send.length) await this.deliver(plan.send, devices, day, plan.news);
+    // (Nothing new, nothing to plan: most looks, which then cost no counting.)
+    const untold = items.some((item) => {
+      const before = told.get(item.key);
+      return !before || (item.alert && !before.alert);
+    });
+    const plan = untold ? planNotifications({ now, prefs, items, told, sentToday: db.countOn(day), lastSentAt: db.lastSentAt(), newsToday: db.newsOn(day), lastNewsAt: db.lastNewsAt(), modelToday: db.modelOn(day) }) : null;
+    if (plan?.digest.length) this.toDigest(plan.digest);
+    if (plan?.send.length) await this.deliver(plan.send, devices, day, plan.news);
+    else await this.remind(now, prefs, day, standing, devices);
+    await this.digest(now, prefs, day, standing, devices);
     // What's told now has reached the day's limit: one message says so, once that day, and not in quiet hours.
     if (limitReached(prefs, db.countOn(day)) && db.setting("limit-said") !== day && !inQuietHours(prefs.quiet, now)) {
       db.setSetting("limit-said", day);
@@ -387,6 +411,88 @@ export class NotifyService {
     db.tell(items);
     db.dropPending(items.map((item) => item.key));
     db.toDigest(items.map((item) => ({ key: item.key, topic: item.topic ?? (item.model ? "asked" : item.kind === "finished" ? "chat" : "note") })));
+  }
+
+  /**
+   * What a told key was about went away (answered, dismissed, cleared, or lapsed): every app takes its notification down
+   * where it still shows it, and an ask that lapsed unanswered is counted in the digest (no answer was no).
+   */
+  private wentAway(key: string, now: number): void {
+    const { db } = this.o;
+    db.withdraw(tagOf(key, this.salt()));
+    const ask = db.ask(key);
+    if (!ask) return;
+    if (ask.expires !== null && ask.expires <= now) db.toDigest([{ key, topic: "lapsed" }]);
+    db.forgetAsk(key);
+  }
+
+  /**
+   * Reminders (PLAN #59): an ask still unanswered is told again four hours on, and an hour before it lapses (before your
+   * night when it lapses in it), twice at most, in fixed words with when no answer means no. Several at once go as one
+   * message, a minute after the last, to every device that may see them; at most REMINDERS_PER_DAY a day, a budget of
+   * their own, so a reminder never spends what a new ask needs.
+   */
+  private async remind(now: number, prefs: NotifyPrefs, day: string, standing: readonly NotifyItem[], devices: readonly Reached[]): Promise<void> {
+    const { db } = this.o;
+    const asks = standing.filter((item) => isAsk(item) && prefs.kinds[item.kind]);
+    if (!asks.length || db.remindersOn(day) >= REMINDERS_PER_DAY) return;
+    const last = db.lastSentAt();
+    if (last !== null && now - last < NOTIFY_GAP_MS) return;
+    const told = db.asks();
+    const due = asks.filter((item) => {
+      const ask = told.get(item.key);
+      return ask !== undefined && reminderDue(ask, now, prefs.quiet);
+    });
+    if (!due.length) return;
+    db.reminded(due.map((item) => item.key));
+    const salt = this.salt();
+    for (const item of due) db.unwithdraw(tagOf(item.key, salt));
+    const results = await Promise.all(
+      devices.map(async (device) => {
+        const mine = due.filter((item) => item.needs.every((scope) => device.scopes.includes(scope)));
+        const payload = remindersMessage(mine, now, prefs.quiet.tz, salt);
+        if (!payload) return null;
+        return { name: device.name, ok: await this.send(device, payload, deliveryFor(mine, false)) };
+      }),
+    );
+    const sent = results.filter((r): r is { name: string; ok: boolean } => r !== null);
+    if (sent.length) this.logged(day, "reminder", sent.map((s) => s.name), sent.some((s) => s.ok));
+  }
+
+  /**
+   * The day's digest (your word, 25 November 2026: at 08:00 in your own time): what went to it instead of buzzing, the
+   * knights' tasks that ended and the asks that still wait, in counts and fixed words, once a day, quietly, to the device
+   * you used last. Nothing to say, nothing said. It doesn't count against the day's limit.
+   */
+  private async digest(now: number, prefs: NotifyPrefs, day: string, standing: readonly NotifyItem[], devices: readonly Reached[]): Promise<void> {
+    const { db } = this.o;
+    // (What it last said and since when: read once, then kept here, where alone they're written.)
+    this.digestState ??= { saidOn: db.setting("digest-said"), since: db.setting("digest-at") };
+    const state = this.digestState;
+    if (state.since === null) {
+      // The first look that knows the digest: it counts from now, and the first is said at its next time (never at once,
+      // with a day's worth from before it began).
+      db.setSetting("digest-at", (state.since = String(now)));
+      if (digestDue(prefs, now, state.saidOn)) db.setSetting("digest-said", (state.saidOn = day));
+      return;
+    }
+    if (!digestDue(prefs, now, state.saidOn)) return;
+    const since = Number(state.since) || now - 24 * HOUR;
+    let tasks = { verified: 0, unverified: 0 };
+    try {
+      tasks = this.o.sources.tasksEnded?.(since) ?? tasks;
+    } catch (error) {
+      this.o.log(`notifications: knights' tasks not read for the digest (${redact(String((error as Error).message)).slice(0, 160)})`);
+    }
+    const payload = digestMessage({ topics: db.digestTopics(), ...tasks, open: standing.filter(isAsk).length }, this.salt());
+    db.setSetting("digest-said", (state.saidOn = day));
+    db.setSetting("digest-at", (state.since = String(now)));
+    db.clearDigest();
+    if (!payload) return;
+    const to = this.lastUsed(devices);
+    const said = await Promise.all(to.map(async (device) => ({ name: device.name, ok: await this.send(device, payload, { ttlSeconds: 12 * 3600, urgency: "low" }) })));
+    db.logSent(day, "digest", said.map((s) => s.name), said.some((s) => s.ok));
+    this.o.ledger({ class: "outward", resource: "notify", target: "digest", verdict: "approved", reason: "you turned notifications on for these devices", quest: "galahad.self", detail: `to ${said.map((s) => s.name).join(", ")}`.slice(0, 500) });
   }
 
   /** The device you used last, if you used it within a day and he can reach it: news goes there alone. Otherwise every device. */
@@ -517,10 +623,14 @@ export class NotifyService {
   private async deliver(items: NotifyItem[], devices: Reached[], day: string, news: boolean): Promise<void> {
     const { db } = this.o;
     const delivery = deliveryFor(items, news);
-    // Told from here on, whatever the push service answers: a failing service is never a reason to try the same news again.
+    // Told from here on, whatever the push service answers: a failing service is never a reason to try the same news
+    // again. (An ask is reminded before it lapses, to whichever device can be reached then.)
     db.tell(items);
+    db.asked(items.filter(isAsk));
     db.addModel(day, items.filter((item) => item.model).length);
     db.dropPending(items.map((item) => item.key));
+    const salt = this.salt();
+    for (const item of items) db.unwithdraw(tagOf(item.key, salt));
     const results = await Promise.all(
       (news ? this.lastUsed(devices) : devices).map(async (device) => {
         // Each device is told what it could see in the app anyway.
@@ -535,7 +645,7 @@ export class NotifyService {
   }
 
   /** What was sent, counted against the day; and his own act, in the ledger: what kind and to which devices, never what it said. */
-  private logged(day: string, kind: NotifyPayload["kind"], names: string[], ok: boolean): void {
+  private logged(day: string, kind: NotifyPayload["kind"] | "reminder", names: string[], ok: boolean): void {
     this.o.db.logSent(day, kind, names, ok);
     this.o.ledger({ class: "outward", resource: "notify", target: kind, verdict: "approved", reason: "you turned notifications on for these devices", quest: "galahad.self", detail: `to ${names.join(", ")}`.slice(0, 500) });
   }
@@ -603,13 +713,14 @@ export class NotifyService {
 
   /**
    * What the node kept for a device that collects its notifications, handed over once and forgotten. `on` false: its
-   * notifications are off (turned off here or elsewhere, or never on), and nothing is kept for it.
+   * notifications are off (turned off here or elsewhere, or never on), and nothing is kept for it. `withdrawn`, whatever
+   * else: the tags of notifications whose matter was answered, dismissed, cleared or lapsed, to take down where it shows them.
    */
-  collect(device: string): { on: boolean; notifications: NotifyPayload[] } {
+  collect(device: string): { on: boolean; notifications: NotifyPayload[]; withdrawn: string[] } {
     const paired = this.o.mind.activeDevice(device);
     if (!paired || paired.kind !== "client") throw new NotifyError(403, "only a paired device collects its notifications, its own");
     const on = this.o.db.subscription(device)?.endpoint === collectEndpoint(device);
-    return { on, notifications: on ? this.o.db.collect(device) : [] };
+    return { on, notifications: on ? this.o.db.collect(device) : [], withdrawn: this.o.db.withdrawn() };
   }
 
   unsubscribe(device: string): boolean {
@@ -627,6 +738,7 @@ export class NotifyService {
       kinds: { ...current.kinds, ...Object.fromEntries(Object.entries(input.kinds ?? {}).filter(([, v]) => v !== undefined)) },
       quiet: { ...current.quiet, ...Object.fromEntries(Object.entries(input.quiet ?? {}).filter(([, v]) => v !== undefined)) },
       perDay: input.perDay ?? current.perDay,
+      digest: { ...current.digest, ...Object.fromEntries(Object.entries(input.digest ?? {}).filter(([, v]) => v !== undefined)) },
     };
     this.o.db.setPrefs(next);
     this.nudge();
@@ -688,6 +800,7 @@ export class NotifyService {
       node: this.o.nodeName,
       key: await this.publicKey(),
       zone,
+      withdrawn: db.withdrawn(),
       prefs,
       devices: devices.map((d) => this.deviceView(d.sub, d.name)),
       subscribed: asking === null ? null : devices.some((d) => d.sub.device === asking),

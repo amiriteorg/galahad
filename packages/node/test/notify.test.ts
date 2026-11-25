@@ -19,8 +19,8 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
   const quests: QuestView[] = [];
   const listeners: (() => void)[] = [];
   const db = new NotifyStore(":memory:", () => now, "UTC");
-  // No quiet hours here: each test is about what's said, not when.
-  db.setPrefs({ ...db.prefs(), quiet: { ...db.prefs().quiet, on: false } });
+  // No quiet hours and no digest here: each test is about what's said, not when (those that are turn them on).
+  db.setPrefs({ ...db.prefs(), quiet: { ...db.prefs().quiet, on: false }, digest: { ...db.prefs().digest, on: false } });
   db.put("c_phone", { endpoint: "https://web.push.apple.com/stand-in", p256dh: "p", auth: "a", service: "Apple" });
   const sender = {
     publicKey: async () => "key",
@@ -365,16 +365,16 @@ describe("the Android app: kept on the node, collected by the app", () => {
     expect(h.service.subscribeCollect("c_android")).toMatchObject({ device: "c_android", name: "Pixel", service: COLLECT_SERVICE });
     expect(() => h.service.subscribeCollect("n_ultra")).toThrow(/only a paired device/);
     expect(() => h.service.collect("n_ultra")).toThrow(/only a paired device/);
-    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [] });
+    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [], withdrawn: [] });
     // Told as every device is, through the one door: nothing is sent anywhere for it.
     h.quest({ quest: "q-1", state: "working" });
     h.quest({ quest: "q-1", state: "done" });
     await h.look();
     expect(h.sent.map((s) => s.to).sort()).toEqual(["collect:c_android", "https://web.push.apple.com/stand-in"]);
     expect(h.service.collect("c_android")).toMatchObject({ on: true, notifications: [{ kind: "finished", title: "Quest done", body: "A quest you started has ended." }] });
-    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [] });
+    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [], withdrawn: [] });
     // What's kept for one device is its own: a phone that's told through a push service collects nothing.
-    expect(h.service.collect("c_phone")).toEqual({ on: false, notifications: [] });
+    expect(h.service.collect("c_phone")).toEqual({ on: false, notifications: [], withdrawn: [] });
   });
 
   test("a newer one about the same thing replaces one not yet collected; one kept past its time is dropped untold", async () => {
@@ -388,7 +388,7 @@ describe("the Android app: kept on the node, collected by the app", () => {
     expect(h.service.collect("c_android").notifications.map((n) => n.title)).toEqual(["Galahad: again", "Galahad: this needs you"]);
     await sender.send(target, told("t-c"), { ttlSeconds: 60, urgency: "normal" });
     h.advance(61_000);
-    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [] });
+    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [], withdrawn: [] });
   });
 
   test("gets the same last look as a push service's: anything that reads as a secret goes as the general one", async () => {
@@ -405,9 +405,9 @@ describe("the Android app: kept on the node, collected by the app", () => {
     h.service.subscribeCollect("c_android");
     await h.service.test("c_android");
     expect(h.service.unsubscribe("c_android")).toBe(true);
-    expect(h.service.collect("c_android")).toEqual({ on: false, notifications: [] });
+    expect(h.service.collect("c_android")).toEqual({ on: false, notifications: [], withdrawn: [] });
     h.service.subscribeCollect("c_android");
-    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [] });
+    expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [], withdrawn: [] });
   });
 
   test("at most sixty are kept for a device: the oldest go first", async () => {
@@ -522,5 +522,94 @@ describe("tiers on the wire", () => {
     await h.look();
     expect(h.sent.map((s) => s.payload)).toMatchObject([{ kind: "told", title: "Galahad: 3 things", body: "He has 3 questions." }]);
     expect(h.db.digestTopics()).toEqual({ look: 1, asked: 1 });
+  });
+});
+
+describe("reminders, and what's taken down", () => {
+  type Action = ReturnType<NotifySources["actions"]>[number];
+  const ID = "a_DDDDDDDDDDDDDDDDDDDDDD";
+
+  test("an approval unanswered is reminded four hours on and an hour before it lapses, in fixed words, replacing the first; twice at most", async () => {
+    let actions: Action[] = [];
+    const h = harness({ sources: { actions: () => actions } });
+    actions = [{ id: ID, connector: "dinero", tool: "book", state: "waiting", requestedAt: `${h.now() - 60_000}.0000.n_test`, expires: h.now() + 24 * 3600_000, class: "outward" }];
+    const lapses = h.now() + 24 * 3600_000;
+    await h.look();
+    expect(h.sent.map((s) => s.payload.title)).toEqual(["Galahad asks your approval"]);
+    for (let minutes = 0; minutes < 24 * 60; minutes += 15) {
+      h.advance(15 * 60_000 - 61_000);
+      await h.look();
+    }
+    const salt = h.db.setting("tag-salt")!;
+    const reminders = h.sent.slice(1).map((s) => s.payload);
+    expect(reminders).toHaveLength(2);
+    for (const r of reminders) expect(r).toMatchObject({ kind: "approval", title: "Galahad: still waiting", open: "inbox", tag: tagOf(`action:${ID}`, salt) });
+    expect(reminders[0]!.body).toBe("An approval still waits for your answer. No answer by Fri 12:00 means no."); // (asked Thursday at noon)
+    void lapses;
+    expect(Object.keys(reminders[0]!)).not.toContain("action");
+    expect(JSON.stringify(reminders)).not.toMatch(/dinero|book/);
+    // A budget of their own: reminders never spend what a new ask needs (the day's count has the approval alone).
+    const days = [...new Set(h.db.sentOn(notifyDay(h.now(), "UTC")).map((row) => row.kind))];
+    expect(days).toContain("reminder");
+    expect(h.db.countOn(notifyDay(h.now(), "UTC"))).toBe(0);
+    expect(h.db.countOn(notifyDay(h.now() - 24 * 3600_000, "UTC"))).toBe(1);
+  });
+
+  test("answered anywhere, it is taken down everywhere: its tag is withdrawn for every app; one that lapsed is counted in the digest", async () => {
+    let actions: Action[] = [];
+    const h = harness({ sources: { actions: () => actions } });
+    h.service.subscribeCollect("c_phone");
+    const waiting: Action = { id: ID, connector: "dinero", tool: "book", state: "waiting", requestedAt: `${h.now() - 60_000}.0000.n_test`, expires: h.now() + 3600_000, class: "outward" };
+    actions = [waiting];
+    await h.look();
+    const tag = tagOf(`action:${ID}`, h.db.setting("tag-salt")!);
+    expect((await h.service.view("c_phone")).withdrawn).toEqual([]);
+    actions = [{ ...waiting, state: "approved" }];
+    await h.look();
+    expect((await h.service.view("c_phone")).withdrawn).toEqual([tag]);
+    expect(h.service.collect("c_phone").withdrawn).toEqual([tag]);
+    expect(h.db.digestTopics()).toEqual({});
+    // Another, left to lapse: no answer is no, and the digest says so.
+    const other = { ...waiting, id: "a_EEEEEEEEEEEEEEEEEEEEEE", requestedAt: `${h.now() - 60_000}.0000.n_test`, expires: h.now() + 3600_000 };
+    actions = [other];
+    await h.look();
+    h.advance(3600_000);
+    actions = [{ ...other, state: "expired" }];
+    await h.look();
+    expect(h.db.digestTopics()).toEqual({ lapsed: 1 });
+  });
+});
+
+describe("the day's digest", () => {
+  test("at its time in your zone: what went to it and the knights' tasks that ended, quietly, to the device you used last; once a day", async () => {
+    const devices = [
+      { id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read", "chat"] },
+      { id: "c_ipad", name: "iPad", kind: "client" as const, scopes: ["mind:read", "chat"] },
+    ];
+    let notices: ReturnType<NotifySources["notices"]> = [];
+    const h = harness({ devices, sources: { notices: () => notices, tasksEnded: () => ({ verified: 3, unverified: 1 }) } });
+    h.service.subscribeApple("c_ipad", { token: "ff".repeat(32), environment: "production" });
+    h.db.setPrefs({ ...h.db.prefs(), digest: { on: true, at: "08:00" } });
+    h.service.seen("c_ipad", "UTC");
+    // A note and an outcome's report: the digest's, never told on their own.
+    notices = [
+      { key: "order-expiring:o1", severity: "info", title: "Standing order \"x\" expires 2026-11-30", source: "heartbeat", dismissed: false },
+      { key: "outcome:out-aaaaaaaaaaaa:report", severity: "info", title: "Books: his daily report", source: "outcome:out-aaaaaaaaaaaa", dismissed: false },
+    ];
+    await h.look();
+    expect(h.sent).toEqual([]);
+    expect(h.db.digestTopics()).toEqual({ note: 1, report: 1 });
+    // 08:00 the next morning (UTC, as the iPad says).
+    h.advance(Date.parse("2026-11-13T08:00:00Z") - h.now() - 61_000);
+    h.service.seen("c_ipad", "UTC");
+    await h.look();
+    expect(h.sent.map((s) => [s.to, s.payload])).toEqual([
+      [`apns:production:${"ff".repeat(32)}`, { v: 1, kind: "finished", title: "Galahad: while you were away", body: "3 tasks verified, 1 task didn't pass, 1 outcome report, 1 note.", open: "overview", tag: tagOf("digest", h.db.setting("tag-salt")!) }],
+    ]);
+    expect(h.db.digestTopics()).toEqual({});
+    // It doesn't count against the day, and comes once a day.
+    expect(h.db.countOn("2026-11-13")).toBe(0);
+    await h.look();
+    expect(h.sent).toHaveLength(1);
   });
 });

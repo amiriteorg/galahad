@@ -179,8 +179,8 @@ beforeAll(async () => {
   await json(admin("setProvider", { id: "stand-in", kind: "openai", baseUrl: `http://127.0.0.1:${models.port}/v1` }));
   await json(admin("setRoster", { role: "planner", models: ["stand-in/worker"] }));
   await json(admin("setConnector", { id: "forge", manifest: { id: "forge", label: "Forge", origin: `http://127.0.0.1:${service.port}`, tools: { post: { description: "Post publicly.", method: "POST", path: "/posts", params: { text: { type: "string", required: true } }, class: "outward" } } } }));
-  // No quiet hours to begin with: each test that's about them turns them on.
-  await json(admin("setNotify", { quiet: { on: false } }));
+  // No quiet hours and no digest to begin with: each test that's about them turns them on.
+  await json(admin("setNotify", { quiet: { on: false }, digest: { on: false } }));
   phone = await pair("phone", ["mind:read", "mind:write", "chat", "vault:read", "brain:write", "fleet:admin", "connect"]);
   tablet = await pair("tablet", ["mind:read"]);
 });
@@ -372,10 +372,12 @@ describe("what he sends", () => {
     expect(delivery.payload).toMatchObject({ kind: "approval", title: "Galahad asks your approval", body: "An action is waiting for your answer in the Inbox.", open: "inbox" });
     expect(said(delivery)).not.toMatch(/quarterly|42|bank said|forge|post/);
     expect(delivery.headers.urgency).toBe("high");
-    // Answered: nothing more is said about it.
+    // Answered: nothing more is said about it, and every app takes its notification down (its tag, withdrawn).
     await json(phone.call("decideAction", { id: asked.action, approve: false }));
     await look();
     expect(phone.browser.received).toHaveLength(before + 1);
+    expect((await view(tablet.call)).withdrawn).toContain(delivery.payload!.tag);
+    expect(delivery.payload!.tag).toBe(tagFor(`action:${asked.action}`));
   });
 
   test("a key an agent asks for: the phone is told one is needed, never its name or the reason (an agent chose both)", async () => {
@@ -715,6 +717,11 @@ describe("from a terminal: galahad notify", () => {
     expect(await run("quiet", ["off"])).toBe("Quiet hours: off: he tells you whenever it happens.");
     expect(await run("limit", ["20"])).toContain("At most 20 a day");
     await run("limit", ["12"]);
+    // The day's digest: its time, in your own, or off.
+    expect(await run("digest", ["07:30"])).toMatch(/^The digest: at 07:30, \S+ time: what happened that he didn't buzz you for, once a day, quietly\.$/);
+    expect((await view()).prefs.digest).toEqual({ on: true, at: "07:30" });
+    expect(await run("digest", ["off"])).toBe("The digest: off: what he doesn't buzz you for waits in your Inbox.");
+    await expect(run("digest", ["8am"])).rejects.toThrow("a time of day");
     await expect(run("kinds", ["adverts", "on"])).rejects.toThrow("isn't a kind");
     // A kind an older version had is no kind now.
     await expect(run("kinds", ["journal", "on"])).rejects.toThrow("isn't a kind");

@@ -25,8 +25,12 @@ import { type DigestTopic, isTimeZone, type NotifyItem, type NotifyPayload, type
  *   presence       when each of your devices last asked the node anything, and the time zone it
  *                  said it was in (a hint, outside what's signed): your day is read in the zone
  *                  your devices say, and news goes to the device you used last.
+ *   asks           each ask that was told (an approval, a question, a key or connector he needs):
+ *                  when, when it lapses, and the reminders it was given.
  *   digest         what went to the day's digest instead of being told on its own (by key and
  *                  topic, never its words), until the digest says it.
+ *   withdrawn      tags of notifications whose matter was answered, dismissed, cleared or lapsed,
+ *                  for two days, so each app takes them down where it still shows them.
  *
  * `secure_delete` overwrites what a removed subscription held.
  */
@@ -54,9 +58,18 @@ export interface ToldRow {
 
 export interface SentRow {
   at: number;
-  kind: NotifyPayload["kind"];
+  /** What was sent: a payload's kind, or the day's digest, or a reminder. */
+  kind: NotifyPayload["kind"] | "digest" | "reminder";
   devices: string[];
   ok: boolean;
+}
+
+export interface AskRow {
+  toldAt: number;
+  /** When it lapses (null: it doesn't). */
+  expires: number | null;
+  reminded: number;
+  lastRemindedAt: number | null;
 }
 
 export interface LostRow {
@@ -81,10 +94,12 @@ interface SubscriptionRecord {
   failures: number;
 }
 
-/** Sends that don't count against the day's limit: your own test, and the message that says the limit was reached. */
-const UNCOUNTED = "('test', 'limit')";
+/** Sends that don't count against the day's limit: your own test, the message that says the limit was reached, the day's
+ * digest, and reminders (which have a budget of their own). */
+const UNCOUNTED = "('test', 'limit', 'digest', 'reminder')";
 /** Messages of news alone (PLAN #59): what's told now never carries a news kind. */
 const NEWS = "('finished', 'told')";
+const WITHDRAWN_KEEP_MS = 48 * 60 * 60_000;
 /** A device's zone is your day's for this long after it last asked the node anything. */
 const ZONE_KEEP_MS = 30 * 24 * 60 * 60_000;
 const KEEP_SENT_MS = 30 * 24 * 60 * 60_000;
@@ -114,7 +129,9 @@ export class NotifyStore {
       CREATE TABLE IF NOT EXISTS collect (device TEXT NOT NULL, tag TEXT NOT NULL, payload TEXT NOT NULL, at INTEGER NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY (device, tag));
       CREATE TABLE IF NOT EXISTS lost (device TEXT PRIMARY KEY, at INTEGER NOT NULL, service TEXT NOT NULL, why TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS presence (device TEXT PRIMARY KEY, at INTEGER NOT NULL, zone TEXT);
-      CREATE TABLE IF NOT EXISTS digest (key TEXT PRIMARY KEY, topic TEXT NOT NULL, at INTEGER NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS asks (key TEXT PRIMARY KEY, told_at INTEGER NOT NULL, expires INTEGER, reminded INTEGER NOT NULL DEFAULT 0, reminded_at INTEGER);
+      CREATE TABLE IF NOT EXISTS digest (key TEXT PRIMARY KEY, topic TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS withdrawn (tag TEXT PRIMARY KEY, at INTEGER NOT NULL);`);
   }
 
   close(): void {
@@ -196,6 +213,39 @@ export class NotifyStore {
     this.db.query("DELETE FROM presence WHERE device = ?").run(device);
   }
 
+  /* ---------- asks that were told, and their reminders ---------- */
+
+  /** These asks were told now (to anyone, or nobody): remembered with when each lapses, once. */
+  asked(items: readonly Pick<NotifyItem, "key" | "expires">[]): void {
+    const put = this.db.query("INSERT OR IGNORE INTO asks (key, told_at, expires) VALUES (?, ?, ?)");
+    const at = this.now();
+    this.db.transaction(() => {
+      for (const item of items) put.run(item.key, at, item.expires ?? null);
+    })();
+  }
+
+  ask(key: string): AskRow | null {
+    return this.asks().get(key) ?? null;
+  }
+
+  /** Every ask that was told and still has a record, by key: read once a look. */
+  asks(): Map<string, AskRow> {
+    const rows = this.db.query<{ key: string; told_at: number; expires: number | null; reminded: number; reminded_at: number | null }, []>("SELECT key, told_at, expires, reminded, reminded_at FROM asks").all();
+    return new Map(rows.map((r) => [r.key, { toldAt: r.told_at, expires: r.expires, reminded: r.reminded, lastRemindedAt: r.reminded_at }]));
+  }
+
+  reminded(keys: readonly string[]): void {
+    const mark = this.db.query("UPDATE asks SET reminded = reminded + 1, reminded_at = ? WHERE key = ?");
+    const at = this.now();
+    this.db.transaction(() => {
+      for (const key of keys) mark.run(at, key);
+    })();
+  }
+
+  forgetAsk(key: string): void {
+    this.db.query("DELETE FROM asks WHERE key = ?").run(key);
+  }
+
   /* ---------- the day's digest ---------- */
 
   /** These go to the day's digest (each once, by key and topic: never its words). */
@@ -217,6 +267,23 @@ export class NotifyStore {
   /** The digest said what waited until now. */
   clearDigest(): void {
     this.db.query("DELETE FROM digest WHERE at <= ?").run(this.now());
+  }
+
+  /* ---------- notifications to take down ---------- */
+
+  withdraw(tag: string): void {
+    this.db.query("INSERT INTO withdrawn (tag, at) VALUES (?, ?) ON CONFLICT (tag) DO UPDATE SET at = excluded.at").run(tag, this.now());
+    this.db.query("DELETE FROM withdrawn WHERE at < ?").run(this.now() - WITHDRAWN_KEEP_MS);
+  }
+
+  /** The tags withdrawn in the last two days, the most recent first. */
+  withdrawn(): string[] {
+    return this.db.query<{ tag: string }, [number]>("SELECT tag FROM withdrawn WHERE at >= ? ORDER BY at DESC, tag LIMIT 200").all(this.now() - WITHDRAWN_KEEP_MS).map((r) => r.tag);
+  }
+
+  /** A notification told again (a reminder, a finding come back) is up again: not withdrawn. */
+  unwithdraw(tag: string): void {
+    this.db.query("DELETE FROM withdrawn WHERE tag = ?").run(tag);
   }
 
   /* ---------- devices that came back after nobody could be reached ---------- */
@@ -364,7 +431,7 @@ export class NotifyStore {
 
   /* ---------- what was sent ---------- */
 
-  logSent(day: string, kind: NotifyPayload["kind"], devices: string[], ok: boolean): void {
+  logSent(day: string, kind: SentRow["kind"], devices: string[], ok: boolean): void {
     const at = this.now();
     this.db.query("INSERT INTO sent (at, day, kind, devices, ok) VALUES (?, ?, ?, ?, ?)").run(at, day, kind, JSON.stringify(devices), ok ? 1 : 0);
     this.db.query("DELETE FROM sent WHERE at < ?").run(at - KEEP_SENT_MS);
@@ -385,6 +452,11 @@ export class NotifyStore {
   /** When the last notification that counts was sent. */
   lastSentAt(): number | null {
     return this.db.query<{ at: number | null }, []>(`SELECT MAX(at) AS at FROM sent WHERE kind NOT IN ${UNCOUNTED}`).get()?.at ?? null;
+  }
+
+  /** How many reminder messages were sent on a day. */
+  remindersOn(day: string): number {
+    return this.db.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM sent WHERE day = ? AND kind = 'reminder'").get(day)!.n;
   }
 
   /** How many messages of news alone were sent on a day, and when the last went. */

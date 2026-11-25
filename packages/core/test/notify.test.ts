@@ -5,10 +5,13 @@ import {
   catchUpMessage,
   connectorItem,
   conversationFromHash,
+  digestDue,
+  digestMessage,
   GENERIC_NOTIFICATION,
   inQuietHours,
   isQuietKind,
   itemTier,
+  lapseTime,
   limitMessage,
   limitReached,
   MODEL_PER_DAY,
@@ -34,6 +37,9 @@ import {
   questionItem,
   readNotifyPayload,
   readNotifyPrefs,
+  reminderDue,
+  reminderMessage,
+  REMIND_AFTER_MS,
   screenItem,
   secretItem,
   tagOf,
@@ -459,6 +465,95 @@ describe("news, budgets and summaries", () => {
   });
 });
 
+describe("reminders before an ask lapses", () => {
+  const copenhagen = { ...NOTIFY_DEFAULTS.quiet, tz: "Europe/Copenhagen" };
+  // 10:00 in Copenhagen (winter: UTC+1).
+  const told = at("2026-11-25T09:00:00Z");
+  const ask = (over: Partial<Parameters<typeof reminderDue>[0]> = {}) => ({ toldAt: told, expires: told + 24 * 3600_000, reminded: 0, lastRemindedAt: null, ...over });
+
+  test("four hours after it was told, once; an hour before it lapses, once more; never more than twice", () => {
+    expect(REMIND_AFTER_MS).toBe(4 * 3600_000);
+    expect(reminderDue(ask(), told + 3 * 3600_000, copenhagen)).toBe(false);
+    expect(reminderDue(ask(), told + 4 * 3600_000, copenhagen)).toBe(true);
+    expect(reminderDue(ask({ reminded: 1, lastRemindedAt: told + 4 * 3600_000 }), told + 5 * 3600_000, copenhagen)).toBe(false);
+    // The last, an hour before it lapses at 10:00 the next morning.
+    expect(reminderDue(ask({ reminded: 1, lastRemindedAt: told + 4 * 3600_000 }), told + 23 * 3600_000, copenhagen)).toBe(true);
+    expect(reminderDue(ask({ reminded: 2, lastRemindedAt: told + 23 * 3600_000 }), told + 23.5 * 3600_000, copenhagen)).toBe(false);
+    // Lapsed is lapsed.
+    expect(reminderDue(ask(), told + 24 * 3600_000, copenhagen)).toBe(false);
+  });
+
+  test("never at night; one that lapses in the night is reminded in the hour before the night begins", () => {
+    // Told at 15:00, lapsing at 01:00 (in the night): four hours on is 19:00, and the last word comes 21:00 to 22:00.
+    const afternoon = at("2026-11-25T14:00:00Z");
+    const late = { toldAt: afternoon, expires: afternoon + 10 * 3600_000, reminded: 1, lastRemindedAt: afternoon + 4 * 3600_000 };
+    expect(reminderDue(late, at("2026-11-25T19:30:00Z"), copenhagen)).toBe(false); // 20:30: not yet the hour before the night
+    expect(reminderDue(late, at("2026-11-25T20:05:00Z"), copenhagen)).toBe(true); // 21:05: the night begins at 22:00
+    expect(reminderDue({ ...late, reminded: 0, lastRemindedAt: null }, at("2026-11-25T21:30:00Z"), copenhagen)).toBe(false); // 22:30: night
+    // The first reminder falls in the night: it waits for the morning (if the ask still stands).
+    const evening = at("2026-11-25T19:30:00Z"); // 20:30
+    const day = { toldAt: evening, expires: evening + 24 * 3600_000, reminded: 0, lastRemindedAt: null };
+    expect(reminderDue(day, evening + 4 * 3600_000, copenhagen)).toBe(false); // 00:30
+    expect(reminderDue(day, at("2026-11-26T06:00:00Z"), copenhagen)).toBe(true); // 07:00
+  });
+
+  test("an ask that doesn't lapse (a key, a connector he needs) is reminded once", () => {
+    const key = { toldAt: told, expires: null, reminded: 0, lastRemindedAt: null };
+    expect(reminderDue(key, told + 4 * 3600_000, copenhagen)).toBe(true);
+    expect(reminderDue({ ...key, reminded: 1, lastRemindedAt: told + 4 * 3600_000 }, told + 30 * 3600_000, copenhagen)).toBe(false);
+  });
+
+  test("its words are fixed, say when no answer means no, carry no buttons, and replace the notification that told of it", () => {
+    const now = at("2026-11-25T12:05:00Z");
+    expect(reminderMessage({ key: "action:a_1", kind: "approval", expires: at("2026-11-25T13:05:00Z") }, now, "Europe/Copenhagen", "salt")).toEqual({
+      v: 1,
+      kind: "approval",
+      title: "Galahad: still waiting",
+      body: "An approval still waits for your answer. No answer by 14:05 means no.",
+      open: "inbox",
+      tag: tagOf("action:a_1", "salt"),
+    });
+    expect(reminderMessage({ key: "secret:x", kind: "question" }, now, "Europe/Copenhagen").body).toBe("He still needs a key to go on. The Inbox says which.");
+    expect(lapseTime(at("2026-11-26T08:05:00Z"), now, "Europe/Copenhagen")).toBe("Thu 09:05");
+    expect(lapseTime(at("2026-11-25T22:59:00Z"), now, "Europe/Copenhagen")).toBe("23:59");
+  });
+});
+
+describe("the day's digest", () => {
+  const copenhagen: NotifyPrefs = { ...NOTIFY_DEFAULTS, quiet: { ...NOTIFY_DEFAULTS.quiet, tz: "Europe/Copenhagen" } };
+
+  test("at 08:00 in your own time, once a day, never in quiet hours, and not when it's off", () => {
+    expect(NOTIFY_DEFAULTS.digest).toEqual({ on: true, at: "08:00" });
+    expect(digestDue(copenhagen, at("2026-11-26T06:59:00Z"), null)).toBe(false); // 07:59
+    expect(digestDue(copenhagen, at("2026-11-26T07:00:00Z"), null)).toBe(true); // 08:00
+    expect(digestDue(copenhagen, at("2026-11-26T07:00:00Z"), "2026-11-26")).toBe(false);
+    expect(digestDue(copenhagen, at("2026-11-26T15:00:00Z"), "2026-11-25")).toBe(true); // a node that was down at 8 says it later
+    expect(digestDue({ ...copenhagen, digest: { on: false, at: "08:00" } }, at("2026-11-26T07:00:00Z"), null)).toBe(false);
+    expect(digestDue({ ...copenhagen, digest: { on: true, at: "06:00" } }, at("2026-11-26T05:30:00Z"), null)).toBe(false); // 06:30: quiet hours
+  });
+
+  test("counts and fixed words, the most telling first, what still waits; nothing happened, nothing said; it replaces yesterday's", () => {
+    expect(digestMessage({ topics: {}, verified: 0, unverified: 0, open: 2 })).toBeNull();
+    const told = digestMessage({ topics: { lapsed: 1, look: 3, note: 2, report: 1, ci: 1 }, verified: 4, unverified: 1, open: 1 }, "salt")!;
+    expect(told).toEqual({
+      v: 1,
+      kind: "finished",
+      title: "Galahad: while you were away",
+      // (The least telling go first when it doesn't fit: here a CI fix under way and 2 notes.)
+      body: "1 ask lapsed unanswered, 4 tasks verified, 1 task didn't pass, 3 looks of his, 1 outcome report. 1 ask still waits for you.",
+      open: "overview",
+      tag: tagOf("digest", "salt"),
+    });
+    expect(readNotifyPayload(JSON.parse(JSON.stringify(told)))).toEqual(told);
+    expect(isQuietKind(told.kind)).toBe(true);
+    // Too much to say: whole parts only, never cut mid-word.
+    const many = digestMessage({ topics: { lapsed: 12, asked: 20, chat: 9, look: 40, report: 7, ci: 3, backlog: 2, note: 30 }, verified: 140, unverified: 13, open: 9 })!;
+    expect(many.body.length).toBeLessThanOrEqual(NOTIFY_BODY_MAX);
+    expect(many.body.endsWith("9 asks still wait for you.")).toBe(true);
+    expect(many.body).not.toContain("…");
+  });
+});
+
 describe("what waited while nobody could be reached", () => {
   const noon = at("2026-11-12T12:00:00Z");
   const catchUp = (items: NotifyItem[], over: Partial<Parameters<typeof planCatchUp>[0]> = {}) => planCatchUp({ now: noon, prefs: NOTIFY_DEFAULTS, items, sentToday: 0, lastSentAt: null, ...over });
@@ -609,11 +704,15 @@ describe("settings and what a device hands over", () => {
   test("stored preferences read leniently: what doesn't read as a setting is the default", () => {
     expect(readNotifyPrefs(null)).toEqual(NOTIFY_DEFAULTS);
     // (`journal`: a switch an older version stored for a kind that's gone; it's read past like any other stranger.)
-    expect(readNotifyPrefs({ kinds: { journal: true, finished: false, approval: "yes", extra: true }, quiet: { from: "25:00", to: "06:30", tz: "Nowhere/Land" }, perDay: 999 })).toEqual({
+    expect(readNotifyPrefs({ kinds: { journal: true, finished: false, approval: "yes", extra: true }, quiet: { from: "25:00", to: "06:30", tz: "Nowhere/Land" }, perDay: 999, digest: { on: "yes", at: "8am" } })).toEqual({
       kinds: { ...NOTIFY_DEFAULTS.kinds, finished: false },
       quiet: { on: true, from: "22:00", to: "06:30", tz: "UTC" },
       perDay: 12,
+      digest: { on: true, at: "08:00" },
     });
+    // Settings stored before the digest read as its default; one stored with it, as stored.
+    expect(readNotifyPrefs({ perDay: 6 }).digest).toEqual({ on: true, at: "08:00" });
+    expect(readNotifyPrefs({ digest: { on: false, at: "07:30" } }).digest).toEqual({ on: false, at: "07:30" });
     expect(NOTIFY_DEFAULTS).toMatchObject({ kinds: { "needs-you": true, approval: true, finished: true, question: true }, quiet: { on: true, from: "22:00", to: "07:00", tz: "UTC" } });
   });
 
@@ -635,6 +734,9 @@ describe("settings and what a device hands over", () => {
 
   test("what the node takes is checked at the door", () => {
     expect(NotifyPrefsInput.safeParse({ kinds: { finished: false }, quiet: { from: "21:30", tz: "Europe/Copenhagen" }, perDay: 20 }).success).toBe(true);
+    expect(NotifyPrefsInput.safeParse({ digest: { on: false } }).success).toBe(true);
+    expect(NotifyPrefsInput.safeParse({ digest: { at: "07:45" } }).success).toBe(true);
+    for (const bad of [{ digest: { at: "8am" } }, { digest: { on: "yes" } }, { digest: { at: "08:00", when: "daily" } }]) expect(NotifyPrefsInput.safeParse(bad).success).toBe(false);
     for (const bad of [{ kinds: { adverts: true } }, { kinds: { journal: true } }, { quiet: { from: "9pm" } }, { quiet: { tz: "Mars/Olympus" } }, { perDay: 0 }, { perDay: 500 }, { extra: 1 }]) {
       expect(NotifyPrefsInput.safeParse(bad).success).toBe(false);
     }

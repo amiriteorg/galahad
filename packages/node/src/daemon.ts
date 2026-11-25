@@ -572,6 +572,12 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
         const installed = new Set(installedConnectors(store).map((c) => c.id));
         return connectorRequests.list().filter((r) => !installed.has(r.connector)).map((r) => r.id);
       },
+      // What the day's digest counts first: knights' tasks that ended since the last one, verified and not.
+      tasksEnded: (since) => {
+        const ended = team.store.tasks().filter((t) => (t.status === "done" || t.status === "failed" || t.status === "stopped") && t.updatedAt > since);
+        const verified = ended.filter((t) => t.status === "done" && t.verified).length;
+        return { verified, unverified: ended.length - verified };
+      },
       turns,
       chats,
       quests,

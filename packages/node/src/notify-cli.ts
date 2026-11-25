@@ -10,6 +10,7 @@ import { alertReserve, CLOCK, newsBudget, NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY
  *   galahad notify kinds [<kind> on|off …]  what he tells you (needs-you, approval, finished, question, told)
  *   galahad notify quiet [on | off | HH:MM-HH:MM] [--tz Europe/Copenhagen]
  *   galahad notify limit <n>                at most n a day
+ *   galahad notify digest [on | off | HH:MM] the day's digest: what happened that he didn't buzz you for, once a day
  *   galahad notify off <device>             remove a device's subscription
  *   galahad notify apple-key < key.json     the Apple push key the iPhone app is notified with:
  *                                           {"key": "<the .p8's text>", "keyId": "…", "teamId": "…"[, "topic": "<bundle id>"]}
@@ -24,7 +25,7 @@ interface Api {
 
 type Flags = Record<string, string | boolean | (string | boolean)[] | undefined>;
 
-const USAGE = "usage: galahad notify | notify test [device] | notify kinds [<kind> on|off …] | notify quiet [on|off|HH:MM-HH:MM] [--tz zone] | notify limit <n> | notify off <device> | notify apple-key < key.json";
+const USAGE = "usage: galahad notify | notify test [device] | notify kinds [<kind> on|off …] | notify quiet [on|off|HH:MM-HH:MM] [--tz zone] | notify limit <n> | notify digest [on|off|HH:MM] | notify off <device> | notify apple-key < key.json";
 
 const tty = process.stdout.isTTY;
 const dim = (s: string) => (tty ? `\x1b[2m${s}\x1b[0m` : s);
@@ -44,6 +45,10 @@ export function quietWords(prefs: NotifyPrefs, zone?: string): string {
   return prefs.quiet.on ? `${prefs.quiet.from} to ${prefs.quiet.to}, ${zone ?? prefs.quiet.tz} time: everything but an alert waits, then one message says what waited` : "off: he tells you whenever it happens";
 }
 
+export function digestWords(prefs: NotifyPrefs, zone?: string): string {
+  return prefs.digest.on ? `at ${prefs.digest.at}, ${zone ?? prefs.quiet.tz} time: what happened that he didn't buzz you for, once a day, quietly` : "off: what he doesn't buzz you for waits in your Inbox";
+}
+
 /** Everything `galahad notify` prints: who, what, when, and today. Never an endpoint (the node gives none). */
 export function statusLines(view: NotifyView): string[] {
   const out: string[] = [bold(`Notifications from ${view.node}`)];
@@ -56,6 +61,7 @@ export function statusLines(view: NotifyView): string[] {
   for (const kind of NOTIFY_KINDS) out.push(`  ${(view.prefs.kinds[kind] ? "on " : "off").padEnd(4)} ${kind.padEnd(10)} ${dim(NOTIFY_KIND_INFO[kind].label)}`);
   out.push("", `${bold("Quiet hours")}  ${quietWords(view.prefs, view.zone)}${view.quiet ? dim(` (now; ${view.held} waiting)`) : ""}`);
   if (view.zone && view.zone !== view.prefs.quiet.tz) out.push(dim(`  (your devices say they're in ${view.zone}; the setting's ${view.prefs.quiet.tz} is used when none has said)`));
+  out.push(`${bold("The digest")}  ${digestWords(view.prefs, view.zone)}`);
   out.push(`${bold("The day's limit")}  ${view.today.count} of ${view.today.limit} sent today (${view.today.day})`);
   for (const sent of view.today.sent) out.push(`  ${time(sent.at)}  ${sent.kind.padEnd(10)} ${dim(`to ${sent.devices.join(", ")}${sent.ok ? "" : " (didn't arrive)"}`)}`);
   return out;
@@ -106,6 +112,19 @@ export async function notifyCommand(api: Api, sub: string | undefined, rest: str
     const { prefs } = await api.call<{ prefs: NotifyPrefs }>("setNotify", { perDay: n });
     const kept = alertReserve(prefs.perDay);
     print(`At most ${prefs.perDay} a day${kept ? `, the last ${kept === 1 ? "one" : kept} kept for alerts` : ""}; news alone at most ${newsBudget(prefs.perDay)} (the rest goes to the digest). When what needs you reaches the limit, one message says so.`);
+    return;
+  }
+  if (sub === "digest") {
+    const arg = rest[0];
+    let digest: Partial<NotifyPrefs["digest"]> | null = null;
+    if (arg === "on" || arg === "off") digest = { on: arg === "on" };
+    else if (arg !== undefined) {
+      if (!CLOCK.test(arg)) throw new Error(`the digest's time is a time of day: galahad notify digest 08:00`);
+      digest = { on: true, at: arg };
+    }
+    const view = digest ? null : await api.call<NotifyView>("notify");
+    const prefs = digest ? (await api.call<{ prefs: NotifyPrefs }>("setNotify", { digest })).prefs : view!.prefs;
+    print(`The digest: ${digestWords(prefs, view?.zone)}.`);
     return;
   }
   if (sub === "apple-key") {
