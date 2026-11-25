@@ -234,6 +234,7 @@ import { localModelsOf, type ModelPeer, serves, viaFleet } from "./local-models.
 import { githubRepo, shipBranch } from "./quest-cli.ts";
 import type { Terminals } from "./terminals.ts";
 import { LiveChanges, MindCounts, timedStamp } from "./live.ts";
+import { QampGrantError, QampGrants } from "./qamp-grants.ts";
 
 /**
  * loopback  127.0.0.1:<port>         local processes only: CLI (admin token), model gateway
@@ -255,6 +256,8 @@ export interface AppContext {
   sync: SyncEngine;
   tokens: GatewayTokens;
   arms: ArmTokens;
+  /** Grants to agents on your other machines, over Q-AMP (qamp-grants.ts): each an arm, a chain and a bridge. */
+  qamp: QampGrants;
   adminToken: string;
   assets: Assets;
   caps: () => Capabilities | null;
@@ -3708,6 +3711,8 @@ export function createApp(ctx: AppContext) {
     bankComplete: (input) => bankErrors(() => ctx.bank.complete(input)),
     bankDisconnect: () => bankErrors(() => ctx.bank.disconnect()),
     grantArm: (input) => {
+      // A grant's arm holds what its tools' routes need and nothing else: another tool is another grant.
+      if (QampGrants.isGrantArm(input.label)) throw new HttpError(400, "a Q-AMP grant's arm holds what its tools need and nothing else: grant again (galahad qamp grant) for other tools");
       try {
         return { arm: ctx.arms.grant(input.label, input.add ?? [], input.remove ?? []) };
       } catch (error) {
@@ -4207,13 +4212,36 @@ export function createApp(ctx: AppContext) {
     mintArm: (input) => {
       // `loop.<name>` is the name the node gives its own loops' quests (his own work: skills.ts): never an agent's.
       if (input.label.startsWith("loop.")) throw new HttpError(400, "names beginning loop. are his own loops'; choose another");
+      // `qamp.<id>` is a grant's (qamp-grants.ts), holding what its tools need alone: only a grant makes one.
+      if (QampGrants.isGrantArm(input.label)) throw new HttpError(400, "names beginning qamp. are grants to agents on other machines (galahad qamp grant); choose another");
       try {
         return ctx.arms.mint(input.label, input.scopes);
       } catch (error) {
         throw new HttpError(400, (error as Error).message);
       }
     },
-    revokeArm: (input) => ({ revoked: ctx.arms.revoke(input.label) }),
+    // A grant's arm ends with its grant: its bridge is stopped too, as galahad qamp revoke would, wherever arms are listed.
+    revokeArm: async (input) => {
+      const grant = ctx.qamp.grantOfArm(input.label);
+      if (grant) return { revoked: await ctx.qamp.revoke(grant) };
+      return { revoked: ctx.arms.revoke(input.label) };
+    },
+    qampGrants: (_input, p) => {
+      ownerOfQamp(p);
+      return { grants: ctx.qamp.list() };
+    },
+    qampGrant: (input, p) => {
+      ownerOfQamp(p);
+      return qampErrors(() => ctx.qamp.grant(input, p));
+    },
+    qampRevoke: (input: { id: string } | { all: true }, p) => {
+      ownerOfQamp(p);
+      return qampErrors(async () => {
+        if ("all" in input) return { revoked: await ctx.qamp.revokeAll() };
+        if (!(await ctx.qamp.revoke(input.id))) throw new HttpError(404, `no grant ${input.id} on this node (galahad qamp grants lists them)`);
+        return { revoked: 1 };
+      });
+    },
     buildSandboxImage: (input, p) =>
       longRunning(
         onNode(p, input.on, routes.buildSandboxImage.path, input.lab ? { lab: true } : input.gazebo ? { gazebo: true } : input.desktop ? { desktop: true } : {}, async () => {
@@ -4372,6 +4400,21 @@ export function createApp(ctx: AppContext) {
   function ownerOfNotify(p: Principal): void {
     if (!isOwner(p)) throw new HttpError(403, "notifications are yours alone");
   }
+  /**
+   * Q-AMP grants are yours, as your rules are: made, listed and ended from a terminal or a paired device of yours (with
+   * fleet:admin, the route's scope), never by an agent (Galahad's own principal and the knights' are arms) or another node.
+   */
+  function ownerOfQamp(p: Principal): void {
+    if (!isOwner(p)) throw new HttpError(403, "only you grant, list and end an agent's access over Q-AMP");
+  }
+  const qampErrors = async <T,>(work: () => Promise<T>): Promise<T> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof QampGrantError) throw new HttpError(error.status, error.message);
+      throw error;
+    }
+  };
   /** Which device a request is about: a paired device means itself; another's only with fleet:admin; a terminal names one, or none (all). */
   function notifyTarget(named: string | undefined, p: Principal): string | null {
     if (p.kind !== "client") return named ?? null;

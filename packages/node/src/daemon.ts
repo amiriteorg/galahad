@@ -18,6 +18,7 @@ import { Governor } from "./compute/governor.ts";
 import { modelSpeed, sandboxStart } from "./compute/measure.ts";
 import { ComputeService, liveHost, type Measure } from "./compute/service.ts";
 import { ArmTokens, GALAHAD_ARM } from "./arms.ts";
+import { QampGrants, type QampRunner, qampRunner } from "./qamp-grants.ts";
 import { ArtifactStore } from "./artifacts.ts";
 import { artifactsAdapter, chatsAdapter, investigationsAdapter, memoriesAdapter, skillsAdapter, trialsAdapter } from "./archive/adapters.ts";
 import { LocalDiskBackend } from "./archive/blobs.ts";
@@ -156,6 +157,11 @@ export interface DaemonOptions {
    * origin), how often he looks (false: only when the test says), his clock, and how a pause before a retry passes.
    */
   push?: { allow?: string[]; tickMs?: number | false; now?: () => number; sleep?: (ms: number) => Promise<void>; apple?: { development?: string; production?: string } };
+  /** How Q-AMP's binary is run for grants (tests: a stand-in). Default: <home>/bin/qamp, or GALAHAD_QAMP_BIN. */
+  qamp?: QampRunner;
+  /** The UDP ports grants' bridges listen on (tests: others; default 7781–7789), and how often expiry is looked for. */
+  qampPorts?: { first: number; last: number };
+  qampSweepMs?: number;
 }
 
 /**
@@ -312,6 +318,23 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       log(`ledger write failed: ${(error as Error).message}`);
     }
   };
+
+  // Grants to agents on your other machines, over Q-AMP (qamp-grants.ts): each its arm, its chain and its bridge, which
+  // serves `galahad mcp --arm qamp.<id> --tools …` on this node's own address. Its binary is the node's own copy.
+  const qampBin = env.GALAHAD_QAMP_BIN ?? join(home.dir, "bin", "qamp");
+  const cliPath = resolve(dirname(fileURLToPath(import.meta.url)), "cli.ts");
+  const qamp = new QampGrants({
+    db: local,
+    arms,
+    home,
+    port,
+    address: () => advertise,
+    runner: opts.qamp ?? qampRunner(() => qampBin),
+    mcpCommand: (label, tools) => [process.execPath, cliPath, "mcp", "--arm", label, "--tools", tools.join(","), "--home", home.dir],
+    ledger,
+    log,
+    ...(opts.qampPorts ? { ports: opts.qampPorts } : {}),
+  });
 
   // Compute: this node's slots. Every sandbox it creates and every background model call takes one, and waits when
   // there's none; the ceiling is the owner's (or the default half), read from the mind as it is each time.
@@ -630,6 +653,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     sync,
     tokens,
     arms,
+    qamp,
     adminToken: home.adminToken(),
     assets,
     doctor: (options) => runDoctor(doctorDeps, options),
@@ -739,6 +763,9 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
   // Advertise the endpoint only once we are actually listening on it.
   publishProfile(store, identity, endpoint, caps);
   sync.start();
+  // Grants still in force get their bridges back (each one's MCP server calls this node's API, now listening); those whose
+  // time ran out while it was down end now.
+  void qamp.resume(opts.qampSweepMs).catch((error: Error) => log(`qamp: ${error.message}`));
 
   // Loops and the outbox start once the API they call is listening.
   if ((opts.defaultHeartbeat ?? true) && process.env.GALAHAD_HEARTBEAT !== "off") {
@@ -833,6 +860,8 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
     async stop() {
       const finished = Promise.all(servers.map((s) => s.stop()));
       shutdown.abort();
+      // Grants' bridges stop (each drains its calls); the grants stay, and their bridges start again with the node.
+      const qampStopped = qamp.stop();
       // Every terminal's shell is ended, and whoever watched one is told (their streams end with it).
       terminals?.closeAll();
       const teamEnded = Promise.all([team.service?.stop(), team.outcomes?.stop(), team.backlog?.stop()]);
@@ -866,6 +895,7 @@ export async function startDaemon(home: Home, opts: DaemonOptions = {}): Promise
       // A turn still going after that is stopped: its answer kept as stopped, what's queued behind it held until you resume.
       await turns.close();
       await teamEnded;
+      await qampStopped;
       await Promise.all(servers.map((s) => s.stop(true)));
       bank.close();
       notifyDb.close();

@@ -44,6 +44,11 @@ const Env = z.object({
     .optional(),
   /** off: the archive keeps what it has and serves it, but pulls, embeds and summarises nothing new. */
   GALAHAD_ARCHIVE: z.enum(["on", "off"]).optional(),
+  /** Q-AMP's binary, where it isn't the node's own copy (<home>/bin/qamp, scripts/qamp-pin.sh): an absolute path. Tests use it. */
+  GALAHAD_QAMP_BIN: z
+    .string()
+    .refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p), "an absolute path")
+    .optional(),
   /** Chat turns this node runs at once (default 4), and how long one may run, in minutes (default 30). */
   GALAHAD_TURNS_MAX: z.coerce.number().int().min(1).max(64).optional(),
   GALAHAD_TURN_MINUTES: z.coerce.number().min(1).max(720).optional(),

@@ -7,6 +7,7 @@ import { MCP_AUTHS, MCP_CATEGORIES, type McpCategory, type McpIndexEntry } from 
 import { ActionId, ArtifactId, ConnectorId, LoopName, LoopStatus, NoticeKey, NoticeSeverity, SCREEN_SESSION_MAX_MINUTES, ScreenSessionId, THINKING_EFFORTS } from "./events.ts";
 import { Conclusion, InvestigationId, InvestigationStatus, PredictionOutcome, Preregistration } from "./investigations.ts";
 import { MAX_ORDER_DAYS, OrderId, OrderPattern } from "./orders.ts";
+import { QampGrantInput, QampRevokeInput } from "./qamp.ts";
 import { RuleInput, RuleName, RuleToldInput, RuleTrippedInput } from "./rules.ts";
 import { type Scope, Scope as ScopeSchema } from "./scopes.ts";
 import { TrialRecord, TrialRunId, type TrialRunSettings } from "./trials.ts";
@@ -1437,6 +1438,14 @@ export const routes = {
     scope: "fleet:admin",
     input: z.strictObject({ label: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,47}$/) }),
   },
+
+  // ---- Q-AMP grants (qamp.ts; PLAN #58): an agent on another of your machines, a few of his tools, for a while ----
+  /** The grants in force on this node: each one's agent, tools, end and bridge. Yours alone, as each of these is. */
+  qampGrants: { method: "GET", path: "/api/qamp/grants", scope: "fleet:admin", input: null },
+  /** Grant an agent's key some of the read-only tools for a while: an arm of its own, a chain bound to its key, a bridge. */
+  qampGrant: { method: "POST", path: "/api/qamp/grants", scope: "fleet:admin", input: QampGrantInput },
+  /** End one grant, or every one: its arm deleted at once (the agent's next call refused), its bridge stopped. */
+  qampRevoke: { method: "POST", path: "/api/qamp/revoke", scope: "fleet:admin", input: QampRevokeInput },
 
   // ---- The archive (node-local: what this node keeps, for good) -----------------
   /** Entries, chunks embedded, the backlog, the embedder, the last integrity check, disk used. */
