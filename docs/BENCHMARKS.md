@@ -169,27 +169,29 @@ A seeded week in virtual time (`bench/notify/sim.ts`, a look every minute): the 
 
 A stand-in owner answers an ask only once a delivery told them of it: they open the app on the device that buzzed 2 to 40 minutes later in their waking hours (07:00 to 23:00), and answer what was delivered; they also open the iPhone app each morning and the laptop's on weekday mornings, which runs each app's own healing. An ask never delivered is never answered. Whether a delivery sounded is what the node asked of the platforms: a push of Urgency low is passive everywhere. It takes about a second, and also runs as a normal test at two days (`bench/notify/sim.test.ts`).
 
-| Seed 20 261 112, a week | 25 Nov 2026 (PLAN #59's first step) |
-|---|---:|
-| Asks that lapsed unanswered | 0 |
-| Asks answered, of 21 | 19 |
-| From an ask to its answer: median · 90th percentile (virtual minutes) | 40 · 693.6 |
-| Minutes an ask stood with no device that could be reached | 1,015 |
-| Buzzes · for each knight's task that ended verified (54) | 86 · 1.59 |
-| Buzzes at night (22:00 to 07:00 in your time) that weren't alerts | 0 |
-| Buzzes about what resolved without you | 4 |
-| Buzzes about what his own judgment raised | 9 |
-| The same thing told again as new while it stood | 2 |
-| A notification that replaced one telling of an ask still waiting | 0 |
-| One look, with a day's worth standing | 0.05 ms |
+| Seed 20 261 112, a week | PLAN #59's first step | Its second and third |
+|---|---:|---:|
+| Asks that lapsed unanswered | 0 | 0 |
+| Asks answered, of 21 | 19 | 19 |
+| From an ask to its answer: median · 90th percentile (virtual minutes) | 40 · 693.6 | 20 · 193 |
+| Minutes an ask stood with no device that could be reached | 1,015 | 0 |
+| Buzzes · for each knight's task that ended verified (54) | 86 · 1.59 | 46 · 0.852 |
+| Buzzes at night (22:00 to 07:00 in your time) that weren't alerts | 0 | 0 |
+| Buzzes about what resolved without you | 4 | 2 |
+| Buzzes about what his own judgment raised | 9 | 8 |
+| The same thing told again as new while it stood | 2 | 0 |
+| A notification that replaced one telling of an ask still waiting | 0 | 0 |
+| One look, with a day's worth standing | 0.05 ms | 0.05 ms |
 
-What it says of the first step (before tiers, budgets, reminders and the digest):
+What it said of the first step (before tiers, budgets, reminders and the digest):
 
-- **Asks wait behind news.** By 14:00 to 20:00 on most days ordinary news has reached the day's limit, and an approval asked after that waits for the morning: that is most of the 693.6-minute 90th percentile (the design's Probe C).
-- **The iPhone stays dead from Wednesday.** Its app never asks Apple again, so from Friday's outage on nobody can be reached for 1,015 minutes while something waits; the web app's own healing and the catch-up are why nothing lapsed.
-- **A connector request you leave standing is told again every 49 hours** (twice in the week: Probe B).
-- **Every push sounds:** 86 buzzes, one and a half for each task done, 9 of them his own looks asking you something.
-- Night buzzes read 0 only because the day's limit is spent before 22:00 each day; quiet hours themselves run in the node's zone, an hour off the owner's (Probe D).
+- **Asks waited behind news.** By 14:00 to 20:00 on most days ordinary news had reached the day's limit, and an approval asked after that waited for the morning: that was most of the 693.6-minute 90th percentile (the design's Probe C).
+- **The iPhone stayed dead from Wednesday.** Its app never asked Apple again, so from Friday's outage on nobody could be reached for 1,015 minutes while something waited; the web app's own healing and the catch-up were why nothing lapsed.
+- **A connector request you leave standing was told again every 49 hours** (twice in the week: Probe B).
+- **Every push sounded:** 86 buzzes, one and a half for each task done, 9 of them his own looks asking you something.
+- Night buzzes read 0 only because the day's limit was spent before 22:00 each day; quiet hours themselves ran in the node's zone, an hour off the owner's (Probe D).
+
+What the second and third steps changed (each is in its commit's words): asks have a budget news can't spend, so the 90th percentile fell to 193 minutes (what remains is asks made in the night, told at 07:00); news is quiet, so 46 of 92 deliveries sound, against 86 of 94; his looks that found what they looked for and CI a knight fixes go to the digest; the iPhone hands Apple's token over again when it opens, so it is back with a new token on Thursday's first look and covers Friday's laptop outage: nobody is ever unreachable while something waits; nothing is told twice while it stands. Night buzzes stay 0 now because quiet hours run in the owner's zone. What still sounds is asks, each on both devices (approvals 21 of the 46, keys 6, findings 5); reminders 2.
 
 ### web: does anything move on the PWA's screens?
 
