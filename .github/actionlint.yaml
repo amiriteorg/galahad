@@ -1,0 +1,4 @@
+# actionlint's settings: the runner labels of sovware.io's own runners, which GitHub doesn't know.
+self-hosted-runner:
+  labels:
+    - macos-xcode # the Mac mini (ci.yml's apple job)

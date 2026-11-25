@@ -236,24 +236,40 @@ jobs:
             "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.ref }}"
           git checkout -q FETCH_HEAD
           git log --oneline -1
+      # Swift packages (Sparkle) are fetched anonymously (-packageAuthorizationProvider netrc, and no .netrc): by default
+      # Xcode looks for a github.com password in the login keychain, and on the mini, which has one, macOS asked whether
+      # xcodebuild may use it, a prompt no one answers, and the job waited on it until it was cancelled (25 November 2026).
       - name: iPhone tests, on a simulator of their own
         working-directory: apps/apple
         run: |
           set -euo pipefail
           xcodegen generate --quiet
+          # An XcodeGen that can't find its setting presets makes a project with no SDK, whose iPhone app is a Mac one.
+          grep -q 'SDKROOT = iphoneos' Galahad.xcodeproj/project.pbxproj || { echo "::error::XcodeGen made the project without its setting presets (share/xcodegen beside its bin)"; exit 1; }
+          # A cancelled job is killed, so its trap never deletes its simulator: delete any an earlier job left (this runner
+          # runs one job at a time).
+          xcrun simctl list devices -j | python3 -c 'import json,sys; [print(d["udid"]) for r in json.load(sys.stdin)["devices"].values() for d in r if d["name"].startswith("Galahad CI ")]' |
+            while read -r left; do xcrun simctl shutdown "$left" 2>/dev/null || true; xcrun simctl delete "$left"; done
           # The newest iOS runtime the Mac has (the mini's is 27.2; the push gate's Mac, 27.0).
           runtime=$(xcrun simctl list runtimes iOS -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("isAvailable")]; print(max(r, key=lambda x: [int(n) for n in x["version"].split(".")])["identifier"])')
           udid=$(xcrun simctl create "Galahad CI ${GITHUB_RUN_NUMBER:-0}" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$runtime")
           trap 'xcrun simctl delete "$udid"' EXIT
           xcrun simctl bootstatus "$udid" -b > /dev/null
           xcodebuild -project Galahad.xcodeproj -scheme Galahad -destination "platform=iOS Simulator,id=$udid" \
-            -derivedDataPath build test -skip-testing:GalahadTests/MacShotsTests -quiet
+            -derivedDataPath build -packageAuthorizationProvider netrc test -skip-testing:GalahadTests/MacShotsTests -quiet
       - name: Mac build (never launched)
         working-directory: apps/apple
         run: |
-          set -euo pipefail
-          trap '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$PWD/build/Build/Products/Debug/Galahad.app" 2>/dev/null || true' EXIT
-          xcodebuild -project Galahad.xcodeproj -scheme GalahadMac -destination 'platform=macOS' -derivedDataPath build build -quiet
+          xcodebuild -project Galahad.xcodeproj -scheme GalahadMac -destination 'platform=macOS' -derivedDataPath build \
+            -packageAuthorizationProvider netrc build -quiet
+      # The Mac must not keep these builds as apps it could open: each one built (the Mac app, the Sparkle updater inside
+      # it, and the iPhone app built for the simulator), whatever became of the steps before.
+      - name: Forget the builds
+        if: always()
+        working-directory: apps/apple
+        run: |
+          find "$PWD/build/Build/Products" -name '*.app' -type d \
+            -exec /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u {} \; 2>/dev/null || true
 
   sandbox:
     name: Sandbox (real Docker)
