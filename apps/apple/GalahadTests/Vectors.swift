@@ -509,6 +509,17 @@ struct Vectors: Decodable {
     let timelines: Timelines
     /// Where a notice came from, in words (the PWA's lib/notices.ts).
     let notices: [NoticeFrom]
+    /// What a native app does about its notifications when it opens (core's notifyReach).
+    let notifyReach: [ReachCase]
+
+    struct ReachCase: Decodable {
+        let permission: String
+        let subscribed: Bool
+        let lost: Bool
+        let reachable: Int
+        let localOn: Bool
+        let step: String
+    }
     /// Code, coloured by what each part is (the PWA's lib/highlight.ts).
     let highlights: [HighlightCase]
 

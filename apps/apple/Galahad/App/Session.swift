@@ -23,6 +23,8 @@ import Observation
     private(set) var notices: [NoticeView] = []
     /// His asks to use a Mac itself, and his sessions there while they last.
     private(set) var screenSessions: [ScreenSessionView] = []
+    /// An approval its notification's Approve asked to see (its id): the Inbox opens its card, the yes behind Face ID.
+    var approvalToOpen: String?
     /// MCP servers' questions to you, mid-call: each holds its call until you answer, say no, or its time runs out.
     private(set) var questions: [QuestionView] = []
     private(set) var turns: [TurnView] = []

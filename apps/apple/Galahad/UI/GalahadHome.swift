@@ -172,6 +172,7 @@ struct GalahadHome: View {
                     TroubleRow(trouble: trouble).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let since = session.keptSince { KeptLine(since: since) }
+                ReachCard(session: session)
                 Suggestions { text in
                     chat.draft = text
                     composing = true

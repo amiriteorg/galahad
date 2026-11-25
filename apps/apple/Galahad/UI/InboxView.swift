@@ -6,11 +6,30 @@ import SwiftUI
 struct InboxView: View {
     let session: Session
     @State private var open: ActionView?
+    /// The card was opened from its notification's Approve: its yes is given behind Face ID.
+    @State private var guarded = false
+
+    /// When you put the card that says he can't reach this device away (Not now, for a week).
+    @AppStorage("reach-put-away") private var reachPutAway: Double = 0
+
+    /// Whether the card that says he can't reach this device is at the top (iPhone and iPad only).
+    private var reachShown: Bool {
+        #if os(iOS)
+        (PushCenter.shared.reach == .turnOn || PushCenter.shared.reach == .settings) && Date.now.timeIntervalSince1970 - reachPutAway >= 7 * 24 * 3600
+        #else
+        false
+        #endif
+    }
     /// Why an approval declined from its row wasn't (the row has no room to say it).
     @State private var declineTrouble: String?
 
     var body: some View {
         GroupedList {
+            #if os(iOS)
+            if reachShown {
+                Section { ReachCard(session: session).listRowInsets(EdgeInsets()) }
+            }
+            #endif
             if !session.pairings.isEmpty {
                 Section {
                     ForEach(session.pairings) { pairing in
@@ -47,7 +66,10 @@ struct InboxView: View {
             if !session.waiting.isEmpty {
                 Section {
                     ForEach(session.waiting) { action in
-                        Button { open = action } label: { ApprovalRow(action: action) }
+                        Button {
+                            guarded = false
+                            open = action
+                        } label: { ApprovalRow(action: action) }
                             .tint(.primary)
                             // A no from the row; a yes is only ever given in the approval itself.
                             .inboxSwipe("Decline", when: session.can("fleet:admin")) {
@@ -99,14 +121,23 @@ struct InboxView: View {
         .overlay {
             if !session.inboxLoaded {
                 ProgressView()
-            } else if session.inboxCount == 0 {
+            } else if session.inboxCount == 0 && !reachShown {
                 ContentUnavailableView("Nothing needs you", systemImage: "checkmark.circle", description: Text("Approvals, his asks to use a Mac, keys Galahad asks for, facts he noticed about you, what your rules tell you and devices asking to join wait here."))
             }
         }
         .navigationTitle("Inbox")
         .refreshable { await session.refresh() }
         .sheet(item: $open) { action in
-            ApprovalSheet(session: session, action: action)
+            ApprovalSheet(session: session, action: action, guarded: guarded)
+        }
+        // An approval its notification's Approve asked to see: its card, once the Inbox has it.
+        .task(id: session.approvalToOpen) {
+            guard let id = session.approvalToOpen else { return }
+            if !session.waiting.contains(where: { $0.id == id }) { await session.refresh() }
+            session.approvalToOpen = nil
+            guard let action = session.waiting.first(where: { $0.id == id }) else { return }
+            guarded = true
+            open = action
         }
         .alert("Couldn't decline it", isPresented: Binding(get: { declineTrouble != nil }, set: { if !$0 { declineTrouble = nil } })) {
             Button("OK", role: .cancel) {}
@@ -231,6 +262,9 @@ struct KeptChanges: View {
 struct ApprovalSheet: View {
     let session: Session
     let action: ActionView
+    /// Opened from its notification's Approve: the yes is given behind Face ID (or the passcode), the request in front of
+    /// you (your word, 25 November 2026).
+    var guarded = false
     @Environment(\.dismiss) private var dismiss
     @State private var confirming = false
     @State private var typed = ""
@@ -340,7 +374,15 @@ struct ApprovalSheet: View {
                         .autocorrectionDisabled()
                 }
                 Button(destructive ? "Approve delete" : edits.isEmpty ? "Approve and send" : "Approve and send as edited", role: destructive ? .destructive : nil) {
-                    Task { await decide(true) }
+                    Task {
+                        if guarded {
+                            if let refused = await DeviceOwner.confirm("Approve \(action.connector).\(action.tool)") {
+                                problem = refused
+                                return
+                            }
+                        }
+                        await decide(true)
+                    }
                 }
                 .disabled(destructive && typed != Approval.deleteName(connector: action.connector, tool: action.tool, target: action.target, args: action.args))
                 Button("Cancel", role: .cancel) {}

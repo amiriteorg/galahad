@@ -28,6 +28,51 @@ enum Push {
         case chat(String?)
         case overview
         case settings
+        /// An approval's card, in full, from its notification's Approve: a yes is given only with the request in front of
+        /// you, and behind Face ID (your word, 25 November 2026).
+        case approval(String)
+    }
+
+    /// iOS's leave to show notifications, as core's notifyReach takes it.
+    enum Permission: String, Sendable {
+        case granted, denied, undetermined
+    }
+
+    /// What the app does about its notifications when it opens (core's notifyReach, held to the vectors): hand Apple's
+    /// token to the node again, asking nothing (Apple's advice: tokens change); a card with Turn on; a card with Open
+    /// Settings; or nothing.
+    enum Reach: String, Equatable, Sendable {
+        case renew
+        case turnOn = "turn-on"
+        case settings
+        case none
+    }
+
+    static func reach(permission: Permission, subscribed: Bool, lost: Bool, reachable: Int, localOn: Bool = false) -> Reach {
+        if subscribed || lost { return permission == .granted ? .renew : permission == .denied ? .settings : .turnOn }
+        if reachable > 0 && !localOn { return .none }
+        return permission == .denied ? .settings : .turnOn
+    }
+
+    /// A delivered notification's tag, as the node wrote it (ours: `galahad.tag`), or nil.
+    static func tag(_ userInfo: [AnyHashable: Any]) -> String? {
+        guard let ours = userInfo["galahad"] as? [String: Any], (ours["v"] as? Int) == 1, let tag = ours["tag"] as? String,
+              tag.range(of: #"^[A-Za-z0-9._:-]{1,64}$"#, options: .regularExpression) != nil
+        else { return nil }
+        return tag
+    }
+
+    /// Of the notifications still shown, those whose matter was answered, dismissed, cleared or lapsed on any device (the
+    /// node's `withdrawn`): their identifiers, to take down.
+    static func withdrawn(_ delivered: [(id: String, userInfo: [AnyHashable: Any])], tags: Set<String>) -> [String] {
+        delivered.compactMap { note in tag(note.userInfo).flatMap { tags.contains($0) ? note.id : nil } }
+    }
+
+    /// "They were on until 18 Nov: Apple's push service stopped taking them." (the web app's lostLine).
+    static func lostLine(at: Double, service: String) -> String {
+        let day = Date(timeIntervalSince1970: at / 1000).formatted(.dateTime.day().month(.abbreviated).locale(Locale(identifier: "en_GB")))
+        let who = service == "a push service you allowed" ? "the push service you allowed" : "\(service)'s push service"
+        return "They were on until \(day): \(who) stopped taking them."
     }
 
     /// Where a tapped notification opens: ours names one of the node's fixed places; anything else opens the Inbox.

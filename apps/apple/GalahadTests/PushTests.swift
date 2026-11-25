@@ -59,4 +59,34 @@ struct PushTests {
         #expect(Push.action(["galahad": ["v": 2, "kind": "approval", "action": id]]) == nil)
         #expect(Push.action(["aps": ["category": "approval"]]) == nil)
     }
+
+    @Test func whatTheAppDoesWhenItOpensIsCoresOwnWord() throws {
+        let cases = Vectors.shared.notifyReach
+        #expect(cases.count == 36)
+        for c in cases {
+            let step = Push.reach(permission: try #require(Push.Permission(rawValue: c.permission)), subscribed: c.subscribed, lost: c.lost, reachable: c.reachable, localOn: c.localOn)
+            #expect(step.rawValue == c.step, "\(c)")
+        }
+    }
+
+    @Test func approveOnANotificationOpensItsCardNeverAYesFromTheLockScreen() {
+        // The destination an Approve leads to carries the approval's own id; a tap elsewhere goes where the node said.
+        #expect(Push.Destination.approval("a_1234567890123456789012") != .inbox)
+        #expect(Push.destination(["galahad": ["v": 1, "kind": "approval", "open": "inbox", "action": "a_1234567890123456789012"]]) == .inbox)
+    }
+
+    @Test func whatWasAnsweredElsewhereIsTakenDownByItsTagAlone() {
+        let ours: (String) -> [AnyHashable: Any] = { ["galahad": ["v": 1, "kind": "approval", "open": "inbox", "tag": $0]] }
+        let shown: [(id: String, userInfo: [AnyHashable: Any])] = [("one", ours("t-a")), ("two", ours("t-b")), ("three", ["aps": ["alert": "hi"]]), ("four", ours("bad tag!"))]
+        #expect(Push.withdrawn(shown, tags: ["t-a", "t-z"]) == ["one"])
+        #expect(Push.withdrawn(shown, tags: []) == [])
+        #expect(Push.tag(ours("t-a")) == "t-a")
+        #expect(Push.tag(["galahad": ["v": 2, "tag": "t-a"]]) == nil)
+    }
+
+    @Test func aLostSubscriptionIsSaidAsTheWebAppSaysIt() {
+        // 18 November 2026, noon UTC.
+        #expect(Push.lostLine(at: 1_795_003_200_000, service: "Apple") == "They were on until 18 Nov: Apple's push service stopped taking them.")
+        #expect(Push.lostLine(at: 1_795_003_200_000, service: "a push service you allowed") == "They were on until 18 Nov: the push service you allowed stopped taking them.")
+    }
 }

@@ -1,4 +1,4 @@
-import { b64u, type NotifyPayload, tagOf, zonedParts } from "../../packages/core/src/index.ts";
+import { b64u, type NotifyPayload, notifyReach, tagOf, zonedParts } from "../../packages/core/src/index.ts";
 import type { MindStore } from "../../packages/mind/src/index.ts";
 import { FAILING_AFTER, NotifyService, type NotifySources } from "../../packages/node/src/notify.ts";
 import { NotifyStore, type Subscription } from "../../packages/node/src/notify-store.ts";
@@ -220,8 +220,8 @@ export async function runNotifySim(o: NotifySimOptions): Promise<NotifySimResult
       }
       if (step === "make" || step === "hand-over") await service.subscribe(LAPTOP, laptopSubscription());
     } else if (phoneHeals(view)) {
-      // A new registration with Apple: a token Apple knows.
-      phoneToken = phoneToken === "ab".repeat(32) ? "cd".repeat(32) : "ab".repeat(32);
+      // Registering with Apple again gives the same token, unless Apple dropped it: then a new one.
+      if (phoneGone && phoneToken === phoneGone.token) phoneToken = "cd".repeat(32);
       service.subscribeApple(PHONE, { token: phoneToken, environment: "production" });
     }
   }
@@ -519,9 +519,11 @@ export async function runNotifySim(o: NotifySimOptions): Promise<NotifySimResult
 }
 
 /**
- * What the iPhone app does with the node's word when it opens: as built before 25 November 2026 it registered with
- * Apple only when you flipped its switch, so a token Apple dropped stayed dead until you found More → Notifications.
+ * What the iPhone app does with the node's word when it opens (Core/Push.swift, held to core's notifyReach by the
+ * vectors): with iOS's leave given, it registers with Apple again and hands the token over while they're on or were lost
+ * (Apple's advice, since tokens change). Before 25 November 2026 it registered only when you flipped its switch, so a token
+ * Apple dropped stayed dead until you found More → Notifications.
  */
-function phoneHeals(_view: { subscribed: boolean | null; lost: unknown }): boolean {
-  return false;
+function phoneHeals(view: { subscribed: boolean | null; lost: unknown; reachable: number }): boolean {
+  return notifyReach({ permission: "granted", subscribed: view.subscribed === true, lost: !!view.lost, reachable: view.reachable }) === "renew";
 }

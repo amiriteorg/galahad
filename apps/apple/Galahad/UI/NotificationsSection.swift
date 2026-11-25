@@ -12,7 +12,6 @@ struct NotificationsSection: View {
     @State private var problem: String?
 
     private struct Status: Decodable { let subscribed: Bool? }
-    private struct Kept: Decodable { struct Device: Decodable { let service: String }; let device: Device }
     private struct Removed: Decodable { let removed: Bool }
     private struct Sent: Decodable { struct Line: Decodable { let ok: Bool; let error: String? }; let sent: [Line] }
     private struct Nothing: Encodable {}
@@ -34,7 +33,7 @@ struct NotificationsSection: View {
         } header: {
             Text("Notifications")
         } footer: {
-            Text("Galahad comes to you here when something needs you: an approval, a key he asked for, a question, work that ended while you were away. A notification never holds a key or a model's own words.")
+            Text("Galahad comes to you here when something needs you: an approval, a key he asked for, a question, at once and with a sound; work that ended while you were away, quietly. A notification says fixed words only, never a key, your own words or a model's: the app shows those once you open it.")
         }
         .task { await load() }
     }
@@ -54,10 +53,9 @@ struct NotificationsSection: View {
         said = nil
         do {
             if want {
-                let token = try await PushCenter.shared.register()
-                let kept = try await session.client.post("/api/notify/apple", ["token": token, "environment": PushCenter.shared.environment], as: Kept.self)
+                let service = try await PushCenter.shared.turnOn(session)
                 on = true
-                said = "On, through \(kept.device.service)'s push service."
+                said = "On, through \(service)'s push service."
             } else {
                 _ = try await session.client.post("/api/notify/unsubscribe", Nothing(), as: Removed.self)
                 on = false
@@ -75,6 +73,62 @@ struct NotificationsSection: View {
             let line = try await session.client.post("/api/notify/test", Nothing(), as: Sent.self).sent.first
             said = line?.ok == true ? "Sent: it arrives in a moment." : nil
             if line?.ok != true { problem = "It didn't go: \(line?.error ?? "no reason given")." }
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+}
+
+/// The card at the top of Galahad's home and the Inbox while he can't reach this device when Galahad is closed (the web
+/// app's reachCard): its notifications were lost (Apple stopped taking its token), or no device of yours can be reached.
+/// Turn on asks iOS from your tap (if it hasn't asked before); when iOS says no, Open Settings. Not now puts it away for a
+/// week on this device. Each launch hands the token over again by itself while they're on (PushCenter.renew).
+struct ReachCard: View {
+    let session: Session
+    @AppStorage("reach-put-away") private var putAway: Double = 0
+    @State private var busy = false
+    @State private var problem: String?
+    @Environment(\.openURL) private var openURL
+
+    private var center: PushCenter { .shared }
+    private var away: Bool { Date.now.timeIntervalSince1970 - putAway < 7 * 24 * 3600 }
+
+    var body: some View {
+        if (center.reach == .turnOn || center.reach == .settings) && !away {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Label("He can't reach this \(ThisDevice.kind) when Galahad is closed.", systemImage: "bell.slash").font(.headline)
+                if let lost = center.lost { Text(Push.lostLine(at: lost.at, service: lost.service)).font(.callout).foregroundStyle(.secondary) }
+                if center.reach == .settings {
+                    Text("Notifications are off for Galahad in this \(ThisDevice.kind)'s Settings.").font(.callout).foregroundStyle(.secondary)
+                }
+                if let problem { Text(problem).font(.footnote).foregroundStyle(Color.siege) }
+                HStack(spacing: Space.s3) {
+                    if center.reach == .settings {
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+                        }
+                        .buttonStyle(.glassProminent)
+                    } else {
+                        Button("Turn on notifications") { Task { await turnOn() } }
+                            .buttonStyle(.glassProminent)
+                            .disabled(busy)
+                    }
+                    Button("Not now") { putAway = Date.now.timeIntervalSince1970 }
+                        .buttonStyle(.glass)
+                }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: Metrics.cardRadius, style: .continuous))
+        }
+    }
+
+    private func turnOn() async {
+        busy = true
+        defer { busy = false }
+        problem = nil
+        do {
+            try await center.turnOn(session)
         } catch {
             problem = error.localizedDescription
         }

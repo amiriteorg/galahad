@@ -59,6 +59,8 @@ struct MainView: View {
             guard scenePhase == .active else { return }
             // Back in the app: the chat on screen as the node holds it now (an answer it was watching may have gone on).
             await session.chat.resume(with: session.client)
+            // Notifications: Apple's token handed over again (it changes), what was answered elsewhere taken down here.
+            Task { await PushCenter.shared.renew(session) }
             await app.keepFresh(session)
         }
     }
@@ -127,6 +129,9 @@ struct PhoneTabs: View {
             guard let id else { talking = []; return }
             await session.chat.open(id, with: session.client)
             talking = [.chat]
+        case .approval(let id):
+            tab = .inbox
+            session.approvalToOpen = id
         }
     }
 }
@@ -204,6 +209,9 @@ struct SplitPlaces: View {
         case .chat(let id):
             place = .galahad
             if let id { await session.chat.open(id, with: session.client) }
+        case .approval(let id):
+            place = .inbox
+            session.approvalToOpen = id
         }
     }
 }
