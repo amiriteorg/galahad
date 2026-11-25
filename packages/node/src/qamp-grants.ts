@@ -171,8 +171,20 @@ async function udpFree(address: string, port: number): Promise<boolean> {
 /** An address and a port as a socket address, and as a URL's: an IPv6 address in brackets. */
 const hostPort = (address: string, port: number): string => `${address.includes(":") ? `[${address}]` : address}:${port}`;
 
-/** Never every interface: a bridge listens on this node's tailnet address alone. */
-const unspecified = (address: string): boolean => /^(0\.0\.0\.0|::|\[::\]|0+(:0+)*)$/.test(address) || address === "";
+/**
+ * Never every interface: a bridge listens on this node's tailnet address alone. Read as a URL reads it, so every way of
+ * writing "any" (0.0.0.0, 0, ::, ::0, 0:0::0, an IPv4-mapped 0.0.0.0) is one form; what isn't an address at all counts too.
+ */
+export function unspecified(address: string): boolean {
+  const bare = address.replace(/^\[(.*)\]$/, "$1");
+  if (!bare) return true;
+  try {
+    const host = new URL(`http://${bare.includes(":") ? `[${bare}]` : bare}/`).hostname;
+    return host === "0.0.0.0" || host === "[::]" || host === "[::ffff:0:0]";
+  } catch {
+    return true;
+  }
+}
 
 interface Row {
   id: string;

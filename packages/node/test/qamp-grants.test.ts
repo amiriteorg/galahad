@@ -7,7 +7,7 @@ import { OWNER_SCOPES, type QampTool } from "@galahad/core";
 import type { LedgerEntryInput } from "@galahad/sandbox";
 import { ArmTokens } from "../src/arms.ts";
 import { Home } from "../src/home.ts";
-import { grantScopes, mayGrant, QampGrantError, QampGrants, type QampProcess, type QampRunner } from "../src/qamp-grants.ts";
+import { grantScopes, mayGrant, QampGrantError, QampGrants, type QampProcess, type QampRunner, unspecified } from "../src/qamp-grants.ts";
 import { type GalahadTool, TOOLS } from "../src/tools.ts";
 
 /*
@@ -240,8 +240,13 @@ describe("a grant made", () => {
     expect(arms.list()).toHaveLength(1);
   });
 
+  test("every way of writing every interface is one, and refused; a real address is none of them", () => {
+    for (const any of ["0.0.0.0", "0", "::", "::0", "0:0::0", "0:0:0:0:0:0:0:0", "[::]", "::ffff:0.0.0.0", "", "not an address"]) expect([any, unspecified(any)]).toEqual([any, true]);
+    for (const one of ["192.0.2.7", "127.0.0.1", "fd7a:115c:a1e0::1", "::1", "[fd7a:115c:a1e0::1]"]) expect([one, unspecified(one)]).toEqual([one, false]);
+  });
+
   test("never on every interface: with no address but 0.0.0.0 or ::, refused before anything is made", async () => {
-    for (const any of ["0.0.0.0", "::", ""]) {
+    for (const any of ["0.0.0.0", "::", "::0", ""]) {
       address = any;
       const refused = await grants().grant({ agent: AGENT, tools: ["fleet"], ttlSeconds: 60 }, you).catch((e: QampGrantError) => e);
       expect([any, (refused as QampGrantError).status]).toEqual([any, 424]);
