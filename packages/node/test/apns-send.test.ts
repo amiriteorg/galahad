@@ -75,16 +75,28 @@ describe("a notification to the iPhone app", () => {
     expect(claims(jwt)).toEqual([{ alg: "ES256", kid: "KEY0000001" }, { iss: "TEAM000001", iat: 1_800_000_000 }]);
     expect(await signedByKey(jwt)).toBe(true);
     expect(request!.body).toEqual({
-      aps: { alert: { title: PAYLOAD.title, body: PAYLOAD.body }, sound: "default", "thread-id": "approval" },
+      aps: { alert: { title: PAYLOAD.title, body: PAYLOAD.body }, sound: "default", "interruption-level": "active", "thread-id": "approval" },
       galahad: { v: 1, kind: "approval", open: "inbox", tag: "approval-1" },
     });
+    apple.close();
+  });
+
+  test("news is passive: no sound, no lighting the screen, held by a Focus or a Scheduled Summary (PLAN #59)", async () => {
+    const { sender: apple } = sender();
+    const news = { ...PAYLOAD, kind: "finished" as const, title: "Galahad has finished", body: "A chat you left him working in has his answer." };
+    await apple.send({ endpoint: appleEndpoint("production", TOKEN), p256dh: "", auth: "" }, news, { ttlSeconds: 3600, urgency: "low" });
+    expect(seen[0]!.headers["apns-priority"]).toBe("5");
+    expect(seen[0]!.body.aps).toEqual({ alert: { title: news.title, body: news.body }, "interruption-level": "passive", "thread-id": "finished" });
+    // A quiet kind is passive whatever the delivery says; what's told now sounds.
+    expect(JSON.parse(applePayload({ ...news, kind: "limit" })).aps["interruption-level"]).toBe("passive");
+    expect(JSON.parse(applePayload(PAYLOAD, { urgency: "normal" })).aps).toMatchObject({ sound: "default", "interruption-level": "active" });
     apple.close();
   });
 
   test("an approval told alone carries its buttons: approve and decline, or decline alone for a delete; the action rides with ours", () => {
     const action = "a_1234567890123456789012";
     expect(JSON.parse(applePayload({ ...PAYLOAD, action, approvable: true }))).toEqual({
-      aps: { alert: { title: PAYLOAD.title, body: PAYLOAD.body }, sound: "default", "thread-id": "approval", category: "approval" },
+      aps: { alert: { title: PAYLOAD.title, body: PAYLOAD.body }, sound: "default", "interruption-level": "active", "thread-id": "approval", category: "approval" },
       galahad: { v: 1, kind: "approval", open: "inbox", tag: "approval-1", action },
     });
     expect(JSON.parse(applePayload({ ...PAYLOAD, action, approvable: false })).aps.category).toBe("approval-decline");

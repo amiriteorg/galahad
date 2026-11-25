@@ -40,6 +40,13 @@ export interface NotifyPayload {
   approvable?: boolean;
 }
 
+/**
+ * The kinds a device tells quietly, as news (PLAN #59): no sound and no banner over what you're doing, the News channel on
+ * Android, never on the icon's count. A message of news alone carries one of them; everything else may sound.
+ */
+export const NOTIFY_QUIET_KINDS: readonly NotifyPayload["kind"][] = ["finished", "told", "limit"];
+export const isQuietKind = (kind: string): boolean => (NOTIFY_QUIET_KINDS as readonly string[]).includes(kind);
+
 /** What's shown when a push can't be read as a notification of ours: browsers require one, and it must mean something. */
 export const GENERIC_NOTIFICATION: NotifyPayload = { v: 1, kind: "needs-you", title: "Galahad", body: "Something needs you. Open the app to see it.", open: "inbox", tag: "galahad" };
 

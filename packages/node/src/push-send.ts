@@ -56,10 +56,14 @@ export const PUSH_PAD_BYTES = 1024;
 export const PUSH_RETRY_MS = [2_000, 8_000] as const;
 const MAX_RETRY_AFTER_MS = 30_000;
 
-/** How long a push service keeps a message for a device that's away, and how urgent it is. */
+/**
+ * How long a push service keeps a message for a device that's away, and how urgent it is (RFC 8030): `low` is news,
+ * passive on every platform (no sound; delivered when the device is on power or Wi-Fi), `normal` a finding, `high` an
+ * ask or an alert.
+ */
 export interface PushDelivery {
   ttlSeconds: number;
-  urgency: "normal" | "high";
+  urgency: "low" | "normal" | "high";
 }
 
 export class PushSender {

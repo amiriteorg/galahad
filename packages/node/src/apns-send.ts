@@ -1,5 +1,5 @@
 import http2 from "node:http2";
-import { b64u, findSecrets, GENERIC_NOTIFICATION, type NotifyPayload, readNotifyPayload, sha256Bytes, utf8 } from "@galahad/core";
+import { b64u, findSecrets, GENERIC_NOTIFICATION, isQuietKind, type NotifyPayload, readNotifyPayload, sha256Bytes, utf8 } from "@galahad/core";
 import type { PushDelivery, PushOutcome, PushTarget } from "./push-send.ts";
 
 /*
@@ -72,13 +72,16 @@ export async function appleProviderToken(key: ApplePushKey, issuedAt: number): P
 export const APPLE_CATEGORY = { approve: "approval", decline: "approval-decline" } as const;
 
 /**
- * What the iPhone app is sent: Apple's part (the alert, its sound, the thread it joins, the buttons it shows) and ours
- * (what a tap opens, and an approval's action for its buttons). An iPhone shows the same buttons on its Watch.
+ * What the iPhone app is sent: Apple's part (the alert, how it interrupts, the thread it joins, the buttons it shows) and
+ * ours (what a tap opens, and an approval's action for its buttons). An iPhone shows the same buttons on its Watch.
+ * What's told now is `active`, with the default sound; news (`urgency` low, or a quiet kind) is `passive`, with none:
+ * iOS shows it in the list without lighting the screen or sounding, and a Focus or a Scheduled Summary holds it.
  */
-export function applePayload(payload: NotifyPayload): string {
+export function applePayload(payload: NotifyPayload, delivery?: Pick<PushDelivery, "urgency">): string {
   const category = payload.action ? (payload.approvable ? APPLE_CATEGORY.approve : APPLE_CATEGORY.decline) : null;
+  const quiet = delivery?.urgency === "low" || isQuietKind(payload.kind);
   return JSON.stringify({
-    aps: { alert: { title: payload.title, body: payload.body }, sound: "default", "thread-id": payload.kind, ...(category ? { category } : {}) },
+    aps: { alert: { title: payload.title, body: payload.body }, ...(quiet ? {} : { sound: "default" }), "interruption-level": quiet ? "passive" : "active", "thread-id": payload.kind, ...(category ? { category } : {}) },
     galahad: { v: 1, kind: payload.kind, open: payload.open, tag: payload.tag, ...(payload.conversation ? { conversation: payload.conversation } : {}), ...(payload.action ? { action: payload.action } : {}) },
   });
 }
@@ -195,7 +198,7 @@ export class ApplePushSender {
       "apns-collapse-id": b64u(sha256Bytes(utf8(safe.tag))).slice(0, 32),
       "content-type": "application/json",
     };
-    const body = applePayload(safe);
+    const body = applePayload(safe, delivery);
     const first = await this.attempt(device.environment, headers, body, signal);
     // A token Apple's other service made (an app that told its node the wrong one: a TestFlight build said to be a
     // development one, or the other way round) is a BadDeviceToken here: asked there once, and kept there when it is taken.
