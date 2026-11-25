@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   actionItem,
   alertReserve,
+  catchUpMessage,
   connectorItem,
   conversationFromHash,
   GENERIC_NOTIFICATION,
@@ -21,6 +22,7 @@ import {
   notifyMessage,
   type NotifyPrefs,
   notifyUrl,
+  planCatchUp,
   planNotifications,
   pushService,
   questItem,
@@ -308,6 +310,48 @@ describe("when he speaks, and when he stays silent", () => {
     // Several chats at once open the Overview's In hand, not one of them.
     expect(notifyMessage([turn, { ...turn, key: "turn:t_8" }])).toMatchObject({ kind: "summary", open: "overview", body: "He finished 2 pieces of work." });
     expect(notifyMessage([item("a", { alert: true }), item("b")])!.title).toBe("Galahad: alert");
+  });
+});
+
+describe("what waited while nobody could be reached", () => {
+  const noon = at("2026-11-12T12:00:00Z");
+  const catchUp = (items: NotifyItem[], over: Partial<Parameters<typeof planCatchUp>[0]> = {}) => planCatchUp({ now: noon, prefs: NOTIFY_DEFAULTS, items, sentToday: 0, lastSentAt: null, ...over });
+  const approval = item("action:a", { kind: "approval" });
+  const key = item("secret:k", { kind: "question" });
+  const warning = item("notice:disk");
+  const alert = item("notice:vault", { alert: true });
+
+  test("one message counts what stands that needs you, never its words: asks, warnings and alerts, opening the Inbox", () => {
+    expect(catchUpMessage([approval], "salt")).toEqual({ v: 1, kind: "summary", title: "Galahad: 1 thing waits for you", body: "While he couldn't reach you: 1 approval. The Inbox has it.", open: "inbox", tag: tagOf("catch-up", "salt") });
+    expect(catchUpMessage([approval, key])!.body).toBe("While he couldn't reach you: 1 approval and 1 question. The Inbox has them.");
+    const many = [alert, approval, { ...approval, key: "screen:s" }, key, warning, { ...warning, key: "notice:loop:ci" }];
+    expect(catchUpMessage(many)).toMatchObject({ title: "Galahad: 6 things wait for you", body: "While he couldn't reach you: 1 alert, 2 approvals, 1 question and 2 warnings. The Inbox has them." });
+    // No buttons on it (a catch-up only counts), and a tag of its own: the next summary of news doesn't replace it.
+    expect(catchUpMessage([approval, key], "salt")!.tag).not.toBe(notifyMessage([approval, key], "salt")!.tag);
+    expect(Object.keys(catchUpMessage([{ ...approval, action: { id: "a_1234567890123456789012", approvable: true } }])!)).not.toContain("action");
+    // News isn't caught up (it was news then), and nothing is nothing to say.
+    expect(catchUpMessage([item("turn:t", { kind: "finished", open: "chat" }), item("notice:rule:x", { kind: "told" })])).toBeNull();
+    expect(catchUpMessage([])).toBeNull();
+    const made = catchUpMessage(Array.from({ length: 48 }, (_, i) => item(`notice:${i}`, { kind: (["needs-you", "approval", "question"] as const)[i % 3]!, alert: i % 6 === 0 })))!;
+    expect(readNotifyPayload(JSON.parse(JSON.stringify(made)))).toEqual(made);
+    expect(made.title.length).toBeLessThanOrEqual(NOTIFY_TITLE_MAX);
+    expect(made.body.length).toBeLessThanOrEqual(NOTIFY_BODY_MAX);
+  });
+
+  test("it is told as any message is: kinds you turned off left out, quiet hours, the day's limit and the minute between, unless an alert is in it", () => {
+    expect(catchUp([approval, key, item("turn:t", { kind: "finished" })])).toEqual({ send: [approval, key], waiting: null });
+    expect(catchUp([])).toEqual({ send: [], waiting: null });
+    expect(catchUp([approval], { prefs: { ...NOTIFY_DEFAULTS, kinds: { ...NOTIFY_DEFAULTS.kinds, approval: false } } })).toEqual({ send: [], waiting: null });
+    // 23:30 in Copenhagen: it waits for morning, unless an alert stands.
+    const night: Partial<Parameters<typeof planCatchUp>[0]> = { now: at("2026-11-12T22:30:00Z"), prefs: { ...NOTIFY_DEFAULTS, quiet: { ...NOTIFY_DEFAULTS.quiet, tz: "Europe/Copenhagen" } } };
+    expect(catchUp([approval], night)).toEqual({ send: [], waiting: "quiet" });
+    expect(catchUp([approval, alert], night)).toEqual({ send: [approval, alert], waiting: null });
+    // Ordinary news has reached the day's limit: only with an alert in it, and never past the whole limit.
+    expect(catchUp([approval], { sentToday: 10 })).toEqual({ send: [], waiting: "limit" });
+    expect(catchUp([approval, alert], { sentToday: 10 })).toEqual({ send: [approval, alert], waiting: null });
+    expect(catchUp([alert], { sentToday: 12 })).toEqual({ send: [], waiting: "limit" });
+    expect(catchUp([approval], { lastSentAt: noon - 20_000 })).toEqual({ send: [], waiting: "gap" });
+    expect(catchUp([approval], { lastSentAt: noon - NOTIFY_GAP_MS })).toEqual({ send: [approval], waiting: null });
   });
 });
 

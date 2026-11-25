@@ -395,6 +395,55 @@ export function tagOf(key: string, salt = ""): string {
   return isNotifyTag(tag) ? tag : "galahad";
 }
 
+/* ---------- what waited while nobody could be reached ---------- */
+
+/**
+ * What a catch-up counts: what stands and needs you (approvals, questions, keys and connectors he needs, warnings and
+ * alerts). News (a turn that ended, a quest, a rule's tell) isn't caught up: it was news then.
+ */
+const CATCH_UP_KINDS: ReadonlySet<NotifyKind> = new Set(["needs-you", "approval", "question"]);
+
+/**
+ * When the device that comes back after nobody could be reached is told what waited (`items`: what stands that needs
+ * you and was told already, to nobody or to a device that couldn't be reached): as any message is, the kinds you
+ * turned off left out, within quiet hours, the day's limit and a minute after the last message, unless an alert is in
+ * it. What was never told isn't its business: that is told as anything new is.
+ */
+export function planCatchUp(input: { now: number; prefs: NotifyPrefs; items: readonly NotifyItem[]; sentToday: number; lastSentAt: number | null }): NotifyPlan {
+  const due = input.items.filter((item) => CATCH_UP_KINDS.has(item.kind) && input.prefs.kinds[item.kind]);
+  if (!due.length) return { send: [], waiting: null };
+  const urgent = due.some((item) => item.alert);
+  if (input.sentToday >= input.prefs.perDay || (!urgent && limitReached(input.prefs, input.sentToday))) return { send: [], waiting: "limit" };
+  if (!urgent && inQuietHours(input.prefs.quiet, input.now)) return { send: [], waiting: "quiet" };
+  if (!urgent && input.lastSentAt !== null && input.now - input.lastSentAt < NOTIFY_GAP_MS) return { send: [], waiting: "gap" };
+  return { send: due, waiting: null };
+}
+
+/**
+ * The catch-up: how many of each wait, never their words, opening the Inbox. No buttons (it only counts), and a tag of
+ * its own, so a summary of news that comes after doesn't replace it.
+ */
+export function catchUpMessage(items: readonly NotifyItem[], salt = ""): NotifyPayload | null {
+  const counts: [number, string, string][] = [
+    [items.filter((item) => item.kind === "needs-you" && item.alert).length, "1 alert", "% alerts"],
+    [items.filter((item) => item.kind === "approval").length, "1 approval", "% approvals"],
+    [items.filter((item) => item.kind === "question").length, "1 question", "% questions"],
+    [items.filter((item) => item.kind === "needs-you" && !item.alert).length, "1 warning", "% warnings"],
+  ];
+  const parts = counts.filter(([n]) => n > 0).map(([n, one, many]) => counted(n, one, many));
+  const n = counts.reduce((sum, [count]) => sum + count, 0);
+  if (!n) return null;
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0]!;
+  return {
+    v: 1,
+    kind: "summary",
+    title: notifyClean(`Galahad: ${counted(n, "1 thing waits", "% things wait")} for you`, NOTIFY_TITLE_MAX),
+    body: notifyClean(`While he couldn't reach you: ${list}. The Inbox has ${n === 1 ? "it" : "them"}.`, NOTIFY_BODY_MAX),
+    open: "inbox",
+    tag: tagOf("catch-up", salt),
+  };
+}
+
 /** The message that says ordinary news has reached the day's limit (`perDay`: the limit you set). */
 export function limitMessage(perDay: number): NotifyPayload {
   const reserve = alertReserve(perDay);

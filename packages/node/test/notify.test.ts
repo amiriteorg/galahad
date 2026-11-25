@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { GENERIC_NOTIFICATION, type NotifyPayload, type QuestView } from "@galahad/core";
+import { b64u, GENERIC_NOTIFICATION, notifyDay, type NotifyPayload, type QuestView, tagOf } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
 import { COLLECT_SERVICE, CollectSender, collectTarget } from "../src/collect-send.ts";
 import { type NotifyOptions, NotifyService, type NotifySources } from "../src/notify.ts";
@@ -12,7 +12,7 @@ import type { PushDelivery, PushOutcome, PushSender, PushTarget } from "../src/p
  * it ended. The whole path over HTTP, with a stand-in push service, is notify.e2e.test.ts.
  */
 
-function harness(over: { devices?: { id: string; name: string; kind: "node" | "client"; scopes: string[] }[]; answer?: (target: PushTarget) => PushOutcome | undefined } = {}) {
+function harness(over: { devices?: { id: string; name: string; kind: "node" | "client"; scopes: string[] }[]; answer?: (target: PushTarget) => PushOutcome | undefined; sources?: Partial<NotifySources>; tickMs?: number | false } = {}) {
   let now = Date.UTC(2026, 10, 12, 12, 0, 0);
   const sent: { to: string; payload: NotifyPayload }[] = [];
   const devices = over.devices ?? [{ id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read", "chat", "vault:read"] }];
@@ -39,10 +39,11 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
     turns: { running: () => [], view: () => ({ watchers: 0 }) },
     chats: { summary: () => null },
     quests: { list: () => quests, onChange: (fn) => (listeners.push(fn), () => {}) },
+    ...over.sources,
   };
   const mind = { activeDevice: (id: string) => devices.find((d) => d.id === id) ?? null, devices: () => devices } as unknown as MindStore;
   const ledger: unknown[] = [];
-  const options: NotifyOptions = { mind, nodeName: "ultra", db, sender, allowed: [], sources, ledger: (entry) => void ledger.push(entry), log: () => {}, now: () => now, tickMs: false };
+  const options: NotifyOptions = { mind, nodeName: "ultra", db, sender, allowed: [], sources, ledger: (entry) => void ledger.push(entry), log: () => {}, now: () => now, tickMs: over.tickMs ?? false };
   const service = new NotifyService(options);
   const quest = (q: Partial<QuestView> & { quest: string; state: QuestView["state"] }): void => {
     const at = quests.findIndex((x) => x.quest === q.quest && x.by === (q.by ?? "you"));
@@ -131,6 +132,100 @@ describe("what couldn't be told in time", () => {
     h.advance(19 * 3600_000);
     await h.look();
     expect(h.sent).toEqual([]);
+  });
+});
+
+describe("what waited while nobody could be reached", () => {
+  const TOKEN = "ef".repeat(32);
+  type Action = ReturnType<NotifySources["actions"]>[number];
+  /** An approval waiting since a minute before `now` (its time as the outbox stamps it), lapsing a day after. */
+  const waiting = (now: number): Action => ({ id: "a_AAAAAAAAAAAAAAAAAAAAAA", connector: "dinero", tool: "book", state: "waiting", requestedAt: `${now - 60_000}.0000.n_test`, expires: now + 86_400_000, class: "outward" });
+  const caughtUp = (h: ReturnType<typeof harness>, title: string, body: string): NotifyPayload => ({ v: 1, kind: "summary", title, body, open: "inbox", tag: tagOf("catch-up", h.db.setting("tag-salt") ?? "") });
+
+  test("an approval waiting, then a device turned on: told once, as one message counting it, to that device", async () => {
+    // The design's Probe A: the approval was told to nobody, so it was never told at all, and lapsed in a day.
+    let actions: Action[] = [];
+    const h = harness({ sources: { actions: () => actions } });
+    h.service.unsubscribe("c_phone");
+    actions = [waiting(h.now())];
+    await h.look();
+    expect(h.sent).toEqual([]);
+    h.service.subscribeApple("c_phone", { token: TOKEN, environment: "production" });
+    await h.look();
+    h.advance(3 * 3600_000);
+    await h.look();
+    expect(h.sent.map((s) => s.payload)).toEqual([caughtUp(h, "Galahad: 1 thing waits for you", "While he couldn't reach you: 1 approval. The Inbox has it.")]);
+    // Counted against the day, and in the ledger as his own act: the kind and the device, never what it said.
+    expect(h.db.countOn(notifyDay(h.now(), h.db.prefs().quiet.tz))).toBe(1);
+    expect(h.ledger.at(-1)).toMatchObject({ resource: "notify", target: "summary", detail: "to phone" });
+    expect(JSON.stringify(h.ledger)).not.toContain("dinero");
+  });
+
+  test("not when another device could be told, nor when a device hands over again the subscription it has (as its app does on opening)", async () => {
+    let actions: Action[] = [];
+    const devices = [
+      { id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read"] },
+      { id: "c_ipad", name: "iPad", kind: "client" as const, scopes: ["mind:read"] },
+    ];
+    const h = harness({ devices, sources: { actions: () => actions } });
+    actions = [waiting(h.now())];
+    await h.look();
+    expect(h.sent.map((s) => s.payload.kind)).toEqual(["approval"]);
+    h.service.subscribeApple("c_ipad", { token: TOKEN, environment: "production" });
+    await h.look();
+    h.service.subscribeApple("c_ipad", { token: TOKEN, environment: "production" });
+    await h.look();
+    expect(h.sent).toHaveLength(1);
+  });
+
+  test("turned on with nothing standing, nothing is said, and nothing is kept back for later", async () => {
+    let actions: Action[] = [];
+    const h = harness({ sources: { actions: () => actions } });
+    h.service.unsubscribe("c_phone");
+    await h.look();
+    h.service.subscribeApple("c_phone", { token: TOKEN, environment: "production" });
+    await h.look();
+    expect(h.sent).toEqual([]);
+    // What comes later is told as itself, once, and never again as something that waited.
+    actions = [waiting(h.now())];
+    await h.look();
+    await h.look();
+    expect(h.sent.map((s) => s.payload.kind)).toEqual(["approval"]);
+  });
+
+  test("it waits for quiet hours to end; what was never told isn't in it, and is told as itself a minute after", async () => {
+    let actions: Action[] = [];
+    let keys: string[] = [];
+    const h = harness({ sources: { actions: () => actions, secretRequests: () => keys } });
+    h.service.unsubscribe("c_phone");
+    actions = [waiting(h.now())];
+    await h.look();
+    const hhmm = (ms: number) => new Date(ms).toISOString().slice(11, 16);
+    h.db.setPrefs({ ...h.db.prefs(), quiet: { on: true, from: hhmm(h.now() - 2 * 3600_000), to: hhmm(h.now() + 2 * 3600_000), tz: "UTC" } });
+    h.service.subscribeApple("c_phone", { token: TOKEN, environment: "production" });
+    await h.look();
+    expect(h.sent).toEqual([]);
+    keys = ["while-away"];
+    h.db.setPrefs({ ...h.db.prefs(), quiet: { ...h.db.prefs().quiet, on: false } });
+    await h.look();
+    expect(h.sent.map((s) => s.payload)).toEqual([caughtUp(h, "Galahad: 1 thing waits for you", "While he couldn't reach you: 1 approval. The Inbox has it.")]);
+    await h.look();
+    expect(h.sent.map((s) => s.payload.title)).toEqual(["Galahad: 1 thing waits for you", "Galahad asks for a key"]);
+  });
+
+  test("a browser turned on is looked at again shortly, as the apps are", async () => {
+    let actions: Action[] = [];
+    const h = harness({ tickMs: 3_600_000, sources: { actions: () => actions } });
+    h.service.unsubscribe("c_phone");
+    actions = [waiting(h.now())];
+    await h.service.tick();
+    const pair = (await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])) as CryptoKeyPair;
+    const p256dh = b64u(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
+    await h.service.subscribe("c_phone", { endpoint: "https://web.push.apple.com/another-stand-in", expirationTime: null, keys: { p256dh, auth: b64u(crypto.getRandomValues(new Uint8Array(16))) } });
+    // No look of his own (a tick an hour apart): the nudge a turned-on device gives.
+    for (let waited = 0; !h.sent.length && waited < 4000; waited += 25) await Bun.sleep(25);
+    await h.service.stop();
+    expect(h.sent.map((s) => s.payload.title)).toEqual(["Galahad: 1 thing waits for you"]);
   });
 });
 

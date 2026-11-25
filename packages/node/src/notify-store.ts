@@ -10,7 +10,9 @@ import { type NotifyItem, type NotifyPayload, type NotifyPrefs, readNotifyPrefs 
  *                  and the two keys messages are encrypted to. The endpoint is a
  *                  capability, so it lives here and nowhere else: not in the mind, not
  *                  in a log line, not in any answer a route gives.
- *   settings       what he sends and when he stays silent (kinds, quiet hours, the limit).
+ *   settings       what he sends and when he stays silent (kinds, quiet hours, the limit), and
+ *                  the devices that came back after nobody could be reached, until each is
+ *                  told what waited (`catch-up:<device>`).
  *   told           what was already told, so a finding is told once and not again while
  *                  it stands.
  *   pending        things that happened and wait to be told (a turn that ended at night).
@@ -151,12 +153,29 @@ export class NotifyStore {
     this.db.query("UPDATE subscriptions SET endpoint = ?, service = ?, updated_at = ? WHERE device = ?").run(endpoint, service, this.now(), device);
   }
 
-  /** This device's subscription goes, and with it what was kept for it and any record that it was lost (turned off, or
-   * revoked, it isn't lost). Whether it had a subscription. */
+  /** This device's subscription goes, and with it what was kept for it, what waited to be caught up, and any record that
+   * it was lost (turned off, or revoked, it isn't lost). Whether it had a subscription. */
   remove(device: string): boolean {
     this.db.query("DELETE FROM collect WHERE device = ?").run(device);
     this.forgetLost(device);
+    this.caughtUp(device);
     return this.db.query("DELETE FROM subscriptions WHERE device = ?").run(device).changes > 0;
+  }
+
+  /* ---------- devices that came back after nobody could be reached ---------- */
+
+  /** This device is to be told what waited, once (a setting, `catch-up:<device>`, holding when it came back). */
+  catchUp(device: string): void {
+    this.setSetting(`catch-up:${device}`, String(this.now()));
+  }
+
+  /** The devices still to be told what waited. */
+  catchUps(): string[] {
+    return this.db.query<{ k: string }, []>("SELECT k FROM settings WHERE k LIKE 'catch-up:%' ORDER BY k").all().map((r) => r.k.slice("catch-up:".length));
+  }
+
+  caughtUp(device: string): void {
+    this.db.query("DELETE FROM settings WHERE k = ?").run(`catch-up:${device}`);
   }
 
   /* ---------- subscriptions their push service dropped ---------- */

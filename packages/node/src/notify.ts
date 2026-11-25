@@ -2,6 +2,7 @@ import {
   actionItem,
   questionItem,
   type ApplePushInput,
+  catchUpMessage,
   connectorItem,
   inQuietHours,
   isP256Point,
@@ -19,6 +20,7 @@ import {
   type NotifyPrefs,
   type NotifyPrefsInput,
   type NotifyView,
+  planCatchUp,
   planNotifications,
   type PushSubscriptionInput,
   pushService,
@@ -34,7 +36,7 @@ import {
 import type { MindStore } from "@galahad/mind";
 import type { LedgerEntryInput } from "@galahad/sandbox";
 import type { KeptSummary } from "./chats.ts";
-import type { LostRow, NotifyStore, Subscription } from "./notify-store.ts";
+import type { LostRow, NotifyStore, Subscription, ToldRow } from "./notify-store.ts";
 import { appleEndpoint, type ApplePushEnvironment, appleTarget } from "./apns-send.ts";
 import { COLLECT_SERVICE, collectEndpoint } from "./collect-send.ts";
 import type { PushDelivery, PushOutcome, PushTarget } from "./push-send.ts";
@@ -120,6 +122,19 @@ const QUEST_ID = /^[A-Za-z0-9._:-]{1,64}$/;
 export const FAILING_AFTER = 2;
 /** Whether he can reach a device through its subscription now: its sends aren't failing. */
 const reaches = (sub: Subscription): boolean => sub.failures < FAILING_AFTER;
+/**
+ * The doctor's own finding that he can't reach you (doctor.ts, its notify.devices line, a notice of the heartbeat's):
+ * never counted in what waited, since a device turning on is what answers it.
+ */
+const ABOUT_REACHING_YOU = /^notice:doctor:notify\./;
+
+type Reached = { sub: Subscription; name: string; scopes: string[] };
+
+/** How long a push service keeps a message, and how soon it's delivered: an alert a day, an ask at once. */
+const deliveryFor = (items: readonly NotifyItem[]): PushDelivery => {
+  const alert = items.some((item) => item.alert);
+  return { ttlSeconds: alert ? 24 * 3600 : 12 * 3600, urgency: alert || items.some((item) => item.kind === "approval" || item.kind === "question") ? "high" : "normal" };
+};
 
 const hlcMs = (hlc: string): number => Number(hlc.split(".")[0]);
 /** Whose keys only stand for something that can go away and come back. */
@@ -318,7 +333,8 @@ export class NotifyService {
     const items = [...standing, ...waiting.filter((p) => now - p.at <= PENDING_KEEP_MS).map((p) => p.item)];
 
     const devices = this.devices();
-    // Nobody to tell: what stands now is old news by the time a device is turned on.
+    // Nobody to tell: what stands is told to nobody (it isn't told one by one later), and news is dropped. The device
+    // that comes back is told what still stands and needs you, once, as one message (catchUp, below).
     if (!devices.length) {
       const fresh = items.filter((item) => !told.has(item.key));
       if (fresh.length) db.tell(fresh);
@@ -327,6 +343,7 @@ export class NotifyService {
     }
 
     const day = notifyDay(now, prefs.quiet.tz);
+    await this.catchUp(now, prefs, day, standing, told, devices);
     const plan = planNotifications({ now, prefs, items, told, sentToday: db.countOn(day), lastSentAt: db.lastSentAt() });
     if (plan.send.length) await this.deliver(plan.send, devices, day);
     // Ordinary news has reached the day's limit: one message says so, once that day, and not in quiet hours.
@@ -337,9 +354,42 @@ export class NotifyService {
     }
   }
 
+  /**
+   * What waited while nobody could be reached, told once to the device that came back (marked when it turned them on):
+   * one message counting what stands and needs you that was told already, to nobody or to a device that couldn't be
+   * reached. What was never told isn't in it: that's told as anything new is, to every device, this one too.
+   */
+  private async catchUp(now: number, prefs: NotifyPrefs, day: string, standing: readonly NotifyItem[], told: ReadonlyMap<string, ToldRow>, devices: readonly Reached[]): Promise<void> {
+    const { db } = this.o;
+    for (const device of db.catchUps()) {
+      const to = devices.find((d) => d.sub.device === device);
+      if (!to) {
+        db.caughtUp(device); // no longer on: there's no one to tell
+        continue;
+      }
+      const waited = standing.filter((item) => {
+        const before = told.get(item.key);
+        // (An alert told only as a warning is told again as itself, so it isn't here.)
+        return before !== undefined && !(item.alert && !before.alert) && !ABOUT_REACHING_YOU.test(item.key) && item.needs.every((scope) => to.scopes.includes(scope));
+      });
+      const plan = planCatchUp({ now, prefs, items: waited, sentToday: db.countOn(day), lastSentAt: db.lastSentAt() });
+      if (plan.waiting) continue; // quiet hours, the day's limit, or a minute since the last message: a later look
+      db.caughtUp(device);
+      const payload = catchUpMessage(plan.send, this.salt());
+      if (!payload) continue; // nothing waited
+      const ok = await this.send(to, payload, deliveryFor(plan.send));
+      this.logged(day, payload.kind, [to.name], ok);
+    }
+  }
+
+  /** Whether a device turning on now comes back to nobody he could reach: then it's told what waited. */
+  private comesBack(): boolean {
+    return !this.devices().some((d) => reaches(d.sub));
+  }
+
   /** The subscribed devices that are still yours: one that was revoked loses its subscription here. */
-  private devices(): { sub: Subscription; name: string; scopes: string[] }[] {
-    const out: { sub: Subscription; name: string; scopes: string[] }[] = [];
+  private devices(): Reached[] {
+    const out: Reached[] = [];
     for (const sub of this.o.db.subscriptions()) {
       const device = this.o.mind.activeDevice(sub.device);
       if (!device || device.kind !== "client") {
@@ -383,10 +433,9 @@ export class NotifyService {
     return outcome.ok;
   }
 
-  private async deliver(items: NotifyItem[], devices: { sub: Subscription; name: string; scopes: string[] }[], day: string): Promise<void> {
+  private async deliver(items: NotifyItem[], devices: Reached[], day: string): Promise<void> {
     const { db } = this.o;
-    const alert = items.some((item) => item.alert);
-    const delivery: PushDelivery = { ttlSeconds: alert ? 24 * 3600 : 12 * 3600, urgency: alert || items.some((item) => item.kind === "approval" || item.kind === "question") ? "high" : "normal" };
+    const delivery = deliveryFor(items);
     // Told from here on, whatever the push service answers: a failing service is never a reason to try the same news again.
     db.tell(items);
     db.dropPending(items.map((item) => item.key));
@@ -400,10 +449,13 @@ export class NotifyService {
     );
     const sent = results.filter((r): r is { name: string; ok: boolean } => r !== null);
     if (!sent.length) return;
-    const kind = notifyMessage(items, this.salt())!.kind;
-    db.logSent(day, kind, sent.map((s) => s.name), sent.some((s) => s.ok));
-    // His own act, in the ledger: what kind and to which devices, never what it said.
-    this.o.ledger({ class: "outward", resource: "notify", target: kind, verdict: "approved", reason: "you turned notifications on for these devices", quest: "galahad.self", detail: `to ${sent.map((s) => s.name).join(", ")}`.slice(0, 500) });
+    this.logged(day, notifyMessage(items, this.salt())!.kind, sent.map((s) => s.name), sent.some((s) => s.ok));
+  }
+
+  /** What was sent, counted against the day; and his own act, in the ledger: what kind and to which devices, never what it said. */
+  private logged(day: string, kind: NotifyPayload["kind"], names: string[], ok: boolean): void {
+    this.o.db.logSent(day, kind, names, ok);
+    this.o.ledger({ class: "outward", resource: "notify", target: kind, verdict: "approved", reason: "you turned notifications on for these devices", quest: "galahad.self", detail: `to ${names.join(", ")}`.slice(0, 500) });
   }
 
   /* ---------- the owner's own acts: this device on and off, the settings, a test ---------- */
@@ -428,7 +480,10 @@ export class NotifyService {
       this.o.db.remove(owner);
     }
     await this.publicKey();
+    const back = this.comesBack();
     const kept = this.o.db.put(device, { endpoint: input.endpoint, p256dh: input.keys.p256dh, auth: input.keys.auth, service: service.service });
+    if (back) this.o.db.catchUp(device);
+    this.nudge();
     return this.deviceView(kept, paired.name);
   }
 
@@ -443,7 +498,9 @@ export class NotifyService {
       if (this.o.mind.activeDevice(owner)) throw new NotifyError(409, "that iPhone's token is another paired device's; turn notifications off there first, or revoke that device");
       this.o.db.remove(owner);
     }
+    const back = this.comesBack();
     const kept = this.o.db.put(device, { endpoint, p256dh: "", auth: "", service: appleService(input.environment) });
+    if (back) this.o.db.catchUp(device);
     this.nudge();
     return this.deviceView(kept, paired.name);
   }
@@ -455,7 +512,9 @@ export class NotifyService {
   subscribeCollect(device: string): NotifyDeviceView {
     const paired = this.o.mind.activeDevice(device);
     if (!paired || paired.kind !== "client") throw new NotifyError(403, "only a paired device turns notifications on, for itself");
+    const back = this.comesBack();
     const kept = this.o.db.put(device, { endpoint: collectEndpoint(device), p256dh: "", auth: "", service: COLLECT_SERVICE });
+    if (back) this.o.db.catchUp(device);
     this.nudge();
     return this.deviceView(kept, paired.name);
   }
