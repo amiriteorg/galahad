@@ -874,6 +874,18 @@ const timelines = {
 // ---- where a notice came from, in words (the PWA's lib/notices.ts) ----------------------------------------------------
 const notices = ["rule:pushes", "loop:morning", "heartbeat", "ci", "compute", "rule:a:b", "rule:", ":x", "constructor:x", "something-new"].map((source) => ({ source, from: noticeFrom(source) }));
 
+// ---- notifications: what a native app does when it opens, and which kinds it tells quietly (core's notify.ts) --------
+const notifyReach = (["granted", "denied", "undetermined"] as const).flatMap((permission) =>
+  [
+    [true, false],
+    [false, true],
+    [false, false],
+  ].flatMap(([subscribed, lost]) =>
+    [0, 2].flatMap((reachable) => [false, true].map((localOn) => ({ permission, subscribed: subscribed!, lost: lost!, reachable, localOn, step: core.notifyReach({ permission, subscribed: subscribed!, lost: lost!, reachable, localOn }) }))),
+  ),
+);
+const notifyQuiet = ["needs-you", "approval", "question", "finished", "told", "summary", "limit", "test", "advert"].map((kind) => ({ kind, quiet: core.isQuietKind(kind) }));
+
 // ---- code, coloured by what each part is (the PWA's lib/highlight.ts) -------------------------------------------------
 const highlights = [
   ["swift", `let x = "hi \\" there" // say it\nif c == 'a' { return 0x1F }\nlet big = 1_000.5e-3, odd = 0b2, y1 = x`],
@@ -920,6 +932,8 @@ const vectors = {
   timelines,
   notices,
   highlights,
+  notifyReach,
+  notifyQuiet,
 };
 const text = `${JSON.stringify(vectors, null, 2)}\n`;
 if (Bun.argv.includes("--check")) {

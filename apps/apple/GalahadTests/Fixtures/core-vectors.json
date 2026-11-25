@@ -19574,5 +19574,333 @@
         }
       ]
     }
+  ],
+  "notifyReach": [
+    {
+      "permission": "granted",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 0,
+      "localOn": false,
+      "step": "renew"
+    },
+    {
+      "permission": "granted",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 0,
+      "localOn": true,
+      "step": "renew"
+    },
+    {
+      "permission": "granted",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 2,
+      "localOn": false,
+      "step": "renew"
+    },
+    {
+      "permission": "granted",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 2,
+      "localOn": true,
+      "step": "renew"
+    },
+    {
+      "permission": "granted",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 0,
+      "localOn": false,
+      "step": "renew"
+    },
+    {
+      "permission": "granted",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 0,
+      "localOn": true,
+      "step": "renew"
+    },
+    {
+      "permission": "granted",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 2,
+      "localOn": false,
+      "step": "renew"
+    },
+    {
+      "permission": "granted",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 2,
+      "localOn": true,
+      "step": "renew"
+    },
+    {
+      "permission": "granted",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 0,
+      "localOn": false,
+      "step": "turn-on"
+    },
+    {
+      "permission": "granted",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 0,
+      "localOn": true,
+      "step": "turn-on"
+    },
+    {
+      "permission": "granted",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 2,
+      "localOn": false,
+      "step": "none"
+    },
+    {
+      "permission": "granted",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 2,
+      "localOn": true,
+      "step": "turn-on"
+    },
+    {
+      "permission": "denied",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 0,
+      "localOn": false,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 0,
+      "localOn": true,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 2,
+      "localOn": false,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 2,
+      "localOn": true,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 0,
+      "localOn": false,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 0,
+      "localOn": true,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 2,
+      "localOn": false,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 2,
+      "localOn": true,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 0,
+      "localOn": false,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 0,
+      "localOn": true,
+      "step": "settings"
+    },
+    {
+      "permission": "denied",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 2,
+      "localOn": false,
+      "step": "none"
+    },
+    {
+      "permission": "denied",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 2,
+      "localOn": true,
+      "step": "settings"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 0,
+      "localOn": false,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 0,
+      "localOn": true,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 2,
+      "localOn": false,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": true,
+      "lost": false,
+      "reachable": 2,
+      "localOn": true,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 0,
+      "localOn": false,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 0,
+      "localOn": true,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 2,
+      "localOn": false,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": false,
+      "lost": true,
+      "reachable": 2,
+      "localOn": true,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 0,
+      "localOn": false,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 0,
+      "localOn": true,
+      "step": "turn-on"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 2,
+      "localOn": false,
+      "step": "none"
+    },
+    {
+      "permission": "undetermined",
+      "subscribed": false,
+      "lost": false,
+      "reachable": 2,
+      "localOn": true,
+      "step": "turn-on"
+    }
+  ],
+  "notifyQuiet": [
+    {
+      "kind": "needs-you",
+      "quiet": false
+    },
+    {
+      "kind": "approval",
+      "quiet": false
+    },
+    {
+      "kind": "question",
+      "quiet": false
+    },
+    {
+      "kind": "finished",
+      "quiet": true
+    },
+    {
+      "kind": "told",
+      "quiet": true
+    },
+    {
+      "kind": "summary",
+      "quiet": false
+    },
+    {
+      "kind": "limit",
+      "quiet": true
+    },
+    {
+      "kind": "test",
+      "quiet": false
+    },
+    {
+      "kind": "advert",
+      "quiet": false
+    }
   ]
 }

@@ -27,6 +27,7 @@ import {
   type NotifyItem,
   notifyLine,
   notifyMessage,
+  notifyReach,
   type NotifyOrigin,
   type NotifyPrefs,
   notifyUrl,
@@ -551,6 +552,26 @@ describe("the day's digest", () => {
     expect(many.body.length).toBeLessThanOrEqual(NOTIFY_BODY_MAX);
     expect(many.body.endsWith("9 asks still wait for you.")).toBe(true);
     expect(many.body).not.toContain("…");
+  });
+});
+
+describe("a native app's own word on reaching it", () => {
+  test("it hands its subscription over again when it's on or was lost (Apple's advice: tokens change), and says how when it can't", () => {
+    const table: [Parameters<typeof notifyReach>[0], ReturnType<typeof notifyReach>][] = [
+      [{ permission: "granted", subscribed: true, lost: false, reachable: 1 }, "renew"],
+      [{ permission: "granted", subscribed: false, lost: true, reachable: 0 }, "renew"],
+      [{ permission: "denied", subscribed: true, lost: false, reachable: 1 }, "settings"],
+      [{ permission: "denied", subscribed: false, lost: true, reachable: 1 }, "settings"],
+      [{ permission: "undetermined", subscribed: false, lost: true, reachable: 1 }, "turn-on"],
+      // Nobody can be reached: a card, whatever this device was.
+      [{ permission: "granted", subscribed: false, lost: false, reachable: 0 }, "turn-on"],
+      [{ permission: "undetermined", subscribed: false, lost: false, reachable: 0 }, "turn-on"],
+      [{ permission: "denied", subscribed: false, lost: false, reachable: 0 }, "settings"],
+      // Turned off here while another reaches you: not nagged. Turned off elsewhere while it thought itself on: told.
+      [{ permission: "granted", subscribed: false, lost: false, reachable: 2 }, "none"],
+      [{ permission: "granted", subscribed: false, lost: false, reachable: 2, localOn: true }, "turn-on"],
+    ];
+    for (const [state, step] of table) expect(`${JSON.stringify(state)} ${notifyReach(state)}`).toBe(`${JSON.stringify(state)} ${step}`);
   });
 });
 

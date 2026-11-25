@@ -819,3 +819,22 @@ export interface NotifyView {
   quiet: boolean;
   held: number;
 }
+
+/* ---------- a native app's own word: re-subscribe, or say how ---------- */
+
+/**
+ * What a native app (iPhone, iPad, Mac, Android) does about its notifications when it opens, from the OS's leave and
+ * the node's word (Apple's own advice: register at every launch, since tokens change). renew: hand the node this
+ * device's subscription again, asking nothing (it's on, or its push service dropped it: your own choice, which still
+ * stands) · turn-on: a card saying he can't reach this device, with Turn on (the OS asks from your tap) · settings: a
+ * card saying the OS blocks them, with Open Settings · none. A device you turned off while another reaches you isn't
+ * nagged; one turned off elsewhere that still thought itself on (`localOn`) is told so.
+ */
+export type NotifyReach = "renew" | "turn-on" | "settings" | "none";
+
+export function notifyReach(s: { permission: "granted" | "denied" | "undetermined"; subscribed: boolean; lost: boolean; reachable: number; localOn?: boolean }): NotifyReach {
+  if (s.subscribed || s.lost) return s.permission === "granted" ? "renew" : s.permission === "denied" ? "settings" : "turn-on";
+  if (s.reachable > 0 && !s.localOn) return "none";
+  return s.permission === "denied" ? "settings" : "turn-on";
+}
+
