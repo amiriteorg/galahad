@@ -1,16 +1,19 @@
 package org.amirite.galahad.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The Roundtable's rows, Galahad's line and each knight's drawing, held to the vectors the PWA's own code wrote. */
+/** The Roundtable's rows, Galahad's line and what each knight is seen doing, held to the vectors the PWA's own code wrote. */
 class RosterTest {
     private val v = Json.parse(javaClass.classLoader!!.getResource("core-vectors.json")!!.readText())
 
     private fun asks(j: Json?) = j.list.map { Ask(it["by"].string!!, it["connector"].string, it["tool"].string) }
 
-    @Test fun everyKnightWearsTheDrawingCoreGivesIt() {
-        for (c in v["looks"].list) assertEquals(c.text(), c["look"].string, Looks.of(c["id"].string!!, c["name"].string!!, c["avatar"]))
+    @Test fun whatAKnightIsDoingIsReadFromItsStepAsCoreReadsIt() {
+        val steps = v["faces"]["steps"].list
+        assertTrue(steps.size >= 15)
+        for (c in steps) assertEquals(c["line"].string, c["step"].string, Roster.taskStep(c["line"].string!!))
     }
 
     @Test fun eachRowSaysWhatThePwasSays() {

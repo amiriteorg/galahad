@@ -5,7 +5,7 @@ import org.junit.Test
 
 /**
  * Galahad's orb, as the PWA draws it (lib/orb.ts, through the parity vectors the Apple app is held to): the same colours
- * and the same parts at every size.
+ * and the same parts at every size, his data ring and his sphere of glyphs among them.
  */
 class OrbTest {
     private val v: Json = Json.parse(javaClass.classLoader!!.getResource("core-vectors.json")!!.readText())["orb"]!!
@@ -27,6 +27,9 @@ class OrbTest {
             val size = when (level) { "badge" -> 28.0; "seat" -> 64.0; else -> 168.0 }
             assertEquals(level, parts.list.map(::part), Orb.parts(size))
         }
+        // Every level has his sphere of glyphs round its nucleus, drawn last; all of him has his data ring too.
+        for (size in listOf(28.0, 64.0, 168.0)) assertEquals(listOf("nucleus", "sphere"), Orb.parts(size).takeLast(2).map { it.name })
+        assertEquals(listOf("data"), Orb.parts(168.0).filterIsInstance<Orb.Part.Glyphs>().map { it.name })
     }
 
     @Test fun eachSizeShowsAsMuchOfHimAsThePWAs() {
@@ -48,18 +51,19 @@ class OrbTest {
         }
     }
 
-    /** A part as lib/orb.ts wrote it, as this app's own (what it doesn't carry is NaN, which equals nothing). */
+    /** A part as lib/orb.ts wrote it, as this app's own (what it doesn't carry is NaN, which no number of this app's is). */
     private fun part(j: Json): Orb.Part {
         fun n(key: String) = j[key].double ?: Double.NaN
-        fun ink(value: Json?) = Orb.Ink.entries.firstOrNull { it.name.lowercase() == value.string } ?: Orb.Ink.WHITE
+        fun ink(value: Json?) = Orb.Ink.entries.first { it.name.lowercase() == value.string }
         val stops = j["stops"].list.map { Orb.Stop(it["at"].double ?: Double.NaN, ink(it["ink"]), it["opacity"].double ?: Double.NaN) }
         val name = j["name"].string ?: ""
         return when (j["kind"].string) {
             "disc" -> Orb.Part.Disc(name, n("r"), n("cx"), n("cy"), n("spread"), stops)
             "ring" -> Orb.Part.Ring(name, n("r"), n("width"), ink(j["ink"]), n("opacity"), (j["arcs"] as? Json.Arr)?.items?.map { Orb.Arc(it[0].double ?: Double.NaN, it[1].double ?: Double.NaN) })
             "ticks" -> Orb.Part.Ticks(name, n("r"), j["count"].int ?: -1, n("offset"), n("length"), n("width"), ink(j["ink"]), n("opacity"))
-            "rim" -> Orb.Part.Rim(name, n("r"), n("width"), j["from"][0].double ?: Double.NaN, j["from"][1].double ?: Double.NaN, j["to"][0].double ?: Double.NaN, j["to"][1].double ?: Double.NaN, stops)
-            else -> Orb.Part.Shine(name, n("cx"), n("cy"), n("rx"), n("ry"), n("rotate"), n("opacity"))
+            "glyphs" -> Orb.Part.Glyphs(name, n("r"), j["count"].int ?: -1, n("size"), n("share"), ink(j["ink"]))
+            "sphere" -> Orb.Part.Sphere(name, n("r"), j["count"].int ?: -1, n("glyph"), ink(j["second"]))
+            else -> error("a part this app doesn't draw: ${j.text()}")
         }
     }
 }

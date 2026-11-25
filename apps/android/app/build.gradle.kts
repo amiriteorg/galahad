@@ -35,8 +35,6 @@ android {
     androidResources {
         // Its words are English: the libraries' other languages would only make it bigger.
         localeFilters += "en"
-        // Of the PWA's drawings, the two this app never shows stay out of it (aapt's own defaults kept, then those two).
-        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~:!galahad-helm.webp:!black-knight*.webp"
     }
     signingConfigs {
         if (keystore != null) {
@@ -65,8 +63,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     sourceSets {
-        // The knights as the owner drew them: the PWA's own files, packaged as they are (never copied or redrawn).
-        getByName("main").assets.srcDir("../../web/src/knights")
+        // (No pictures of the knights: each is an orb of glyphs it draws itself, ui/Orb.kt. Its mark is a vector drawable.)
         // The parity vectors the Apple app is held to, read where they are: this app is held to the same bytes.
         getByName("test").resources.srcDir("../../apple/GalahadTests/Fixtures")
     }

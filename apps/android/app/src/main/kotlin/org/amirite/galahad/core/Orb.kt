@@ -2,10 +2,13 @@ package org.amirite.galahad.core
 
 /**
  * Galahad's orb, as data (the PWA's lib/orb.ts, the Apple app's Orb.swift, held to them by the vectors; your word,
- * 23 November 2026: he is the one you talk to, "a Jarvis … like visual, the orb graphic"): a sphere of light inside the
- * rings of a heads-up display, in the colour of his state. The parts it is drawn from, in a square 200 wide centred on
- * its middle (y down), and each state's colours; ui/Orb.kt draws them, moved as OrbMotion says where he is doing
- * something (your word, 24 November 2026), and still otherwise.
+ * 23 November 2026: he is the one you talk to, "a Jarvis … like visual, the orb graphic"): a sphere of glyphs round a
+ * bright nucleus inside the rings of a heads-up display, with a ring of data turning in it, in the colour of his state.
+ * On 25 November 2026 his glass sphere became glyphs, as every knight's orb is (your words: "custom/procedurally
+ * generated colored particle orbs", "also update Galahad's orb", "use glyph and randomness on the orbs, like
+ * Jarvis/Ultron in the movies, and my other project Phren"); the glyphs are OrbSphere's, his own handle's sphere. The
+ * parts it is drawn from, in a square 200 wide centred on its middle (y down), and each state's colours; ui/Orb.kt draws
+ * them, moved as OrbMotion says where he is doing something (your word, 24 November 2026), and still otherwise.
  */
 object Orb {
     /** His line's tone (Roster.Now's), and red for a failure. */
@@ -39,11 +42,13 @@ object Orb {
         /** `count` short strokes across a circle, evenly round from `offset` degrees, each `length` long and `width` wide. */
         data class Ticks(override val name: String, val r: Double, val count: Int, val offset: Double, val length: Double, val width: Double, val ink: Ink, val opacity: Double) : Part
 
-        /** A circle's stroke lit along the line from (fromX, fromY) to (toX, toY) (a linear gradient). */
-        data class Rim(override val name: String, val r: Double, val width: Double, val fromX: Double, val fromY: Double, val toX: Double, val toY: Double, val stops: List<Stop>) : Part
+        /** `count` places round a circle `r` from the middle, about `share` of them lit with a hex digit `size` high, each
+         * changing on a slow beat of its own (OrbSphere.dataGlyph): his data ring. */
+        data class Glyphs(override val name: String, val r: Double, val count: Int, val size: Double, val share: Double, val ink: Ink) : Part
 
-        /** An ellipse of white, turned by `rotate` degrees about its middle. */
-        data class Shine(override val name: String, val cx: Double, val cy: Double, val rx: Double, val ry: Double, val rotate: Double, val opacity: Double) : Part
+        /** `count` glyphs on a sphere `r` from the middle, its nearest `glyph` high (OrbSphere), his own handle's sphere;
+         * some of them are `second`'s colour. */
+        data class Sphere(override val name: String, val r: Double, val count: Int, val glyph: Double, val second: Ink) : Part
     }
 
     /** From these sizes (dp), a seat's rings and then the full display's ticks can be told apart. */
@@ -94,26 +99,25 @@ object Orb {
     private val thirds = listOf(Arc(20.0, 90.0), Arc(140.0, 210.0), Arc(260.0, 330.0))
 
     private val halo = Part.Disc("halo", 99.0, 0.5, 0.5, 0.5, listOf(Stop(0.0, Ink.TINT, 0.55), Stop(0.62, Ink.TINT, 0.2), Stop(1.0, Ink.TINT, 0.0)))
-    private fun body(r: Double) = Part.Disc("body", r, 0.4, 0.36, 0.72, listOf(Stop(0.0, Ink.WHITE, 0.96), Stop(0.24, Ink.LIGHT, 1.0), Stop(0.64, Ink.TINT, 1.0), Stop(1.0, Ink.DEEP, 1.0)))
 
-    /** Light through the glass, gathered at its lower edge as a marble's is. */
-    private fun rim(r: Double, width: Double, reach: Double) = Part.Rim("rim", r, width, -reach, -reach, reach, reach, listOf(Stop(0.0, Ink.WHITE, 0.0), Stop(0.55, Ink.WHITE, 0.0), Stop(1.0, Ink.WHITE, 0.55)))
-    private fun core(r: Double) = Part.Disc("core", r, 0.5, 0.5, 0.5, listOf(Stop(0.0, Ink.WHITE, 0.85), Stop(1.0, Ink.WHITE, 0.0)))
-    private fun shine(cx: Double, cy: Double, rx: Double, ry: Double) = Part.Shine("shine", cx, cy, rx, ry, -28.0, 0.3)
+    /** The light the sphere sits in, brightest at its middle: its glyphs are seen against it. */
+    private fun glow(r: Double) = Part.Disc("glow", r, 0.5, 0.5, 0.5, listOf(Stop(0.0, Ink.TINT, 0.45), Stop(0.55, Ink.TINT, 0.16), Stop(1.0, Ink.TINT, 0.0)))
+
+    /** The bright nucleus at its heart (Phren's): white at its middle, into his tint, and gone. */
+    private fun nucleus(r: Double) = Part.Disc("nucleus", r, 0.5, 0.5, 0.5, listOf(Stop(0.0, Ink.WHITE, 0.95), Stop(0.3, Ink.TINT, 0.65), Stop(1.0, Ink.TINT, 0.0)))
+    private fun sphere(r: Double, count: Int, glyph: Double) = Part.Sphere("sphere", r, count, glyph, Ink.WHITE)
 
     private val FULL: List<Part> = listOf(
         halo,
         Part.Ring("ring", 95.0, 1.1, Ink.TINT, 0.5, quarters(6.0)),
         Part.Ticks("notches", 95.0, 4, 0.0, 9.0, 1.6, Ink.TINT, 0.8),
-        Part.Ticks("ticks", 86.5, 72, 0.0, 3.0, 0.8, Ink.TINT, 0.45),
-        Part.Ticks("marks", 86.5, 12, 0.0, 7.0, 1.4, Ink.TINT, 0.75),
-        Part.Ring("segments", 77.0, 2.6, Ink.TINT, 0.55, thirds),
-        Part.Ring("inner", 70.5, 0.8, Ink.TINT, 0.28, null),
-        body(60.0),
-        rim(58.6, 1.8, 41.0),
-        core(26.0),
-        shine(-21.0, -27.0, 19.0, 10.0),
-        Part.Shine("glint", -31.0, -35.0, 3.4, 2.6, -28.0, 0.8),
+        Part.Ticks("ticks", 89.0, 72, 0.0, 3.0, 0.8, Ink.TINT, 0.45),
+        Part.Ticks("marks", 89.0, 12, 0.0, 7.0, 1.4, Ink.TINT, 0.75),
+        Part.Glyphs("data", 80.5, 48, 7.0, 0.62, Ink.LIGHT),
+        Part.Ring("segments", 72.0, 2.4, Ink.TINT, 0.55, thirds),
+        glow(64.0),
+        nucleus(37.0),
+        sphere(54.0, 170, 14.0),
     )
 
     private val SEAT: List<Part> = listOf(
@@ -121,17 +125,15 @@ object Orb {
         Part.Ring("ring", 94.0, 2.4, Ink.TINT, 0.55, quarters(8.0)),
         Part.Ticks("notches", 94.0, 4, 0.0, 12.0, 3.2, Ink.TINT, 0.85),
         Part.Ring("segments", 80.0, 4.5, Ink.TINT, 0.5, thirds),
-        body(66.0),
-        rim(64.4, 2.6, 45.0),
-        core(28.0),
-        shine(-23.0, -30.0, 21.0, 11.0),
+        glow(74.0),
+        nucleus(44.0),
+        sphere(64.0, 72, 22.0),
     )
 
     private val BADGE: List<Part> = listOf(
         Part.Ring("ring", 94.0, 5.0, Ink.TINT, 0.5, null),
-        body(78.0),
-        rim(76.0, 3.5, 53.0),
-        core(30.0),
-        shine(-27.0, -34.0, 24.0, 13.0),
+        glow(88.0),
+        nucleus(53.0),
+        sphere(70.0, 30, 30.0),
     )
 }

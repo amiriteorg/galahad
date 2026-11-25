@@ -2,9 +2,10 @@ package org.amirite.galahad.core
 
 /*
  * The Roundtable as the PWA and the Apple app read it (apps/web/src/lib/roster.ts, now.ts, knight-state.ts and core's
- * avatar.ts), so a knight's line, state and face say the same thing on every screen: Galahad first, then each knight,
- * then each room, every row with one line of latest activity and a mark when it needs you. Pure, from what the app
- * already asks the node (the team as one snapshot, the approvals waiting); the parity vectors hold it byte for byte.
+ * avatar.ts, whose colours are Avatar's), so a knight's line, state and orb say the same thing on every screen: Galahad
+ * first, then each knight, then each room, every row with one line of latest activity and a mark when it needs you.
+ * Pure, from what the app already asks the node (the team as one snapshot, the approvals waiting); the parity vectors
+ * hold it byte for byte.
  */
 
 data class Teammate(
@@ -282,51 +283,5 @@ object Roster {
         val expression = if (here) "thinking" else if (doing != null) "working" else if (needsLine != null) "asking" else "idle"
         val tone = if (needsLine != null) "warn" else if (doing != null) "accent" else if (fresh != null) "ok" else "neutral"
         return Now(text, expression, tone)
-    }
-}
-
-/** The owner's ten drawings of knights (core's AVATAR_LOOKS): which one a knight wears, the same on every device. */
-object Looks {
-    data class Look(val id: String, val color: String)
-
-    val all = listOf(
-        Look("kay", "#f9e9d9"), Look("gaheris", "#9c494f"), Look("percival", "#d5adc7"), Look("palamedes", "#945764"), Look("gawain", "#84845e"),
-        Look("tristan", "#999aab"), Look("lancelot", "#93a2c0"), Look("bedivere", "#9dac9e"), Look("bors", "#be7153"), Look("gareth", "#fbc866"),
-    )
-
-    // Core's AVATAR_FORMS, AVATAR_EYES, AVATAR_ACCESSORIES and AVATAR_TEMPERAMENTS (packages/core/src/avatar.ts).
-    private val forms = setOf("round", "armored", "hooded")
-    private val eyes = setOf("oval", "round", "visor")
-    private val accessories = setOf("none", "plume", "ears", "crown")
-    private val temperaments = setOf("calm", "curious", "lively")
-    private val hex = Regex("^#[0-9a-fA-F]{6}$")
-
-    /** A saved profile core would take (isAvatarProfile): exactly its seven keys, each one of core's values. */
-    private fun profileColor(profile: Json?): String? {
-        val f = (profile as? Json.Obj)?.fields ?: return null
-        if (f.keys != setOf("v", "form", "color", "accent", "eyes", "accessory", "temperament")) return null
-        val ok = f["v"].long == 1L && f["form"].string in forms && hex.matches(f["color"].string ?: "") && hex.matches(f["accent"].string ?: "") &&
-            f["eyes"].string in eyes && f["accessory"].string in accessories && f["temperament"].string in temperaments
-        return if (ok) f["color"].string!!.lowercase() else null
-    }
-
-    private fun apart(a: String, b: String): Double {
-        fun rgb(c: String) = listOf(1, 3, 5).map { c.substring(it, it + 2).toInt(16) }
-        val (r1, g1, b1) = rgb(a)
-        val (r2, g2, b2) = rgb(b)
-        val red = (r1 + r2) / 2.0
-        return Math.sqrt((2 + red / 256) * (r1 - r2) * (r1 - r2) + 4.0 * (g1 - g2) * (g1 - g2) + (2 + (255 - red) / 256) * (b1 - b2) * (b1 - b2))
-    }
-
-    /** A chosen look; else the drawing its first name is; else the nearest to an older profile's colour; else from its handle. */
-    fun of(id: String, name: String, profile: Json?): String {
-        val saved = profileColor(profile)
-        all.firstOrNull { it.color == saved }?.let { return it.id }
-        val first = name.trim().lowercase().split(Regex("\\s+")).firstOrNull() ?: ""
-        all.firstOrNull { it.id == first }?.let { return it.id }
-        if (saved != null) return all.reduce { best, look -> if (apart(look.color, saved) < apart(best.color, saved)) look else best }.id
-        var seed = 2166136261L
-        for (c in id) seed = ((seed xor c.code.toLong()) * 16777619L) and 0xFFFFFFFFL
-        return all[(seed % all.size).toInt()].id
     }
 }

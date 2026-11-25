@@ -13,7 +13,8 @@ import kotlin.math.min
  * the same clock a step at a time, and the same frame at the same moment, to a billionth.
  */
 class OrbMotionTest {
-    private val v: Json = Json.parse(javaClass.classLoader!!.getResource("core-vectors.json")!!.readText())["orb"]!!["motion"]!!
+    private val all: Json = Json.parse(javaClass.classLoader!!.getResource("core-vectors.json")!!.readText())
+    private val v: Json = all["orb"]!!["motion"]!!
 
     private fun mood(wire: String?): OrbMotion.Mood = OrbMotion.Mood.entries.first { it.wire == wire }
     private fun num(j: Json?): Double = j.double ?: error("not a number: $j")
@@ -43,6 +44,14 @@ class OrbMotionTest {
             KnightState.entries.firstOrNull { it.wire == wire }?.let { assertEquals("$wire", s["mood"].string, OrbMotion.mood(it).wire) }
         }
         assertEquals(OrbMotion.Mood.IDLE, OrbMotion.mood(null as KnightState?))
+    }
+
+    @Test fun whatAKnightIsDoingIsItsOrbsMoodAsThePWAs() {
+        val moods = all["faces"]["moods"].list
+        assertEquals(11, moods.size)
+        for (m in moods) assertEquals(m["expression"].string, m["mood"].string, OrbMotion.moodOfExpression(m["expression"].string).wire)
+        assertEquals(OrbMotion.Mood.IDLE, OrbMotion.moodOfExpression(null))
+        assertEquals(OrbMotion.Mood.IDLE, OrbMotion.moodOfExpression("constructor"))
     }
 
     @Test fun itBurstsWhereThePWAsDoes() {
@@ -113,10 +122,12 @@ class OrbMotionTest {
 
     @Test fun stillIsTheOrbUnmoved() {
         assertEquals(OrbMotion.Frame(1.0, 1.0, 0.0, 0.0, 0.0, 0.0, null, emptyList(), emptyList(), emptyList(), emptyList()), OrbMotion.STILL)
-        // A stage too small for motes shows none; a mood's share is rounded as the PWA rounds it (half up).
+        // A stage too small for motes shows none; a mood's share is rounded as the PWA rounds it (half up: 30 at 0.35 is 11).
         val frame = OrbMotion.frame(OrbMotion.Mood.DONE, OrbMotion.clock(OrbMotion.Mood.DONE), 3.0, since = 0.4, from = OrbMotion.Mood.WORKING, burst = true)
         assertEquals(emptyList<OrbMotion.Mote>(), OrbMotion.shownMotes(frame, OrbMotion.stage(Orb.Level.BADGE)))
-        assertEquals(Math.round(10 * 0.35).toInt() + Math.round(26 * 0.35).toInt() + OrbMotion.BURST_MOTES, OrbMotion.shownMotes(frame, OrbMotion.RING).size)
+        fun shown(mood: OrbMotion.Mood) = Math.round(OrbMotion.motion(mood).motes.count * 0.35).toInt()
+        assertEquals(shown(OrbMotion.Mood.DONE) + shown(OrbMotion.Mood.WORKING) + OrbMotion.BURST_MOTES, OrbMotion.shownMotes(frame, OrbMotion.RING).size)
+        assertEquals(11, OrbMotion.shownMotes(OrbMotion.STILL.copy(motes = List(30) { OrbMotion.Mote(0.0, 0.5, 1.0, 1.0) }), OrbMotion.RING).size)
     }
 
     @Test fun itIsDrawnAsFewTimesASecondAsLookSmooth() {

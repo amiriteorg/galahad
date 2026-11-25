@@ -49,7 +49,6 @@ import org.amirite.galahad.app.Bubble
 import kotlinx.coroutines.delay
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.KnightState
-import org.amirite.galahad.core.Looks
 import org.amirite.galahad.core.Underway
 import org.amirite.galahad.core.UnderwayWords
 import org.amirite.galahad.core.bool
@@ -99,7 +98,7 @@ fun ChatScreen(app: AppModel, back: () -> Unit, openKnight: (String) -> Unit = {
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s2), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
                     // His orb, at work while he answers here, before the node has said so.
-                    Face("galahad", if (live) KnightState.WORKING else table.galahad.state, size = 48.dp)
+                    Face("galahad", null, if (live) KnightState.WORKING else table.galahad.state, size = 48.dp)
                     Text(table.galahad.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 }
             }
@@ -155,7 +154,7 @@ private fun UnderwayBar(app: AppModel, live: Boolean, openKnight: (String) -> Un
             val row = table.rows.firstOrNull { it.kind == "knight" && it.id == task.assignee }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                 Row(Modifier.weight(1f).clickable { openKnight(task.assignee) }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    Face(Looks.of(task.assignee, task.name, row?.avatar), KnightState.WORKING, size = 28.dp, description = task.name, key = task.assignee)
+                    Face(task.assignee, row?.avatar, KnightState.WORKING, size = 28.dp, description = task.name)
                     Column(Modifier.weight(1f)) {
                         Text("${task.name} · ${UnderwayWords.state(task)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(task.title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)

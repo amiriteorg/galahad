@@ -15,14 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.app.Attachments
 import org.amirite.galahad.app.Notices
 import org.amirite.galahad.core.Joining
 import org.amirite.galahad.core.Share
-import org.amirite.galahad.ui.Drawings
 import org.amirite.galahad.ui.GalahadTheme
 import org.amirite.galahad.ui.JoinScreen
 import org.amirite.galahad.ui.Root
@@ -34,8 +32,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         take(intent)
-        // The knights' faces are read while the first frame is made, off the main thread (ui/Faces.kt).
-        lifecycleScope.launch(Dispatchers.Default) { Drawings.prewarm(applicationContext) }
         // The node is asked only while the app is on screen. What it kept for this phone's notifications is collected
         // beside the first look, not before it: that was a whole round trip before the Roundtable could fill in.
         lifecycleScope.launch {

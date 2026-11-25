@@ -5,19 +5,25 @@ the Apple app is Apple's. It pairs the way the PWA and the Apple app do and sign
 `packages/core` verifies it, with a device key made in the phone's secure hardware (the Keystore: StrongBox where the
 phone has one) that never leaves it.
 
-It's small on purpose: a signed release is about 3 MB, nearly all of it the code, the rest the knights as the owner
-drew them, packaged straight from `apps/web/src/knights` (never copied or redrawn). It needs no Google services: HTTP,
-JSON and the cryptography are what Android ships, and the only libraries are AndroidX's Compose, activity-compose and
-profile installer, and Kotlin's coroutines. A state moves as long as it lasts (your word, 24 November 2026): Galahad's
-orb and every knight's seat in their state's mood (`core/OrbMotion.kt`, the PWA's lib/orb-motion.ts held to it by the
-vectors), only as often as the mood needs, and nothing at all while the phone's animations are off; a knight's state is
-still its ring's colour and a word.
+It's small on purpose: a signed release is about 3 MB, nearly all of it the code; it carries no pictures of the
+knights, which it draws itself. It needs no Google services: HTTP, JSON and the cryptography are what Android ships, and
+the only libraries are AndroidX's Compose, activity-compose and profile installer, and Kotlin's coroutines. Every knight
+is an orb (your words, 25 November 2026: "drop the knight avatars, and just use custom/procedurally generated colored
+particle orbs", "use glyph and randomness on the orbs, like Jarvis/Ultron in the movies, and my other project Phren"):
+a sphere of monospace glyphs round a bright nucleus, in the colour you chose for it on its page or the one of 24 its
+handle picks (`core/Avatar.kt`, core's avatar.ts), its sphere, glyphs and arcs its handle's (`core/OrbSphere.kt`, the
+PWA's lib/orb-sphere.ts), ink on paper in the light theme. A state moves as long as it lasts (your word, 24 November
+2026), slowly and calmly (25 November 2026: "slow and calming movement"): Galahad's orb and every knight's orb in its
+seat in their state's mood (`core/OrbMotion.kt`, the PWA's lib/orb-motion.ts held to it by the vectors), only as often
+as the mood needs, and one still frame while the phone's animations are off; a knight's state is still its ring's
+colour and a word.
 
 It opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything): his place, at the
 bar's right end, is his home (`ui/GalahadHome.kt`), his orb large in the colour of where he stands, his line, what you
 might ask, what he asks you (the Inbox's own cards), your recent chats and the message box, each chat shown over it. His
-orb (`core/Orb.kt`, drawn by `ui/Orb.kt`) is the PWA's and the iPhone's, part for part, held to them by the parity
-vectors, and moves as theirs do; it is his seat at the Roundtable and the place's icon too (still, in the bar).
+orb (`core/Orb.kt`, drawn by `ui/Orb.kt`: his heads-up rings, a ring of data turning in them, and his own sphere of
+glyphs) is the PWA's and the iPhone's, part for part, held to them by the parity vectors, and moves as theirs do; it is
+his seat at the Roundtable and the place's icon too (still, in the bar).
 
 What it does (21 November 2026): join your node with an invite and the six-digit code; the Roundtable, Galahad first,
 each knight in its state's ring with one line of what it's doing (the same line the PWA and the iPhone show: the roster
@@ -52,8 +58,9 @@ scripts/release.sh                 # build/release/Galahad-<build>.apk: tested, 
 
 The JVM tests read `apps/apple/GalahadTests/Fixtures/core-vectors.json` where it is (`bun apps/apple/scripts/vectors.ts`
 writes it from core and the push gate checks it), so this app is held to the same bytes as the Apple app: request
-signing, the device id, canonical JSON, invites, the pairing proofs and codes, the Roundtable's rows, and every answer
-block.
+signing, the device id, canonical JSON, invites, the pairing proofs and codes, the Roundtable's rows, the orbs (a
+knight's colours, every sphere's glyphs at a moment, a knight's arcs, Galahad's parts and data ring, and how each mood
+moves), and every answer block.
 
 ## Running it against a throwaway node
 

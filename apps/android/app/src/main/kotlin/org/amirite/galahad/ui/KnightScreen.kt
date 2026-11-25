@@ -41,7 +41,6 @@ import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.KnightState
-import org.amirite.galahad.core.Looks
 import org.amirite.galahad.core.NodeError
 import org.amirite.galahad.core.Roster
 import org.amirite.galahad.core.bool
@@ -67,6 +66,7 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
     var watching by rememberSaveable(id) { mutableStateOf(false) }
     var inTerminal by rememberSaveable(id) { mutableStateOf(false) }
     var vmMenu by remember { mutableStateOf(false) }
+    var colouring by remember(id) { mutableStateOf(false) }
     BackHandler(enabled = watching) { watching = false }
     if (watching) {
         DesktopScreen(app, id, person?.name ?: id) { watching = false }
@@ -102,18 +102,23 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
     ) {
         val scope = rememberCoroutineScope()
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-            Face(Looks.of(id, person?.name ?: id, person?.avatar), row?.state, size = 120.dp, description = person?.name, key = id)
+            Face(id, person?.avatar, row?.state, size = 120.dp, description = person?.name)
             Text(person?.name ?: id, style = MaterialTheme.typography.headlineSmallEmphasized)
             StateChip(row?.state)
             row?.let { Text(Roster.besideChip(it.line, it.state), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            // Paused, a knight starts nothing new until you resume it; what it's doing now finishes.
             person?.let { p ->
-                TextButton(onClick = {
-                    scope.launch { runCatching { app.client?.post("/api/team/control", Json.obj("teammate" to id, "action" to if (p.enabled) "pause" else "resume")); app.refresh() } }
-                }) { Text(if (p.enabled) "Pause ${p.name}" else "Resume ${p.name}") }
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                    // Paused, a knight starts nothing new until you resume it; what it's doing now finishes.
+                    TextButton(onClick = {
+                        scope.launch { runCatching { app.client?.post("/api/team/control", Json.obj("teammate" to id, "action" to if (p.enabled) "pause" else "resume")); app.refresh() } }
+                    }) { Text(if (p.enabled) "Pause ${p.name}" else "Resume ${p.name}") }
+                    // Its orb's colour, chosen once the node has answered (never from the Roundtable this phone kept).
+                    if (table.asOf == null) TextButton(onClick = { colouring = true }) { Text("Its colour") }
+                }
             }
         }
     }
+    if (colouring) person?.let { p -> ColourDialog(app, id, p.name, p.avatar) { colouring = false } }
 }
 
 /** A room's page: who sits in it, what was said there and its tasks, and a box to write to them all. */
@@ -136,7 +141,7 @@ fun RoomScreen(app: AppModel, id: String, back: () -> Unit) {
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
             Row(horizontalArrangement = Arrangement.spacedBy(-Space.s3)) {
-                for (m in members.take(5)) Face(Looks.of(m.id, m.name, m.avatar), table.rows.firstOrNull { it.kind == "knight" && it.id == m.id }?.state, size = 64.dp, description = m.name, key = m.id)
+                for (m in members.take(5)) Face(m.id, m.avatar, table.rows.firstOrNull { it.kind == "knight" && it.id == m.id }?.state, size = 64.dp, description = m.name)
             }
             Text(room?.name ?: "A room", style = MaterialTheme.typography.headlineSmallEmphasized)
             row?.let { Text(it.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }

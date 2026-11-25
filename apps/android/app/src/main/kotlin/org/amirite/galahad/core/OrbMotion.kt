@@ -22,9 +22,11 @@ import kotlin.math.sin
  * - done: a burst, then green with a glint going round.
  * - failed: the turning stops and the motes run down its sides.
  *
- * This replaces the stillness asked for on 18 November 2026, on your later word. Nothing moves while the phone's
- * animations are off (Settings › Accessibility › Remove animations): the still orb (Orb) is drawn then, which is this
- * function's frame with nothing under way. A knight's handle only seeds where its motes start.
+ * All of it slow and calm (your word, 25 November 2026: "slow and calming movement"): a breath takes 4 to 12 seconds, a
+ * ring turns a few degrees a second, and a mood arrives over more than a second. This replaces the stillness asked for
+ * on 18 November 2026, on your later word. Nothing moves while the phone's animations are off (Settings ›
+ * Accessibility › Remove animations): the still orb (Orb) is drawn then, which is this function's frame with nothing
+ * under way. A knight's handle only seeds where its motes start.
  */
 object OrbMotion {
     enum class Mood { IDLE, WORKING, WAITING, QUEUED, PAUSED, DONE, FAILED; val wire: String get() = name.lowercase() }
@@ -52,22 +54,23 @@ object OrbMotion {
     data class Motion(val breath: Double, val swell: Double, val turn: Turn, val comet: Comet?, val ripple: Double?, val motes: Motes, val aura: Double)
 
     val motions: Map<Mood, Motion> = mapOf(
-        Mood.IDLE to Motion(6.5, 0.012, Turn(3.0, 0.0, -4.5), null, null, Motes(14, 7.0, 0.25, Flow.ORBIT), 0.12),
-        Mood.WORKING to Motion(2.6, 0.022, Turn(24.0, 6.0, -40.0), Comet(160.0, 90.0), null, Motes(26, 30.0, 0.0, Flow.INWARD), 0.34),
-        Mood.WAITING to Motion(2.2, 0.03, Turn(6.0, 0.0, -8.0), null, 2.2, Motes(12, 10.0, 0.45, Flow.ORBIT), 0.42),
-        Mood.QUEUED to Motion(4.5, 0.012, Turn(10.0, 0.0, -10.0), Comet(40.0, 50.0), null, Motes(8, 14.0, 0.15, Flow.ORBIT), 0.16),
-        Mood.PAUSED to Motion(9.0, 0.006, Turn(0.0, 0.0, 0.0), null, null, Motes(0, 0.0, 0.0, Flow.ORBIT), 0.06),
-        Mood.DONE to Motion(5.0, 0.015, Turn(2.0, 0.0, -3.0), Comet(50.0, 30.0), null, Motes(10, 9.0, 0.3, Flow.ORBIT), 0.3),
-        Mood.FAILED to Motion(3.4, 0.018, Turn(0.0, 0.0, 0.0), null, null, Motes(8, 0.0, 0.0, Flow.FALL), 0.3),
+        Mood.IDLE to Motion(9.0, 0.01, Turn(1.6, 0.0, -2.4), null, null, Motes(10, 3.5, 0.2, Flow.ORBIT), 0.1),
+        Mood.WORKING to Motion(5.2, 0.016, Turn(9.0, 2.2, -14.0), Comet(55.0, 110.0), null, Motes(16, 9.0, 0.0, Flow.INWARD), 0.26),
+        Mood.WAITING to Motion(4.2, 0.024, Turn(2.5, 0.0, -3.5), null, 4.2, Motes(10, 4.0, 0.35, Flow.ORBIT), 0.34),
+        Mood.QUEUED to Motion(7.0, 0.01, Turn(4.0, 0.0, -4.0), Comet(18.0, 60.0), null, Motes(6, 5.0, 0.12, Flow.ORBIT), 0.14),
+        Mood.PAUSED to Motion(12.0, 0.005, Turn(0.0, 0.0, 0.0), null, null, Motes(0, 0.0, 0.0, Flow.ORBIT), 0.05),
+        Mood.DONE to Motion(8.0, 0.012, Turn(1.0, 0.0, -1.5), Comet(20.0, 40.0), null, Motes(8, 4.0, 0.25, Flow.ORBIT), 0.24),
+        Mood.FAILED to Motion(6.0, 0.014, Turn(0.0, 0.0, 0.0), null, null, Motes(6, 0.0, 0.0, Flow.FALL), 0.24),
     )
 
     fun motion(mood: Mood): Motion = motions.getValue(mood)
 
-    /** Seconds a new mood takes to arrive: its motes, its light and its waves fade in over them. */
-    const val ARRIVE = 0.8
-    /** Seconds a burst takes (done, and a task's end), and how many motes fly out in it. */
-    const val BURST = 1.6
-    const val BURST_MOTES = 16
+    /** Seconds a new mood takes to arrive: its motes, its light and its waves fade in over them (slowly: your word, 25
+     * November 2026, "slow and calming movement"). */
+    const val ARRIVE = 1.6
+    /** Seconds a burst takes (done, and a task's end), and how many motes drift out in it: a soft one. */
+    const val BURST = 2.6
+    const val BURST_MOTES = 12
     /** Seconds a speed, the swell and the light take to ease most of the way (63 %) to a new mood's. */
     const val EASE = 0.35
     /** The longest step a frame takes: one late by more (the app coming back) turns nothing a long way at once. */
@@ -87,6 +90,22 @@ object OrbMotion {
 
     /** The same from a state as the node and the PWA write it ("needs"); one it doesn't know is at rest. */
     fun mood(wire: String?): Mood = mood(KnightState.entries.firstOrNull { it.wire == wire })
+
+    /**
+     * What a knight is doing where only that is known (Roster's expression, core's avatarExpression), as its orb's mood
+     * (the PWA's orbMoodOfExpression): thinking, at work, reading, browsing and checking are work; waiting is queued;
+     * asking your leave waits on you; pleased is done; concerned is failed; resting is paused; idle, and anything else, is
+     * idle.
+     */
+    fun moodOfExpression(expression: String?): Mood = when (expression) {
+        "thinking", "working", "reading", "browsing", "checking" -> Mood.WORKING
+        "waiting" -> Mood.QUEUED
+        "asking" -> Mood.WAITING
+        "pleased" -> Mood.DONE
+        "concerned" -> Mood.FAILED
+        "resting" -> Mood.PAUSED
+        else -> Mood.IDLE
+    }
 
     /** Whether a change of mood bursts: arriving at done from any other mood, or at idle straight from work (a task's end
      * you watched). Never on first sight (`from` null): opening a page shows where things stand, settled. */
@@ -233,22 +252,22 @@ object OrbMotion {
             val p = rand(seed, i, 3)
             val z = rand(seed, i, 4)
             val speed = m.motes.speed * (0.5 + s)
-            // Each twinkles on a breath of its own, between 1.8 and 4.2 seconds.
-            val twinkle = 0.5 + 0.5 * sin(2 * PI * (t / (1.8 + 2.4 * s) + p))
+            // Each twinkles on a slow breath of its own, between 3 and 7 seconds.
+            val twinkle = 0.5 + 0.5 * sin(2 * PI * (t / (3 + 4 * s) + p))
             val angle: Double
             val u: Double
             val alpha: Double
             when (m.motes.flow) {
                 Flow.INWARD -> {
-                    // From the band's outer edge to its inner one, turning as it comes, 2.2 to 3.8 seconds a pass, then again.
-                    val phase = fract(t / (2.2 + 1.6 * s) + p)
+                    // From the band's outer edge to its inner one, turning as it comes, 4 to 7 seconds a pass, then again.
+                    val phase = fract(t / (4 + 3 * s) + p)
                     angle = 360 * a + speed * t + 120 * phase
                     u = 1 - phase
                     alpha = sin(PI * phase) * (0.55 + 0.45 * twinkle)
                 }
                 Flow.FALL -> {
-                    // Down one side, from high on it to the foot, faster as it goes, fading, 3.5 to 6 seconds a run.
-                    val phase = fract(t / (3.5 + 2.5 * s) + p)
+                    // Down one side, from high on it to the foot, faster as it goes, fading, 6 to 10 seconds a run.
+                    val phase = fract(t / (6 + 4 * s) + p)
                     val side = if (a < 0.5) -1.0 else 1.0
                     val from = side * (20 + 70 * u0)
                     angle = from + (side * 180 - from) * phase * phase
@@ -296,18 +315,19 @@ object OrbMotion {
 
     /**
      * How a frame moves the orb's parts (Orb's names), and where its lights are drawn among them: the outer ring and its
-     * notches turn with the frame's `ring`, the ticks and their marks with its `ticks`, the segments with its `segments`;
-     * the sphere swells with its `scale`, and its glow (the halo, the core) brightens with its `glow`. The waves are drawn
-     * after the halo, under every ring; the light and the motes after the rings, just before the sphere, which they pass
-     * behind.
+     * notches turn with the frame's `ring`, the ticks and their marks with its `ticks`, the segments and the data ring
+     * with its `segments`; the sphere, its nucleus and the light it sits in swell with its `scale`, and its glows (the
+     * halo, the light round the sphere, the nucleus) brighten with its `glow`. The sphere turns with its `ring`, three
+     * times as far (OrbSphere.TURN). The waves are drawn after the halo, under every ring; the light and the motes after
+     * the rings, just before the sphere's light, which they pass behind.
      */
     object Moves {
         val ring = listOf("ring", "notches")
         val ticks = listOf("ticks", "marks")
-        val segments = listOf("segments")
-        val swell = listOf("body", "rim", "core", "shine", "glint")
-        val glow = listOf("halo", "core")
-        const val LIGHTS_BEFORE = "body"
+        val segments = listOf("segments", "data")
+        val swell = listOf("glow", "nucleus", "sphere")
+        val glow = listOf("halo", "glow", "nucleus")
+        const val LIGHTS_BEFORE = "glow"
     }
 
     /**

@@ -46,7 +46,6 @@ import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.KnightState
-import org.amirite.galahad.core.Looks
 import org.amirite.galahad.core.NodeError
 import org.amirite.galahad.core.Roster
 import org.amirite.galahad.core.RosterRow
@@ -107,7 +106,8 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
         // (His line says what he's doing: until the node has answered, there's nothing it could truly say.)
         if (table.snapshot != null) item {
             Seat(
-                drawing = "galahad",
+                id = "galahad",
+                profile = null,
                 name = "Galahad",
                 state = table.galahad.state,
                 line = table.galahad.text,
@@ -117,7 +117,7 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
             )
         }
         items(knights, key = { "k:${it.id}" }) { row ->
-            Seat(Looks.of(row.id, row.name, row.avatar), row.name, row.state, row.line, row.needs, row.unread, key = row.id) { openKnight(row.id) }
+            Seat(row.id, row.avatar, row.name, row.state, row.line, row.needs, row.unread) { openKnight(row.id) }
         }
         if (table.snapshot != null && knights.isEmpty()) {
             item {
@@ -157,9 +157,9 @@ internal fun Refused(app: AppModel, p: NodeError) {
     }
 }
 
-/** One seat at the table: a face in its ring, the name and its state's word, and one line of what it's doing. */
+/** One seat at the table: its orb in its ring, the name and its state's word, and one line of what it's doing. */
 @Composable
-private fun Seat(drawing: String, name: String, state: KnightState?, line: String, needs: Boolean, unread: Boolean, key: String = drawing, onClick: () -> Unit) {
+private fun Seat(id: String, profile: Json?, name: String, state: KnightState?, line: String, needs: Boolean, unread: Boolean, onClick: () -> Unit) {
     val brand = LocalBrand.current
     val beside = Roster.besideChip(line, state)
     Row(
@@ -171,7 +171,7 @@ private fun Seat(drawing: String, name: String, state: KnightState?, line: Strin
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
     ) {
-        Face(drawing, state, key = key)
+        Face(id, profile, state)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
                 Text(name, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis)
