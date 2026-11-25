@@ -2,6 +2,7 @@ import type { BankStatusView } from "@galahad/core";
 import { isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage, type View } from "../context.ts";
 import { type BankCallback, budgetLabel, consentLeft, offReason } from "../lib/bank.ts";
+import { isGrantArm } from "../lib/grants.ts";
 import { badge, busy, button, callout, empty, errorState, meter, pageHead, section, skeletonRows, spinner, switchControl } from "../ui/controls.ts";
 import { confirmAction } from "../ui/dialog.ts";
 import { h, replace } from "../ui/dom.ts";
@@ -168,7 +169,8 @@ export const bankView: View = (root, ctx, { scope }) => {
   async function loadAgents(): Promise<void> {
     if (!admin) return;
     try {
-      const { arms } = await ctx.api.get<{ arms: ArmView[] }>("/api/arms", scope.signal);
+      // A Q-AMP grant's arm holds its tools' scopes and nothing else (the node refuses more): never one to give the bank.
+      const arms = (await ctx.api.get<{ arms: ArmView[] }>("/api/arms", scope.signal)).arms.filter((arm) => !isGrantArm(arm.label));
       replace(
         agents,
         section(

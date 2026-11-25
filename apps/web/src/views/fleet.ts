@@ -1,8 +1,9 @@
-import type { ComputeNodeView, ComputeView, DeviceView, FleetView, PairingView, PeerStatus } from "@galahad/core";
+import type { ComputeNodeView, ComputeView, DeviceView, FleetView, PairingView, PeerStatus, QampGrantView } from "@galahad/core";
 import { isAbort } from "../api.ts";
 import { capacityBlock, computeBody, slotsTile } from "./fleet-compute.ts";
 import { encodeQr, qrPath } from "@galahad/core/qr";
 import { type Ctx, errorMessage, type View } from "../context.ts";
+import { grantEnds, shortDid } from "../lib/grants.ts";
 import { makesSandboxes } from "../lib/sandbox.ts";
 import { gb, plural, shortId } from "../lib/text.ts";
 import { countdown, hlcMs, relativeTime } from "../lib/time.ts";
@@ -530,23 +531,32 @@ interface ArmInfo {
 
 /**
  * Agents that hold their own key to Galahad (coding agents over MCP): what each may do, and
- * Revoke, so one can be cut off from any device. Giving one a key stays at a terminal.
+ * Revoke, so one can be cut off from any device. Giving one a key stays at a terminal. One on
+ * another of your machines is a Q-AMP grant (an arm `qamp.<id>`): its row says whose key it is,
+ * what it may call and when it ends, and Revoke ends the grant, its bridge and all.
  */
 function agentsSection(ctx: Ctx, scope: Scope): HTMLElement | null {
   if (!ctx.can("fleet:admin")) return null;
   const box = h("div", { class: "card" }, skeletonRows(2, { avatar: true }));
   const count = h("span", { class: "count-label tnum" });
 
-  async function revoke(arm: ArmInfo): Promise<void> {
+  async function revoke(arm: ArmInfo, grant: QampGrantView | undefined): Promise<void> {
     const ok = await confirmAction({
       title: `Revoke ${arm.label}?`,
-      body: h("p", {}, "Its key stops working at once: it can no longer read the mind, run sandboxes or use your models. To bring it back, install it again from a terminal."),
+      body: h(
+        "p",
+        {},
+        grant
+          ? "Its grant ends at once: its key to Galahad is deleted, so the agent's next call is refused, and its bridge stops. To give it again, grant it from a terminal (galahad qamp grant)."
+          : "Its key stops working at once: it can no longer read the mind, run sandboxes or use your models. To bring it back, install it again from a terminal.",
+      ),
       confirmLabel: "Revoke",
       typeToConfirm: arm.label,
     });
     if (!ok) return;
     try {
-      await ctx.api.post("/api/arms/revoke", { label: arm.label }, scope.signal);
+      if (grant) await ctx.api.post("/api/qamp/revoke", { id: grant.id }, scope.signal);
+      else await ctx.api.post("/api/arms/revoke", { label: arm.label }, scope.signal);
       toast(`${arm.label} can't reach Galahad any more`, { tone: "ok" });
       void load();
     } catch (error) {
@@ -556,21 +566,36 @@ function agentsSection(ctx: Ctx, scope: Scope): HTMLElement | null {
 
   async function load(): Promise<void> {
     try {
-      const { arms } = await ctx.api.get<{ arms: ArmInfo[] }>("/api/arms", scope.signal);
+      const [{ arms }, grants] = await Promise.all([
+        ctx.api.get<{ arms: ArmInfo[] }>("/api/arms", scope.signal),
+        // A node from before grants has no such list: none.
+        ctx.api.get<{ grants: QampGrantView[] }>("/api/qamp/grants", scope.signal).then(
+          (r) => r.grants,
+          () => [] as QampGrantView[],
+        ),
+      ]);
       if (scope.disposed) return;
+      const grantOf = new Map(grants.map((g) => [g.label, g]));
       count.textContent = arms.length ? String(arms.length) : "";
       replace(
         box,
         arms.length
           ? rows(
-              ...arms.map((arm) =>
-                listRow({
-                  lead: "terminal",
+              ...arms.map((arm) => {
+                const grant = grantOf.get(arm.label);
+                return listRow({
+                  lead: grant ? "link" : "terminal",
                   title: h("span", { class: "mono" }, arm.label),
-                  meta: [...arm.scopes.map((s) => h("span", { class: "tag mono" }, s)), arm.createdAt ? h("span", {}, `since ${relativeTime(arm.createdAt)}`) : null],
-                  trail: button("Revoke", { size: "sm", variant: "danger", icon: "ban", label: `Revoke ${arm.label}`, onClick: () => void revoke(arm) }),
-                }),
-              ),
+                  meta: grant
+                    ? [
+                        h("span", { class: "mono", title: grant.agent }, `agent ${shortDid(grant.agent)}`),
+                        ...grant.tools.map((t) => h("span", { class: "tag mono" }, t)),
+                        h("span", { title: new Date(grant.endsAt).toLocaleString() }, grantEnds(grant.endsAt)),
+                      ]
+                    : [...arm.scopes.map((s) => h("span", { class: "tag mono" }, s)), arm.createdAt ? h("span", {}, `since ${relativeTime(arm.createdAt)}`) : null],
+                  trail: button("Revoke", { size: "sm", variant: "danger", icon: "ban", label: `Revoke ${arm.label}`, onClick: () => void revoke(arm, grant) }),
+                });
+              }),
             )
           : empty({ icon: "terminal", title: "No agents yet", body: "A coding agent gets Galahad's mind and sandboxes from a terminal on a node.", compact: true }),
       );
@@ -580,7 +605,19 @@ function agentsSection(ctx: Ctx, scope: Scope): HTMLElement | null {
   }
 
   void load();
-  const section_ = section("Agents", { note: ["Coding agents with their own key to Galahad. Add one on a node: ", h("span", { class: "mono" }, "galahad mcp install claude"), " (or opencode, codex, hermes)."] }, box);
+  const section_ = section(
+    "Agents",
+    {
+      note: [
+        "Coding agents with their own key to Galahad. Add one on a node: ",
+        h("span", { class: "mono" }, "galahad mcp install claude"),
+        " (or opencode, codex, hermes); one on another machine of yours, for a while: ",
+        h("span", { class: "mono" }, "galahad qamp grant"),
+        ".",
+      ],
+    },
+    box,
+  );
   section_.querySelector(".section-head h2")?.after(count);
   return section_;
 }
