@@ -78,7 +78,30 @@ export interface QampProcess {
   /** How it ended: its exit code, or the signal that ended it. */
   exited: Promise<number | string | null>;
   kill(signal: "SIGTERM" | "SIGKILL"): void;
+  /** Its process id, kept with its grant: a node that died without stopping it stops it when it starts again. */
+  pid?: number;
 }
+
+/** How a bridge a dead node left running is found and stopped (tests: a stand-in). */
+export interface QampStrays {
+  /** A process's whole command line, or null if there's none by that id. */
+  command(pid: number): string | null;
+  kill(pid: number, signal: "SIGTERM" | "SIGKILL"): void;
+}
+
+const processes: QampStrays = {
+  command(pid) {
+    const ps = Bun.spawnSync(["ps", "-ww", "-p", String(pid), "-o", "command="], { stdout: "pipe", stderr: "ignore" });
+    return ps.exitCode === 0 ? ps.stdout.toString().trim() || null : null;
+  },
+  kill(pid, signal) {
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // Gone already.
+    }
+  },
+};
 
 /** How the grants run Q-AMP's command (tests: a stand-in). */
 export interface QampRunner {
@@ -128,6 +151,7 @@ export function qampRunner(binary: () => string | null): QampRunner {
         ready,
         exited: proc.exited.then(() => proc.signalCode ?? proc.exitCode),
         kill: (signal) => proc.kill(signal),
+        pid: proc.pid,
       };
     },
   };
@@ -159,6 +183,8 @@ interface Row {
   bridge: string;
   created_at: number;
   ends_at: number;
+  /** Its bridge's process id when it last started (a dead node's left-over bridge is found by it). */
+  pid: number | null;
 }
 
 /** A bridge in this process: what it is, and its supervision. */
@@ -196,6 +222,8 @@ export interface QampGrantsOptions {
   /** How long a bridge may take to listen (its MCP server's start included), and to drain when told to stop. */
   startMs?: number;
   stopGraceMs?: number;
+  /** How a bridge left running by a node that died is found and stopped (tests: a stand-in). */
+  strays?: QampStrays;
 }
 
 /** The longest a bridge that keeps stopping waits before it is started again. */
@@ -218,7 +246,7 @@ export class QampGrants {
     this.portFree = opts.portFree ?? udpFree;
     opts.db.exec(`CREATE TABLE IF NOT EXISTS qamp_grants (
       id TEXT PRIMARY KEY, agent TEXT NOT NULL, tools TEXT NOT NULL, scopes TEXT NOT NULL, port INTEGER NOT NULL UNIQUE,
-      bridge TEXT NOT NULL, created_at INTEGER NOT NULL, ends_at INTEGER NOT NULL)`);
+      bridge TEXT NOT NULL, created_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, pid INTEGER)`);
   }
 
   private get keyPath(): string {
@@ -412,6 +440,25 @@ export class QampGrants {
     }
     live.state = "up";
     live.upSince = this.now();
+    if (proc.pid) this.opts.db.query("UPDATE qamp_grants SET pid = ? WHERE id = ?").run(proc.pid, id);
+  }
+
+  /**
+   * A bridge of this grant's that a node which died (no stop of its own: killed, crashed) left running: it holds the
+   * grant's port, and no later revoke could stop it. Stopped as the node starts again. Only if its command line still
+   * names this grant's arm: a pid since taken by any other process is left alone.
+   */
+  private async stopStray(row: Row): Promise<void> {
+    const strays = this.opts.strays ?? processes;
+    const ours = (): boolean => {
+      const command = row.pid ? strays.command(row.pid) : null;
+      return !!command && /\bserve\b/.test(command) && command.includes(`--arm ${qampArm(row.id)} `);
+    };
+    if (!row.pid || !ours()) return;
+    strays.kill(row.pid, "SIGTERM");
+    for (let i = 0; i < 50 && ours(); i++) await Bun.sleep(100);
+    if (ours()) strays.kill(row.pid, "SIGKILL");
+    this.opts.log(`qamp: stopped ${qampArm(row.id)}'s bridge, left running by a node that didn't stop it (pid ${row.pid})`);
   }
 
   /** A bridge ended: on purpose (nothing more to do), or not, when it is started again until its grant ends. */
@@ -522,6 +569,7 @@ export class QampGrants {
         }
       }
       for (const row of this.rows()) {
+        await this.stopStray(row);
         if (row.ends_at <= this.now()) {
           await this.end(row.id, "expired");
           continue;

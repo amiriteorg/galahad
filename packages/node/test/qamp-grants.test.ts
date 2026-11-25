@@ -383,6 +383,27 @@ describe("while the daemon runs, and when it stops and starts", () => {
     expect(lines.filter((l) => l.target === lapsing.grant.label && l.class === "delete").map((l) => l.reason)).toEqual(["the grant ended (its time was up): its arm is deleted, so the agent's next call is refused"]);
   });
 
+  test("a bridge left running by a node that died (no stop of its own) is stopped when the node starts again, its port freed for the new one", async () => {
+    const first = grants();
+    const kept = await first.grant({ agent: AGENT, tools: ["fleet"], ttlSeconds: 3600 }, you);
+    const lapsing = await first.grant({ agent: AGENT, tools: ["ledger"], ttlSeconds: 60 }, you);
+    // The node is killed: its bridges never hear of it (no stop()), and run on.
+    const killed: [number, string][] = [];
+    const running = new Map(qamp.bridges.map((b, i) => [4100 + i, `qamp serve --key k --listen 127.0.0.1:1 -- bun cli.ts mcp --arm ${b.args[b.args.indexOf("--arm") + 1]} --tools fleet`]));
+    // A pid that's now some other process: never touched.
+    running.set(4200, "/usr/bin/some-other-thing");
+    const strays = { command: (pid: number) => running.get(pid) ?? null, kill: (pid: number, signal: string) => void (killed.push([pid, signal]), running.delete(pid)) };
+    db.query("UPDATE qamp_grants SET pid = 4200 WHERE id = ?").run(lapsing.grant.id);
+    db.query("UPDATE qamp_grants SET pid = 4100 WHERE id = ?").run(kept.grant.id);
+    clock += 120_000;
+    const second = grants({ strays });
+    await second.resume(0);
+    expect(killed).toEqual([[4100, "SIGTERM"]]);
+    expect(second.list().map((g) => [g.id, g.bridge.state])).toEqual([[kept.grant.id, "up"]]);
+    expect(running.has(4200)).toBe(true);
+    expect(logged).toContain(`qamp: stopped qamp.${kept.grant.id}'s bridge, left running by a node that didn't stop it (pid 4100)`);
+  });
+
   test("a stopping node makes no new grant", async () => {
     const g = grants();
     await g.stop();
