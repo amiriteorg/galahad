@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Publishes a release build (scripts/release.sh's) as a GitHub release, android-<build>, and writes what galahad.sh's
 # download says of it (apps/site/public/android/latest.json, read by apps/site/src/lib/facts.ts as the Mac's feed is):
-# the newest signed APK, where it is, its size, its SHA-256 and the certificate it is signed with.
+# the newest signed APK, where it is, its size, its SHA-256 and the certificate it is signed with. Its tag goes on
+# sovware.io first (scripts/release-tag.sh), on the commit the build is of, and reaches GitHub through the mirror.
 #
-#   apps/android/scripts/publish.sh build/release/Galahad-<build>.apk
+#   apps/android/scripts/publish.sh build/release/Galahad-<build>.apk [commit]     (commit: HEAD)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 APK=${1:?the APK scripts/release.sh built}
+COMMIT=${2:-HEAD}
 [[ $APK =~ Galahad-(20[0-9]{10})\.apk$ ]] || { echo "an APK scripts/release.sh built: Galahad-<build>.apk" >&2; exit 1; }
 BUILD=${BASH_REMATCH[1]}
 TOOLS=$(ls -d "${ANDROID_HOME:-$HOME/Library/Android/sdk}"/build-tools/* | sort -V | tail -1)
@@ -24,7 +26,8 @@ with an invite: on the node, \`galahad invite --client\`, and compare the six-di
 
 Signed with Galahad's release key: certificate SHA-256 $CERT. Every build is signed with the same key, so each installs
 over the last. The APK's SHA-256: $SHA."
-gh release create "$TAG" "$APK#$NAME" --repo amiriteorg/galahad --title "Galahad for Android $BUILD" --notes "$NOTES"
+../../scripts/release-tag.sh "$TAG" "$COMMIT"
+gh release create "$TAG" "$APK#$NAME" --repo amiriteorg/galahad --verify-tag --title "Galahad for Android $BUILD" --notes "$NOTES"
 cat > ../site/public/android/latest.json <<JSON
 {
   "version": "$VERSION",

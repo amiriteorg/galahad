@@ -1,8 +1,10 @@
-# CI on GitHub's own runners: independent jobs run in parallel. Galahad's repository is public, and a
-# pull request from a fork runs its own copy of a workflow, so no job here asks for a runner of the
-# owner's: a stranger's code must never reach the owner's machines (the organisation's runner group
-# refuses public repositories as well, and is left that way). GitHub's runners are free for a public
-# repository.
+# CI, run by both forges from this one file. Galahad's main copy is on sovware.io (Forgejo, sign-in only, no
+# sign-ups), whose Actions run it on the owner's runner for every push and pull request there: only the owner and
+# their agents can push there. GitHub is sovware.io's public push mirror and runs it on its own runners for every
+# push the mirror makes, and for pull requests on GitHub. A pull request from a fork runs its own copy of a workflow,
+# so no job asks for a runner of the owner's by name: on GitHub a stranger's code must never reach the owner's
+# machines (the organisation's runner group refuses public repositories as well, and is left that way). The site
+# deploys from whichever run holds CLOUDFLARE_API_TOKEN: GitHub's (sovware.io holds no such secret, so it skips).
 #
 #  typecheck  ┐
 #  test       │ every push and PR

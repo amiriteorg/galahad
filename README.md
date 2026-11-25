@@ -81,4 +81,6 @@ bun galahad ask "Good morning, Galahad."
 
 Galahad is open source under the [Apache License 2.0](LICENSE). Found a security problem? Please report it privately: see [SECURITY](SECURITY.md).
 
+This GitHub repository is a mirror. Galahad's main copy is on sovware.io, its owner's own forge, which pushes every change here as it lands. Issues are read here; a pull request here can't be merged as it is, so what's taken from one lands on sovware.io and comes back through the mirror.
+
 Created in [T3 Code](https://t3.codes).

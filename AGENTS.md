@@ -42,3 +42,4 @@ A change that should make something better (or might make something worse) is sh
 - **Hit every surface:** when you change a contract, update the server, the CLI, the PWA and the docs.
 - **Don't run destructive commands** (no `rm -rf` outside temp dirs, no killing by pattern, no force-push). Tests use temp homes, never `~/.galahad`.
 - Default branch is `main`. Commit or open PRs only when asked.
+- **The main copy is `sovware.io/amiriteorg/galahad`** (Forgejo, sign-in only). GitHub (`amiriteorg/galahad`, public) is its push mirror: every push to sovware.io goes there, and the mirror deletes any branch or tag that exists only on GitHub. Push to sovware.io, never to GitHub; a release is tagged on sovware.io first (`scripts/release-tag.sh`), then created on GitHub with `--verify-tag`.

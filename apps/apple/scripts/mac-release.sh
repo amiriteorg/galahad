@@ -17,6 +17,8 @@ cd "$(dirname "$0")/.."
 
 REPO=amiriteorg/galahad
 BUILD=$(date -u +%Y%m%d%H%M)
+# The commit this release is of: its tag goes on it (scripts/release-tag.sh).
+COMMIT=$(git rev-parse HEAD)
 VERSION=$(awk -F'"' '/MARKETING_VERSION:/ {print $2; exit}' project.yml)
 MIN_MACOS=$(awk -F'"' '/^    macOS:/ {print $2; exit}' project.yml)
 APP=build/Build/Products/Release/Galahad.app
@@ -65,5 +67,7 @@ cat > "$FEED" <<XML
 XML
 
 echo "→ ready: apps/apple/$OUT/$NAME, and the feed in apps/site/public/mac/appcast.xml"
-echo "  publish the archive first:  gh release create mac-$BUILD apps/apple/$OUT/$NAME --repo $REPO --title 'Galahad for Mac $VERSION ($BUILD)' --notes '…'"
+echo "  publish the archive first: its tag on sovware.io, then the release on GitHub (a tag made there is deleted by the mirror):"
+echo "    scripts/release-tag.sh mac-$BUILD $COMMIT"
+echo "    gh release create mac-$BUILD apps/apple/$OUT/$NAME --repo $REPO --verify-tag --title 'Galahad for Mac $VERSION ($BUILD)' --notes '…'"
 echo "  then the feed: commit apps/site/public/mac/appcast.xml and push (the site deploys from main)"
