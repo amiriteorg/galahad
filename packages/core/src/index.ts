@@ -35,6 +35,7 @@ export * from "./rules.ts";
 export * from "./screen.ts";
 export * from "./pairing.ts";
 export * from "./qr.ts";
+export * from "./qamp.ts";
 export * from "./request-auth.ts";
 export * from "./schedule.ts";
 export * from "./scopes.ts";
