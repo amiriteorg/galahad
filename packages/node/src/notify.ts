@@ -123,10 +123,15 @@ export const FAILING_AFTER = 2;
 /** Whether he can reach a device through its subscription now: its sends aren't failing. */
 const reaches = (sub: Subscription): boolean => sub.failures < FAILING_AFTER;
 /**
- * The doctor's own finding that he can't reach you (doctor.ts, its notify.devices line, a notice of the heartbeat's):
- * never counted in what waited, since a device turning on is what answers it.
+ * The doctor's own findings about reaching you (doctor.ts, its notify.devices line, notices of the heartbeat's): never
+ * counted in what waited, since a device turning on is what answers them.
  */
 const ABOUT_REACHING_YOU = /^notice:doctor:notify\./;
+/**
+ * The one that says he can't reach you at all: for your Inbox, never a notification. The node that raises it has no
+ * device to tell, and from another node (which can reach you) it would say what isn't so.
+ */
+const CANT_REACH_YOU = /^doctor:notify\.reach:/;
 
 type Reached = { sub: Subscription; name: string; scopes: string[] };
 
@@ -275,7 +280,7 @@ export class NotifyService {
         return [];
       }
     };
-    for (const notice of safely("notices", () => this.o.sources.notices())) out.push(noticeItem(notice), toldItem(notice));
+    for (const notice of safely("notices", () => this.o.sources.notices())) if (!CANT_REACH_YOU.test(notice.key)) out.push(noticeItem(notice), toldItem(notice));
     for (const action of safely("approvals", () => this.o.sources.actions())) out.push(actionItem({ id: action.id, connector: action.connector, tool: action.tool, state: action.state, requestedMs: hlcMs(action.requestedAt), expires: action.expires, ...(action.class ? { class: action.class } : {}) }, now));
     for (const session of safely("screen sessions", () => this.o.sources.screenSessions?.() ?? [])) out.push(screenItem(session, now));
     for (const question of safely("questions", () => this.o.sources.questions?.() ?? [])) out.push(questionItem(question, now));
@@ -614,13 +619,20 @@ export class NotifyService {
     };
   }
 
-  /** For the doctor: whether anyone can be reached, and a device whose sends keep failing. */
-  doctorFacts(): { devices: number; failing: { device: string; error: string }[]; keyProblem: string | null } {
+  /**
+   * For the doctor: whether anyone can be reached, a device whose sends keep failing, how many devices' subscriptions
+   * were lost, and how many things wait for your answer (approvals, questions, keys and connectors he needs, of the
+   * kinds you have on): with nobody to reach, either is worth a word in your Inbox.
+   */
+  doctorFacts(): { devices: number; failing: { device: string; error: string }[]; keyProblem: string | null; lost: number; asks: number } {
     const devices = this.devices();
+    const prefs = this.o.db.prefs();
     return {
       devices: devices.length,
       failing: devices.filter((d) => !reaches(d.sub) && d.sub.lastError).map((d) => ({ device: d.name, error: d.sub.lastError! })),
       keyProblem: this.keyProblem,
+      lost: this.lostDevices().length,
+      asks: this.standing(this.now()).filter((item) => (item.kind === "approval" || item.kind === "question") && prefs.kinds[item.kind]).length,
     };
   }
 }

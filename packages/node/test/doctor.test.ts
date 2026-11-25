@@ -543,6 +543,40 @@ describe("each fault gives its own line and advice", () => {
     expect(fault((f) => (f.notify = { devices: 2, failing: [], keyProblem: "the key file is not a P-256 key" }), "notify.key").state).toBe("broken");
   });
 
+  test("notifications: he can't reach you is a finding for your Inbox once it matters; a node nobody uses isn't nagged", () => {
+    const reach = (notify: NonNullable<DoctorFacts["notify"]>) => {
+      const facts = healthy();
+      facts.notify = notify;
+      return byId(diagnose(facts), "notify.devices");
+    };
+    const unreachable = {
+      // A notice of its own (the line's id is notify.devices): it is never told as the failing device's is.
+      key: `doctor:notify.reach:${healthy().self.id}`,
+      severity: "warn",
+      title: "Galahad can't reach you when the app is closed",
+      body: "No device of yours has notifications on, so what needs you waits here until you look. iPhone or iPad: More → Notifications. Web app: Settings → Notifications. Android: More → Notifications.",
+    };
+    // Nobody on, nothing lost and nothing waiting for an answer: said, but not a finding.
+    expect(reach({ devices: 0, failing: [], keyProblem: null, lost: 0, asks: 0 })).toMatchObject({ state: "ok" });
+    expect(reach({ devices: 0, failing: [], keyProblem: null, lost: 0, asks: 0 }).finding).toBeUndefined();
+    // Something waits for your answer, or a device's subscription was dropped by its push service: it needs you.
+    const asks = reach({ devices: 0, failing: [], keyProblem: null, lost: 0, asks: 2 });
+    expect(asks).toMatchObject({ state: "needs-you", line: "no device has notifications on, so he can't reach you when the app is closed, and 2 things wait for your answer" });
+    expect(asks.finding).toEqual(unreachable as never);
+    const lost = reach({ devices: 0, failing: [], keyProblem: null, lost: 1, asks: 0 });
+    expect(lost).toMatchObject({ state: "needs-you", line: "no device has notifications on, so he can't reach you when the app is closed: a device's were dropped by its push service" });
+    expect(lost.fix).toContain("More → Notifications");
+    expect(lost.finding).toEqual(unreachable as never);
+    // Its words don't change while it stands (how many wait isn't in them), so an unchanged problem writes nothing.
+    expect(reach({ devices: 0, failing: [], keyProblem: null, lost: 3, asks: 7 }).finding).toEqual(unreachable as never);
+    // A device that keeps failing: the other devices are told which (the heartbeat's titles are told), and what to do.
+    const failing = reach({ devices: 3, failing: [{ device: "iPhone", error: "Apple's push service answered 500" }, { device: "iPad", error: "Apple's push service answered 500" }], keyProblem: null, lost: 0, asks: 1 });
+    expect(failing.state).toBe("needs-you");
+    expect(failing.finding).toEqual({ key: `doctor:notify.devices:${healthy().self.id}`, severity: "warn", title: "Notifications aren't reaching iPhone and iPad", body: "The last ones didn't arrive. On that device, turn notifications off and on again; galahad notify test sends one." });
+    // Facts from before these were known read as before.
+    expect(reach({ devices: 0, failing: [], keyProblem: null }).finding).toBeUndefined();
+  });
+
   test("disk and the service: low, nearly full, restarts, trouble in the log", () => {
     expect(fault((f) => (f.disk = { freeGb: 80, totalGb: 1800 }), "disk.home").state).toBe("needs-you");
     expect(fault((f) => (f.disk = { freeGb: 0.6, totalGb: 1800 }), "disk.home").state).toBe("broken");

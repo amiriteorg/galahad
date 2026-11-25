@@ -760,6 +760,33 @@ describe("a test, when you ask for one", () => {
 });
 
 describe("when nobody can be reached", () => {
+  test("he says so in your Inbox once something waits for your answer (a node nobody uses isn't nagged); a device turning on answers it", async () => {
+    // (Nobody is subscribed: the test before turned both devices off.) The keys an agent asked for earlier, never given,
+    // are put aside first, so nothing waits for you to begin with.
+    const { requests: earlier } = await json<{ requests: { name: string }[] }>(admin("secretRequests"));
+    for (const { name } of earlier) await json(admin("dismissSecretRequest", { name }));
+    const key = `doctor:notify.reach:${daemon.identity.id}`;
+    const reach = async () => (await json<{ findings: { key: string; severity: string; title: string; body: string }[] }>(admin("heartbeat", {}))).findings.find((f) => f.key === key);
+    expect(await reach()).toBeUndefined();
+    const { token } = await json<{ token: string }>(admin("mintArm", { label: "unreachable" }));
+    await json(withToken(() => token)("requestSecret", { name: "reach-me", purpose: "asked while nobody could be told" }));
+    // A heartbeat finding: a notice in the Inbox (the orb's amber, "Galahad asks you" in every app), in words that stand.
+    expect(await reach()).toMatchObject({
+      severity: "warn",
+      title: "Galahad can't reach you when the app is closed",
+      body: "No device of yours has notifications on, so what needs you waits here until you look. iPhone or iPad: More → Notifications. Web app: Settings → Notifications. Android: More → Notifications.",
+    });
+    // The doctor says so on its own line too, no longer "ok".
+    const { checks } = await json<{ checks: { id: string; state: string; line: string }[] }>(admin("doctor", { quick: true, offline: true }));
+    expect(checks.find((c) => c.id === "notify.devices")).toMatchObject({ state: "needs-you", line: "no device has notifications on, so he can't reach you when the app is closed, and 1 thing waits for your answer" });
+    // A device turning on answers it: the next beat finds nothing, and clears the notice.
+    await json(phone.call("pushSubscribe", phone.browser.subscription));
+    expect(await reach()).toBeUndefined();
+    // (Off again, and the ask put aside: the next test begins with nobody to reach.)
+    expect(await json(phone.call("pushUnsubscribe", {}))).toEqual({ removed: true });
+    await json(admin("dismissSecretRequest", { name: "reach-me" }));
+  });
+
   test("what stood meanwhile is told once, as one message counting it, to the device that comes back; never in its words", async () => {
     // (Nobody is subscribed: the test before turned both devices off.) The keys an agent asked for earlier, never given,
     // are put aside first, so what stands here is this test's own.
@@ -769,9 +796,10 @@ describe("when nobody can be reached", () => {
     raise("meanwhile:1", "warn", "while nobody was listening");
     const { token } = await json<{ token: string }>(admin("mintArm", { label: "meanwhile" }));
     await json(withToken(() => token)("requestSecret", { name: "while-away", purpose: "asked while nobody could be told" }));
-    // The node's own words that it can't reach you: a device turning on answers them, so they aren't counted.
-    const reach = `doctor:notify.devices:${daemon.identity.id}`;
+    // The node's own words about reaching you: a device turning on answers them, so they aren't counted.
+    const reach = `doctor:notify.reach:${daemon.identity.id}`;
     raise(reach, "warn", "Galahad can't reach you when the app is closed");
+    raise(`doctor:notify.devices:${daemon.identity.id}`, "warn", "Notifications aren't reaching phone");
     await look();
     await look();
     expect(phone.browser.requests).toBe(before.phone);
@@ -781,7 +809,7 @@ describe("when nobody can be reached", () => {
     await look();
     expect(phone.browser.requests).toBe(before.phone + 1);
     const delivery = last(phone.browser);
-    expect(said(delivery)).not.toMatch(/listening|while-away|asked while|when the app is closed/);
+    expect(said(delivery)).not.toMatch(/listening|while-away|asked while|when the app is closed|reaching phone/);
     expect(delivery.payload).toEqual({ v: 1, kind: "summary", title: "Galahad: 2 things wait for you", body: "While he couldn't reach you: 1 question and 1 warning. The Inbox has them.", open: "inbox", tag: tagOf("catch-up", daemon.notify["o"].db.setting("tag-salt")!) });
     expect(delivery.headers.urgency).toBe("high");
     // Once: nothing more is said of it, and a device turned on while the phone can be reached isn't caught up.
@@ -792,6 +820,7 @@ describe("when nobody can be reached", () => {
     expect(tablet.browser.requests).toBe(before.tablet);
     clearNotice("meanwhile:1");
     clearNotice(reach);
+    clearNotice(`doctor:notify.devices:${daemon.identity.id}`);
     await json(admin("dismissSecretRequest", { name: "while-away" }));
     // (Off again, as the tests after this one expect: the phone alone.)
     expect(await json(tablet.call("pushUnsubscribe", {}))).toEqual({ removed: true });

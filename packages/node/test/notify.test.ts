@@ -229,6 +229,19 @@ describe("what waited while nobody could be reached", () => {
   });
 });
 
+describe("his own words about reaching you", () => {
+  test("that he can't reach you is never a notification (from another node it isn't so); that a device isn't reached is, to the others", async () => {
+    const notice = (key: string, title: string) => ({ key, severity: "warn", title, source: "heartbeat", dismissed: false });
+    const notices = [notice("doctor:notify.reach:n_other", "Galahad can't reach you when the app is closed")];
+    const h = harness({ sources: { notices: () => notices } });
+    await h.look();
+    expect(h.sent).toEqual([]);
+    notices.push(notice("doctor:notify.devices:n_ultra", "Notifications aren't reaching iPad"));
+    await h.look();
+    expect(h.sent.map((s) => s.payload)).toMatchObject([{ kind: "needs-you", title: "Galahad: this needs you", body: "Notifications aren't reaching iPad" }]);
+  });
+});
+
 describe("a subscription its push service drops: lost, not turned off", () => {
   const TOKEN = "cd".repeat(32);
   const gone = (): PushOutcome => ({ ok: false, gone: true, status: 410, error: "Apple's push service says this subscription is gone (410)", attempts: 1 });

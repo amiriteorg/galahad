@@ -121,8 +121,12 @@ export interface DoctorFacts {
     /** Lines of the node's own log that read like trouble, newest first, already redacted. */
     warnings: { at: number; text: string }[];
   };
-  /** Push notifications on this node (absent: a node from before them). */
-  notify?: { devices: number; failing: { device: string; error: string }[]; keyProblem: string | null };
+  /**
+   * Push notifications on this node (absent: a node from before them): the devices subscribed, those whose sends keep
+   * failing, and (absent: gathered before these were known) how many devices' subscriptions their push service dropped,
+   * and how many things wait for your answer (approvals, questions, keys and connectors he needs).
+   */
+  notify?: { devices: number; failing: { device: string; error: string }[]; keyProblem: string | null; lost?: number; asks?: number };
   /**
    * The knights whose own setup can stop their work here (absent: a node with no Roundtable): one in sensitive mode,
    * each of its models and why this node can't use it (null: it can); each key of yours it was given, and why it can't
@@ -200,7 +204,8 @@ function probeAdvice(error: string): string {
 
 export function diagnose(f: DoctorFacts): Diagnosis[] {
   const out: Diagnosis[] = [];
-  const add = (area: DoctorArea, id: string, state: DoctorState, line: string, fix?: string, extra: { ms?: number; finding?: Omit<DoctorFinding, "key"> } = {}): void => {
+  // `as`: the finding's own name, where one line says two things that are told apart (each its own notice, told once).
+  const add = (area: DoctorArea, id: string, state: DoctorState, line: string, fix?: string, extra: { ms?: number; finding?: Omit<DoctorFinding, "key">; as?: string } = {}): void => {
     out.push({
       id,
       area,
@@ -208,7 +213,7 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
       line,
       ...(fix && state !== "ok" ? { fix } : {}),
       ...(extra.ms !== undefined ? { ms: extra.ms } : {}),
-      ...(extra.finding && (state === "needs-you" || state === "broken") ? { finding: { key: `doctor:${id}:${f.self.id}`, ...extra.finding } } : {}),
+      ...(extra.finding && (state === "needs-you" || state === "broken") ? { finding: { key: `doctor:${extra.as ?? id}:${f.self.id}`, ...extra.finding } } : {}),
     });
   };
   const self = f.self.name;
@@ -566,10 +571,25 @@ export function diagnose(f: DoctorFacts): Diagnosis[] {
 
   if (f.notify) {
     const n = f.notify;
+    const lost = n.lost ?? 0;
+    const asks = n.asks ?? 0;
     if (n.keyProblem) add("notify", "notify.key", "broken", `this node's notification key can't be used: ${n.keyProblem.slice(0, 160)}`, "Turn notifications off and on again on each device (Settings): the node makes a new key, and each device subscribes to it.");
-    else if (!n.devices) add("notify", "notify.devices", "ok", "no device has notifications turned on, so he can't reach you when the app is closed (Settings turns them on)");
-    else if (n.failing.length) add("notify", "notify.devices", "needs-you", `notifications aren't reaching ${n.failing.map((d) => `${d.device} (${d.error.slice(0, 80)})`).join("; ")}`, "On that device: Settings, turn notifications off and on again. galahad notify test sends one now.");
-    else add("notify", "notify.devices", "ok", `${plural(n.devices, "device")} can be reached with a notification`);
+    else if (!n.devices && (lost || asks)) {
+      // Nobody can be reached, and it matters: a device's were on until its push service dropped them, or something
+      // waits for an answer only you give (unanswered, an approval lapses in a day). In your Inbox, so every app shows
+      // it; never pushed (notify.ts): a notification can't say it can't reach you.
+      const why = lost ? `: ${lost === 1 ? "a device's were dropped by its push service" : `${plural(lost, "device")}' were dropped by their push services`}` : `, and ${plural(asks, "thing")} ${asks === 1 ? "waits" : "wait"} for your answer`;
+      add("notify", "notify.devices", "needs-you", `no device has notifications on, so he can't reach you when the app is closed${why}`, "Turn them on from a device you carry: iPhone or iPad, More → Notifications; the web app, Settings → Notifications; Android, More → Notifications. galahad notify test sends one.", {
+        as: "notify.reach",
+        finding: { severity: "warn", title: "Galahad can't reach you when the app is closed", body: "No device of yours has notifications on, so what needs you waits here until you look. iPhone or iPad: More → Notifications. Web app: Settings → Notifications. Android: More → Notifications." },
+      });
+    } else if (!n.devices) add("notify", "notify.devices", "ok", "no device has notifications turned on, so he can't reach you when the app is closed (Settings turns them on)");
+    else if (n.failing.length) {
+      const names = n.failing.map((d) => d.device);
+      add("notify", "notify.devices", "needs-you", `notifications aren't reaching ${n.failing.map((d) => `${d.device} (${d.error.slice(0, 80)})`).join("; ")}`, "On that device: Settings, turn notifications off and on again. galahad notify test sends one now.", {
+        finding: { severity: "warn", title: `Notifications aren't reaching ${names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0]}`, body: "The last ones didn't arrive. On that device, turn notifications off and on again; galahad notify test sends one." },
+      });
+    } else add("notify", "notify.devices", "ok", `${plural(n.devices, "device")} can be reached with a notification`);
   }
 
   /* ---------- disk ---------- */
