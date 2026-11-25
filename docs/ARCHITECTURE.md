@@ -442,7 +442,7 @@ Tools: `recall` (a long memory, such as a quest's whole report, comes shortened 
 - **The end.** A grant ends when its time is up or when you revoke it: with `galahad qamp revoke`, or with Revoke wherever arms are listed (`galahad arms revoke`, the Fleet page).
   - Its arm is deleted first, so the agent's next call is refused at the door.
   - Then its bridge is told to stop. It drains, and is killed if it won't stop.
-- **With the daemon.** The daemon keeps each bridge running and starts it again if it stops. It stops them when it stops, and when it starts it starts those of grants still in force.
+- **With the daemon.** The daemon keeps each bridge running and starts it again if it stops. It stops them when it stops, and when it starts it starts those of grants still in force. A bridge that a node which died (killed, or crashed outside systemd) left running is stopped first, found by its pid only while its command line still names its grant's arm.
 - **Kept where.** Each step is a line in the ledger (resource `qamp`). Grants are node-local, as arm tokens are.
 - **A cancel.** The bridge passes an agent's cancel to the MCP server as `notifications/cancelled` (as Q-AMP documents and tests), which aborts the tool's requests to the node (`mcp-cancel.test.ts`). A route that finishes its work after its caller leaves still finishes it. This path hasn't been run end to end through the bridge: the four tools answer too fast to cancel.
 - **Tested** in `qamp-grants.test.ts` (with a stand-in for the binary) and `qamp-routes.test.ts` (over the node's API). `qamp.e2e.test.ts` runs Q-AMP's real, pinned binary (`scripts/qamp-pin.sh`); without `GALAHAD_QAMP_BIN` it is skipped, and says so.
