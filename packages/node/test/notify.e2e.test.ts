@@ -426,6 +426,23 @@ describe("what he sends", () => {
     expect((await phone.call("setNotify", { kinds: { adverts: true } })).status).toBe(400);
     expect((await phone.call("setNotify", { quiet: { tz: "Mars/Olympus" } })).status).toBe(400);
   });
+
+  test("your rules' tells are a switch of their own: off, a tell says nothing; on again, the one that stands is told", async () => {
+    const before = phone.browser.received.length;
+    // The switch Settings shows (and `galahad notify kinds told off` sends): the node refused it once.
+    const off = await phone.call("setNotify", { kinds: { told: false } });
+    expect(off.status).toBe(200);
+    expect(((await off.json()) as { prefs: NotifyView["prefs"] }).prefs.kinds).toEqual({ "needs-you": true, approval: true, finished: true, question: true, told: false });
+    raise("rule:pushes:t_1", "info", "pushes: a command it matches has run", "rule:pushes");
+    await look();
+    expect(phone.browser.received).toHaveLength(before);
+    await json(phone.call("setNotify", { kinds: { told: true } }));
+    await look();
+    expect(phone.browser.received).toHaveLength(before + 1);
+    expect(last(phone.browser).payload).toMatchObject({ kind: "told", title: "Galahad: your rule pushes", body: "A command it matches has run. The Inbox says which, where and how it ended.", open: "inbox" });
+    clearNotice("rule:pushes:t_1");
+    await look();
+  });
 });
 
 describe("when he stays silent", () => {
@@ -670,6 +687,10 @@ describe("from a terminal: galahad notify", () => {
     expect(await run("kinds", ["question", "off", "finished", "off"])).toMatch(/off\s+question/);
     expect((await view()).prefs.kinds).toMatchObject({ question: false, finished: false });
     await run("kinds", ["question", "on", "finished", "on"]);
+    // Your rules' tells too, which the node once refused (galahad notify kinds told off).
+    expect(await run("kinds", ["told", "off"])).toMatch(/off\s+told/);
+    expect((await view()).prefs.kinds.told).toBe(false);
+    expect(await run("kinds", ["told", "on"])).toMatch(/on\s+told/);
     expect(await run("quiet", ["21:30-06:45"], { tz: "Europe/Copenhagen" })).toBe("Quiet hours: 21:30 to 06:45, Europe/Copenhagen time: everything but an alert waits, then one message says what waited.");
     expect(await run("quiet", ["off"])).toBe("Quiet hours: off: he tells you whenever it happens.");
     expect(await run("limit", ["20"])).toContain("At most 20 a day");

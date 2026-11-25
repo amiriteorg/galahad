@@ -11,6 +11,7 @@ import {
   NOTIFY_BODY_MAX,
   NOTIFY_DEFAULTS,
   NOTIFY_GAP_MS,
+  NOTIFY_KINDS,
   NOTIFY_TITLE_MAX,
   noticeItem,
   toldItem,
@@ -434,6 +435,12 @@ describe("settings and what a device hands over", () => {
     // A zone already stored (set from the app or a terminal, as before this changed) stays as it was.
     expect(readNotifyPrefs({ quiet: { on: true, from: "22:00", to: "07:00", tz: "Europe/Copenhagen" } }, "Asia/Tokyo").quiet.tz).toBe("Europe/Copenhagen");
     expect(readNotifyPrefs({ quiet: { tz: "Nowhere/Land" } }, "Asia/Tokyo").quiet.tz).toBe("Asia/Tokyo");
+  });
+
+  test("every kind he tells you about is a switch the node takes: your rules' tells too", () => {
+    // Settings and `galahad notify kinds told off` offered it, and the node refused it ("unrecognized key: told").
+    expect(NotifyPrefsInput.safeParse({ kinds: { told: false } }).success).toBe(true);
+    for (const kind of NOTIFY_KINDS) expect(`${kind} ${NotifyPrefsInput.safeParse({ kinds: { [kind]: false } }).success}`).toBe(`${kind} true`);
   });
 
   test("what the node takes is checked at the door", () => {
