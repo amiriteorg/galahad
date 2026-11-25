@@ -16,6 +16,7 @@ import { connectorRequestCard } from "./connectors.ts";
 import { openInvite, pairingCard } from "./fleet.ts";
 import { describeWakes } from "../lib/wakes.ts";
 import { describeTask, findingRow, loopsChanged, showHookSecret } from "./loops.ts";
+import { reachNote } from "./notifications.ts";
 import { openOrderFromAction } from "./orders.ts";
 import { secretRequestCard } from "./vault.ts";
 
@@ -580,6 +581,8 @@ export const inboxView: View = (root, ctx, { scope }) => {
   const noticesSection = section("Noticed", { actions: go("Loops", "loops") }, noticesBox);
   // Kept across re-renders so it stays open while the outbox changes.
   const history = disclosure(historySummary, { flush: true, hidden: true }, historyRows);
+  // First, while it matters: that he can't reach this device when Galahad is closed, and the one thing to do.
+  const reach = reachNote(ctx, scope);
 
   replace(
     root,
@@ -588,7 +591,7 @@ export const inboxView: View = (root, ctx, { scope }) => {
       { class: "page narrow" },
       pageHead("Inbox", "Everything that needs you. Nothing here happens without your say."),
       // Shown whole once the Inbox has been read: what waits comes in at once, not section by section.
-      pageBody(allClear, pairingsSection, screenSection, questionsSection, actionsSection, requestsSection, connectorsSection, draftsSection, aboutYouSection, noticesSection, read ? history : null),
+      pageBody(reach.el, allClear, pairingsSection, screenSection, questionsSection, actionsSection, requestsSection, connectorsSection, draftsSection, aboutYouSection, noticesSection, read ? history : null),
     ),
   );
 

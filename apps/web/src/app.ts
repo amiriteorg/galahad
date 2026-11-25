@@ -124,9 +124,11 @@ async function boot(): Promise<void> {
   }
   if (bankReturn) handBankCallback(bankReturn);
   if (shared) handShared(shared);
-  const shell = renderShell(root, { api, identity, whoami });
-  // Notifications: the node's copy of this device's subscription is kept current (never asks, never turns anything on).
+  // Notifications: the node's copy of this device's subscription is kept current (never asks, never turns on what you
+  // turned off; one its push service dropped is made again). Begun before the views, whose card says he can't reach
+  // this device only once this is done.
   void syncPush(api);
+  const shell = renderShell(root, { api, identity, whoami });
 
   // One refused request isn't proof of revocation: ask once more before leaving the app.
   let state: "ok" | "checking" | "refused" = "ok";

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { NOTIFY_DEFAULTS } from "@galahad/core/notify";
-import { clockProblem, isIos, keyBytes, pairingNote, perDayProblem, type PushEnv, pushState, quietLine, readOpenMessage, sameKey, todayLine } from "./push.ts";
+import { clockProblem, isIos, keyBytes, pairingNote, perDayProblem, PUSH_STATE_TEXT, type PushEnv, pushState, pushSync, quietLine, REACH_DISMISS_MS, reachCard, reachDismissed, readOpenMessage, sameKey, todayLine } from "./push.ts";
 
 /* Notifications on this device: the state it's in, and the checks the Settings fields make. */
 
@@ -72,6 +72,54 @@ describe("the node's key", () => {
     expect(sameKey(other.buffer, key)).toBe(false);
     expect(sameKey(null, key)).toBe(false);
     expect(sameKey(bytes.slice(0, 64).buffer, key)).toBe(false);
+  });
+});
+
+describe("when he can't reach this device", () => {
+  const lost = { at: Date.UTC(2026, 10, 18, 12), service: "Apple", why: "Apple's push service says this subscription is gone (410)" };
+  const nobody = { subscribed: false, lost: null, reachable: 0 };
+  const title = "He can't reach this device when Galahad is closed.";
+
+  test("a card only while it matters: this device's were lost, or no device of yours can be reached", () => {
+    expect(reachCard(env(), nobody)).toEqual({ why: "off", title, detail: null, action: "turn-on" });
+    expect(reachCard(env({ permission: "granted" }), { ...nobody, lost, reachable: 2 })).toEqual({ why: "lost", title, detail: "They were on until 18 Nov: Apple's push service stopped taking them.", action: "turn-on" });
+    // Off here while another device reaches you: your choice, not nagged.
+    expect(reachCard(env(), { ...nobody, reachable: 1 })).toBeNull();
+    // On here (or the node can't say: a terminal, a node from before this, not asked yet): nothing to show.
+    expect(reachCard(env({ permission: "granted", subscribed: true }), { subscribed: true, lost: null, reachable: 1 })).toBeNull();
+    expect(reachCard(env(), { subscribed: null, lost: null, reachable: 0 })).toBeNull();
+    expect(reachCard(env(), { subscribed: false })).toBeNull();
+    expect(reachCard(env(), null)).toBeNull();
+  });
+
+  test("where a tap here can't turn them on, it says what can; a browser that can't be reached at all is offered nothing", () => {
+    expect(reachCard(env({ permission: "denied" }), { ...nobody, lost })).toEqual({ why: "blocked", title, detail: "Notifications are blocked for this site in your browser: allow them in its settings for this site, then turn them on here.", action: null });
+    expect(reachCard(env({ ios: true }), nobody)).toEqual({ why: "home-screen", title, detail: PUSH_STATE_TEXT["home-screen"], action: null });
+    expect(reachCard(env({ capable: false }), nobody)).toBeNull();
+    // A stand-in push service a test allowed is named as one.
+    expect(reachCard(env(), { ...nobody, lost: { ...lost, service: "a push service you allowed" } })!.detail).toBe("They were on until 18 Nov: the push service you allowed stopped taking them.");
+  });
+
+  test("put away for a week (Not now), then shown again while it still matters", () => {
+    const now = Date.UTC(2026, 10, 25, 12);
+    expect(reachDismissed(null, now)).toBe(false);
+    expect(reachDismissed(now - 6 * 24 * 3600_000, now)).toBe(true);
+    expect(reachDismissed(now - REACH_DISMISS_MS, now)).toBe(false);
+    // A time from a clock set ahead doesn't hide it for good.
+    expect(reachDismissed(now + 3600_000, now)).toBe(false);
+  });
+
+  test("when the app opens: a lost subscription is made again, asking nothing; what you turned off stays off", () => {
+    // Lost: a new one (never the dead one handed back), and only with the browser's leave, which syncPush checks first.
+    expect(pushSync({ subscribed: false, lost: true, browser: true, sameKey: true })).toBe("make");
+    expect(pushSync({ subscribed: false, lost: true, browser: false, sameKey: false })).toBe("make");
+    // Turned off (here, from a terminal, or never on): the browser's copy goes too, so both agree.
+    expect(pushSync({ subscribed: false, lost: false, browser: true, sameKey: true })).toBe("drop");
+    expect(pushSync({ subscribed: false, lost: false, browser: false, sameKey: false })).toBe("none");
+    // On: kept current; made again for a node's new key; nothing to hand over without the browser's own.
+    expect(pushSync({ subscribed: true, lost: false, browser: true, sameKey: true })).toBe("hand-over");
+    expect(pushSync({ subscribed: true, lost: false, browser: true, sameKey: false })).toBe("make");
+    expect(pushSync({ subscribed: true, lost: false, browser: false, sameKey: false })).toBe("none");
   });
 });
 

@@ -1,4 +1,4 @@
-import { CLOCK, isConversationId, NOTIFY_OPENS, NOTIFY_PER_DAY, type NotifyOpen, type NotifyPrefs, type NotifyView } from "@galahad/core/notify";
+import { CLOCK, isConversationId, NOTIFY_OPENS, NOTIFY_PER_DAY, type NotifyLostView, type NotifyOpen, type NotifyPrefs, type NotifyView } from "@galahad/core/notify";
 
 /*
  * Notifications on this device, as the page reasons about them (pure: the browser's
@@ -55,6 +55,60 @@ export const PUSH_STATE_TEXT: Record<PushState, string> = {
   off: "Off. Your browser asks you once, when you turn this on.",
   on: "On: he can reach this device when the app is closed.",
 };
+
+/* ---------- when he can't reach this device ---------- */
+
+/** How long the card stays away once you put it away (Not now): a week, on this device. */
+export const REACH_DISMISS_MS = 7 * 24 * 3600_000;
+
+export interface ReachCard {
+  /** off: not on here · lost: on until its push service stopped taking them · blocked: the browser said no · home-screen: an iPhone's Safari tab. */
+  why: "off" | "lost" | "blocked" | "home-screen";
+  title: string;
+  /** What to know first: when they were lost and by which service, how to allow them, or the Home Screen note. */
+  detail: string | null;
+  /** Turn them on from your tap (the browser asks); none where a tap here can't. */
+  action: "turn-on" | null;
+}
+
+/** "They were on until 18 Nov: Apple's push service stopped taking them." */
+export function lostLine(lost: NotifyLostView): string {
+  const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(lost.at);
+  const service = lost.service === "a push service you allowed" ? "the push service you allowed" : `${lost.service}'s push service`;
+  return `They were on until ${day}: ${service} stopped taking them.`;
+}
+
+/**
+ * The card at the top of "Galahad asks you" and the Inbox, saying he can't reach this device when Galahad is closed,
+ * and the one thing to do. Only while it matters: this device's subscription was lost (it was on, and you didn't turn
+ * it off), or no device of yours can be reached at all. A device you turned off while another reaches you isn't
+ * nagged; a browser that can't be pushed to at all is offered nothing (the Inbox's notice says where else).
+ */
+export function reachCard(env: PushEnv, view: { subscribed: boolean | null; lost?: NotifyLostView | null; reachable?: number } | null): ReachCard | null {
+  if (!view || view.subscribed === null) return null;
+  const state = pushState(env);
+  if (state === "on" || state === "unsupported") return null;
+  const lost = view.lost ?? null;
+  if (!lost && view.reachable !== 0) return null;
+  const title = "He can't reach this device when Galahad is closed.";
+  if (state === "home-screen") return { why: "home-screen", title, detail: PUSH_STATE_TEXT["home-screen"], action: null };
+  if (state === "blocked") return { why: "blocked", title, detail: "Notifications are blocked for this site in your browser: allow them in its settings for this site, then turn them on here.", action: null };
+  return { why: lost ? "lost" : "off", title, detail: lost ? lostLine(lost) : null, action: "turn-on" };
+}
+
+/** Whether you put the card away (`at`) less than a week ago. */
+export const reachDismissed = (at: number | null, now: number): boolean => at !== null && at <= now && now - at < REACH_DISMISS_MS;
+
+/**
+ * What the app does with this browser's subscription when it opens (the browser's leave already given; never asked
+ * here). make: a new one, handed over (lost, so your own choice still stands; or made for a node's new key) · drop:
+ * the browser's goes too (turned off, here or elsewhere: both agree) · hand-over: the node's copy kept current.
+ */
+export function pushSync(s: { subscribed: boolean; lost: boolean; browser: boolean; sameKey: boolean }): "make" | "drop" | "hand-over" | "none" {
+  if (!s.subscribed) return s.lost ? "make" : s.browser ? "drop" : "none";
+  if (!s.browser) return "none";
+  return s.sameKey ? "hand-over" : "make";
+}
 
 /**
  * What the service worker tells an open page when a notification is tapped: one of the app's places, and a

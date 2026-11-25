@@ -3,7 +3,8 @@
  * sidebar state, the last chat role, what Enter does while Galahad is working,
  * which kept chat you had open (its id only), how the Roundtable is laid out on
  * this device (a board or a list, the sidebar's sections folded, a knight's side
- * panel shown), and when it last showed you what happened while you were away (a
+ * panel shown), when it last showed you what happened while you were away (a
+ * time), and when you put away the card that says he can't reach this device (a
  * time). Never secrets, never a word of a chat, never anything else from the
  * server. boot.ts reads the same keys before paint.
  */
@@ -22,6 +23,7 @@ const KEYS = {
   folded: "galahad:roster-folded",
   panel: "galahad:knight-panel",
   away: "galahad:away-seen",
+  reach: "galahad:reach-put-away",
 } as const;
 
 type PrefKey = keyof typeof KEYS;
@@ -121,6 +123,13 @@ export const awaySince = (now = Date.now()): number => {
   return Number.isFinite(at) && at > 0 && at <= now ? at : now - 24 * 3600_000;
 };
 export const markAwaySeen = (at = Date.now()): void => write("away", String(at));
+
+/** When you put away the card that says he can't reach this device (Not now), or null (lib/push.ts reachDismissed). */
+export const reachPutAway = (): number | null => {
+  const at = Number(read("reach"));
+  return Number.isFinite(at) && at > 0 ? at : null;
+};
+export const putReachAway = (at = Date.now()): void => write("reach", String(at));
 
 /** How the Roundtable's own page shows the knights on this device: as a board of cards (the default) or as a list. */
 export type RoundtableView = "board" | "list";
