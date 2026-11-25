@@ -201,6 +201,7 @@ export class MindStore {
   readonly db: Database;
   readonly clock: HlcClock;
   private readonly listeners = new Set<(event: GEvent) => void>();
+  private readonly appliedListeners = new Set<(events: readonly GEvent[], rebuilt: boolean) => void>();
   /** Set only during a replay: chain verdicts for every event in the log. */
   private validity: Validity | null = null;
   /**
@@ -214,6 +215,26 @@ export class MindStore {
   onEmit(listener: (event: GEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Called once events have entered the log and the views, and are committed: this node's own and any a peer sent
+   * (what shows them, the live stream, looks again). `rebuilt`: the log was replayed, so any view may have changed.
+   * A hint, never a record: an event the views refused is among them, and it changes nothing.
+   */
+  onApplied(listener: (events: readonly GEvent[], rebuilt: boolean) => void): () => void {
+    this.appliedListeners.add(listener);
+    return () => this.appliedListeners.delete(listener);
+  }
+
+  private announce(events: readonly GEvent[], rebuilt: boolean): void {
+    for (const listener of this.appliedListeners) {
+      try {
+        listener(events, rebuilt);
+      } catch {
+        /* listeners must not break writes */
+      }
+    }
   }
 
   constructor(path: string, clock = new HlcClock()) {
@@ -366,13 +387,17 @@ export class MindStore {
       signer,
     );
     // Atomic: an event this node is not authorized to write never enters the log.
+    let rebuilt = false;
     this.db.transaction(() => {
       if (kind === "fleet.genesis") this.expectFleet(event.id);
       const result = this.ingest([event]);
       if (result.invalid.length) throw new Error(`emit rejected: ${result.invalid[0]!.error}`);
       const rejected = this.rejection(event.id);
       if (rejected) throw new Error(`emit not authorized: ${rejected}`);
+      rebuilt = result.rebuilt;
     })();
+    // (Its ingest, inside that transaction, left this to be said once it was committed.)
+    this.announce([event], rebuilt);
     for (const listener of this.listeners) {
       try {
         listener(event);
@@ -485,6 +510,8 @@ export class MindStore {
     })();
     // Only events that entered the mind and were accepted may move the clock.
     for (const event of applied) if (!this.rejection(event.id)) this.safeObserve(event.hlc);
+    // Said once committed: inside another's transaction (emit's), that one says it when it commits.
+    if (applied.length && !this.db.inTransaction) this.announce(applied, rebuilt);
     return { added, invalid, rebuilt };
   }
 
