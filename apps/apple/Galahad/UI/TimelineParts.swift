@@ -75,6 +75,13 @@ private struct KeepingLatest: ViewModifier {
             } action: { _, now in
                 away = now
             }
+            // What is under the conversation grew (what is under way came above the message box, or the box grew a
+            // line): at the latest, the latest stays in sight above it rather than slipping under it.
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentInsets.bottom
+            } action: { before, now in
+                if now > before && !away { position.scrollTo(edge: .bottom) }
+            }
             // Just above the message box (an inset of no height, so the conversation never moves for it).
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear
