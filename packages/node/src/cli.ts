@@ -23,6 +23,7 @@ import { archiveCommand } from "./archive-cli.ts";
 import { keyAddCommand, keyElsewhereLine } from "./key-cli.ts";
 import { skillsCommand } from "./skills-cli.ts";
 import { ruleCommand } from "./rule-cli.ts";
+import { qampCommand } from "./qamp-cli.ts";
 import { computeCommand, parseEffort } from "./compute-cli.ts";
 import { checkGates, githubConnector, githubRepo, investigateFromCli, questFromCli, shipBranch } from "./quest-cli.ts";
 import { askCommand, questsCommand, queueCommand, queueLines, turnLine, turnsCommand } from "./turn-cli.ts";
@@ -424,6 +425,12 @@ Agents (MCP, ACP)
   acp --arm <label> [--buzz]      Galahad himself as an ACP agent (stdio; started by the harness, not by you); --buzz
                                   posts each answer where it was asked, with Buzz's CLI
   arms | arms revoke <label>      list or revoke agent credentials
+  qamp grant <did:key:z6Mk…> [--tools fleet,compute,place,ledger] [--ttl 1h]
+                                  an agent on another of your machines (one that runs no node: Claude Code on a laptop)
+                                  calls these read-only tools here over Q-AMP, for that long (24h at most): its own key
+                                  alone, through a bridge on this node's tailnet address. Prints what its machine runs
+  qamp grants | qamp revoke <id>|--all
+                                  the grants in force; end one, or every one, now (each also ends by itself)
 
 Maintenance
   awake on|off|status             a Mac set to stay on (a Mac mini serving the fleet) is kept from sleeping while its
@@ -2165,6 +2172,9 @@ Evidence: galahad artifact ${i!.artifact}`));
     case "rule":
     case "rules":
       await ruleCommand(new Admin(home), sub, rest, flags);
+      return;
+    case "qamp":
+      await qampCommand(new Admin(home), sub, rest, flags);
       return;
     case "archive":
       await archiveCommand(new Admin(home), sub, rest, flags, { confirm, readStdin: () => Bun.stdin.text() });
