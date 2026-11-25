@@ -28,7 +28,8 @@
  *                   cumulative layout shift), with what moved. --shift-runs n opens each that many times (default 3).
  *     --places a,b  only these places (their names as the report gives them: overview, knight, sheet-add-key…), for
  *                   --shots and --shifts
- *     --rest        only what Chat and the Roundtable cost at rest (below): no page loads are measured
+ *     --rest        only what Chat and the Roundtable cost at rest, and what they ask the node for (below): no page
+ *                   loads are measured
  *
  * It starts a throwaway node on loopback (a temp home, the file keystore, a stand-in Docker and
  * stand-in models: nothing leaves this machine, and ~/.galahad is never touched), fills it with a
@@ -53,7 +54,8 @@
  * layout, paint, parsing), from Chrome's own trace. For Chat and the Roundtable it also says what the page
  * costs while nothing changes, over ten seconds: the page's main thread's time a second, and the processor time a
  * second of the page's whole renderer (its main thread, compositor, raster and workers) and of every process of the
- * browser (its GPU process drawing the frames among them).
+ * browser (its GPU process drawing the frames among them); and, over a minute, every request each asks the node
+ * for meanwhile, by path.
  *
  * Timings move with the machine's load: compare two checkouts measured one after the other, and
  * trust a difference only when the ranges don't overlap. Bytes, requests and nodes don't move.
@@ -373,6 +375,8 @@ interface Wire {
   encoding: string;
   by: "page" | "service worker";
   from: "network" | "service worker" | "cache";
+  /** An answer that stays open (server-sent events): it is never waited for to end. */
+  stream?: boolean;
 }
 interface Load {
   paint: number;
@@ -702,8 +706,9 @@ try {
     }
     if (method === "Target.detachedFromTarget") workers.delete(params.sessionId);
     if (!method.startsWith("Network.") || (sessionId !== page && !workers.has(sessionId ?? ""))) return;
-    lastTraffic = Date.now();
     const key = `${sessionId}:${params.requestId}`;
+    // (What comes on a stream the page keeps open is not the page loading.)
+    if (!(method === "Network.dataReceived" && wire.get(key)?.stream)) lastTraffic = Date.now();
     if (method === "Network.requestWillBeSent" && params.request.url.startsWith(origin)) {
       wire.set(key, { path: new URL(params.request.url).pathname, status: 0, bytes: 0, encoding: "", by: sessionId === page ? "page" : "service worker", from: "network", done: false });
     } else if (method === "Network.responseReceived" && wire.has(key)) {
@@ -711,6 +716,7 @@ try {
       entry.status = params.response.status;
       entry.encoding = params.response.headers["content-encoding"] ?? params.response.headers["Content-Encoding"] ?? "";
       entry.from = params.response.fromServiceWorker ? "service worker" : params.response.fromDiskCache || params.response.fromPrefetchCache ? "cache" : "network";
+      if (params.response.mimeType === "text/event-stream") entry.stream = true;
     } else if ((method === "Network.loadingFinished" || method === "Network.loadingFailed") && wire.has(key)) {
       Object.assign(wire.get(key)!, { bytes: params.encodedDataLength ?? 0, done: true });
     }
@@ -726,7 +732,8 @@ try {
   const navigate = async (url: string): Promise<void> => {
     await browser.send("Page.navigate", { url }, page);
   };
-  const quiet = (ms: number) => until("the network to go quiet", () => Date.now() - lastTraffic > ms && [...wire.values()].every((entry) => entry.done), 30_000);
+  // (A stream the page keeps open, the node's live stream among them, is quiet when nothing comes on it.)
+  const quiet = (ms: number) => until("the network to go quiet", () => Date.now() - lastTraffic > ms && [...wire.values()].every((entry) => entry.done || entry.stream), 30_000);
 
   // Gawain's desktop shows a stand-in page, drawn here once at the desktop's own size (1280×800) as the JPEG its VM sends.
   await browser.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, page);
@@ -883,6 +890,22 @@ try {
         avatarElements: await evaluate<number>(`document.querySelectorAll(".worker-avatar, .worker-avatar *").length`),
       }
     : null;
+  /**
+   * What a page asks the node for while it stays open and nobody touches it: every request in a minute (the page's and
+   * its service worker's), by path, from a second and a half after it is usable. A stream it keeps open counts once,
+   * when it is opened (or opened again) within that minute.
+   */
+  const askedAtRest = async (hash: string) => {
+    await open(hash, false);
+    await sleep(1500);
+    wire.clear();
+    await sleep(60_000);
+    const paths = new Map<string, number>();
+    for (const entry of wire.values()) paths.set(entry.path, (paths.get(entry.path) ?? 0) + 1);
+    return { requests: wire.size, paths: Object.fromEntries([...paths].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) };
+  };
+  const chatAsked = RUNS || REST ? await askedAtRest("#/chat") : null;
+  const roundtableAsked = RUNS || REST ? await askedAtRest("#/team") : null;
 
   // ---------- what moves on screen once it is there ----------
   // Each place, and Galahad's, a knight's and a room's timeline, opened as a returning visit opens it (the service worker
@@ -1160,11 +1183,17 @@ try {
     `The Roundtable at rest (laptop, ten seconds): ${atRest!.avatars} avatars of ${atRest!.avatarElements} elements, ${atRest!.animations} animations running;`,
     `the main thread works ${atRest!.mainThread} ms a second (script ${atRest!.script}, style ${atRest!.style}, layout ${atRest!.layout}); the page's renderer ${atRest!.renderer} ms, the whole browser ${atRest!.browser} ms of processor a second.`,
     `Chat at rest: ${chatAtRest!.animations} animations running; the main thread works ${chatAtRest!.mainThread} ms a second (script ${chatAtRest!.script}, style ${chatAtRest!.style}, layout ${chatAtRest!.layout}); the page's renderer ${chatAtRest!.renderer} ms, the whole browser ${chatAtRest!.browser} ms of processor a second.`,
+    ...(
+      [
+        ["Chat", chatAsked!],
+        ["The Roundtable", roundtableAsked!],
+      ] as const
+    ).map(([name, asked]) => `${name} asks the node ${asked.requests} times a minute at rest${asked.requests ? `: ${Object.entries(asked.paths).map(([path, n]) => `${path} ${n}`).join(", ")}` : ""}.`),
   ];
   if (REST) {
     console.log(`\nThe PWA at ${revision}${dirty} (${REPO}), in ${(await browser.send("Browser.getVersion")).product}.`);
     console.log(restLines().join("\n"));
-    if (JSON_OUT) writeFileSync(JSON_OUT, `${JSON.stringify({ revision: `${revision}${dirty}`, chatAtRest, roundtableAtRest: atRest }, null, 2)}\n`);
+    if (JSON_OUT) writeFileSync(JSON_OUT, `${JSON.stringify({ revision: `${revision}${dirty}`, chatAtRest, roundtableAtRest: atRest, chatAsked, roundtableAsked }, null, 2)}\n`);
   } else if (!RUNS) console.log(`${shots.length} screenshots in ${resolve(SHOTS ?? ".")}, nothing measured${MOVES || SHIFTS ? ` but ${[MOVES ? "the moves" : "", SHIFTS ? "the shifts" : ""].filter(Boolean).join(" and ")}` : ""} (--runs 0).`);
   else {
   // (The browser fetches /sw.js itself, outside what the protocol shows of the page and the worker: it is counted here.)
@@ -1181,6 +1210,8 @@ try {
     pages: results,
     chatAtRest,
     roundtableAtRest: atRest,
+    chatAsked,
+    roundtableAsked,
     ...(MOVES ? { moves } : {}),
     ...(SHIFTS ? { shifts: shifted } : {}),
     shots,
