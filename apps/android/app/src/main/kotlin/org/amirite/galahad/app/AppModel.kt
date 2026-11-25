@@ -1,6 +1,8 @@
 package org.amirite.galahad.app
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,13 +18,16 @@ import org.amirite.galahad.core.DeviceKey
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.NodeClient
 import org.amirite.galahad.core.NodeError
+import org.amirite.galahad.core.Reach
 import org.amirite.galahad.core.Roster
 import org.amirite.galahad.core.RosterRow
 import org.amirite.galahad.core.Snapshot
 import org.amirite.galahad.core.UsageMeter
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
+import org.amirite.galahad.core.int
 import org.amirite.galahad.core.list
+import org.amirite.galahad.core.long
 import org.amirite.galahad.core.string
 import org.amirite.galahad.core.text
 
@@ -255,14 +260,58 @@ class AppModel(context: Context) {
         chat.reset()
     }
 
+    /** The card that says he can't reach this phone when Galahad is closed (null: he can, or you put it away), and why. */
+    data class ReachCard(val step: Reach.Step, val lost: String?, val offElsewhere: Boolean)
+
+    private val _reach = MutableStateFlow<ReachCard?>(null)
+    val reach: StateFlow<ReachCard?> = _reach
+
+    /** Not now: the card goes until the app next comes to the front. */
+    fun putReachAway() {
+        _reach.value = null
+    }
+
     /**
-     * The app has come to the front: what the node kept for this phone's notifications is taken and dropped (the app
-     * shows it all), and this phone stops asking if they were turned off elsewhere.
+     * The app has come to the front: what was answered elsewhere is taken down here; what the node kept for this phone is
+     * taken and dropped (the app shows it all); and its notifications are handed over again while they're on or were lost
+     * (core's notifyReach): a lost UnifiedPush address falls back to collecting at once, and the distributor is asked for a
+     * new one. Otherwise the card says how to turn them on, instead of the phone going quiet without a word.
      */
     suspend fun inFront() {
         val c = client ?: return
-        if (!Notices.on(appContext)) return
-        if (runCatching { Notices.collect(appContext, c, show = false) }.getOrNull() == false) Notices.stop(appContext)
+        val view = runCatching { c.get("/api/notify") }.getOrNull() ?: return
+        val subscribed = view["subscribed"].bool ?: return
+        Notices.takeDown(appContext, view["withdrawn"].list.mapNotNull { it.string })
+        val lost = view["lost"].takeIf { it is Json.Obj }
+        val localOn = Notices.on(appContext)
+        val permission = when {
+            Notices.allowed(appContext) -> "granted"
+            Build.VERSION.SDK_INT >= 33 && appContext.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED -> "undetermined"
+            else -> "denied"
+        }
+        val step = Reach.step(permission, subscribed, lost != null, view["reachable"].int ?: 1, localOn)
+        val lostLine = lost?.let { l -> l["at"].long?.let { Reach.lostLine(it, l["service"].string ?: "its") } }
+        when (step) {
+            Reach.Step.RENEW -> {
+                if (lost != null) {
+                    // Its push service dropped this phone's address: collected from now on, at once, and its distributor asked
+                    // for a new address (the receiver hands that over); said in More → Notifications meanwhile.
+                    val distributor = UnifiedPush.registration(appContext)?.distributor
+                    runCatching { Notices.turnOn(appContext, c) }
+                    Notices.trouble(appContext, "${lostLine ?: "Its push service stopped taking them."} Collected until it gives a new address.")
+                    if (distributor != null) runCatching { Notices.makeInstant(appContext, c, distributor) }
+                } else if (Notices.instant(appContext) == null) runCatching { Notices.turnOn(appContext, c) }
+                _reach.value = null
+            }
+            Reach.Step.TURN_ON, Reach.Step.SETTINGS -> {
+                // Turned off elsewhere (the web app, the terminal) while this phone thought itself on: it stops asking, and says so.
+                val offElsewhere = localOn && !subscribed && lost == null
+                if (offElsewhere) Notices.stop(appContext)
+                _reach.value = ReachCard(step, lostLine, offElsewhere)
+            }
+            Reach.Step.NONE -> _reach.value = null
+        }
+        if (Notices.on(appContext) && Notices.instant(appContext) == null) runCatching { Notices.collect(appContext, c, show = false) }
     }
 
     /** Asks every five seconds while [active] runs (the activity's STARTED state). */

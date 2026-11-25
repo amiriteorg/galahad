@@ -24,6 +24,7 @@ import org.amirite.galahad.R
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.NodeClient
 import org.amirite.galahad.core.NodeError
+import org.amirite.galahad.core.Reach
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
 import org.amirite.galahad.core.int
@@ -35,8 +36,10 @@ import org.amirite.galahad.core.string
  * its own rules (the kinds you chose, quiet hours, the day's limit), and the phone collects it over its own signed
  * connection (core's `notifyCollect`): every fifteen minutes or so on Android's own schedule, which waits longer while
  * the phone sleeps, and each time the app comes to the front. Each is shown as the node told it: a title, one line,
- * where it opens. An approval told alone carries Approve and Decline (Decline alone for a delete), behind the phone's
- * own unlock, as the iPhone's does.
+ * where it opens; what needs you on the Needs you channel, news (a quiet kind) on News. An approval told alone carries
+ * Approve, which opens the Inbox with the whole request in front of you (never a yes from the lock screen: your word,
+ * 25 November 2026), and Decline, answered where it's told, behind the phone's own unlock. What was answered, dismissed,
+ * cleared or lapsed on any device is taken down here (the node's `withdrawn`).
  */
 object Notices {
     private const val JOB = 1
@@ -115,7 +118,7 @@ object Notices {
     private fun channels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(NEEDS, "Needs you", NotificationManager.IMPORTANCE_HIGH).apply { description = "An approval, a question, something that needs you." })
-        manager.createNotificationChannel(NotificationChannel(NEWS, "News", NotificationManager.IMPORTANCE_DEFAULT).apply { description = "Work that ended; a rule of yours that told you." })
+        manager.createNotificationChannel(NotificationChannel(NEWS, "News", NotificationManager.IMPORTANCE_LOW).apply { description = "Work that ended, what your rules and loops tell you, the day's digest: quietly." })
     }
 
     /**
@@ -125,7 +128,15 @@ object Notices {
     suspend fun collect(context: Context, client: NodeClient, show: Boolean = true): Boolean {
         val answer = client.post("/api/notify/collect", Json.obj())
         if (show && allowed(context)) for (n in answer["notifications"].list) show(context, n)
+        takeDown(context, answer["withdrawn"].list.mapNotNull { it.string })
         return answer["on"].bool == true
+    }
+
+    /** The notifications still shown whose matter was answered, dismissed, cleared or lapsed on any device: taken down. */
+    fun takeDown(context: Context, tags: List<String>) {
+        if (tags.isEmpty()) return
+        val manager = context.getSystemService(NotificationManager::class.java)
+        for (tag in tags) if (TAG_FORM.matches(tag)) manager.cancel(tag, 0)
     }
 
     /**
@@ -154,7 +165,7 @@ object Notices {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(OPEN, n["open"].string ?: "inbox")
             .apply { n["conversation"].string?.let { putExtra(CONVERSATION, it) } }
-        val note = Notification.Builder(context, if (kind == "finished" || kind == "told") NEWS else NEEDS)
+        val note = Notification.Builder(context, if (Reach.quiet(kind)) NEWS else NEEDS)
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle(title)
             .setContentText(body)
@@ -174,8 +185,16 @@ object Notices {
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 ),
             ).setAuthenticationRequired(true).build()
-            // A delete is approved only where its name is typed, in the app: from here, Decline alone.
-            if (n["approvable"].bool == true) note.addAction(answer(true, "Approve"))
+            // Approve opens the Inbox, the whole request in front of you, behind the phone's unlock (a yes is never given
+            // from the lock screen); a delete is approved only where its name is typed, in the app, all the same.
+            if (n["approvable"].bool == true) {
+                val inbox = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP).putExtra(OPEN, "inbox")
+                note.addAction(
+                    Notification.Action.Builder(Icon.createWithResource(context, R.drawable.ic_notify), "Approve…", PendingIntent.getActivity(context, (tag + "open").hashCode(), inbox, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+                        .setAuthenticationRequired(true)
+                        .build(),
+                )
+            }
             note.addAction(answer(false, "Decline"))
         }
         context.getSystemService(NotificationManager::class.java).notify(tag, 0, note.build())
@@ -220,10 +239,17 @@ class CollectJob : JobService() {
     override fun onStopJob(params: JobParameters): Boolean = true
 }
 
-/** Approve or Decline, from an approval's notification: signed by this phone, as the Inbox's answer is. */
+/**
+ * Decline, from an approval's notification: signed by this phone, as the Inbox's answer is. Never a yes: Approve opens the
+ * Inbox (a notification shown before that was so still asks for one here, and is told to open the app instead).
+ */
 class NoticeAnswer : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val (action, approve, tag) = Notices.answerOf(intent) ?: return
+        if (approve) {
+            Notices.said(context, tag, "Open Galahad to approve it", "A yes is given in the app, with the request in front of you.", passes = false)
+            return
+        }
         val client = AppModel.of(context).client ?: return
         val done = goAsync()
         CoroutineScope(Dispatchers.IO).launch {

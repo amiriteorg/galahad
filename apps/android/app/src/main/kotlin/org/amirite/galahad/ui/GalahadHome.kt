@@ -159,6 +159,7 @@ fun GalahadHome(app: AppModel, openChat: () -> Unit, showInbox: () -> Unit) {
                     }
                 }
             }
+            item { ReachCard(app) }
             item { GalahadAsks(app, showInbox) }
             val recent = chats.take(4)
             if (recent.isNotEmpty()) item { SectionTitle("Recent", Modifier.padding(top = Space.s2)) }
