@@ -58,6 +58,8 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   const canEdit = ctx.can("fleet:admin");
   const canChat = canEdit && ctx.can("chat");
   const roomId = opts.room;
+  /** Whether the task asked for (opts.task, from Work) has been brought into view yet. */
+  let focused = false;
   const panelAsked = opts.teamTab === "workspace";
   let snapshot: TeamSnapshot | null = ctx.live.team.value;
   /** Your prices, for what a finished task cost (asked for once; without them a task still says its tokens). */
@@ -302,7 +304,15 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
           ],
     );
     if (first) replace(content, thread);
-    if (first || nearEnd) content.scrollTop = content.scrollHeight;
+    // A task opened from Work is brought into view, once, and marked a moment; otherwise the timeline opens at its end.
+    const asked = !focused && opts.task ? content.querySelector<HTMLElement>(`[data-key="task:${opts.task}"]`) : null;
+    if (asked) {
+      focused = true;
+      asked.scrollIntoView({ block: "center", behavior: "auto" });
+      asked.classList.add("is-focus");
+      const unmark = setTimeout(() => asked.classList.remove("is-focus"), 2400);
+      scope.add(() => clearTimeout(unmark));
+    } else if (first || nearEnd) content.scrollTop = content.scrollHeight;
   }
 
   async function refreshWorkspace(id: string): Promise<void> {

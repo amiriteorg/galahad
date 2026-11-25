@@ -43,6 +43,7 @@ import { openCreateSandbox, sandboxesView } from "./views/sandboxes.ts";
 import { forgetThisBrowser, settingsView } from "./views/settings.ts";
 import { trialsView } from "./views/trials.ts";
 import { teamView } from "./views/team.ts";
+import { workView } from "./views/work.ts";
 import { giveToRoundtable } from "./views/team-forms.ts";
 import { landingHash, teamHash, teamLocation } from "./lib/team.ts";
 import { openAddKey, vaultView } from "./views/vault.ts";
@@ -50,6 +51,7 @@ import { openAddKey, vaultView } from "./views/vault.ts";
 /** Each place's page (the places themselves, and where each is reached from, are lib/nav.ts). */
 const VIEWS: Record<Route, View> = {
   chat: chatView,
+  work: workView,
   team: teamView,
   inbox: inboxView,
   more: moreView,
@@ -86,7 +88,8 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   // The roster and More: the roster is the sidebar on a wide screen and the first screen on a phone, whose
   // bar is the roster and More. The app opens on the roster (lib/nav.ts).
   const tabs = tabsOf(visible);
-  const hasRoster = tabs.some((spec) => spec.id === "team");
+  // (Whether this device seats the Roundtable at all: on a phone's bar Work stands where it did, since 25 November 2026.)
+  const hasRoster = visible.some((spec) => spec.id === "team");
   const narrow = matchMedia("(max-width: 959px)");
   const home = (): Route => homeOf(visible, { narrow: narrow.matches });
 
@@ -173,7 +176,10 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
 
   // Sidebar: the roster, and under it More (a device with no roster has its Inbox there).
   const roster = hasRoster ? rosterNav(ctx) : null;
-  const navChildren = tabs.filter((spec) => spec.id !== "team").map((spec) => link(spec, "nav-item", [icon(spec.icon), h("span", { class: "label" }, spec.label), spec.id === "inbox" ? inboxBadge() : null]));
+  const navChildren = tabs.filter((spec) => spec.id !== "team" && spec.id !== "work").map((spec) => link(spec, "nav-item", [icon(spec.icon), h("span", { class: "label" }, spec.label), spec.id === "inbox" ? inboxBadge() : null]));
+  // Work, at the head of the sidebar on a wide screen (a phone has it in its bar): the work by project, each task a thread.
+  const workPlace = visible.find((spec) => spec.id === "work");
+  const workLink = workPlace ? link(workPlace, "nav-item sidebar-work", [icon(workPlace.icon), h("span", { class: "label" }, workPlace.label)]) : null;
   const collapse = button(sidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar", {
     variant: "ghost",
     size: "sm",
@@ -212,6 +218,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
       headSearch,
       collapse,
     ),
+    workLink,
     roster?.el ?? null,
     h("nav", { class: "nav", "aria-label": "Sections" }, ...navChildren),
     h("div", { class: "sidebar-foot" }, deviceChip),
@@ -439,7 +446,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const routeFromHash = (): Route | null => routeOf(location.hash, visible);
 
   /** How often the team is asked for: every two seconds on its own pages, slowly while it is only the sidebar, never when nothing shows it. */
-  const watch = (): void => live.watchTeam(!hasRoster ? null : current === "team" ? 2000 : narrow.matches ? null : 6000);
+  const watch = (): void => live.watchTeam(!hasRoster ? null : current === "team" || current === "work" ? 2000 : narrow.matches ? null : 6000);
   narrow.addEventListener("change", () => (watch(), syncHome()), { signal: lifetime.signal });
   const syncHome = (): void => {
     for (const a of homeLinks) a.href = `#/${home()}`;

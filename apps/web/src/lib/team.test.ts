@@ -61,6 +61,10 @@ describe("team navigation and identity", () => {
     expect(teamLocation("#/team?room=room-a_1&tab=work")).toEqual({ room: "room-a_1" });
     expect(teamLocation("#/team?room=room-a_1&tab=chat")).toEqual({ room: "room-a_1" });
     expect(teamLocation("#/chat?room=room-a_1")).toEqual({});
+    // A task opened from Work (25 November 2026) keeps its place in the address; anything that isn't a task's id is dropped.
+    expect(teamHash({ room: "room-a_1", task: "task-abcdefghijkl" })).toBe("#/team?room=room-a_1&task=task-abcdefghijkl");
+    expect(teamLocation("#/team?room=room-a_1&task=task-abcdefghijkl")).toEqual({ room: "room-a_1", task: "task-abcdefghijkl" });
+    expect(teamLocation("#/team?room=room-a_1&task=../x")).toEqual({ room: "room-a_1" });
     expect(teamLocation("#/team?room=../secret&tab=unknown")).toEqual({});
   });
   test("the address the app opens on is its page's own, and Team's keeps its room and tab: a reload comes back to the same conversation", () => {

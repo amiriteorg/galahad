@@ -2,7 +2,7 @@ import type { TeamDelivery, TeamEngramStatus, TeamHarness, TeamMessage, TeamSnap
 
 /** What a knight's page shows: its timeline, or its Workspace panel. (A room has only its timeline.) */
 export type TeamTab = "chat" | "workspace";
-export interface TeamLocation { room?: string; teamTab?: TeamTab }
+export interface TeamLocation { room?: string; teamTab?: TeamTab; task?: string }
 
 /** A knight's coding harness, as it is named to you: his own, or a tool that does the engineer's part in the VM
  * (the vendors' own tools by their own names, in plain text; any other that speaks ACP, by the command you give it). */
@@ -111,8 +111,10 @@ export function teamLocation(hash: string): TeamLocation {
   const params = new URLSearchParams(hash.split("?")[1] ?? "");
   const room = params.get("room");
   const tab = params.get("tab");
+  const task = params.get("task");
   return {
     ...(room && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(room) ? { room } : {}),
+    ...(task && /^task-[A-Za-z0-9_-]{12}$/.test(task) ? { task } : {}),
     // (The Work tab's address, tab=work, opens the timeline: a task is a card in it now.)
     ...(tab === "workspace" ? { teamTab: tab } : {}),
   };
@@ -122,6 +124,7 @@ export function teamHash(location: TeamLocation): string {
   const params = new URLSearchParams();
   if (location.room) params.set("room", location.room);
   if (location.teamTab && location.teamTab !== "chat") params.set("tab", location.teamTab);
+  if (location.task) params.set("task", location.task);
   return `#/team${params.size ? `?${params}` : ""}`;
 }
 

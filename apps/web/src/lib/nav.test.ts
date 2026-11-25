@@ -17,22 +17,25 @@ const device = (...scopes: AnyScope[]) => placesFor((scope) => scopes.includes(s
 const ids = (places: readonly { id: string }[]) => places.map((place) => place.id);
 
 describe("the app's places", () => {
-  test("every address the app had is still a place, and More is the one that was added", () => {
-    expect(ids(PLACES).filter((id) => id !== "more").sort()).toEqual(Object.keys(BEFORE).sort());
+  test("every address the app had is still a place; More and Work are the ones added", () => {
+    expect(ids(PLACES).filter((id) => id !== "more" && id !== "work").sort()).toEqual(Object.keys(BEFORE).sort());
     expect(ids(PLACES)).toContain("more");
+    // Work (your word, 25 November 2026: "per task/per project like t3code"), for any device that may chat, as the
+    // Roundtable is.
+    expect(PLACES.find((place) => place.id === "work")?.scope).toBe("chat");
   });
 
   test("what a device may see follows its scopes as it did", () => {
     const sets: AnyScope[][] = [OWNER, [], ["chat"], ["mind:read"], ["chat", "mind:read"], ["fleet:admin"], ["sandbox"], ["vault:read"], ["bank:read"], ["chat", "mind:read", "vault:read"]];
     for (const scopes of sets) {
       const before = Object.entries(BEFORE).filter(([, [scope, alsoFor]]) => scope === null || scopes.includes(scope) || (alsoFor !== undefined && scopes.includes(alsoFor))).map(([id]) => id);
-      expect([scopes, ids(device(...scopes)).filter((id) => id !== "more").sort()]).toEqual([scopes, before.sort()]);
+      expect([scopes, ids(device(...scopes)).filter((id) => id !== "more" && id !== "work").sort()]).toEqual([scopes, before.sort()]);
     }
   });
 
-  test("the roster comes first: Galahad's own timeline and the Roundtable's; the Inbox is no longer a place of its own in the navigation", () => {
-    expect(ids(primaryOf(device(...OWNER)))).toEqual(["chat", "team"]);
-    expect(primaryOf(device(...OWNER)).map((place) => place.label)).toEqual(["Galahad", "Roundtable"]);
+  test("Galahad comes first, then the work by project, then the Roundtable; the Inbox is no longer a place of its own in the navigation", () => {
+    expect(ids(primaryOf(device(...OWNER)))).toEqual(["chat", "work", "team"]);
+    expect(primaryOf(device(...OWNER)).map((place) => place.label)).toEqual(["Galahad", "Work", "Roundtable"]);
   });
 
   test("#/roundtable is the Roundtable's address as well as #/team; no other place has a second name", () => {
@@ -82,9 +85,9 @@ describe("the app's places", () => {
 
   test("a phone's bar is the Roundtable, More and Galahad at its right end; a device with no roster has its Inbox there", () => {
     // Your word, 23 November 2026: Galahad the right-most in the bar (the app still opens on him).
-    expect(ids(tabsOf(device(...OWNER)))).toEqual(["team", "more", "chat"]);
-    expect(ids(tabsOf(device("chat")))).toEqual(["team", "more", "chat"]);
-    expect(tabsOf(device(...OWNER)).map((tab) => tab.label)).toEqual(["Roundtable", "More", "Galahad"]);
+    expect(ids(tabsOf(device(...OWNER)))).toEqual(["work", "more", "chat"]);
+    expect(ids(tabsOf(device("chat")))).toEqual(["work", "more", "chat"]);
+    expect(tabsOf(device(...OWNER)).map((tab) => tab.label)).toEqual(["Work", "More", "Galahad"]);
     expect(homeOf(device(...OWNER), { narrow: true })).toBe("chat");
     expect(ids(tabsOf(device("mind:read")))).toEqual(["inbox", "more"]);
     expect(ids(tabsOf(device()))).toEqual(["inbox", "more"]);
@@ -100,7 +103,9 @@ describe("the app's places", () => {
   test("a place reached from More keeps More marked, and a timeline keeps the roster marked", () => {
     const tabs = tabsOf(device(...OWNER));
     expect(tabOf("chat", tabs)).toBe("chat");
-    expect(tabOf("team", tabs)).toBe("team");
+    // The Roundtable and a knight's or a room's timeline keep Work marked: they are where its tasks are worked.
+    expect(tabOf("work", tabs)).toBe("work");
+    expect(tabOf("team", tabs)).toBe("work");
     for (const id of ["more", "inbox", "overview", "fleet", "settings", "vault"] as const) expect([id, tabOf(id, tabs)]).toEqual([id, "more"]);
     // On a device whose bar holds the Inbox, the Inbox marks itself.
     expect(tabOf("inbox", tabsOf(device("mind:read")))).toBe("inbox");
@@ -112,7 +117,7 @@ describe("the app's places", () => {
     expect(rail.groups.map(ids)).toEqual(moreIndex(device(...OWNER)).filter((group) => group.heading !== "This device").map((group) => ids(group.places)));
     expect(ids(rail.foot)).toEqual(["settings"]);
     const onRail: string[] = [...rail.groups.flat(), ...rail.foot].map((place) => place.id);
-    expect(onRail.sort()).toEqual(ids(device(...OWNER)).filter((id) => !["chat", "team", "more"].includes(id)).sort());
+    expect(onRail.sort()).toEqual(ids(device(...OWNER)).filter((id) => !["chat", "work", "team", "more"].includes(id)).sort());
     // The Inbox leads it, where what needs you is counted.
     expect(rail.groups[0]![0]!.id).toBe("inbox");
     // A device that may only chat sees only what it may open.

@@ -23,6 +23,8 @@ export interface NavigateOptions {
   /** A persistent team room or direct conversation, and its selected view. */
   room?: string;
   teamTab?: TeamTab;
+  /** A task to show in that room's timeline (from Work): it is brought into view and marked a moment. */
+  task?: string;
 }
 
 /** Live data shared by the shell and the views, polled while the app is visible. */

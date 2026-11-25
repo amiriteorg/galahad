@@ -340,6 +340,9 @@
       .nav-item .count { margin-left: auto; }
       .sidebar-foot { padding-top: var(--sp-2); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
       .sidebar > .nav { flex: none; padding-top: var(--sp-2); }
+      /* Work, at the sidebar's head (shell.ts): a wide screen's way to the work by project. */
+      .sidebar > .sidebar-work { flex: none; margin: var(--sp-2) 0 var(--sp-1); }
+      .shell[data-pane="roster"] .sidebar > .sidebar-work { display: none; }
       @media (min-width: 960px) {
         :root[data-sidebar="collapsed"] .sidebar .label,
         :root[data-sidebar="collapsed"] .sidebar .kbds,
@@ -1229,6 +1232,8 @@
       .team-member-choice .meta { display: block; }
       /* A task is a card in the timeline: where it stands; while it runs, its latest lines; once it has ended, how. */
       .team-task { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--card-pad); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-1); }
+      /* A task opened from Work, marked a moment where it is (views/team.ts): a ring of its own, fading. */
+      .team-task.is-focus { box-shadow: var(--shadow-1), 0 0 0 2px var(--work); transition: box-shadow 1.2s ease-out; }
       .task-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
       .task-head strong { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
       .task-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; color: var(--text-3); font-size: var(--fs-12); }

@@ -30,6 +30,9 @@ interface PlaceSpec {
 const LIST = [
   // Galahad himself, the one you talk to (your word, 23 November 2026): his address stays #/chat, and "chat" still finds him.
   { id: "chat", label: "Galahad", icon: "chat", under: "primary", scope: "chat", key: "c", keywords: ["galahad", "chat", "counsel", "ask", "talk", "history", "conversations", "home", "orb"], about: "" },
+  // The work, by project, each task a thread (your word, 25 November 2026: "way more task/coding focused … per task/per
+  // project like t3code"): what is under way, and every project's tasks.
+  { id: "work", label: "Work", icon: "layers", under: "primary", scope: "chat", key: "j", keywords: ["work", "tasks", "projects", "threads", "repositories", "under way", "jobs", "code"], about: "" },
   // (Its address stays #/team, and #/roundtable is the same page. Its older names still find it.)
   { id: "team", label: "Roundtable", icon: "roundtable", under: "primary", scope: "chat", key: "h", keywords: ["knights", "roundtable", "give", "rooms", "messages", "tasks", "coordination", "team", "squires", "hermes"], about: "" },
   // (What needs you shows on the row it belongs to; the Inbox is where all of it is answered.)
@@ -74,7 +77,7 @@ export function routeOf(hash: string, visible: Place[]): Route | null {
   return visible.find((place) => place.id === id)?.id ?? null;
 }
 
-/** The roster's places: Galahad's own timeline, and the Roundtable's. */
+/** The roster's places: Galahad's own timeline, the work by project, and the Roundtable's. */
 export const primaryOf = (visible: Place[]): Place[] => visible.filter((place) => place.under === "primary");
 
 /**
@@ -85,11 +88,12 @@ export const primaryOf = (visible: Place[]): Place[] => visible.filter((place) =
 export const homeOf = (visible: Place[], _screen: { narrow: boolean }): Route => primaryOf(visible)[0]?.id ?? "inbox";
 
 /**
- * A phone's bar: the Roundtable, More, and Galahad at its right end (your word, 23 November 2026: Galahad the right-most
- * in the bar; the app still opens on him). A device with no roster has its Inbox and More.
+ * A phone's bar: Work, More, and Galahad at its right end (your words: 23 November 2026, Galahad the right-most in the
+ * bar, the app still opening on him; 25 November 2026, the work by project, as T3 Code has it, where the Roundtable
+ * was: the knights are a tap from Work). A device with no roster has its Inbox and More.
  */
 export function tabsOf(visible: Place[]): Place[] {
-  const order: Route[] = visible.some((place) => place.id === "team") ? ["team", "more", "chat"] : ["inbox", "more"];
+  const order: Route[] = visible.some((place) => place.id === "work") ? ["work", "more", "chat"] : visible.some((place) => place.id === "team") ? ["team", "more", "chat"] : ["inbox", "more"];
   return order.flatMap((id) => visible.filter((place) => place.id === id));
 }
 
@@ -115,6 +119,7 @@ export function railOf(visible: Place[]): { groups: Place[][]; foot: Place[] } {
   };
 }
 
-/** Which entry of the bar a place is under: itself when it is one, the roster for a timeline, More for the rest. */
+/** Which entry of the bar a place is under: itself when it is one, Work for the Roundtable and its timelines (where its
+ * tasks are worked), More for the rest. */
 export const tabOf = (route: Route, tabs: Place[]): Route =>
-  tabs.some((tab) => tab.id === route) ? route : PLACES.find((place) => place.id === route)?.under === "primary" ? "team" : "more";
+  tabs.some((tab) => tab.id === route) ? route : PLACES.find((place) => place.id === route)?.under === "primary" ? (tabs.some((tab) => tab.id === "work") ? "work" : "team") : "more";
