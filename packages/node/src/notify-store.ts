@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { closeSync, existsSync, openSync } from "node:fs";
-import { type NotifyItem, type NotifyPayload, type NotifyPrefs, readNotifyPrefs } from "@galahad/core";
+import { type DigestTopic, isTimeZone, type NotifyItem, type NotifyPayload, type NotifyPrefs, readNotifyPrefs } from "@galahad/core";
 
 /*
  * What this node keeps for notifications, in its own private database (push.db, mode
@@ -22,6 +22,11 @@ import { type NotifyItem, type NotifyPayload, type NotifyPrefs, readNotifyPrefs 
  *   lost           a device whose subscription its push service stopped taking (it was on, and
  *                  you didn't turn it off): when, the service by name and why in words, never
  *                  the endpoint. Cleared when the device turns them on again or off, or is revoked.
+ *   presence       when each of your devices last asked the node anything, and the time zone it
+ *                  said it was in (a hint, outside what's signed): your day is read in the zone
+ *                  your devices say, and news goes to the device you used last.
+ *   digest         what went to the day's digest instead of being told on its own (by key and
+ *                  topic, never its words), until the digest says it.
  *
  * `secure_delete` overwrites what a removed subscription held.
  */
@@ -78,6 +83,10 @@ interface SubscriptionRecord {
 
 /** Sends that don't count against the day's limit: your own test, and the message that says the limit was reached. */
 const UNCOUNTED = "('test', 'limit')";
+/** Messages of news alone (PLAN #59): what's told now never carries a news kind. */
+const NEWS = "('finished', 'told')";
+/** A device's zone is your day's for this long after it last asked the node anything. */
+const ZONE_KEEP_MS = 30 * 24 * 60 * 60_000;
 const KEEP_SENT_MS = 30 * 24 * 60 * 60_000;
 /** At most this many notifications are kept for one device that collects (the day's limit is 50 at most). */
 const COLLECT_KEPT = 60;
@@ -103,7 +112,9 @@ export class NotifyStore {
       CREATE TABLE IF NOT EXISTS sent (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, devices TEXT NOT NULL, ok INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS sent_by_day ON sent (day, id);
       CREATE TABLE IF NOT EXISTS collect (device TEXT NOT NULL, tag TEXT NOT NULL, payload TEXT NOT NULL, at INTEGER NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY (device, tag));
-      CREATE TABLE IF NOT EXISTS lost (device TEXT PRIMARY KEY, at INTEGER NOT NULL, service TEXT NOT NULL, why TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS lost (device TEXT PRIMARY KEY, at INTEGER NOT NULL, service TEXT NOT NULL, why TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS presence (device TEXT PRIMARY KEY, at INTEGER NOT NULL, zone TEXT);
+      CREATE TABLE IF NOT EXISTS digest (key TEXT PRIMARY KEY, topic TEXT NOT NULL, at INTEGER NOT NULL);`);
   }
 
   close(): void {
@@ -160,6 +171,52 @@ export class NotifyStore {
     this.forgetLost(device);
     this.caughtUp(device);
     return this.db.query("DELETE FROM subscriptions WHERE device = ?").run(device).changes > 0;
+  }
+
+  /* ---------- where you are, and which device you used last ---------- */
+
+  /** This device asked the node something now, from this zone (null: it said none). */
+  see(device: string, zone: string | null): void {
+    this.db
+      .query("INSERT INTO presence (device, at, zone) VALUES (?, ?, ?) ON CONFLICT (device) DO UPDATE SET at = excluded.at, zone = COALESCE(excluded.zone, presence.zone)")
+      .run(device, this.now(), zone && isTimeZone(zone) ? zone.slice(0, 64) : null);
+  }
+
+  /** When each device last asked the node anything, the most recent first. */
+  presence(): { device: string; at: number; zone: string | null }[] {
+    return this.db.query<{ device: string; at: number; zone: string | null }, []>("SELECT device, at, zone FROM presence ORDER BY at DESC, device").all();
+  }
+
+  /** The zone the device you used last said it was in (within a month), or null. */
+  latestZone(): string | null {
+    return this.db.query<{ zone: string }, [number]>("SELECT zone FROM presence WHERE zone IS NOT NULL AND at > ? ORDER BY at DESC, device LIMIT 1").get(this.now() - ZONE_KEEP_MS)?.zone ?? null;
+  }
+
+  forgetPresence(device: string): void {
+    this.db.query("DELETE FROM presence WHERE device = ?").run(device);
+  }
+
+  /* ---------- the day's digest ---------- */
+
+  /** These go to the day's digest (each once, by key and topic: never its words). */
+  toDigest(rows: readonly { key: string; topic: DigestTopic }[]): void {
+    const put = this.db.query("INSERT OR IGNORE INTO digest (key, topic, at) VALUES (?, ?, ?)");
+    const at = this.now();
+    this.db.transaction(() => {
+      for (const row of rows) put.run(row.key, row.topic, at);
+    })();
+  }
+
+  /** What waits for the next digest, counted by topic. */
+  digestTopics(): Partial<Record<DigestTopic, number>> {
+    const out: Partial<Record<DigestTopic, number>> = {};
+    for (const row of this.db.query<{ topic: string; n: number }, []>("SELECT topic, COUNT(*) AS n FROM digest GROUP BY topic").all()) out[row.topic as DigestTopic] = row.n;
+    return out;
+  }
+
+  /** The digest said what waited until now. */
+  clearDigest(): void {
+    this.db.query("DELETE FROM digest WHERE at <= ?").run(this.now());
   }
 
   /* ---------- devices that came back after nobody could be reached ---------- */
@@ -328,6 +385,27 @@ export class NotifyStore {
   /** When the last notification that counts was sent. */
   lastSentAt(): number | null {
     return this.db.query<{ at: number | null }, []>(`SELECT MAX(at) AS at FROM sent WHERE kind NOT IN ${UNCOUNTED}`).get()?.at ?? null;
+  }
+
+  /** How many messages of news alone were sent on a day, and when the last went. */
+  newsOn(day: string): number {
+    return this.db.query<{ n: number }, [string]>(`SELECT COUNT(*) AS n FROM sent WHERE day = ? AND kind IN ${NEWS}`).get(day)!.n;
+  }
+
+  lastNewsAt(): number | null {
+    return this.db.query<{ at: number | null }, []>(`SELECT MAX(at) AS at FROM sent WHERE kind IN ${NEWS}`).get()?.at ?? null;
+  }
+
+  /** How many things his own judgment raised were told on a day. */
+  modelOn(day: string): number {
+    return Number(this.setting(`model-told:${day}`) ?? 0) || 0;
+  }
+
+  addModel(day: string, n: number): void {
+    if (n <= 0) return;
+    const total = this.modelOn(day) + n;
+    this.db.query("DELETE FROM settings WHERE k LIKE 'model-told:%' AND k != ?").run(`model-told:${day}`);
+    this.setSetting(`model-told:${day}`, String(total));
   }
 
   /** How many tests were sent on a day. */

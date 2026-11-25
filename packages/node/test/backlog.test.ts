@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { type ChatStreamEvent, type ExecResult, newNodeIdentity, type Teammate, toldItem } from "@galahad/core";
+import { type ChatStreamEvent, type ExecResult, newNodeIdentity, noticeItem, type Teammate } from "@galahad/core";
 import type { chat as Chat } from "@galahad/brain";
 import { foundFleet, MindStore } from "@galahad/mind";
 import { BACKLOG, BACKLOG_READ, BacklogRunner, issueLines, readProposal } from "../src/backlog.ts";
@@ -94,7 +94,8 @@ describe("work for idle knights, from your backlog", () => {
     expect(w.notices()).toEqual([expect.objectContaining({ severity: "info", source: "backlog", title: "Work proposed for Ada" })]);
     expect(w.notices()[0]!.body).toBe(`A template of outcomes\nIt may spend $2, more than is left of your budget, so it waits in your conversation with Ada, and starts when you approve it there (or galahad roundtable approve ${task!.id}).`);
     // The notification in fixed words, never the model's.
-    expect(toldItem({ key: `backlog:${task!.id}`, severity: "info", source: "backlog", dismissed: false })).toMatchObject({ kind: "told", title: "Galahad: work for a knight" });
+    // Counted in the day's digest, never told on its own: a proposal waits for you in its conversation.
+    expect(noticeItem({ key: `backlog:${task!.id}`, severity: "info", title: "", source: "backlog", dismissed: false })).toMatchObject({ kind: "told", title: "Galahad: work for a knight", tier: "digest", topic: "backlog" });
     // A day on, still its next step, and your budget has room now: he gives it, and it is out of your Inbox.
     w.budget.left = 5;
     w.clock.add(BACKLOG.perKnightMs);

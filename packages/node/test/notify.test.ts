@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { b64u, GENERIC_NOTIFICATION, notifyDay, type NotifyPayload, type QuestView, tagOf } from "@galahad/core";
+import { b64u, GENERIC_NOTIFICATION, notifyDay, type NotifyPayload, type QuestView, tagOf, turnItem } from "@galahad/core";
 import type { MindStore } from "@galahad/mind";
 import { COLLECT_SERVICE, CollectSender, collectTarget } from "../src/collect-send.ts";
 import { type NotifyOptions, NotifyService, type NotifySources } from "../src/notify.ts";
@@ -18,7 +18,7 @@ function harness(over: { devices?: { id: string; name: string; kind: "node" | "c
   const devices = over.devices ?? [{ id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read", "chat", "vault:read"] }];
   const quests: QuestView[] = [];
   const listeners: (() => void)[] = [];
-  const db = new NotifyStore(":memory:", () => now);
+  const db = new NotifyStore(":memory:", () => now, "UTC");
   // No quiet hours here: each test is about what's said, not when.
   db.setPrefs({ ...db.prefs(), quiet: { ...db.prefs().quiet, on: false } });
   db.put("c_phone", { endpoint: "https://web.push.apple.com/stand-in", p256dh: "p", auth: "a", service: "Apple" });
@@ -75,7 +75,8 @@ describe("a quest you started", () => {
     expect(h.sent).toEqual([]); // in hand: nothing to say
     h.quest({ quest: "q-1", state: "unverified" });
     await h.look();
-    expect(h.sent.map((s) => s.payload)).toMatchObject([{ kind: "finished", title: "Quest ended unverified", body: "“Tidy the repo's README”", open: "overview" }]);
+    // Never your goal (your own words): Apple, or any push service, could read it.
+    expect(h.sent.map((s) => s.payload)).toMatchObject([{ kind: "finished", title: "Quest ended unverified", body: "A quest you started has ended.", open: "overview" }]);
     // Said once.
     h.service.lookAtQuests();
     await h.look();
@@ -86,7 +87,7 @@ describe("a quest you started", () => {
     expect(h.sent).toHaveLength(1);
     // The ledger has the kind and the device, never the goal.
     expect(h.ledger).toMatchObject([{ resource: "notify", target: "finished", detail: "to phone" }]);
-    expect(JSON.stringify(h.ledger)).not.toContain("README");
+    expect(JSON.stringify([h.ledger, h.sent])).not.toContain("README");
   });
 
   test("one that had already ended when he first looked is old news; another's quest is never told as yours", async () => {
@@ -125,13 +126,15 @@ describe("a quest you started", () => {
 });
 
 describe("what couldn't be told in time", () => {
-  test("something that happened and couldn't be told in time is dropped, not told a day late", async () => {
+  test("news that couldn't be told for a day and a half isn't told late, or dropped: the day's digest counts it", async () => {
     const h = harness();
     h.quest({ quest: "q-1", state: "working" });
     h.quest({ quest: "q-1", state: "done" });
-    h.advance(19 * 3600_000);
+    h.advance(37 * 3600_000);
     await h.look();
     expect(h.sent).toEqual([]);
+    expect(h.db.digestTopics()).toEqual({ quest: 1 });
+    expect(h.db.pending()).toEqual([]);
   });
 });
 
@@ -238,7 +241,8 @@ describe("his own words about reaching you", () => {
     expect(h.sent).toEqual([]);
     notices.push(notice("doctor:notify.devices:n_ultra", "Notifications aren't reaching iPad"));
     await h.look();
-    expect(h.sent.map((s) => s.payload)).toMatchObject([{ kind: "needs-you", title: "Galahad: this needs you", body: "Notifications aren't reaching iPad" }]);
+    // In fixed words (the device's name is yours): the Inbox names it.
+    expect(h.sent.map((s) => s.payload)).toMatchObject([{ kind: "needs-you", title: "Galahad: this needs you", body: "Something in your Inbox needs you." }]);
   });
 });
 
@@ -297,8 +301,9 @@ describe("a subscription its push service drops: lost, not turned off", () => {
     expect((await h.service.view(null)).reachable).toBe(2);
     done(h, "q-1");
     await h.look();
-    // Once is a failure; twice running, it keeps failing.
+    // Once is a failure; twice running, it keeps failing. (News goes at most every half hour.)
     expect((await h.service.view(null)).reachable).toBe(2);
+    h.advance(30 * 60_000);
     done(h, "q-2");
     await h.look();
     expect((await h.service.view("c_ipad")).reachable).toBe(1);
@@ -366,7 +371,7 @@ describe("the Android app: kept on the node, collected by the app", () => {
     h.quest({ quest: "q-1", state: "done" });
     await h.look();
     expect(h.sent.map((s) => s.to).sort()).toEqual(["collect:c_android", "https://web.push.apple.com/stand-in"]);
-    expect(h.service.collect("c_android")).toMatchObject({ on: true, notifications: [{ kind: "finished", title: "Quest done", body: "“Tidy the repo's README”" }] });
+    expect(h.service.collect("c_android")).toMatchObject({ on: true, notifications: [{ kind: "finished", title: "Quest done", body: "A quest you started has ended." }] });
     expect(h.service.collect("c_android")).toEqual({ on: true, notifications: [] });
     // What's kept for one device is its own: a phone that's told through a push service collects nothing.
     expect(h.service.collect("c_phone")).toEqual({ on: false, notifications: [] });
@@ -416,5 +421,106 @@ describe("the Android app: kept on the node, collected by the app", () => {
     expect(kept).toHaveLength(60);
     expect(kept[0]).toBe("t-1");
     expect(kept.at(-1)).toBe("t-60");
+  });
+});
+
+describe("told once while it stands, and asks before news", () => {
+  type Action = ReturnType<NotifySources["actions"]>[number];
+  const approval = (now: number, over: Partial<Action> = {}): Action => ({ id: "a_CCCCCCCCCCCCCCCCCCCCCC", connector: "dinero", tool: "book", state: "waiting", requestedAt: `${now - 60_000}.0000.n_test`, expires: now + 86_400_000, class: "outward", ...over });
+
+  test("a connector he asked for, standing for days, is told once: never again every 49 hours (Probe B)", async () => {
+    const h = harness({ devices: [{ id: "c_phone", name: "phone", kind: "client", scopes: ["mind:read", "brain:write"] }], sources: { connectorRequests: () => ["cr_AAAAAAAAAAAAAAAAAAAAAA"] } });
+    for (let hour = 0; hour <= 100; hour++) {
+      await h.look();
+      h.advance(3600_000);
+    }
+    expect(h.sent.filter((s) => s.payload.title === "Galahad asks for a connector")).toHaveLength(1);
+  });
+
+  test("a day's worth of news never keeps an approval waiting: news has a budget of its own, and an ask is told at once (Probe C)", async () => {
+    let actions: Action[] = [];
+    const h = harness({ sources: { actions: () => actions } });
+    // Ten quests of yours end through the day, half an hour apart: news, each as it comes.
+    for (let i = 0; i < 10; i++) {
+      h.quest({ quest: `q-${i}`, state: "working" });
+      h.quest({ quest: `q-${i}`, state: "done" });
+      h.advance(31 * 60_000);
+      await h.look();
+    }
+    actions = [approval(h.now())];
+    await h.look();
+    expect(h.sent.at(-1)!.payload).toMatchObject({ kind: "approval", title: "Galahad asks your approval" });
+  });
+});
+
+describe("tiers on the wire", () => {
+  test("news goes quietly (Urgency low) to the device you used last; what needs you goes to every device, as loud as it is", async () => {
+    const devices = [
+      { id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read", "chat"] },
+      { id: "c_ipad", name: "iPad", kind: "client" as const, scopes: ["mind:read", "chat"] },
+    ];
+    let notices: ReturnType<NotifySources["notices"]> = [];
+    const h = harness({ devices, sources: { notices: () => notices } });
+    h.service.subscribeApple("c_ipad", { token: "ee".repeat(32), environment: "production" });
+    h.service.seen("c_phone", null);
+    h.advance(60_000);
+    h.service.seen("c_ipad", "Europe/Copenhagen");
+    h.quest({ quest: "q-1", state: "working" });
+    h.quest({ quest: "q-1", state: "done" });
+    await h.look();
+    expect(h.sent.map((s) => s.to)).toEqual([`apns:production:${"ee".repeat(32)}`]);
+    expect(h.sent[0]!.payload).toMatchObject({ kind: "finished", title: "Quest done" });
+    notices = [{ key: "disk:n_1", severity: "warn", title: "ultra is low on disk", source: "heartbeat", dismissed: false }];
+    await h.look();
+    expect(h.sent.slice(1).map((s) => s.to).sort()).toEqual([`apns:production:${"ee".repeat(32)}`, "https://web.push.apple.com/stand-in"]);
+    // A device you haven't used for a day isn't "last": news goes to every device then.
+    h.advance(25 * 3600_000);
+    h.quest({ quest: "q-2", state: "working" });
+    h.quest({ quest: "q-2", state: "done" });
+    await h.look();
+    expect(h.sent.slice(3).map((s) => s.to).sort()).toEqual([`apns:production:${"ee".repeat(32)}`, "https://web.push.apple.com/stand-in"]);
+  });
+
+  test("your day is read in the zone your devices say, not the node's: 22:30 in Copenhagen is night, whatever London says (Probe D)", async () => {
+    let notices: ReturnType<NotifySources["notices"]> = [];
+    const h = harness({ sources: { notices: () => notices } });
+    // The node in London, quiet hours 22:00 to 07:00 as you set them there; your iPhone says it is in Copenhagen.
+    h.db.setPrefs({ ...h.db.prefs(), quiet: { on: true, from: "22:00", to: "07:00", tz: "Europe/London" } });
+    h.service.seen("c_phone", "Europe/Copenhagen");
+    expect(h.service.zone()).toBe("Europe/Copenhagen");
+    expect((await h.service.view("c_phone")).zone).toBe("Europe/Copenhagen");
+    // 22:30 in Copenhagen (21:30 in London): held for the morning.
+    h.advance(Date.parse("2026-11-25T21:30:00Z") - h.now() - 61_000);
+    notices = [{ key: "disk:n_1", severity: "warn", title: "ultra is low on disk", source: "heartbeat", dismissed: false }];
+    await h.look();
+    expect(h.sent).toEqual([]);
+    expect(await h.service.view(null)).toMatchObject({ quiet: true, held: 1 });
+    // 07:00 in Copenhagen: told.
+    h.advance(Date.parse("2026-11-26T06:00:00Z") - h.now() - 61_000);
+    await h.look();
+    expect(h.sent.map((s) => s.payload.kind)).toEqual(["needs-you"]);
+  });
+
+  test("a device that never said its zone, or isn't yours any more, leaves your day in the setting's zone", async () => {
+    const devices = [{ id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read"] }, { id: "c_gone", name: "gone", kind: "client" as const, scopes: ["mind:read"] }];
+    const h = harness({ devices });
+    h.db.setPrefs({ ...h.db.prefs(), quiet: { ...h.db.prefs().quiet, tz: "Europe/London" } });
+    h.service.seen("c_phone", null);
+    h.service.seen("c_phone", "Mars/Olympus");
+    expect(h.service.zone()).toBe("Europe/London");
+    h.service.seen("c_gone", "Asia/Tokyo");
+    expect(h.service.zone()).toBe("Asia/Tokyo");
+    devices.pop();
+    expect(h.service.zone()).toBe("Europe/London");
+  });
+
+  test("his looks that found what they looked for go to the digest; his questions are told quietly, three a day, the rest to the digest", async () => {
+    const h = harness();
+    const turn = (id: string, over: Partial<Parameters<typeof turnItem>[0]> = {}) => turnItem({ id, conversation: "cv_1234567890123456789012", bank: false, state: "done", question: false, waiting: false, look: true, ...over })!;
+    h.db.addPending(turn("t_look"));
+    for (const id of ["t_q1", "t_q2", "t_q3", "t_q4"]) h.db.addPending(turn(id, { question: true }));
+    await h.look();
+    expect(h.sent.map((s) => s.payload)).toMatchObject([{ kind: "told", title: "Galahad: 3 things", body: "He has 3 questions." }]);
+    expect(h.db.digestTopics()).toEqual({ look: 1, asked: 1 });
   });
 });

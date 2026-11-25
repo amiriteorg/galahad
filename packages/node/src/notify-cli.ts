@@ -1,4 +1,4 @@
-import { alertReserve, CLOCK, NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY_PER_DAY, type NotifyDeviceView, type NotifyKind, type NotifyPrefs, type NotifyView, type RouteName } from "@galahad/core";
+import { alertReserve, CLOCK, newsBudget, NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY_PER_DAY, type NotifyDeviceView, type NotifyKind, type NotifyPrefs, type NotifyView, type RouteName } from "@galahad/core";
 
 /*
  * `galahad notify`: he comes to you, seen and set from a terminal. Thin: the node keeps
@@ -39,8 +39,9 @@ export function deviceNamed(devices: NotifyDeviceView[], ref: string): NotifyDev
   return matches[0]!;
 }
 
-export function quietWords(prefs: NotifyPrefs): string {
-  return prefs.quiet.on ? `${prefs.quiet.from} to ${prefs.quiet.to}, ${prefs.quiet.tz} time: everything but an alert waits, then one message says what waited` : "off: he tells you whenever it happens";
+/** `zone`: the zone your day is read in now (the one your devices last said), when it isn't the setting's. */
+export function quietWords(prefs: NotifyPrefs, zone?: string): string {
+  return prefs.quiet.on ? `${prefs.quiet.from} to ${prefs.quiet.to}, ${zone ?? prefs.quiet.tz} time: everything but an alert waits, then one message says what waited` : "off: he tells you whenever it happens";
 }
 
 /** Everything `galahad notify` prints: who, what, when, and today. Never an endpoint (the node gives none). */
@@ -53,7 +54,8 @@ export function statusLines(view: NotifyView): string[] {
   }
   out.push("", bold("What he tells you"));
   for (const kind of NOTIFY_KINDS) out.push(`  ${(view.prefs.kinds[kind] ? "on " : "off").padEnd(4)} ${kind.padEnd(10)} ${dim(NOTIFY_KIND_INFO[kind].label)}`);
-  out.push("", `${bold("Quiet hours")}  ${quietWords(view.prefs)}${view.quiet ? dim(` (now; ${view.held} waiting)`) : ""}`);
+  out.push("", `${bold("Quiet hours")}  ${quietWords(view.prefs, view.zone)}${view.quiet ? dim(` (now; ${view.held} waiting)`) : ""}`);
+  if (view.zone && view.zone !== view.prefs.quiet.tz) out.push(dim(`  (your devices say they're in ${view.zone}; the setting's ${view.prefs.quiet.tz} is used when none has said)`));
   out.push(`${bold("The day's limit")}  ${view.today.count} of ${view.today.limit} sent today (${view.today.day})`);
   for (const sent of view.today.sent) out.push(`  ${time(sent.at)}  ${sent.kind.padEnd(10)} ${dim(`to ${sent.devices.join(", ")}${sent.ok ? "" : " (didn't arrive)"}`)}`);
   return out;
@@ -103,7 +105,7 @@ export async function notifyCommand(api: Api, sub: string | undefined, rest: str
     if (!rest[0] || !Number.isInteger(n) || n < NOTIFY_PER_DAY.min || n > NOTIFY_PER_DAY.max) throw new Error(`the day's limit is a whole number from ${NOTIFY_PER_DAY.min} to ${NOTIFY_PER_DAY.max}: galahad notify limit 12`);
     const { prefs } = await api.call<{ prefs: NotifyPrefs }>("setNotify", { perDay: n });
     const kept = alertReserve(prefs.perDay);
-    print(`At most ${prefs.perDay} a day${kept ? `, the last ${kept === 1 ? "one" : kept} kept for alerts` : ""}. When ordinary news reaches the limit, one message says so.`);
+    print(`At most ${prefs.perDay} a day${kept ? `, the last ${kept === 1 ? "one" : kept} kept for alerts` : ""}; news alone at most ${newsBudget(prefs.perDay)} (the rest goes to the digest). When what needs you reaches the limit, one message says so.`);
     return;
   }
   if (sub === "apple-key") {

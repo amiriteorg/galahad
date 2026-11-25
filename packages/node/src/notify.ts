@@ -6,12 +6,13 @@ import {
   connectorItem,
   inQuietHours,
   isP256Point,
+  isTimeZone,
+  itemTier,
   fromB64u,
   limitMessage,
   limitReached,
   noticeItem,
   screenItem,
-  toldItem,
   notifyDay,
   type NotifyDeviceView,
   type NotifyItem,
@@ -30,6 +31,7 @@ import {
   randomId,
   redact,
   secretItem,
+  tagOf,
   testMessage,
   turnItem,
 } from "@galahad/core";
@@ -50,7 +52,9 @@ const appleService = (environment: ApplePushEnvironment): string => (environment
  * devices, through one door: `tick()`. It looks at what stands (findings that need you,
  * approvals waiting, keys he asked for) and at what happened (a turn
  * that ended unwatched, a quest you started), asks the pure rules in
- * core's notify.ts what may be told now, and delivers that as one message a device.
+ * core's notify.ts what may be told now and how loudly, and delivers that as one message a
+ * device: what needs you now to every device, news quietly to the device you used last, the
+ * rest counted for the day's digest.
  *
  * Nothing else raises one. There is no route, tool or event that carries a title or a
  * line: every word comes from the typed builders in notify.ts, from records this node
@@ -72,8 +76,8 @@ export interface NotifySources {
   actions(): { id: string; connector: string; tool: string; state: string; requestedAt: string; expires: number; class?: string }[];
   /** MCP servers' questions waiting for your answer, mid-call (questions.ts). */
   questions?(): { id: string; connector: string; askedAt: number; expires: number }[];
-  /** His asks to use a Mac itself, where each stands (core's screen.ts). */
-  screenSessions?(): { id: string; nodeName: string; minutes: number; state: string; askedAt: number }[];
+  /** His asks to use a Mac itself, where each stands (core's screen.ts), and by when an answer is due. */
+  screenSessions?(): { id: string; nodeName: string; minutes: number; state: string; askedAt: number; answerBy?: number }[];
   /** The keys he's waiting for, by name. */
   secretRequests(): string[];
   /** The connectors agents asked for and you haven't added, by request id. */
@@ -109,8 +113,12 @@ export interface NotifyOptions {
 const HOUR = 60 * 60_000;
 /** A finding that went away and comes back within this isn't told again: one that flaps tells you once. */
 export const NOTICE_COOLDOWN_MS = 6 * HOUR;
-/** Something that happened and couldn't be told (quiet hours, the limit) is still news for this long. */
-export const PENDING_KEEP_MS = 18 * HOUR;
+/** Something that happened and couldn't be told (quiet hours, the limit) is still news for this long; then the digest counts it. */
+export const PENDING_KEEP_MS = 36 * HOUR;
+/** News goes to the device you used last, if you used it this recently; otherwise to every device. */
+export const LAST_USED_MS = 24 * HOUR;
+/** A device's presence is written at most this often (every request says it). */
+const PRESENCE_EVERY_MS = 60_000;
 const TOLD_KEEP_MS = 48 * HOUR;
 /** Your own test, at most this often, and this many a day. */
 export const TEST_EVERY_MS = 5_000;
@@ -135,15 +143,22 @@ const CANT_REACH_YOU = /^doctor:notify\.reach:/;
 
 type Reached = { sub: Subscription; name: string; scopes: string[] };
 
-/** How long a push service keeps a message, and how soon it's delivered: an alert a day, an ask at once. */
-const deliveryFor = (items: readonly NotifyItem[]): PushDelivery => {
+/**
+ * How long a push service keeps a message, and how loudly and how soon it's delivered: an alert a day, an ask at once,
+ * a finding as it comes; news quietly (Urgency low: passive on every platform, no sound).
+ */
+const deliveryFor = (items: readonly NotifyItem[], news: boolean): PushDelivery => {
+  if (news) return { ttlSeconds: 12 * 3600, urgency: "low" };
   const alert = items.some((item) => item.alert);
   return { ttlSeconds: alert ? 24 * 3600 : 12 * 3600, urgency: alert || items.some((item) => item.kind === "approval" || item.kind === "question") ? "high" : "normal" };
 };
 
 const hlcMs = (hlc: string): number => Number(hlc.split(".")[0]);
-/** Whose keys only stand for something that can go away and come back. */
-const standsFor = (key: string): boolean => key.startsWith("notice:") || key.startsWith("action:") || key.startsWith("secret:");
+/**
+ * Whose keys stand for something that can go away and come back: told once while it stands, however long that is. (A
+ * connector, a question or a Mac's ask once wasn't, so a connector request standing for days was told again every 49 hours.)
+ */
+const standsFor = (key: string): boolean => /^(notice|action|secret|connector|question|screen):/.test(key);
 
 export class NotifyService {
   private readonly now: () => number;
@@ -161,6 +176,8 @@ export class NotifyService {
   private readonly quests = new Set<string>();
   private keyProblem: string | null = null;
   private tagSalt: string | null = null;
+  /** When each device's presence was last written, and from which zone (so every request doesn't write it). */
+  private readonly lastSeen = new Map<string, { at: number; zone: string | null }>();
 
   constructor(private readonly o: NotifyOptions) {
     this.now = o.now ?? Date.now;
@@ -232,7 +249,7 @@ export class NotifyService {
     const kept = this.o.sources.chats.summary(chat.id);
     if (!kept) return;
     const waits = kept.waits;
-    const item = turnItem({ id: turn.id, conversation: chat.id, title: kept.title, bank: kept.bank, state: turn.state, question: !!waits?.question, waiting: !!waits && waits.actions.length + waits.secrets.length > 0 });
+    const item = turnItem({ id: turn.id, conversation: chat.id, bank: kept.bank, state: turn.state, question: !!waits?.question, waiting: !!waits && waits.actions.length + waits.secrets.length > 0, look: !!turn.spec.look });
     if (!item) return;
     this.o.db.addPending(item);
     this.nudge();
@@ -280,7 +297,7 @@ export class NotifyService {
         return [];
       }
     };
-    for (const notice of safely("notices", () => this.o.sources.notices())) if (!CANT_REACH_YOU.test(notice.key)) out.push(noticeItem(notice), toldItem(notice));
+    for (const notice of safely("notices", () => this.o.sources.notices())) if (!CANT_REACH_YOU.test(notice.key)) out.push(noticeItem(notice));
     for (const action of safely("approvals", () => this.o.sources.actions())) out.push(actionItem({ id: action.id, connector: action.connector, tool: action.tool, state: action.state, requestedMs: hlcMs(action.requestedAt), expires: action.expires, ...(action.class ? { class: action.class } : {}) }, now));
     for (const session of safely("screen sessions", () => this.o.sources.screenSessions?.() ?? [])) out.push(screenItem(session, now));
     for (const question of safely("questions", () => this.o.sources.questions?.() ?? [])) out.push(questionItem(question, now));
@@ -311,7 +328,7 @@ export class NotifyService {
   private async look(): Promise<void> {
     const { db } = this.o;
     const now = this.now();
-    const prefs = db.prefs();
+    const prefs = this.prefs();
     const standing = this.standing(now);
     const standingKeys = new Set(standing.map((item) => item.key));
     const told = db.told();
@@ -332,30 +349,88 @@ export class NotifyService {
       }
     }
 
+    // News that couldn't be told in time (quiet hours, its budget) isn't dropped: the digest counts it.
     const waiting = db.pending();
-    const stale = waiting.filter((p) => now - p.at > PENDING_KEEP_MS).map((p) => p.item.key);
-    if (stale.length) db.dropPending(stale);
+    const stale = waiting.filter((p) => now - p.at > PENDING_KEEP_MS).map((p) => p.item);
+    if (stale.length) this.toDigest(stale);
     const items = [...standing, ...waiting.filter((p) => now - p.at <= PENDING_KEEP_MS).map((p) => p.item)];
 
     const devices = this.devices();
-    // Nobody to tell: what stands is told to nobody (it isn't told one by one later), and news is dropped. The device
-    // that comes back is told what still stands and needs you, once, as one message (catchUp, below).
+    // Nobody to tell: what stands is told to nobody (it isn't told one by one later: the device that comes back is told
+    // what still stands and needs you, once, as one message), and news goes to the digest.
     if (!devices.length) {
       const fresh = items.filter((item) => !told.has(item.key));
-      if (fresh.length) db.tell(fresh);
+      if (fresh.length) {
+        db.tell(fresh);
+        this.toDigest(fresh.filter((item) => itemTier(item) !== "now"));
+      }
       db.dropPending(fresh.map((item) => item.key));
       return;
     }
 
     const day = notifyDay(now, prefs.quiet.tz);
     await this.catchUp(now, prefs, day, standing, told, devices);
-    const plan = planNotifications({ now, prefs, items, told, sentToday: db.countOn(day), lastSentAt: db.lastSentAt() });
-    if (plan.send.length) await this.deliver(plan.send, devices, day);
-    // Ordinary news has reached the day's limit: one message says so, once that day, and not in quiet hours.
+    const plan = planNotifications({ now, prefs, items, told, sentToday: db.countOn(day), lastSentAt: db.lastSentAt(), newsToday: db.newsOn(day), lastNewsAt: db.lastNewsAt(), modelToday: db.modelOn(day) });
+    if (plan.digest.length) this.toDigest(plan.digest);
+    if (plan.send.length) await this.deliver(plan.send, devices, day, plan.news);
+    // What's told now has reached the day's limit: one message says so, once that day, and not in quiet hours.
     if (limitReached(prefs, db.countOn(day)) && db.setting("limit-said") !== day && !inQuietHours(prefs.quiet, now)) {
       db.setSetting("limit-said", day);
-      const said = await Promise.all(devices.map((device) => this.send(device, limitMessage(prefs.perDay), { ttlSeconds: 12 * 3600, urgency: "normal" })));
+      const said = await Promise.all(devices.map((device) => this.send(device, limitMessage(prefs.perDay), { ttlSeconds: 12 * 3600, urgency: "low" })));
       db.logSent(day, "limit", devices.map((d) => d.name), said.some(Boolean));
+    }
+  }
+
+  /** Told to the digest, never on its own: remembered as told (once), and counted in the next digest by its topic. */
+  private toDigest(items: readonly NotifyItem[]): void {
+    const { db } = this.o;
+    db.tell(items);
+    db.dropPending(items.map((item) => item.key));
+    db.toDigest(items.map((item) => ({ key: item.key, topic: item.topic ?? (item.model ? "asked" : item.kind === "finished" ? "chat" : "note") })));
+  }
+
+  /** The device you used last, if you used it within a day and he can reach it: news goes there alone. Otherwise every device. */
+  private lastUsed(devices: readonly Reached[]): Reached[] {
+    const reachable = new Map(devices.filter((d) => reaches(d.sub)).map((d) => [d.sub.device, d]));
+    const now = this.now();
+    for (const seen of this.o.db.presence()) {
+      if (now - seen.at > LAST_USED_MS) break;
+      const device = reachable.get(seen.device);
+      if (device) return [device];
+    }
+    return [...devices];
+  }
+
+  /** Your preferences, with your day read in your own zone: the one your devices last said, else the setting's. */
+  private prefs(): NotifyPrefs {
+    const prefs = this.o.db.prefs();
+    return { ...prefs, quiet: { ...prefs.quiet, tz: this.ownerZone(prefs) } };
+  }
+
+  /** The zone your day is read in: the one the device you used last said (within a month), else quiet hours' own (the node's until you set one). */
+  private ownerZone(prefs: NotifyPrefs = this.o.db.prefs()): string {
+    for (const seen of this.o.db.presence()) {
+      if (!seen.zone) continue;
+      if (this.now() - seen.at > 30 * 24 * HOUR) break;
+      if (this.o.mind.activeDevice(seen.device)?.kind === "client") return seen.zone;
+    }
+    return prefs.quiet.tz;
+  }
+
+  /**
+   * One of your devices asked the node something, from this zone (a hint, outside what's signed, trusted for nothing
+   * else): where you are, for your day, and which device you used last, for news. Written at most once a minute a device.
+   */
+  seen(device: string, zone: string | null): void {
+    const now = this.now();
+    const said = zone && isTimeZone(zone) ? zone : null;
+    const last = this.lastSeen.get(device);
+    if (last && now - last.at < PRESENCE_EVERY_MS && (said === null || said === last.zone)) return;
+    this.lastSeen.set(device, { at: now, zone: said ?? last?.zone ?? null });
+    try {
+      this.o.db.see(device, said);
+    } catch (error) {
+      this.o.log(`notifications: where you are not kept (${redact(String((error as Error).message)).slice(0, 160)})`);
     }
   }
 
@@ -382,7 +457,7 @@ export class NotifyService {
       db.caughtUp(device);
       const payload = catchUpMessage(plan.send, this.salt());
       if (!payload) continue; // nothing waited
-      const ok = await this.send(to, payload, deliveryFor(plan.send));
+      const ok = await this.send(to, payload, deliveryFor(plan.send, false));
       this.logged(day, payload.kind, [to.name], ok);
     }
   }
@@ -438,14 +513,16 @@ export class NotifyService {
     return outcome.ok;
   }
 
-  private async deliver(items: NotifyItem[], devices: Reached[], day: string): Promise<void> {
+  /** One message to each device (news alone: to the device you used last), quietly or not as its tier says. */
+  private async deliver(items: NotifyItem[], devices: Reached[], day: string, news: boolean): Promise<void> {
     const { db } = this.o;
-    const delivery = deliveryFor(items);
+    const delivery = deliveryFor(items, news);
     // Told from here on, whatever the push service answers: a failing service is never a reason to try the same news again.
     db.tell(items);
+    db.addModel(day, items.filter((item) => item.model).length);
     db.dropPending(items.map((item) => item.key));
     const results = await Promise.all(
-      devices.map(async (device) => {
+      (news ? this.lastUsed(devices) : devices).map(async (device) => {
         // Each device is told what it could see in the app anyway.
         const payload = notifyMessage(items.filter((item) => item.needs.every((scope) => device.scopes.includes(scope))), this.salt());
         if (!payload) return null;
@@ -539,9 +616,9 @@ export class NotifyService {
     return this.o.db.remove(device);
   }
 
-  /** The zone your day is read in: quiet hours' (the node's own until you set one). */
+  /** The zone your day is read in: the one your devices last said, else quiet hours' (the node's own until you set one). */
   zone(): string {
-    return this.o.db.prefs().quiet.tz;
+    return this.ownerZone();
   }
 
   setPrefs(input: NotifyPrefsInput): NotifyPrefs {
@@ -561,17 +638,18 @@ export class NotifyService {
     const now = this.now();
     const devices = this.devices().filter((d) => !only || d.sub.device === only);
     if (!devices.length) throw new NotifyError(409, only ? "notifications aren't turned on for that device" : "no device has notifications turned on (Settings, on each device)");
+    const zone = this.ownerZone();
     // Yours to send, but not without end: a page stuck in a loop can't buzz the phone with tests.
     const last = this.o.db.lastTestAt();
     if (last !== null && now - last < TEST_EVERY_MS) throw new NotifyError(429, "a test was just sent; give it a few seconds");
-    if (this.o.db.testsOn(notifyDay(now, this.o.db.prefs().quiet.tz)) >= TESTS_PER_DAY) throw new NotifyError(429, `that's ${TESTS_PER_DAY} tests today; more tomorrow`);
+    if (this.o.db.testsOn(notifyDay(now, zone)) >= TESTS_PER_DAY) throw new NotifyError(429, `that's ${TESTS_PER_DAY} tests today; more tomorrow`);
     const sent = await Promise.all(
       devices.map(async (device) => {
         const ok = await this.send(device, testMessage(device.name), { ttlSeconds: 600, urgency: "high" });
         return { device: device.name, ok, error: ok ? null : (this.o.db.subscription(device.sub.device)?.lastError ?? "its subscription was gone, and was removed") };
       }),
     );
-    this.o.db.logSent(notifyDay(now, this.o.db.prefs().quiet.tz), "test", sent.map((s) => s.device), sent.some((s) => s.ok));
+    this.o.db.logSent(notifyDay(now, zone), "test", sent.map((s) => s.device), sent.some((s) => s.ok));
     this.o.ledger({ class: "outward", resource: "notify", target: "test", verdict: "approved", reason: "you asked for a test", quest: "galahad.self", detail: `to ${sent.map((s) => s.device).join(", ")}`.slice(0, 500) });
     return { sent };
   }
@@ -598,16 +676,18 @@ export class NotifyService {
     const { db } = this.o;
     const now = this.now();
     const prefs = db.prefs();
-    const day = notifyDay(now, prefs.quiet.tz);
+    const zone = this.ownerZone(prefs);
+    const day = notifyDay(now, zone);
     const devices = this.devices();
-    const quiet = inQuietHours(prefs.quiet, now);
+    const quiet = inQuietHours({ ...prefs.quiet, tz: zone }, now);
     const told = db.told();
-    const held = quiet ? [...this.standing(now), ...db.pending().map((p) => p.item)].filter((item) => prefs.kinds[item.kind] && !item.alert && !told.has(item.key)).length : 0;
+    const held = quiet ? [...this.standing(now), ...db.pending().map((p) => p.item)].filter((item) => prefs.kinds[item.kind] && !item.alert && itemTier(item) !== "digest" && !told.has(item.key)).length : 0;
     const lostRows = this.lostDevices();
     const lost = asking === null ? null : (lostRows.find((row) => row.device === asking) ?? null);
     return {
       node: this.o.nodeName,
       key: await this.publicKey(),
+      zone,
       prefs,
       devices: devices.map((d) => this.deviceView(d.sub, d.name)),
       subscribed: asking === null ? null : devices.some((d) => d.sub.device === asking),

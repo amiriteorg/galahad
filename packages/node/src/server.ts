@@ -4452,6 +4452,9 @@ export function createApp(ctx: AppContext) {
       const principal = authenticate(req, body, pathAndQuery, listener);
       if (!principal) throw new HttpError(401, "sign the request with an enrolled device key");
       if (route.scope && !principal.scopes.includes(route.scope)) throw new HttpError(403, `requires scope ${route.scope}`);
+      // One of your devices asked: where you are (its zone, a hint outside what's signed, trusted for nothing else) and
+      // that you used it last, for notifications (your day's hours, and news to that device). Never an agent's or a node's.
+      if (principal.kind === "client" && principal.scopes.includes("mind:read")) ctx.notify.seen(principal.device, req.headers.get(ZONE_HEADER));
       const input = route.input ? route.input.parse(body.length ? JSON.parse(new TextDecoder().decode(body)) : {}) : undefined;
       const result = await handlers[name](input, principal, req);
       if (result instanceof Response) return result;

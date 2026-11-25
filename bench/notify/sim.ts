@@ -206,8 +206,10 @@ export async function runNotifySim(o: NotifySimOptions): Promise<NotifySimResult
   service.subscribeApple(PHONE, { token: phoneToken, environment: "production" });
   await service.subscribe(LAPTOP, laptopSubscription());
 
-  /** What each app does when it opens: the web app's sync (lib/push.ts); the iPhone app, as its build does. */
+  /** What each app does when it opens: it asks the node from where it is (each request says its zone, and the node
+   * keeps it), then the web app's sync (lib/push.ts); the iPhone app, as its build does. */
   async function appOpens(device: string): Promise<void> {
+    service.seen(device, OWNER_ZONE);
     const view = await service.view(device);
     if (device === LAPTOP) {
       const step = pushSync({ subscribed: view.subscribed === true, lost: !!view.lost, browser: laptopBrowserHas, sameKey: true });
@@ -314,7 +316,8 @@ export async function runNotifySim(o: NotifySimOptions): Promise<NotifySimResult
       const fixing = ci() < 0.7;
       const key = `ci:sim-${day}`;
       const raised = localAt(day, between(ci, 9, 18));
-      at(raised, 1, () => raise({ key, severity: "warn", title: `CI failed on owner/repo#${10 + day}`, source: "ci" }));
+      // As ci-watch raises it: a note while the knight's fix is under way, a warning when it's yours.
+      at(raised, 1, () => raise({ key, severity: fixing ? "info" : "warn", title: `CI failed on owner/repo#${10 + day}`, source: "ci" }));
       if (fixing) {
         selfResolved.add(`notice:${key}`);
         at(raised + (60 + intBelow(ci, 180)) * MINUTE, 0, () => clear(key));

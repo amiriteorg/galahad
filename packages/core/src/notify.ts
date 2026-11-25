@@ -10,10 +10,11 @@ export * from "./notify-payload.ts";
  * He comes to you: notifications to your own paired devices (Web Push; webpush.ts).
  *
  * This file is the contract and the rules, all pure: the kinds and their switches, quiet
- * hours and the day's limit, what a notification may say (a short title, one line, where
- * it opens: never a secret, never anything about the bank, never a model's free text),
- * the small payload the service worker turns into a notification, and which push
- * services a node may call.
+ * hours and the day's limits, what a notification may say (a short title, one line, where
+ * it opens: fixed words only, never a secret, never your own words or a model's, which a
+ * push service could read), how loudly (three tiers, chosen by rules, never by a model),
+ * the small payload the service worker turns into a notification, and which push services
+ * a node may call.
  *
  * No zod here: the PWA and its service worker read from this file. What the node takes
  * from a device is checked in notify-input.ts.
@@ -24,7 +25,7 @@ export * from "./notify-payload.ts";
 export const NOTIFY_KIND_INFO: Record<NotifyKind, { label: string; hint: string; on: boolean }> = {
   "needs-you": { label: "Something needs you", hint: "A warning or an alert from his heartbeat: once per finding, not again while it stands.", on: true },
   approval: { label: "An approval is waiting", hint: "Something he or an agent wants to send or delete, filed for your answer.", on: true },
-  finished: { label: "He has finished", hint: "A chat turn nobody was watching, or a quest you started: done, unverified, gave up or failed, said as it is.", on: true },
+  finished: { label: "He has finished", hint: "A chat turn nobody was watching, or a quest you started: done, unverified, gave up or failed. News is told quietly, together, to the device you used last.", on: true },
   question: { label: "He has a question", hint: "An answer that ends by asking you, or a key or connector he needs.", on: true },
   told: { label: "Your rules tell you", hint: "A command a rule of yours matches has run (galahad rule add … --tell): once for each rule and task.", on: true },
 };
@@ -101,6 +102,18 @@ export function notifyDay(now: number, tz: string): string {
 
 /* ---------- what he may say: one item per thing worth telling ---------- */
 
+/**
+ * How loudly a thing is told (PLAN #59): now, at once, to every device, with a budget of its own (an ask that lapses or
+ * blocks, an alert, a fault only you can fix); soon, quietly, with what else is new, to the device you used last (news of
+ * work you asked for); or only in the day's digest (everything else). Chosen by rules from what the node itself wrote,
+ * never by a model: see `tierOf`.
+ */
+export type NotifyTier = "now" | "soon" | "digest";
+export const NOTIFY_TIERS: readonly NotifyTier[] = ["now", "soon", "digest"];
+
+/** What a digest counts each thing as (`digestMessage`). */
+export type DigestTopic = "look" | "chat" | "quest" | "tell" | "report" | "ci" | "backlog" | "note" | "asked" | "lapsed";
+
 export interface NotifyItem {
   /** Told once: "notice:<key>", "action:<id>", "secret:<name>", "turn:<id>", "quest:<id>". */
   key: string;
@@ -115,6 +128,14 @@ export interface NotifyItem {
   needs: string[];
   /** An approval's action, answered from the notification itself (Decline alone when it can't be approved there). */
   action?: { id: string; approvable: boolean };
+  /** How loudly (`tierOf`; an item kept from before tiers is read by its kind: `itemTier`). */
+  tier?: NotifyTier;
+  /** Raised by his own judgment (a turn that ends asking you, an outcome's question): a small budget of its own a day. */
+  model?: boolean;
+  /** What the digest counts it as, when it goes there. */
+  topic?: DigestTopic;
+  /** When an ask lapses, no answer being no. */
+  expires?: number;
 }
 
 /** A line that may be shown: cleaned and cut; null when it looks like it holds a secret (the caller says something general instead). */
@@ -124,78 +145,124 @@ export function notifyLine(text: string, max = NOTIFY_BODY_MAX): string | null {
   return line;
 }
 
-const INBOX_NEEDS_YOU = "Something in your Inbox needs you.";
-/** Notices whose titles are the node's own fixed words around names (never a model's sentence). */
-const TITLED_SOURCES = /^(heartbeat|archive|compute|loop:[a-z0-9][a-z0-9._-]{0,39})$/;
-const ABOUT_BANK = /\bbank|\bconsent\b|\baccounts?\b|\bbalances?\b|\btransactions?\b/i;
-
-/**
- * A finding that needs you: a notice of warn or alert that you haven't dismissed. Its own title is shown
- * (bounded and redacted when it was raised, scanned again here) when the node wrote it from a fixed
- * sentence; anything about the bank, and any notice whose title could be a model's words, says only that
- * something in the Inbox needs you.
+/*
+ * Fixed words only (your word, 25 November 2026): a notification never carries a chat's title, a quest's goal, a
+ * name you gave (a node, a loop, a rule, a device) or anything a model wrote, whichever service carries it. Apple
+ * reads what it carries to an iPhone; Web Push and UnifiedPush are sealed to the device, and carry the same fixed
+ * words. The app shows the real words once it has fetched them over its own signed connection.
  */
-export function noticeItem(n: { key: string; severity: string; title: string; source: string; dismissed: boolean }): NotifyItem | null {
-  if (n.dismissed || (n.severity !== "warn" && n.severity !== "alert")) return null;
-  const alert = n.severity === "alert";
-  const bank = n.key.startsWith("bank") || n.source === "bank" || ABOUT_BANK.test(n.title);
-  const line = !bank && TITLED_SOURCES.test(n.source) ? notifyLine(n.title) : null;
-  return { key: `notice:${n.key}`, kind: "needs-you", alert, title: alert ? "Galahad: alert" : "Galahad: this needs you", body: line ?? INBOX_NEEDS_YOU, open: "inbox", needs: ["mind:read"] };
-}
 
-/** A notice a rule of yours that tells raises (its source `rule:<name>`): the rule's name is yours, never a model's words. */
+/** Where a thing comes from, as far as how loudly it's told: what the node itself wrote, never a model's words. */
+export type NotifyOrigin =
+  | { from: "notice"; key: string; severity: string; source: string }
+  | { from: "action" | "screen" | "question" | "secret" | "connector" | "quest" }
+  | { from: "turn"; look: boolean; question: boolean; waiting: boolean };
+
+/** Sources whose findings are the node's own, about what only you can fix (its heartbeat and doctor, the archive, compute, CI that's yours). */
+const NODE_SOURCES = new Set(["heartbeat", "archive", "compute", "ci"]);
 const RULE_SOURCE = /^rule:([a-z0-9][a-z0-9._-]{0,39})$/;
 const TELL_SOURCE = /^tell:([a-z0-9][a-z0-9._-]{0,39})$/;
 const OUTCOME_SOURCE = /^outcome:out-[a-z0-9_-]{12}$/;
+const LOOP_SOURCE = /^loop:[a-z0-9][a-z0-9._-]{0,39}$/;
 
 /**
- * A command a rule of yours matches has run: once for each rule and task (the notice is one per pair, its count kept in
- * the Inbox). Only the rule's name and fixed words: the command itself is the model's words, and stays in the Inbox.
+ * How loudly, by rules (PLAN #59). Now: every ask (an approval, his ask to use a Mac, a service's question, a key or a
+ * connector he needs), every alert, and a warning the node raised that only you can fix. Soon: news of work you asked
+ * for (a chat you left him in, a quest you ran, your rules' and loops' tells, a loop that failed, an outcome's end), and
+ * what his own judgment raises (a turn that ends asking you or waiting on your answer, an outcome's question), which is
+ * `model` and has a small budget of its own. The digest: his own looks that ended without needing you, a CI failure
+ * a knight is already fixing, an outcome's daily report, backlog proposals, and every other note.
  */
-export function toldItem(n: { key: string; severity: string; source: string; dismissed: boolean }): NotifyItem | null {
-  // A loop that tells you (its source `tell:<loop>`): the loop's name is yours; what happened, often others' words, stays in the Inbox.
-  const loop = TELL_SOURCE.exec(n.source)?.[1];
-  if (loop && !n.dismissed && n.severity === "info") {
-    return { key: `notice:${n.key}`, kind: "told", alert: false, title: `Galahad: ${loop}`, body: "What you asked to be told about has happened. The Inbox says what.", open: "inbox", needs: ["mind:read"] };
+export function tierOf(origin: NotifyOrigin): { tier: NotifyTier; model: boolean; topic: DigestTopic } {
+  switch (origin.from) {
+    case "action":
+    case "screen":
+    case "question":
+    case "secret":
+    case "connector":
+      return { tier: "now", model: false, topic: "note" };
+    case "quest":
+      return { tier: "soon", model: false, topic: "quest" };
+    case "turn": {
+      const asks = origin.question || origin.waiting;
+      if (origin.look && !asks) return { tier: "digest", model: false, topic: "look" };
+      return { tier: "soon", model: asks, topic: asks ? "asked" : origin.look ? "look" : "chat" };
+    }
+    case "notice": {
+      const { severity, source, key } = origin;
+      if (severity === "alert") return { tier: "now", model: false, topic: "note" };
+      if (severity === "warn") {
+        if (source === "heartbeat" && key.startsWith("loop-failing:")) return { tier: "soon", model: false, topic: "tell" };
+        if (NODE_SOURCES.has(source)) return { tier: "now", model: false, topic: source === "ci" ? "ci" : "note" };
+        if (LOOP_SOURCE.test(source)) return { tier: "soon", model: false, topic: "tell" };
+        // An outcome's question, and any warning from a source whose words are a model's: his judgment, never Now.
+        return { tier: "soon", model: true, topic: "asked" };
+      }
+      if (TELL_SOURCE.test(source) || RULE_SOURCE.test(source)) return { tier: "soon", model: false, topic: "tell" };
+      if (OUTCOME_SOURCE.test(source)) return key.endsWith(":report") ? { tier: "digest", model: false, topic: "report" } : { tier: "soon", model: false, topic: "tell" };
+      if (source === "backlog") return { tier: "digest", model: false, topic: "backlog" };
+      if (source === "ci") return { tier: "digest", model: false, topic: "ci" };
+      return { tier: "digest", model: false, topic: "note" };
+    }
   }
-  // An outcome he owns (PLAN #43): its report, or its end. Fixed words: what he wrote is in its room and the Inbox.
-  if (OUTCOME_SOURCE.test(n.source) && !n.dismissed && n.severity === "info") {
-    return { key: `notice:${n.key}`, kind: "told", alert: false, title: "Galahad: an outcome of yours", body: "There's news of it: his words are in its room and your Inbox.", open: "inbox", needs: ["mind:read"] };
+}
+
+/** An item's tier: its own, or for one kept from before tiers, its kind's (an ask or a finding now, news soon). */
+export const itemTier = (item: Pick<NotifyItem, "tier" | "kind">): NotifyTier => item.tier ?? (item.kind === "finished" || item.kind === "told" ? "soon" : "now");
+
+const placed = (origin: NotifyOrigin): Pick<NotifyItem, "tier" | "model" | "topic"> => {
+  const t = tierOf(origin);
+  return { tier: t.tier, topic: t.topic, ...(t.model ? { model: true } : {}) };
+};
+
+/**
+ * A notice that is told, or counted in the digest: a finding of warn or alert, a tell of a loop or a rule of yours, an
+ * outcome's news, or a note. Nothing dismissed. Fixed words only: its own title is the node's words around names you
+ * gave (and a model's, from some sources), and the Inbox has it.
+ */
+export function noticeItem(n: { key: string; severity: string; title: string; source: string; dismissed: boolean }): NotifyItem | null {
+  if (n.dismissed || (n.severity !== "warn" && n.severity !== "alert" && n.severity !== "info")) return null;
+  const key = `notice:${n.key}`;
+  const where = placed({ from: "notice", key: n.key, severity: n.severity, source: n.source });
+  if (n.severity !== "info") {
+    const alert = n.severity === "alert";
+    return { key, kind: "needs-you", alert, title: alert ? "Galahad: alert" : "Galahad: this needs you", body: "Something in your Inbox needs you.", open: "inbox", needs: ["mind:read"], ...where };
   }
-  // Work Galahad proposes a knight with nothing to do, from your backlog, that may spend more than is left of your budget
-  // (what fits it he gives himself, and tells no one): fixed words; what it is waits in its conversation.
-  if (n.source === "backlog" && !n.dismissed && n.severity === "info") {
-    return { key: `notice:${n.key}`, kind: "told", alert: false, title: "Galahad: work for a knight", body: "He proposes a task from your backlog that may spend more than is left of your budget. It starts when you approve it.", open: "inbox", needs: ["mind:read"] };
-  }
-  const rule = RULE_SOURCE.exec(n.source)?.[1];
-  if (!rule || n.dismissed || n.severity !== "info") return null;
-  return { key: `notice:${n.key}`, kind: "told", alert: false, title: `Galahad: your rule ${rule}`, body: "A command it matches has run. The Inbox says which, where and how it ended.", open: "inbox", needs: ["mind:read"] };
+  // A loop that tells you, a command a rule of yours matches (once for each rule and task), an outcome's news, his
+  // proposal from your backlog: what woke it and what was said (often others' words, or a model's) stay in the Inbox.
+  const told = (title: string, body: string): NotifyItem => ({ key, kind: "told", alert: false, title, body, open: "inbox", needs: ["mind:read"], ...where });
+  if (TELL_SOURCE.test(n.source)) return told("Galahad: a loop of yours", "What you asked to be told about has happened. The Inbox says what.");
+  if (RULE_SOURCE.test(n.source)) return told("Galahad: a rule of yours", "A command it matches has run. The Inbox says which, where and how it ended.");
+  if (OUTCOME_SOURCE.test(n.source)) return told("Galahad: an outcome of yours", "There's news of it: his words are in its room and your Inbox.");
+  if (n.source === "backlog") return told("Galahad: work for a knight", "He proposes a task from your backlog that may spend more than is left of your budget. It starts when you approve it.");
+  return told("Galahad: a note", "There's a note in your Inbox.");
 }
 
 /** How long an action must have waited before it's told: one that a standing order answers at once never is. */
 export const ACTION_SETTLE_MS = 5_000;
-const TOOL_REF = /^[a-z][a-z0-9-]{0,39}\.[a-z][a-z0-9_.-]{0,47}$/;
 
-/** An approval waiting for your answer: which tool (its name is the manifest's, bounded), never the arguments or the reason given. */
+/** An approval waiting for your answer: never which tool, its arguments or the reason given (the app shows them). */
 export function actionItem(a: { id: string; connector: string; tool: string; state: string; requestedMs: number; expires: number; class?: string }, now: number): NotifyItem | null {
   if (a.state !== "waiting" || a.expires <= now || now - a.requestedMs < ACTION_SETTLE_MS) return null;
-  const tool = `${a.connector}.${a.tool}`;
   return {
     key: `action:${a.id}`,
     kind: "approval",
     alert: false,
     title: "Galahad asks your approval",
-    body: TOOL_REF.test(tool) ? `${tool} is waiting for your answer in the Inbox.` : "An action is waiting for your answer in the Inbox.",
+    body: a.class === "delete" ? "A delete is waiting for your answer in the Inbox." : "An action is waiting for your answer in the Inbox.",
     open: "inbox",
     needs: ["mind:read"],
-    // Answered from the notification too; a delete only declined there (approving one takes typing its name).
+    expires: a.expires,
+    ...placed({ from: "action" }),
+    // Answered from the notification too: a yes only in the app, with the request in front of you (your word, 25
+    // November 2026); a no where it's told. A delete is approved only where its name is typed.
     ...(/^a_[A-Za-z0-9_-]{22}$/.test(a.id) ? { action: { id: a.id, approvable: a.class !== undefined && a.class !== "delete" } } : {}),
   };
 }
 
 /**
- * An MCP server's question to you, mid-call (questions.ts): which service asks, by the connector's id (a manifest's,
- * bounded), never what it asks (its words). Like an approval, it settles a moment first: one you answered at once isn't told.
+ * An MCP server's question to you, mid-call (questions.ts): never which service or what it asks. Like an approval, it
+ * settles a moment first: one you answered at once isn't told.
  */
 export function questionItem(q: { id: string; connector: string; askedAt: number; expires: number }, now: number): NotifyItem | null {
   if (q.expires <= now || now - q.askedAt < ACTION_SETTLE_MS) return null;
@@ -205,29 +272,31 @@ export function questionItem(q: { id: string; connector: string; askedAt: number
     alert: false,
     // Every notification is his (your word, 23 November 2026: he is the one you hear from), a service's question too.
     title: "Galahad: a service asks you",
-    body: /^[a-z][a-z0-9-]{0,39}$/.test(q.connector) ? `${q.connector} asks you something in the Inbox; its call waits for your answer.` : "A service asks you something in the Inbox; its call waits for your answer.",
+    body: "A service asks you something in the Inbox; its call waits for your answer.",
     open: "inbox",
     needs: ["mind:read"],
+    expires: q.expires,
+    ...placed({ from: "question" }),
   };
 }
 
-/** A node's name, as yours: plain, short. Another name says "a Mac". */
-const NODE_NAME = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/;
-
 /**
- * Galahad asks to use a Mac itself (docs/MAC.md, M4): which Mac (its node's name, which you gave it) and for how long,
- * never what for (his words). Like an approval, it settles a moment first: one you answered at once isn't told.
+ * Galahad asks to use a Mac itself (docs/MAC.md, M4): for how long, never which Mac (its name is yours) or what for (his
+ * words). Like an approval, it settles a moment first: one you answered at once isn't told.
  */
-export function screenItem(s: { id: string; nodeName: string; minutes: number; state: string; askedAt: number }, now: number): NotifyItem | null {
+export function screenItem(s: { id: string; nodeName: string; minutes: number; state: string; askedAt: number; answerBy?: number }, now: number): NotifyItem | null {
   if (s.state !== "waiting" || now - s.askedAt < ACTION_SETTLE_MS) return null;
+  const minutes = Number.isInteger(s.minutes) && s.minutes > 0 && s.minutes < 10_000 ? s.minutes : null;
   return {
     key: `screen:${s.id}`,
     kind: "approval",
     alert: false,
     title: "Galahad asks your approval",
-    body: `To use ${NODE_NAME.test(s.nodeName) ? s.nodeName : "a Mac"} itself for ${s.minutes} minutes: your answer is in the Inbox.`,
+    body: minutes ? `To use a Mac itself for ${minutes} minutes: your answer is in the Inbox.` : "To use a Mac itself: your answer is in the Inbox.",
     open: "inbox",
     needs: ["mind:read"],
+    ...(s.answerBy ? { expires: s.answerBy } : {}),
+    ...placed({ from: "screen" }),
   };
 }
 
@@ -237,7 +306,7 @@ export function screenItem(s: { id: string; nodeName: string; minutes: number; s
  */
 export function secretItem(name: string): NotifyItem | null {
   if (!/^[A-Za-z0-9._:-]{1,128}$/.test(name)) return null;
-  return { key: `secret:${name}`, kind: "question", alert: false, title: "Galahad asks for a key", body: "He needs a key to go on. The Inbox says which; he learns only that it's there.", open: "inbox", needs: ["vault:read"] };
+  return { key: `secret:${name}`, kind: "question", alert: false, title: "Galahad asks for a key", body: "He needs a key to go on. The Inbox says which; he learns only that it's there.", open: "inbox", needs: ["vault:read"], ...placed({ from: "secret" }) };
 }
 
 /**
@@ -246,54 +315,58 @@ export function secretItem(name: string): NotifyItem | null {
  */
 export function connectorItem(id: string): NotifyItem | null {
   if (!/^cr_[A-Za-z0-9_-]{22}$/.test(id)) return null;
-  return { key: `connector:${id}`, kind: "question", alert: false, title: "Galahad asks for a connector", body: "He needs a connector to go on. The Inbox says which.", open: "inbox", needs: ["brain:write"] };
+  return { key: `connector:${id}`, kind: "question", alert: false, title: "Galahad asks for a connector", body: "He needs a connector to go on. The Inbox says which.", open: "inbox", needs: ["brain:write"], ...placed({ from: "connector" }) };
 }
 
-/** Words of your own (a chat's title, a quest's goal) as a notification may show them: not when they speak of the bank, or look like a secret. */
-const yourWords = (text: string, max: number): string | null => (ABOUT_BANK.test(text) ? null : notifyLine(text, max));
-
 /**
- * A chat turn that ended with nobody watching: finished, couldn't finish, or ended by asking you.
- * The chat's title is yours (your first message, or the name you gave it); a chat where he read the
- * bank is told without it, and only to devices that may read the bank.
+ * A chat turn that ended with nobody watching: finished, couldn't finish, or ended by asking you. Never the chat's title
+ * (your first message, or the name you gave it): the app opens the chat. A chat where he read the bank is told only to
+ * devices that may read the bank. One of his own looks that ended without needing you goes to the digest.
  */
-export function turnItem(t: { id: string; conversation: string; title: string; bank: boolean; state: "done" | "error"; question: boolean; waiting: boolean }): NotifyItem | null {
+export function turnItem(t: { id: string; conversation: string; bank: boolean; state: "done" | "error"; question: boolean; waiting: boolean; look?: boolean }): NotifyItem | null {
   if (!isConversationId(t.conversation)) return null;
-  const title = t.bank ? null : yourWords(t.title, 90);
-  const where = title ? `“${title}”` : "A chat you left him working in";
   const asks = t.state === "done" && t.question;
+  const where = t.look ? "A chat he looked in again" : "A chat you left him working in";
   return {
     key: `turn:${t.id}`,
     kind: asks ? "question" : "finished",
     alert: false,
     title: t.state === "error" ? "Galahad couldn't finish" : asks ? "Galahad has a question for you" : "Galahad has finished",
-    body: notifyClean(t.state === "error" ? `${where} ended with an error. Nothing is retried.` : t.waiting ? `${where}: it waits on your answer in the Inbox.` : `${where}.`, NOTIFY_BODY_MAX),
+    body: notifyClean(t.state === "error" ? `${where} ended with an error. Nothing is retried.` : t.waiting ? `${where}: it waits on your answer in the Inbox.` : asks ? `${where} ends by asking you something.` : `${where} has his answer.`, NOTIFY_BODY_MAX),
     open: "chat",
     conversation: t.conversation,
     needs: t.bank ? ["chat", "bank:read"] : ["chat"],
+    ...placed({ from: "turn", look: !!t.look, question: asks, waiting: t.waiting }),
   };
 }
 
 const QUEST_ENDS: Record<string, string> = { done: "Quest done", unverified: "Quest ended unverified", "gave-up": "Quest gave up", failed: "Quest failed" };
 
-/** A quest you started that has ended, said as it ended. One you stopped yourself isn't news. The goal is your own words. */
+/** A quest you started that has ended, said as it ended. One you stopped yourself isn't news. Never its goal (your words). */
 export function questItem(q: { quest: string; goal: string; state: string }): NotifyItem | null {
   const title = QUEST_ENDS[q.state];
   if (!title || !/^[A-Za-z0-9._:-]{1,64}$/.test(q.quest)) return null;
-  const goal = yourWords(q.goal, 110);
-  return { key: `quest:${q.quest}`, kind: "finished", alert: false, title, body: goal ? `“${goal}”` : "A quest you started has ended.", open: "overview", needs: ["mind:read"] };
+  return { key: `quest:${q.quest}`, kind: "finished", alert: false, title, body: "A quest you started has ended.", open: "overview", needs: ["mind:read"], ...placed({ from: "quest" }) };
 }
 
 /* ---------- when he speaks, and when he stays silent ---------- */
 
 /** Between two messages that aren't alerts: what comes in meanwhile is told together. */
 export const NOTIFY_GAP_MS = 60_000;
+/** News (the soon tier) is told at most this often, unless it rides along with something told now. */
+export const NEWS_GAP_MS = 30 * 60_000;
+/** What his own judgment raises (a turn that ends asking you, an outcome's question) is told at most this often a day; past it, the digest says how often he asked. */
+export const MODEL_PER_DAY = 3;
 
 export interface NotifyPlan {
   /** What to tell now, as one message (empty: stay silent). */
   send: NotifyItem[];
   /** Why the rest waits: quiet hours, the day's limit, or too soon after the last message. */
   waiting: "quiet" | "limit" | "gap" | null;
+  /** The message is news alone: told quietly, to the device you used last. */
+  news: boolean;
+  /** What goes to the day's digest instead, now (never told on its own): its tier, or a budget it's past. */
+  digest: NotifyItem[];
 }
 
 /**
@@ -303,17 +376,31 @@ export interface NotifyPlan {
 export const alertReserve = (perDay: number): number => (perDay >= 6 ? 2 : perDay >= 3 ? 1 : 0);
 
 /**
- * Whether ordinary news has reached the day's limit. When it has, one message says so (`limitMessage`): once
- * that day, and not during quiet hours (it isn't an alert); after it only an alert is told, and few.
+ * How many of the day's messages may be news (the soon tier) alone: half of what isn't kept for alerts, so news can
+ * never spend what an ask needs (12 a day: 5 for news, at least 5 more for asks and findings, 2 for alerts). News past
+ * it goes to the digest. News that rides along with something told now spends nothing of it.
+ */
+export const newsBudget = (perDay: number): number => Math.floor((perDay - alertReserve(perDay)) / 2);
+
+/**
+ * Whether what's told now (asks and findings) has reached the day's limit. When it has, one message says so
+ * (`limitMessage`): once that day, and not during quiet hours (it isn't an alert); after it only an alert is told, and few.
  */
 export const limitReached = (prefs: NotifyPrefs, sentToday: number): boolean => sentToday >= prefs.perDay - alertReserve(prefs.perDay);
 
 /**
- * What to tell at this moment. Never anything for "all quiet": with nothing new there is nothing to send.
- * Everything new goes as one message (a burst is one buzz); quiet hours hold everything but alerts, and
- * what was held is told together when they end. The day's limit holds everything, alerts too; its last
- * one or two (`alertReserve`) are for alerts alone, so ordinary news stops a little before it.
- * `told`: the items already told (an alert is told again when it was told only as a warning).
+ * What to tell at this moment. Never anything for "all quiet": with nothing new there is nothing to send. By tier:
+ *
+ *  - now: everything new goes as one message (a burst is one buzz), a minute after the last unless it's an alert, to
+ *    every device; quiet hours hold all but alerts. The day's limit holds everything, alerts too; its last one or two
+ *    (`alertReserve`) are for alerts alone.
+ *  - soon (news): quietly, with what else is new, at most every half hour, or along with something told now; held
+ *    by quiet hours; at most `newsBudget` messages of news alone a day, the rest to the digest. What his own
+ *    judgment raised (`model`) has `MODEL_PER_DAY`; past it, to the digest.
+ *  - digest: never told on its own; it's counted in the day's digest (`digest`).
+ *
+ * `told`: the items already told (an alert is told again when it was told only as a warning). `prefs.quiet.tz`: the zone
+ * your day is read in (the node's caller resolves it: the zone your devices say, else the setting).
  */
 export function planNotifications(input: {
   now: number;
@@ -322,44 +409,80 @@ export function planNotifications(input: {
   told: ReadonlyMap<string, { alert: boolean }>;
   sentToday: number;
   lastSentAt: number | null;
+  /** Messages of news alone sent today, and when the last one went. */
+  newsToday?: number;
+  lastNewsAt?: number | null;
+  /** What his own judgment raised that was told today. */
+  modelToday?: number;
 }): NotifyPlan {
-  const fresh = input.items.filter((item) => {
-    if (!input.prefs.kinds[item.kind]) return false;
+  const untold = input.items.filter((item) => {
     const before = input.told.get(item.key);
     return !before || (item.alert && !before.alert);
   });
-  if (!fresh.length) return { send: [], waiting: null };
-  if (input.sentToday >= input.prefs.perDay) return { send: [], waiting: "limit" };
-  // Past the limit for ordinary news, only an alert is told.
-  const allowed = limitReached(input.prefs, input.sentToday) ? fresh.filter((item) => item.alert) : fresh;
-  if (!allowed.length) return { send: [], waiting: "limit" };
+  // The digest's own, whatever the switches say: it counts what happened; the switches are about what buzzes.
+  const digest = untold.filter((item) => itemTier(item) === "digest");
+  const fresh = untold.filter((item) => itemTier(item) !== "digest" && input.prefs.kinds[item.kind]);
+  // His own judgment, past its budget: the digest says how often he asked.
+  let modelLeft = MODEL_PER_DAY - (input.modelToday ?? 0);
+  const asked: NotifyItem[] = [];
+  const candidates = fresh.filter((item) => {
+    if (!item.model) return true;
+    if (modelLeft > 0) {
+      modelLeft -= 1;
+      return true;
+    }
+    asked.push(item);
+    return false;
+  });
+  const silent = (waiting: NotifyPlan["waiting"], toDigest: NotifyItem[] = []): NotifyPlan => ({ send: [], waiting, news: false, digest: [...digest, ...asked, ...toDigest] });
+  if (!candidates.length) return silent(null);
+  if (input.sentToday >= input.prefs.perDay) return silent("limit");
+
   const quiet = inQuietHours(input.prefs.quiet, input.now);
-  const due = quiet ? allowed.filter((item) => item.alert) : allowed;
-  if (!due.length) return { send: [], waiting: "quiet" };
-  const urgent = due.some((item) => item.alert);
-  if (!urgent && input.lastSentAt !== null && input.now - input.lastSentAt < NOTIFY_GAP_MS) return { send: [], waiting: "gap" };
-  return { send: due, waiting: quiet && due.length < fresh.length ? "quiet" : allowed.length < fresh.length ? "limit" : null };
+  const now = candidates.filter((item) => itemTier(item) === "now");
+  const news = candidates.filter((item) => itemTier(item) === "soon");
+  // Past the limit for what's told now, only an alert is.
+  const nowAllowed = limitReached(input.prefs, input.sentToday) ? now.filter((item) => item.alert) : now;
+  const nowDue = quiet ? nowAllowed.filter((item) => item.alert) : nowAllowed;
+  const newsDue = quiet ? [] : news;
+  const urgent = nowDue.some((item) => item.alert);
+  const gapped = !urgent && input.lastSentAt !== null && input.now - input.lastSentAt < NOTIFY_GAP_MS;
+  const reason = (): NotifyPlan["waiting"] => (quiet && (nowDue.length < now.length || news.length) ? "quiet" : nowAllowed.length < now.length ? "limit" : null);
+  if (nowDue.length) {
+    if (gapped) return silent("gap");
+    // News rides along with what's told now: one buzz, and nothing of news' own budget spent.
+    return { send: [...nowDue, ...newsDue], waiting: reason(), news: false, digest: [...digest, ...asked] };
+  }
+  if (!newsDue.length) return silent(quiet ? "quiet" : nowAllowed.length < now.length ? "limit" : null);
+  // News alone: within its own budget (past it, to the digest), half an hour after the last news, a minute after anything.
+  if ((input.newsToday ?? 0) >= newsBudget(input.prefs.perDay) || limitReached(input.prefs, input.sentToday)) return silent("limit", newsDue);
+  if (gapped || (input.lastNewsAt != null && input.now - input.lastNewsAt < NEWS_GAP_MS)) return silent("gap");
+  return { send: newsDue, waiting: reason(), news: true, digest: [...digest, ...asked] };
 }
 
 const counted = (n: number, one: string, many: string): string => (n === 1 ? one : many.replace("%", String(n)));
 
 /**
- * One message for what's told now: the item itself when it's one, otherwise how many of each kind, without
- * their words. `salt`: this node's own secret for tags (see `tagOf`).
+ * One message for what's told now: the item itself when it's one, otherwise how many of each kind, without their words.
+ * A message of news alone carries a news kind (finished, or told), so every device tells it quietly; a summary has a
+ * tag of its own for its tier and what it began with, so a newer summary never replaces one that told of an ask.
+ * `salt`: this node's own secret for tags (see `tagOf`).
  */
 export function notifyMessage(items: readonly NotifyItem[], salt = ""): NotifyPayload | null {
   if (!items.length) return null;
+  const news = items.every((item) => itemTier(item) !== "now");
+  const quietKind = (): NotifyPayload["kind"] => (items.every((item) => item.kind === "finished") ? "finished" : "told");
   if (items.length === 1) {
     const item = items[0]!;
     return {
       v: 1,
-      kind: item.kind,
+      kind: news ? quietKind() : item.kind,
       title: notifyClean(item.title, NOTIFY_TITLE_MAX),
       body: notifyClean(item.body, NOTIFY_BODY_MAX),
       open: item.open,
       ...(item.conversation ? { conversation: item.conversation } : {}),
       tag: tagOf(item.key, salt),
-      ...(item.action && item.kind === "approval" ? { action: item.action.id, approvable: item.action.approvable } : {}),
+      ...(item.action && item.kind === "approval" && !news ? { action: item.action.id, approvable: item.action.approvable } : {}),
     };
   }
   const count = (kind: NotifyKind) => items.filter((item) => item.kind === kind).length;
@@ -368,7 +491,7 @@ export function notifyMessage(items: readonly NotifyItem[], salt = ""): NotifyPa
     count("approval") ? counted(count("approval"), "1 approval is waiting", "% approvals are waiting") : null,
     count("question") ? counted(count("question"), "he has a question", "he has % questions") : null,
     count("finished") ? counted(count("finished"), "he finished 1 piece of work", "he finished % pieces of work") : null,
-    count("told") ? counted(count("told"), "a rule of yours told you of a command", "rules of yours told you of % commands") : null,
+    count("told") ? counted(count("told"), "he has news you asked for", "he has % pieces of news you asked for") : null,
   ].filter((part): part is string => part !== null);
   const body = parts.join(", ");
   // One place when they all open the same one; otherwise the Inbox, where what needs you is.
@@ -376,11 +499,11 @@ export function notifyMessage(items: readonly NotifyItem[], salt = ""): NotifyPa
   const open = opens.size === 1 ? items[0]!.open : "inbox";
   return {
     v: 1,
-    kind: "summary",
+    kind: news ? quietKind() : "summary",
     title: items.some((item) => item.alert) ? "Galahad: alert" : `Galahad: ${items.length} things`,
     body: notifyClean(`${body.charAt(0).toUpperCase()}${body.slice(1)}.`, NOTIFY_BODY_MAX),
     open: open === "chat" ? "overview" : open,
-    tag: "summary",
+    tag: tagOf(`summary:${news ? "news" : "now"}:${items[0]!.key}`, salt),
   };
 }
 
@@ -398,8 +521,9 @@ export function tagOf(key: string, salt = ""): string {
 /* ---------- what waited while nobody could be reached ---------- */
 
 /**
- * What a catch-up counts: what stands and needs you (approvals, questions, keys and connectors he needs, warnings and
- * alerts). News (a turn that ended, a quest, a rule's tell) isn't caught up: it was news then.
+ * What a catch-up counts: what stands and needs you now (approvals, questions, keys and connectors he needs, warnings
+ * only you can fix, and alerts). News (a turn that ended, a quest, a rule's tell, a loop that failed) isn't caught up:
+ * it was news then.
  */
 const CATCH_UP_KINDS: ReadonlySet<NotifyKind> = new Set(["needs-you", "approval", "question"]);
 
@@ -409,8 +533,8 @@ const CATCH_UP_KINDS: ReadonlySet<NotifyKind> = new Set(["needs-you", "approval"
  * turned off left out, within quiet hours, the day's limit and a minute after the last message, unless an alert is in
  * it. What was never told isn't its business: that is told as anything new is.
  */
-export function planCatchUp(input: { now: number; prefs: NotifyPrefs; items: readonly NotifyItem[]; sentToday: number; lastSentAt: number | null }): NotifyPlan {
-  const due = input.items.filter((item) => CATCH_UP_KINDS.has(item.kind) && input.prefs.kinds[item.kind]);
+export function planCatchUp(input: { now: number; prefs: NotifyPrefs; items: readonly NotifyItem[]; sentToday: number; lastSentAt: number | null }): Pick<NotifyPlan, "send" | "waiting"> {
+  const due = input.items.filter((item) => CATCH_UP_KINDS.has(item.kind) && itemTier(item) === "now" && input.prefs.kinds[item.kind]);
   if (!due.length) return { send: [], waiting: null };
   const urgent = due.some((item) => item.alert);
   if (input.sentToday >= input.prefs.perDay || (!urgent && limitReached(input.prefs, input.sentToday))) return { send: [], waiting: "limit" };
@@ -452,14 +576,8 @@ export function limitMessage(perDay: number): NotifyPayload {
   return { v: 1, kind: "limit", title: "Galahad: quiet until tomorrow", body: `That's ${sent} ${sent === 1 ? "notification" : "notifications"} today. ${rest}`, open: "inbox", tag: "limit" };
 }
 
-export const testMessage = (device: string): NotifyPayload => ({
-  v: 1,
-  kind: "test",
-  title: "Galahad",
-  body: notifyClean(`This is a test. Notifications reach ${notifyLine(device, 40) ?? "this device"}.`, NOTIFY_BODY_MAX),
-  open: "settings",
-  tag: "test",
-});
+/** Your test: fixed words (the device's name is yours), to the device that asked or every device. */
+export const testMessage = (_device?: string): NotifyPayload => ({ v: 1, kind: "test", title: "Galahad", body: "This is a test. Notifications reach this device.", open: "settings", tag: "test" });
 
 /* ---------- where a notification may be sent: push services, and nothing else ---------- */
 
@@ -523,7 +641,8 @@ export interface NotifyDeviceView {
 
 export interface NotifySentView {
   at: number;
-  kind: NotifyPayload["kind"];
+  /** A payload's kind, or the day's digest (which doesn't count against the day's limit). */
+  kind: NotifyPayload["kind"] | "digest";
   /** The devices it went to, by name. */
   devices: string[];
   ok: boolean;
@@ -541,6 +660,8 @@ export interface NotifyLostView {
 
 export interface NotifyView {
   node: string;
+  /** The zone your day is read in now (quiet hours, the day's count, the digest's time): the one your devices last said, else the setting's. */
+  zone?: string;
   /** This node's public key for subscribing (a browser's applicationServerKey). Public by nature. */
   key: string;
   prefs: NotifyPrefs;
