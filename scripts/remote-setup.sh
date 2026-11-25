@@ -119,7 +119,7 @@ WRAPPER
   # address alone, and lets one agent's key in. Opted into on its own (deploy.sh --open-qamp); nothing listens there until
   # you grant an agent something, and a grant ends by itself within a day.
   if [[ $OPEN_QAMP == 1 ]] && command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
-    ufw allow in on tailscale0 to any port 7781:7789 proto udp comment "Galahad Q-AMP grants' bridges over Tailscale" >/dev/null &&
+    ufw allow in on tailscale0 to any port 7781:7789 proto udp comment "Galahad Q-AMP grant bridges over Tailscale" >/dev/null &&
       echo "→ ufw: allowed 7781-7789/udp on tailscale0 only (Q-AMP grants)" || echo "ufw Q-AMP rule not added" >&2
   fi
 

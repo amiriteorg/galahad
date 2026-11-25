@@ -55,6 +55,14 @@ test("Q-AMP's binary shipped with a deploy that isn't the pinned one refuses the
   expect(deploy.app).toBe("aaaaaaaaaaaa");
 });
 
+// ufw refuses a rule whose comment holds an apostrophe ("ERROR: Invalid syntax"): the Q-AMP bridges' rule said "grants'"
+// and was never added on Ultra (25 November 2026), with the deploy otherwise fine. Its root phase runs only on a server.
+test("every firewall rule the setup adds has a comment ufw accepts: no apostrophe in it", () => {
+  const comments = [...readFileSync(script, "utf8").matchAll(/ufw allow [^\n]*comment "([^"]*)"/g)].map((m) => m[1]!);
+  expect(comments.length).toBeGreaterThanOrEqual(3);
+  for (const comment of comments) expect(comment).not.toContain("'");
+});
+
 test("a release whose tests fail on the host never becomes app: the node's code on disk stays the release it runs", () => {
   const deploy = server("refused", "fail");
   expect(deploy.code).toBe(1);
