@@ -17,18 +17,21 @@
 #   --embedder          the archive's local embedder: Ollama (pinned, checksummed) on 127.0.0.1 only,
 #                       with qwen3-embedding:0.6b, hired as the embedder role unless you chose one
 #                       (opt-in; without it a deploy changes nothing here, and leaves an earlier install)
-# other: --port 7777, --skip-tests
+#   --open-qamp         allow UDP 7781-7789 on tailscale0 when UFW is active: Q-AMP grants' bridges
+# other: --port 7777, --skip-tests,
+#   --qamp <file>       Q-AMP's binary for the host (fetched by you: its forge is sign-in only), checked
+#                       there against scripts/qamp-pin.sh and installed for the node (<home>/bin/qamp)
 #
 # Transport: plain ssh by default; GALAHAD_SSH="tailscale ssh" uses Tailscale SSH.
 set -euo pipefail
 
 if [[ $# -lt 1 || $1 == -* ]]; then
-  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 TARGET=$1
 shift
-NAME="-" MODE="update" FLEET="-" INVITE="-" PORT=7777 SKIP_TESTS=0 SUDO=0 EXPOSE=0 OPEN_FIREWALL=0 EMBEDDER=0
+NAME="-" MODE="update" FLEET="-" INVITE="-" PORT=7777 SKIP_TESTS=0 SUDO=0 EXPOSE=0 OPEN_FIREWALL=0 EMBEDDER=0 OPEN_QAMP=0 QAMP_FILE=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --name) NAME=$2; shift 2 ;;
@@ -40,9 +43,15 @@ while [[ $# -gt 0 ]]; do
     --expose) EXPOSE=$2; shift 2 ;;
     --open-firewall) OPEN_FIREWALL=1; shift ;;
     --embedder) EMBEDDER=1; shift ;;
+    --open-qamp) OPEN_QAMP=1; shift ;;
+    --qamp) QAMP_FILE=$2; shift 2 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
+if [[ -n $QAMP_FILE && ! -f $QAMP_FILE ]]; then
+  echo "--qamp $QAMP_FILE: no such file" >&2
+  exit 1
+fi
 for value in "$NAME" "$FLEET" "$INVITE" "$PORT" "$EXPOSE"; do
   [[ $value =~ ^[A-Za-z0-9._-]+$ ]] || { echo "refusing unsafe argument: $value" >&2; exit 1; }
 done
@@ -65,6 +74,11 @@ trap '"${SSH[@]}" "$TARGET" "rm -rf -- $STAGE" || true' EXIT
 # The repository's own bytes: with core.autocrlf (Git for Windows' default) and a .gitattributes,
 # git archive would turn every script into CRLF, and bash on the target refuses it.
 git -c core.autocrlf=false -c core.eol=lf archive --format=tar HEAD | "${SSH[@]}" "$TARGET" "tar -x -C $STAGE"
+# Q-AMP's binary, as you gave it: the host checks it against its pin before anything uses it (remote-setup.sh).
+if [[ -n $QAMP_FILE ]]; then
+  echo "→ shipping Q-AMP's binary ($(basename "$QAMP_FILE"))"
+  "${SSH[@]}" "$TARGET" "cat > $STAGE/qamp.bin" <"$QAMP_FILE"
+fi
 
 echo "→ setting up the node on $TARGET"
-"${SSH[@]}" "$TARGET" "bash $STAGE/scripts/remote-setup.sh $STAGE $REV $MODE $NAME $FLEET $INVITE $PORT $SKIP_TESTS $SUDO $EXPOSE $OPEN_FIREWALL $EMBEDDER"
+"${SSH[@]}" "$TARGET" "bash $STAGE/scripts/remote-setup.sh $STAGE $REV $MODE $NAME $FLEET $INVITE $PORT $SKIP_TESTS $SUDO $EXPOSE $OPEN_FIREWALL $EMBEDDER $OPEN_QAMP"

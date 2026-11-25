@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runs ON the target host, from the staged release (see scripts/deploy.sh). Idempotent.
-#   remote-setup.sh <stage> <rev> <mode> <name|-> <fleet|-> <invite|-> <port> <skip-tests> <sudo> <expose|0> <open-firewall> [<embedder>]
+#   remote-setup.sh <stage> <rev> <mode> <name|-> <fleet|-> <invite|-> <port> <skip-tests> <sudo> <expose|0> <open-firewall> [<embedder>] [<open-qamp>]
+# A stage that holds qamp.bin (deploy.sh --qamp <file>) installs it for the node, once it passes its pin (qamp-pin.sh).
 set -euo pipefail
-STAGE=$1 REV=$2 MODE=$3 NAME=$4 FLEET=$5 INVITE=$6 PORT=$7 SKIP_TESTS=$8 SUDO=$9 EXPOSE=${10} OPEN_FIREWALL=${11} EMBEDDER=${12:-0}
+STAGE=$1 REV=$2 MODE=$3 NAME=$4 FLEET=$5 INVITE=$6 PORT=$7 SKIP_TESTS=$8 SUDO=$9 EXPOSE=${10} OPEN_FIREWALL=${11} EMBEDDER=${12:-0} OPEN_QAMP=${13:-0}
 [[ $NAME == - ]] && NAME=$(hostname -s)
 SYSTEM_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -113,6 +114,13 @@ WRAPPER
     # Sandboxes on the internal gateway network may reach exactly one host port: the model gateway.
     ufw allow in on galahad0 to any port 7779 proto tcp comment "Galahad sandboxes to model gateway only" >/dev/null &&
       echo "→ ufw: sandboxes may reach 7779/tcp on galahad0 only" || echo "ufw sandbox rule not added" >&2
+  fi
+  # Q-AMP grants (docs/SECURITY.md): each grant's bridge listens on one UDP port of 7781-7789, on the node's tailnet
+  # address alone, and lets one agent's key in. Opted into on its own (deploy.sh --open-qamp); nothing listens there until
+  # you grant an agent something, and a grant ends by itself within a day.
+  if [[ $OPEN_QAMP == 1 ]] && command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+    ufw allow in on tailscale0 to any port 7781:7789 proto udp comment "Galahad Q-AMP grants' bridges over Tailscale" >/dev/null &&
+      echo "→ ufw: allowed 7781-7789/udp on tailscale0 only (Q-AMP grants)" || echo "ufw Q-AMP rule not added" >&2
   fi
 
   # Sandbox isolation must not depend on UFW being active: Galahad owns its own rules.
@@ -456,6 +464,19 @@ if [[ $("$HOME/.bun/bin/bun" --version 2>/dev/null || true) != "$BUN_VERSION" ]]
 fi
 echo "→ bun $(bun --version)"
 
+# Q-AMP, where the deploy shipped its binary: checked against its pin, then put where the node looks (<home>/bin/qamp).
+# The node's home is made private first if this is its first deploy (galahad init would make it so; this comes before).
+# shellcheck source=scripts/qamp-pin.sh
+source "$(dirname "${BASH_SOURCE[0]}")/qamp-pin.sh"
+if [[ -f $STAGE/qamp.bin ]]; then
+  [[ -d $HOME/.galahad ]] || install -d -m 0700 "$HOME/.galahad"
+  install_qamp "$STAGE/qamp.bin" "$HOME/.galahad/bin" || { echo "Q-AMP's binary wasn't installed: not deploying" >&2; exit 1; }
+  rm -f "$STAGE/qamp.bin"
+fi
+# The suite drives the real bridge too, where this host has one (its Q-AMP tests skip, saying so, where it hasn't).
+QAMP_FOR_TESTS=""
+[[ -x $HOME/.galahad/bin/qamp ]] && QAMP_FOR_TESTS=$HOME/.galahad/bin/qamp
+
 RELEASE="$HOME/galahad/releases/$REV"
 mkdir -p "$HOME/galahad/releases"
 rm -rf "$RELEASE"
@@ -468,7 +489,7 @@ bun install --frozen-lockfile >/dev/null
 if [[ $SKIP_TESTS != 1 ]]; then
   echo "→ running the test suite on this host"
   LOG=$(mktemp)
-  if ! bun test >"$LOG" 2>&1; then
+  if ! env ${QAMP_FOR_TESTS:+"GALAHAD_QAMP_BIN=$QAMP_FOR_TESTS"} bun test >"$LOG" 2>&1; then
     tail -30 "$LOG"
     echo "tests failed on this host; not (re)starting the service" >&2
     exit 1
