@@ -7,6 +7,7 @@ import { foundFleet, MindStore } from "@galahad/mind";
 import type { Capabilities } from "../src/capabilities.ts";
 import { type Daemon, startDaemon } from "../src/daemon.ts";
 import { Home } from "../src/home.ts";
+import { lookTime } from "../src/looks.ts";
 import { chatTools, type GalahadTool, type ToolApi, TOOLS, toolsFor } from "../src/tools.ts";
 import { z } from "zod";
 import { freePort } from "./ports.ts";
@@ -423,6 +424,11 @@ describe("a look of his, later", () => {
   }
   const underway = async (id: string) => (await (await call("underway", { id }, home.adminToken())).json()) as { tasks: unknown[]; looks: { id: string; note: string; at: number; zone: string; state: string }[] };
   const tools = () => ((bodies.at(-1)?.tools ?? []) as { function: { name: string } }[]).map((t) => t.function.name);
+  const cli = async (...args: string[]) => {
+    const run = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), ...args, "--home", home.dir], { env: { ...process.env, GALAHAD_KEYSTORE: "file" }, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const [out, err, code] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited]);
+    return { out, err, code };
+  };
 
   test("he sets one in a kept chat: it waits above that chat's message box until it comes, and you may call it off", async () => {
     const before = Date.now();
@@ -437,6 +443,12 @@ describe("a look of his, later", () => {
     expect(look!.at - Date.now()).toBeLessThanOrEqual(2 * 3_600_000);
     const all = (await (await call("looks", undefined, home.adminToken())).json()) as { looks: { id: string }[] };
     expect(all.looks.map((l) => l.id)).toContain(look!.id);
+    // In a terminal: when, as he said it (in the zone he was told), what at, and its id. Never a machine's own locale.
+    const listed = await cli("looks");
+    expect(listed.code, listed.err).toBe(0);
+    expect(listed.out).toContain(`${lookTime(look!.at, look!.zone, Date.now())}  Is the site live?`);
+    expect(listed.out).toContain(look!.id);
+    expect(listed.out).not.toMatch(/\d{1,2}\/\d{1,2}\/\d{4}|[AP]M\b/);
     // Called off by you: gone from above the box, and it never comes.
     expect((await call("cancelLook", { id: look!.id }, home.adminToken())).status).toBe(200);
     expect((await underway(id)).looks).toEqual([]);
@@ -474,6 +486,12 @@ describe("a look of his, later", () => {
     expect(String(bodies[0].messages.at(-1).content)).toContain("not your liege's words: Is the site live?");
     expect(daemon.chats.look(due.id)!.state).toBe("done");
     expect((await underway(id)).looks).toEqual([]);
+    // Read in a terminal, it is his too: never printed as your words (it was, until 25 November: "You: (A look you…").
+    const read = await cli("chat", id);
+    expect(read.code, read.err).toBe(0);
+    expect(read.out).toMatch(/He looked again, as he said at (\w{3} \d{1,2} \w{3}, )?\d{2}:\d{2} he would: Is the site live\?/);
+    expect(read.out).not.toContain("A look you set yourself");
+    expect(read.out).toContain("It's live: the home page answers 200.");
   });
 });
 

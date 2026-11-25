@@ -14,6 +14,7 @@ import { activeDevicesMatching } from "./devices.ts";
 import { loadEnv } from "./env.ts";
 import { Home } from "./home.ts";
 import { actionCommand, connectorCommand, heartbeatCommand, loopCommand, noticeCommand, orderCommand, selfActionCommand, statusLine } from "./loop-cli.ts";
+import { lookTime } from "./looks.ts";
 import { BILAG_QUERY } from "./bilag.ts";
 import { runMcpServer } from "./mcp.ts";
 import { runAcpAgent } from "./acp-agent.ts";
@@ -994,7 +995,8 @@ Next:
       if (sub) fail("usage: galahad looks [cancel <id>]");
       const { looks } = await admin.call<{ looks: LookView[] }>("looks");
       if (!looks.length) console.log(dim("No looks of his wait. He sets one in a chat when something isn't done yet (a deploy, a reply), and looks again then."));
-      for (const look of looks) console.log(`  ${bold(new Date(look.at).toLocaleString())}  ${look.note}  ${dim(`${look.id} · ${look.zone}`)}`);
+      // When, as he said it: in the zone he was told, never this machine's locale.
+      for (const look of looks) console.log(`  ${bold(lookTime(look.at, look.zone, Date.now()))}  ${look.note}  ${dim(`${look.id} · ${look.zone}`)}`);
       return;
     }
 
@@ -1448,8 +1450,11 @@ Next:
       if (!sub) fail("usage: galahad chat <id> | galahad chat rm <id>   (galahad chats lists them)");
       const { conversation } = await admin.call<{ conversation: ConversationView }>("conversation", { id: sub });
       console.log(`${bold(conversation.title)}  ${dim(`${conversation.id}${conversation.project ? ` · project ${conversation.project}` : ""}`)}\n`);
+      const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
       for (const m of conversation.messages) {
-        if (m.role === "user") console.log(`${bold("You:")} ${m.content}\n`);
+        // A look of his come back is his own note, as every app shows it: never your words.
+        if (m.role === "user" && m.look) console.log(`${dim(`He looked again, as he said at ${lookTime(m.look.set, here, Date.now())} he would: ${m.look.note}`)}\n`);
+        else if (m.role === "user") console.log(`${bold("You:")} ${m.content}\n`);
         else {
           const tools = m.steps.filter((s) => s.kind === "tool").map((s) => (s.kind === "tool" ? s.title : ""));
           console.log(`${bold("Galahad:")} ${m.content || dim(`(${m.status}${m.error ? `: ${m.error}` : ""})`)}`);
