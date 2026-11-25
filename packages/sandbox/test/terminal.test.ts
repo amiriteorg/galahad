@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { TERMINAL_HANG_UP } from "../src/spec.ts";
 
 /*
@@ -6,10 +7,17 @@ import { TERMINAL_HANG_UP } from "../src/spec.ts";
  * the terminal started is hung up there by its tag. Linux only (it reads /proc), as a sandbox is.
  */
 
+/** Whether a process still runs. One that was killed but that nothing has reaped yet (a zombie: where its parent is
+ * gone and no init process adopts it, as in a CI runner's container with a plain command for its PID 1) has ended:
+ * only its entry is left (/proc/<pid>/stat says state Z). */
 const alive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
-    return true;
+  } catch {
+    return false;
+  }
+  try {
+    return !/^\d+ \(.*\) Z /s.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
   } catch {
     return false;
   }

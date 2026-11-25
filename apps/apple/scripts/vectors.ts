@@ -929,8 +929,11 @@ if (Bun.argv.includes("--check")) {
   } catch {
     /* none yet */
   }
-  if (kept !== text) {
-    console.error(`${OUT} isn't what core makes now: run bun apps/apple/scripts/vectors.ts`);
+  // Every number to within a trillionth (the apps' own tests hold theirs to a billionth), everything else exactly: a
+  // sine on another processor (x86 Linux, in CI) can differ from this Mac's in its last digit, and that is no change.
+  const differs = kept === "" ? "none kept" : firstDifference(JSON.parse(kept), JSON.parse(text), "");
+  if (differs) {
+    console.error(`${OUT} isn't what core makes now (${differs}): run bun apps/apple/scripts/vectors.ts`);
     process.exit(1);
   }
   console.log("the vectors match core");
@@ -938,4 +941,27 @@ if (Bun.argv.includes("--check")) {
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, text);
   console.log(`wrote ${OUT}`);
+}
+
+/** Where two readings of the vectors first part, or null: numbers within a trillionth of each other (and of their size)
+ * are the same, anything else must be equal. */
+function firstDifference(a: unknown, b: unknown, at: string): string | null {
+  if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) <= 1e-12 * Math.max(1, Math.abs(a), Math.abs(b)) ? null : `${at || "the top"}: ${a} ≠ ${b}`;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return `${at}: ${a.length} items ≠ ${b.length}`;
+    for (let i = 0; i < a.length; i++) {
+      const found = firstDifference(a[i], b[i], `${at}[${i}]`);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)) {
+    const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
+    for (const key of keys) {
+      const found = firstDifference((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key], `${at}.${key}`);
+      if (found) return found;
+    }
+    return null;
+  }
+  return Object.is(a, b) ? null : `${at || "the top"}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`;
 }
