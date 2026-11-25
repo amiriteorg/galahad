@@ -523,6 +523,7 @@ The credential above works only beside a node. An agent on a machine of yours th
 2. **The agent's machine gets a key of its own,** from the same release's binary for that machine (check its SHA-256 too):
 
    ```sh
+   mkdir -p -m 700 ~/.qamp                    # qamp keygen makes no folder
    qamp keygen --out ~/.qamp/agent.qamp-key   # prints its did:key:z6Mk…; the file stays there (0600)
    ```
 
