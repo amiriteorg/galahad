@@ -144,6 +144,9 @@ class Chrome {
         "--disable-backgrounding-occluded-windows",
         // No name but this machine's resolves: the browser can reach nothing else.
         "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1 , EXCLUDE localhost",
+        // Inside a container that can't make Chrome's sandbox (sovware.io's CI runner), on its word alone: it loads
+        // nothing but this machine's own app (the line above).
+        ...(process.env.GALAHAD_CHROME_NO_SANDBOX === "1" ? ["--no-sandbox"] : []),
         `--user-data-dir=${profile}`,
         "--remote-debugging-port=0",
         "about:blank",

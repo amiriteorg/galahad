@@ -59,8 +59,18 @@ jobs:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
       - run: bun test
+        if: github.server_url == 'https://github.com'
         env:
           GALAHAD_KEYSTORE: file
+      # sovware.io's runner runs a job's steps as root in its container, and Galahad never runs as root: its installer
+      # refuses to, and its terminals' tests act as a person's shell does. There the tests run as a user of their own.
+      - name: bun test (as a user of its own, not root)
+        if: github.server_url != 'https://github.com'
+        run: |
+          install -m 755 "$(command -v bun)" /usr/local/bin/bun
+          id ci >/dev/null 2>&1 || useradd --create-home --uid 1001 ci
+          chown -R ci "$GITHUB_WORKSPACE"
+          su ci -c "cd '$GITHUB_WORKSPACE' && GALAHAD_KEYSTORE=file bun test"
 
   # The scorecard: every suite's deterministic quality metrics against the recorded baselines (bench/baseline/).
   # A metric that got worse, one the baseline had that's gone, a suite that broke or has no baseline: red.
@@ -78,8 +88,29 @@ jobs:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
       - run: bun run bench --ci
+        if: github.server_url == 'https://github.com'
         env:
           GALAHAD_KEYSTORE: file
+      # Its web suite measures the app in Chrome. GitHub's runners have one; sovware.io's runner image doesn't, so it
+      # fetches one there, and runs the scorecard as a user of its own (Chrome, as Galahad, won't run as root), with
+      # Chrome's sandbox off, which a container can't make: it loads nothing but this checkout's own app.
+      - name: Chrome (sovware.io's runner has none)
+        id: chrome
+        if: github.server_url != 'https://github.com'
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+        with:
+          chrome-version: stable
+          install-dependencies: true
+          no-sudo: true
+      - name: bun run bench --ci (as a user of its own, not root)
+        if: github.server_url != 'https://github.com'
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          install -m 755 "$(command -v bun)" /usr/local/bin/bun
+          id ci >/dev/null 2>&1 || useradd --create-home --uid 1001 ci
+          chown -R ci "$GITHUB_WORKSPACE"
+          su ci -c "cd '$GITHUB_WORKSPACE' && GALAHAD_KEYSTORE=file GALAHAD_CHROME_NO_SANDBOX=1 CHROME='$CHROME_PATH' bun run bench --ci"
 
   site-gate:
     name: Site gate
