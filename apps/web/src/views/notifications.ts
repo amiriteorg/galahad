@@ -49,6 +49,15 @@ async function readEnv(nodeHasThisDevice: boolean): Promise<PushEnv> {
 }
 
 /**
+ * This device as the card that says he can't reach it reads it, without waiting for the service worker (the Inbox,
+ * drawn whole, would wait with it, as long as a first visit takes to start one): whether it's on is the node's word.
+ */
+function nodeEnv(nodeHasThisDevice: boolean): PushEnv {
+  const can = capable();
+  return { capable: can, ios: isIos(navigator), standalone: standalone(), permission: can ? Notification.permission : "default", subscribed: nodeHasThisDevice };
+}
+
+/**
  * From your tap only: ask the browser's leave, subscribe to this node's key, hand the subscription to the node. `fresh`:
  * this device's was lost, so whatever the browser still holds is dead at its push service and a new one is made.
  */
@@ -155,9 +164,8 @@ export function reachNote(ctx: Ctx, scope: Scope, changed: () => void = () => {}
       view = null; // a node from before notifications, or not answering: nothing to say here (Settings says more)
     }
     if (scope.disposed) return;
-    const next = reachDismissed(reachPutAway(), Date.now()) ? null : reachCard(await readEnv(view?.subscribed === true), view);
+    card = reachDismissed(reachPutAway(), Date.now()) ? null : reachCard(nodeEnv(view?.subscribed === true), view);
     key = view?.key ?? key;
-    card = next;
     draw();
   }
 
