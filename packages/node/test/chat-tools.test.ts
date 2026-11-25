@@ -436,8 +436,13 @@ describe("a look of his, later", () => {
     // Offered in a kept chat, and his result says when, where you see it, and its id.
     expect(tools()).toContain("look_later");
     const result = String(bodies.at(-1).messages.at(-1).content);
-    expect(result).toMatch(/^I'll look again at \d{2}:\d{2} \([^)]+\), here: Is the site live\? \(lk_[A-Za-z0-9_-]{16}\)\. Your liege sees it above the message box/);
     const [look] = (await underway(id)).looks;
+    // When, as a look says it (lookTime): its clock in its zone, and its day too when that isn't today. Set after 22:00 for
+    // two hours on, it comes tomorrow: the forge's run at 22:00 UTC on 25 November 2026 failed on a bare "HH:MM".
+    const after = Date.now();
+    const says = (now: number) => `I'll look again at ${lookTime(look!.at, look!.zone, now)} (${look!.zone}), here: Is the site live? (${look!.id}). Your liege sees it above the message box`;
+    expect(result).toMatch(/^I'll look again at .+ \([^)]+\), here: Is the site live\? \(lk_[A-Za-z0-9_-]{16}\)\. Your liege sees it above the message box/);
+    expect([says(before), says(after)].some((form) => result.startsWith(form)), `${result}\nstarts with neither:\n${says(before)}\n${says(after)}`).toBe(true);
     expect(look).toMatchObject({ note: "Is the site live?", state: "waiting" });
     expect(look!.at - before).toBeGreaterThanOrEqual(2 * 3_600_000 - 1000);
     expect(look!.at - Date.now()).toBeLessThanOrEqual(2 * 3_600_000);
