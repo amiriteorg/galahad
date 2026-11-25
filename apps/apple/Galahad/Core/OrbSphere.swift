@@ -186,7 +186,7 @@ extension Orb {
                 width: k != 0 ? 1.1 : 1.8,
                 from: 360 * rand(sphere.seed, k, 41),
                 length: 50 + 130 * rand(sphere.seed, k, 42),
-                speed: (rand(sphere.seed, k, 43) < 0.5 ? -1 : 1) * (0.4 + rand(sphere.seed, k, 44))
+                speed: (rand(sphere.seed, k, 43) < 0.5 ? -1 : 1) * (1 + (2 * rand(sphere.seed, k, 44)).rounded(.down))
             )
         }
     }

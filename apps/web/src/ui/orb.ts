@@ -46,7 +46,8 @@ export function orb(options: OrbOptions = {}): HTMLElement {
   // Each orb's gradients have names of their own: two on one page (his line, the welcome) never share one.
   const id = `orb-${++drawn}`;
   const defs: SVGElement[] = [];
-  const shapes = orbParts(size).map((part, n) => shape(part, `${id}-${n}`, palette, defs));
+  const onPaper = paper();
+  const shapes = orbParts(size).map((part, n) => shape(part, `${id}-${n}`, palette, defs, onPaper));
   return h(
     "span",
     { class: "orb", "data-tone": tone, style: `--orb-size:${size}px`, ...named },
@@ -592,9 +593,10 @@ function rgba(hex: string, alpha: number): string {
   return `rgba(${rgb},${Math.round(Math.max(0, Math.min(1, alpha)) * 1000) / 1000})`;
 }
 
-/** One part as SVG; a gradient it fills or strokes with goes into `defs`, named `id`. */
-function shape(part: OrbPart, id: string, palette: OrbPalette, defs: SVGElement[]): SVGElement {
-  const ink = (name: OrbInk): string => (name === "white" ? "#ffffff" : palette[name]);
+/** One part as SVG; a gradient it fills or strokes with goes into `defs`, named `id`. On a light page (`onPaper`) his
+ * white is his deep tint and his glyphs are ink on paper, as the canvas draws him. */
+function shape(part: OrbPart, id: string, palette: OrbPalette, defs: SVGElement[], onPaper = false): SVGElement {
+  const ink = (name: OrbInk): string => (name === "white" ? (onPaper ? palette.deep : "#ffffff") : palette[name]);
   const stops = (list: readonly OrbStop[]) => list.map((s) => svg("stop", { offset: String(s.at), "stop-color": ink(s.ink), "stop-opacity": String(s.opacity) }));
   const named = { class: `orb-${part.name}` };
   switch (part.kind) {
@@ -618,13 +620,15 @@ function shape(part: OrbPart, id: string, palette: OrbPalette, defs: SVGElement[
       return svg("g", named, ...placed.map(({ k, lit }) => {
         const angle = (360 * k) / part.count;
         const [x, y] = point(part.r, angle).split(" ");
-        return svg("text", { x, y, "font-size": String(part.size), "text-anchor": "middle", "dominant-baseline": "central", "font-family": "ui-monospace, SFMono-Regular, Menlo, monospace", "font-weight": "600", fill: ink(part.ink), opacity: String(Math.round(lit!.alpha * 100) / 100), transform: `rotate(${Math.round(angle * 100) / 100} ${x} ${y})` }, lit!.char);
+        return svg("text", { x, y, "font-size": String(part.size), "text-anchor": "middle", "dominant-baseline": "central", "font-family": "ui-monospace, SFMono-Regular, Menlo, monospace", "font-weight": "600", fill: onPaper ? palette.deep : ink(part.ink), opacity: String(Math.round(lit!.alpha * 100) / 100), transform: `rotate(${Math.round(angle * 100) / 100} ${x} ${y})` }, lit!.char);
       }));
     }
     case "sphere": {
       const sphere = orbSphere("galahad");
-      const shades = { tint: sphereShades(palette.tint, palette.light, palette.deep), second: sphereShades(ink(part.second), ink(part.second), palette.light) };
-      return svg("g", named, ...stillGlyphs(sphereFrame(sphere, spherePoints(sphere, part.count), { angle: 0, radius: part.r, scale: 1, glyph: part.glyph, t: 0, mood: "idle" }), shades));
+      const shades = onPaper
+        ? { tint: paperShades(palette.tint, palette.deep), second: paperShades(palette.deep, blendHex(palette.deep, "#000000", 0.4)) }
+        : { tint: sphereShades(palette.tint, palette.light, palette.deep), second: sphereShades(ink(part.second), ink(part.second), palette.light) };
+      return svg("g", named, ...stillGlyphs(sphereFrame(sphere, spherePoints(sphere, part.count), { angle: 0, radius: part.r, scale: 1, glyph: part.glyph, t: 0, mood: "idle", paper: onPaper }), shades));
     }
   }
 }

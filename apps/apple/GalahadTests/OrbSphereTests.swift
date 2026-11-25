@@ -168,7 +168,8 @@ struct OrbSphereTests {
         #expect(Orb.knightArcs(sphere, .full) == arcs)
         for arc in arcs {
             #expect(arc.length >= 50 && arc.length < 180)
-            #expect(abs(arc.speed) >= 0.4 && abs(arc.speed) < 1.4)
+            // A whole number of its ring's turns, so it never jumps where the ring comes round to 0.
+            #expect(abs(arc.speed) == 1 || abs(arc.speed) == 2)
             #expect(arc.r + arc.width / 2 <= 100)
         }
         #expect(Set((0..<50).map { Orb.knightArcs(Orb.sphere("k\($0)"), .seat).count }) == [1, 2])

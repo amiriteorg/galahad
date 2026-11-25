@@ -144,12 +144,24 @@ describe("an orb's sphere of glyphs", () => {
     for (const arc of arcs) {
       expect(arc.length).toBeGreaterThanOrEqual(50);
       expect(arc.length).toBeLessThan(180);
-      expect(Math.abs(arc.speed)).toBeGreaterThanOrEqual(0.4);
-      expect(Math.abs(arc.speed)).toBeLessThan(1.4);
+      // A whole number of its ring's turns (1 or 2, either way), so where the ring comes round to 0 the arc goes on
+      // smoothly (the Apple port found a fraction made it jump, 25 November 2026).
+      expect([1, 2]).toContain(Math.abs(arc.speed));
       expect(arc.r + arc.width / 2).toBeLessThanOrEqual(100);
     }
     const counts = new Set(Array.from({ length: 50 }, (_, n) => knightArcs(orbSphere(`k${n}`), "seat").length));
     expect(counts).toEqual(new Set([1, 2]));
+  });
+
+  test("a knight's arcs never jump: where its ring comes round to 0, each arc is where it would have been", () => {
+    const at = (arc: { from: number; speed: number }, ring: number) => (((arc.from + arc.speed * ring) % 360) + 360) % 360;
+    for (let n = 0; n < 200; n++) {
+      for (const arc of knightArcs(orbSphere(`knight-${n}`), "seat")) {
+        // The ring at 359.9 degrees, then a tenth of a degree on (0 again): the arc moves by its speed's tenth, no more.
+        const moved = Math.abs(at(arc, 0) - at(arc, 359.9));
+        expect(Math.min(moved, 360 - moved)).toBeLessThanOrEqual(Math.abs(arc.speed) * 0.1 + 1e-9);
+      }
+    }
   });
 
   test("Galahad's data ring: about the share of its places lit, each a hex digit changing on a slow beat", () => {

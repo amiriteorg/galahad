@@ -174,7 +174,7 @@ object OrbSphere {
                 width = if (k != 0) 1.1 else 1.8,
                 from = 360 * OrbMotion.rand(sphere.seed, k, 41),
                 length = 50 + 130 * OrbMotion.rand(sphere.seed, k, 42),
-                speed = (if (OrbMotion.rand(sphere.seed, k, 43) < 0.5) -1 else 1) * (0.4 + OrbMotion.rand(sphere.seed, k, 44)),
+                speed = (if (OrbMotion.rand(sphere.seed, k, 43) < 0.5) -1 else 1) * (1 + kotlin.math.floor(2 * OrbMotion.rand(sphere.seed, k, 44))),
             )
         }
     }

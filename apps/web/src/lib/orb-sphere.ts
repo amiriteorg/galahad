@@ -167,7 +167,8 @@ export function paperShades(ink: string, deep: string): string[] {
 }
 
 /** One of a knight's own arcs round its face (Jarvis's rings, each knight's its own): its radius and width, where it
- * starts and how long it is (degrees), and how fast it turns against its ring's turning (-1.4 to 1.4 times). */
+ * starts and how long it is (degrees), and how fast it turns against its ring's turning: once or twice as fast, either
+ * way, a whole number so that where the ring comes round to 0 the arc goes on smoothly. */
 export interface KnightArc {
   r: number;
   width: number;
@@ -185,7 +186,7 @@ export function knightArcs(sphere: OrbSphere, level: OrbLevel): KnightArc[] {
     width: k ? 1.1 : 1.8,
     from: 360 * orbRand(sphere.seed, k, 41),
     length: 50 + 130 * orbRand(sphere.seed, k, 42),
-    speed: (orbRand(sphere.seed, k, 43) < 0.5 ? -1 : 1) * (0.4 + orbRand(sphere.seed, k, 44)),
+    speed: (orbRand(sphere.seed, k, 43) < 0.5 ? -1 : 1) * (1 + Math.floor(2 * orbRand(sphere.seed, k, 44))),
   }));
 }
 
