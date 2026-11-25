@@ -163,6 +163,34 @@ The chat loop and the quest runner driven by stand-in models that answer at once
 
 The characters of every turn's conversation with the engineer, summed over a whole quest, for three kinds of work a stand-in engineer does the same way every time: the tests run after each of 13 edits (336,141 characters on 16 November 2026), ten files each read, edited and tested (379,806; its last turn 20,250), and thirty different searches that each print a page (647,513). And how many turns, over the three, didn't begin with the turn before's conversation (6): each of those is a beginning a provider can't read from its cache. The engineer's conversation is most of what a quest costs, so a change that sends more, or rewrites what was cached, fails here before it costs anything. Lean context ([PLAN](PLAN.md) #5) is told here: outputs a later run superseded, and file contents a later edit made stale, are lines instead of excerpts (the second kind sent 420,792 characters, its last turn 23,286, before stale contents were cut on 16 November 2026). So is a check that failed and a later check passed (the same test run, typecheck, lint or build, on what it checked or on all of it, however its output was piped): `context.quest.fix-then-check`, eight test files failing in turn and each fixed, the whole suite passing, a typecheck failing and then passing, and the work looked over, sends 346,062 characters, where it sent 384,222 before that was cut on 20 November 2026 (−9.9 %), and its cached beginning is rewritten no more often (2 turns).
 
+### notify: does what needs you reach you, and does little else interrupt you?
+
+A seeded week in virtual time (`bench/notify/sim.ts`, a look every minute): the real rules (core's `notify.ts`) and the real notifier (`NotifyService`, its push.db in memory) at work while a week happens to a node. Approvals (each lapses a day after it's asked, no answer being no), keys he asks for, a connector request you leave standing; his own looks, some ending by asking you or waiting on an approval; chats you left him working in; a CI failure each weekday, most going back to the knight whose work it was and fixed within hours, some yours; a loop's and a rule's tells; an outcome's daily report and its questions; a loop that fails once, a server offline for two hours, a disk alert at 03:10 on Saturday; and knights' tasks that end verified. The owner lives in Copenhagen and the node in London, as theirs do, and they have two devices: the iPhone app and the web app on a laptop. On Wednesday at noon Apple stops knowing the iPhone's token; on Friday the laptop's push service fails from 09:00 to 15:00. The web app makes a lost subscription again when it opens (`lib/push.ts`, `pushSync`); the iPhone app does what its build does.
+
+A stand-in owner answers an ask only once a delivery told them of it: they open the app on the device that buzzed 2 to 40 minutes later in their waking hours (07:00 to 23:00), and answer what was delivered; they also open the iPhone app each morning and the laptop's on weekday mornings, which runs each app's own healing. An ask never delivered is never answered. Whether a delivery sounded is what the node asked of the platforms: a push of Urgency low is passive everywhere. It takes about a second, and also runs as a normal test at two days (`bench/notify/sim.test.ts`).
+
+| Seed 20 261 112, a week | 25 Nov 2026 (PLAN #59's first step) |
+|---|---:|
+| Asks that lapsed unanswered | 0 |
+| Asks answered, of 21 | 19 |
+| From an ask to its answer: median · 90th percentile (virtual minutes) | 40 · 693.6 |
+| Minutes an ask stood with no device that could be reached | 1,015 |
+| Buzzes · for each knight's task that ended verified (54) | 86 · 1.59 |
+| Buzzes at night (22:00 to 07:00 in your time) that weren't alerts | 0 |
+| Buzzes about what resolved without you | 4 |
+| Buzzes about what his own judgment raised | 9 |
+| The same thing told again as new while it stood | 2 |
+| A notification that replaced one telling of an ask still waiting | 0 |
+| One look, with a day's worth standing | 0.05 ms |
+
+What it says of the first step (before tiers, budgets, reminders and the digest):
+
+- **Asks wait behind news.** By 14:00 to 20:00 on most days ordinary news has reached the day's limit, and an approval asked after that waits for the morning: that is most of the 693.6-minute 90th percentile (the design's Probe C).
+- **The iPhone stays dead from Wednesday.** Its app never asks Apple again, so from Friday's outage on nobody can be reached for 1,015 minutes while something waits; the web app's own healing and the catch-up are why nothing lapsed.
+- **A connector request you leave standing is told again every 49 hours** (twice in the week: Probe B).
+- **Every push sounds:** 86 buzzes, one and a half for each task done, 9 of them his own looks asking you something.
+- Night buzzes read 0 only because the day's limit is spent before 22:00 each day; quiet hours themselves run in the node's zone, an hour off the owner's (Probe D).
+
 ### web: does anything move on the PWA's screens?
 
 Every place of the PWA, and Galahad's, a knight's and a room's timeline, opened in a headless Chrome paired with a throwaway node, as a returning visit opens it, on a laptop's screen (1280×800) and a phone's (390×844, the processor slowed 4×, a 9 Mbit/s line), and watched from its first frame until 3 s after it is usable (`apps/web/measure/first-load.ts --shifts`, which the suite runs). A place's metric is its cumulative layout shift, the sum of every layout shift in that time, ×10,000: 0 is a page where nothing moved once it was on screen. The node holds the same stand-in fleet every time (seven knights, a room, tasks running, verified and given up, two trial runs, a kept chat, a quest in hand, a key he asked for, two tripwires), so the same app moves the same way every time: three runs of three visits each gave identical values for every place. It needs Chrome (`CHROME`, or Chrome or Chromium where it usually is) and takes about three minutes, most of it the stand-in fleet getting its work done.
