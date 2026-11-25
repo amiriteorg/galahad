@@ -13,7 +13,8 @@
 #  vectors    │ the parity vectors the Apple and Android apps test against are what the web app's code makes now
 #  android    │ the Android app's JVM tests (held to the same vectors)
 #  apple      │ the iPhone's tests and the Mac build, on sovware.io's Mac mini runner (skipped on GitHub)
-#  secrets    ┘ gitleaks over what the push (or the pull request) adds
+#  secrets    │ gitleaks over what the push (or the pull request) adds
+#  sweep      ┘ the owner's private details, by the forge's secret list, in what it adds (sovware.io alone)
 #  sandbox    real-Docker sandbox tests; opt-in via the repo variable SANDBOX_TESTS=true (GitHub's runner
 #             has Docker and no KVM: the microVM cases are skipped there)
 #  site       on main, after everything passes: deploy galahad.sh (and galahad.bot) when CLOUDFLARE_API_TOKEN exists
@@ -215,6 +216,44 @@ jobs:
           if [ -z "$from" ] || ! git cat-file -e "$from^{commit}" 2>/dev/null; then from=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1); fi
           echo "scanning $from..HEAD ($(git rev-list --count "$from..HEAD") commits)"
           "$RUNNER_TEMP/gitleaks" git --log-opts="$from..HEAD" --no-banner --redact
+
+  # What a push or a pull request adds, swept for the owner's private details (logins, home paths, tailnet addresses,
+  # device names, account ids) before it can reach main and, through the mirror, GitHub: the push gate's last step
+  # (PLAN #54). Its list is sovware.io's secret PRIVATE_SWEEP (an extended regular expression), so it never enters this
+  # public repository; a match is told by file and line alone, never by what matched. On sovware.io alone: GitHub only
+  # ever receives what passed it.
+  sweep:
+    name: Private sweep
+    if: github.server_url != 'https://github.com'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: What this adds, swept for private details
+        env:
+          PRIVATE: ${{ secrets.PRIVATE_SWEEP }}
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [ -n "$PRIVATE" ] || { echo "::error::sovware.io holds no PRIVATE_SWEEP secret: nothing can be swept, so nothing passes"; exit 1; }
+          from="${BASE:-$BEFORE}"
+          if [ -z "$from" ] || ! git cat-file -e "$from^{commit}" 2>/dev/null; then from=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1); fi
+          echo "sweeping what $from..HEAD adds ($(git rev-list --count "$from..HEAD") commits)"
+          # Every added line as "file:line<TAB>text"; the text is matched, and only "file:line" is ever printed.
+          git diff --unified=0 --no-color "$from" HEAD | awk '
+            /^\+\+\+ / { file = substr($0, 7); next }
+            /^@@ / { split($3, a, ","); line = substr(a[1], 2) + 0; next }
+            /^\+/ { printf "%s:%d\t%s\n", file, line, substr($0, 2); line++ }' > "$RUNNER_TEMP/added.txt"
+          hits=$(cut -f2- "$RUNNER_TEMP/added.txt" | grep -n -E -e "$PRIVATE" | cut -d: -f1 || true)
+          if [ -n "$hits" ]; then
+            for n in $hits; do echo "::error::a private detail is added at $(sed -n "${n}p" "$RUNNER_TEMP/added.txt" | cut -f1)"; done
+            exit 1
+          fi
+          echo "nothing private added ($(wc -l < "$RUNNER_TEMP/added.txt") lines looked at)"
 
   # The iPhone's tests and the Mac build, as the push gate ran them on the owner's Mac (PLAN #54): on sovware.io alone, on
   # the Mac mini's runner for this repository (label macos-xcode, on its host: Xcode 27 and xcodegen), on a simulator made
