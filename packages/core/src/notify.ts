@@ -480,6 +480,16 @@ export interface NotifySentView {
   ok: boolean;
 }
 
+/**
+ * A device's notifications that its push service stopped taking (404, 410, a token Apple no longer knows): they were on,
+ * and you didn't turn them off. When, through which service (by name), and why, in words: never an endpoint or a token.
+ */
+export interface NotifyLostView {
+  at: number;
+  service: string;
+  why: string;
+}
+
 export interface NotifyView {
   node: string;
   /** This node's public key for subscribing (a browser's applicationServerKey). Public by nature. */
@@ -488,6 +498,11 @@ export interface NotifyView {
   devices: NotifyDeviceView[];
   /** Whether the device asking is subscribed (null: asked from a terminal). */
   subscribed: boolean | null;
+  /** The device asking, when its subscription was lost rather than turned off (null: it wasn't, or asked from a terminal).
+   * Its app may turn it on again by itself: it restores your own choice, which still stands. */
+  lost: NotifyLostView | null;
+  /** How many devices he can reach now: turned on, and not failing (a device whose last sends failed isn't counted). */
+  reachable: number;
   /** Today, in the quiet hours' zone: what was sent, and how much of the day's limit is used. */
   today: { day: string; sent: NotifySentView[]; count: number; limit: number };
   /** It's quiet hours now; how many things wait for them to end. */

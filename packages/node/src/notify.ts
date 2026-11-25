@@ -34,7 +34,7 @@ import {
 import type { MindStore } from "@galahad/mind";
 import type { LedgerEntryInput } from "@galahad/sandbox";
 import type { KeptSummary } from "./chats.ts";
-import type { NotifyStore, Subscription } from "./notify-store.ts";
+import type { LostRow, NotifyStore, Subscription } from "./notify-store.ts";
 import { appleEndpoint, type ApplePushEnvironment, appleTarget } from "./apns-send.ts";
 import { COLLECT_SERVICE, collectEndpoint } from "./collect-send.ts";
 import type { PushDelivery, PushOutcome, PushTarget } from "./push-send.ts";
@@ -115,6 +115,11 @@ export const TEST_EVERY_MS = 5_000;
 export const TESTS_PER_DAY = 20;
 const TURN_POLL_MS = 1_000;
 const QUEST_ID = /^[A-Za-z0-9._:-]{1,64}$/;
+
+/** A device whose sends have failed this many times running keeps failing: it can't be reached (the doctor says so). */
+export const FAILING_AFTER = 2;
+/** Whether he can reach a device through its subscription now: its sends aren't failing. */
+const reaches = (sub: Subscription): boolean => sub.failures < FAILING_AFTER;
 
 const hlcMs = (hlc: string): number => Number(hlc.split(".")[0]);
 /** Whose keys only stand for something that can go away and come back. */
@@ -347,11 +352,23 @@ export class NotifyService {
     return out;
   }
 
+  /** The devices still yours whose subscriptions were lost: a revoked device's record goes here (it isn't lost, it's gone). */
+  private lostDevices(): LostRow[] {
+    return this.o.db.lost().filter((row) => {
+      const device = this.o.mind.activeDevice(row.device);
+      if (device?.kind === "client") return true;
+      this.o.db.forgetLost(row.device);
+      return false;
+    });
+  }
+
   private async send(to: { sub: Subscription; name: string }, payload: NotifyPayload, delivery: PushDelivery): Promise<boolean> {
     const outcome = await this.o.sender.send(to.sub, payload, delivery, this.abort.signal);
     if (outcome.gone) {
-      // The browser unsubscribed, or the app was removed: the push service has forgotten it, and so does the node.
+      // The push service has forgotten it (the browser rotated or dropped it, the app was removed), and so does the node.
+      // It's remembered as lost, not as turned off: you didn't turn it off, so its app may turn it on again, and says why.
       this.o.db.remove(to.sub.device);
+      this.o.db.lose(to.sub.device, { service: to.sub.service, why: outcome.error ?? `${to.sub.service}'s push service no longer takes them` });
       this.o.log(`notifications: ${to.name}'s subscription is gone at its push service; removed`);
     } else if (outcome.ok) {
       // Taken at another endpoint than kept (an iPhone's token on Apple's other service): kept there from now on.
@@ -522,12 +539,16 @@ export class NotifyService {
     const quiet = inQuietHours(prefs.quiet, now);
     const told = db.told();
     const held = quiet ? [...this.standing(now), ...db.pending().map((p) => p.item)].filter((item) => prefs.kinds[item.kind] && !item.alert && !told.has(item.key)).length : 0;
+    const lostRows = this.lostDevices();
+    const lost = asking === null ? null : (lostRows.find((row) => row.device === asking) ?? null);
     return {
       node: this.o.nodeName,
       key: await this.publicKey(),
       prefs,
       devices: devices.map((d) => this.deviceView(d.sub, d.name)),
       subscribed: asking === null ? null : devices.some((d) => d.sub.device === asking),
+      lost: lost ? { at: lost.at, service: lost.service, why: lost.why } : null,
+      reachable: devices.filter((d) => reaches(d.sub)).length,
       today: { day, sent: db.sentOn(day), count: db.countOn(day), limit: prefs.perDay },
       quiet,
       held,
@@ -539,7 +560,7 @@ export class NotifyService {
     const devices = this.devices();
     return {
       devices: devices.length,
-      failing: devices.filter((d) => d.sub.failures >= 2 && d.sub.lastError).map((d) => ({ device: d.name, error: d.sub.lastError! })),
+      failing: devices.filter((d) => !reaches(d.sub) && d.sub.lastError).map((d) => ({ device: d.name, error: d.sub.lastError! })),
       keyProblem: this.keyProblem,
     };
   }

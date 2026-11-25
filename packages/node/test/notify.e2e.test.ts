@@ -560,6 +560,14 @@ describe("the push service's answers", () => {
     raise("gone:1", "warn", "another finding");
     await look();
     expect((await view()).devices.map((d) => d.name)).toEqual(["phone"]);
+    // Lost, not turned off: the tablet's own view says when, through which service and why, never where it was sent.
+    const seen = await view(tablet.call);
+    expect(JSON.stringify(seen)).not.toContain(new URL(tablet.browser.subscription.endpoint).pathname);
+    expect(seen.subscribed).toBe(false);
+    expect(seen.reachable).toBe(1);
+    expect(seen.lost).toEqual({ at: clock, service: "a push service you allowed", why: "a push service you allowed's push service says this subscription is gone (410)" });
+    expect((await view(phone.call)).lost).toBeNull();
+    expect((await view()).lost).toBeNull(); // a terminal is no device
     const requests = tablet.browser.requests;
     raise("gone:2", "warn", "and another");
     await look();
@@ -567,9 +575,10 @@ describe("the push service's answers", () => {
     expect(last(phone.browser).payload!.body).toBe("and another");
     for (const key of ["gone:1", "gone:2"]) clearNotice(key);
     await look();
-    // It can be turned on again from that device.
+    // It can be turned on again from that device, and isn't lost any more.
     await json(tablet.call("pushSubscribe", tablet.browser.subscription));
     expect((await view()).devices.map((d) => d.name)).toEqual(["phone", "tablet"]);
+    expect(await view(tablet.call)).toMatchObject({ subscribed: true, lost: null, reachable: 2 });
   });
 
   test("a redirect is never followed, and an endpoint is never in a log line", async () => {

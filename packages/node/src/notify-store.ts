@@ -17,6 +17,9 @@ import { type NotifyItem, type NotifyPayload, type NotifyPrefs, readNotifyPrefs 
  *   sent           what was sent, by kind and device: never a title or a line.
  *   collect        what's kept for a device that collects its notifications (the Android app,
  *                  collect-send.ts), until it takes them or they expire.
+ *   lost           a device whose subscription its push service stopped taking (it was on, and
+ *                  you didn't turn it off): when, the service by name and why in words, never
+ *                  the endpoint. Cleared when the device turns them on again or off, or is revoked.
  *
  * `secure_delete` overwrites what a removed subscription held.
  */
@@ -47,6 +50,15 @@ export interface SentRow {
   kind: NotifyPayload["kind"];
   devices: string[];
   ok: boolean;
+}
+
+export interface LostRow {
+  device: string;
+  at: number;
+  /** The push service by name, as the subscription was shown. */
+  service: string;
+  /** In the sender's words: the service by name and what it answered, never the endpoint. */
+  why: string;
 }
 
 interface SubscriptionRecord {
@@ -88,7 +100,8 @@ export class NotifyStore {
       CREATE TABLE IF NOT EXISTS pending (key TEXT PRIMARY KEY, item TEXT NOT NULL, at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS sent (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, devices TEXT NOT NULL, ok INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS sent_by_day ON sent (day, id);
-      CREATE TABLE IF NOT EXISTS collect (device TEXT NOT NULL, tag TEXT NOT NULL, payload TEXT NOT NULL, at INTEGER NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY (device, tag));`);
+      CREATE TABLE IF NOT EXISTS collect (device TEXT NOT NULL, tag TEXT NOT NULL, payload TEXT NOT NULL, at INTEGER NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY (device, tag));
+      CREATE TABLE IF NOT EXISTS lost (device TEXT PRIMARY KEY, at INTEGER NOT NULL, service TEXT NOT NULL, why TEXT NOT NULL);`);
   }
 
   close(): void {
@@ -115,16 +128,20 @@ export class NotifyStore {
     return this.db.query<{ device: string }, [string]>("SELECT device FROM subscriptions WHERE endpoint = ?").get(endpoint)?.device ?? null;
   }
 
-  /** This device's subscription, new or replacing its last one (it keeps the day it was first turned on). */
+  /** This device's subscription, new or replacing its last one (it keeps the day it was first turned on). A device that
+   * was lost is on again. */
   put(device: string, sub: { endpoint: string; p256dh: string; auth: string; service: string }): Subscription {
     const at = this.now();
-    this.db
-      .query(
-        `INSERT INTO subscriptions (device, endpoint, p256dh, auth, service, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (device) DO UPDATE SET endpoint = excluded.endpoint, p256dh = excluded.p256dh, auth = excluded.auth, service = excluded.service,
-           updated_at = excluded.updated_at, last_error = NULL, failures = 0`,
-      )
-      .run(device, sub.endpoint, sub.p256dh, sub.auth, sub.service, at, at);
+    this.db.transaction(() => {
+      this.db
+        .query(
+          `INSERT INTO subscriptions (device, endpoint, p256dh, auth, service, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (device) DO UPDATE SET endpoint = excluded.endpoint, p256dh = excluded.p256dh, auth = excluded.auth, service = excluded.service,
+             updated_at = excluded.updated_at, last_error = NULL, failures = 0`,
+        )
+        .run(device, sub.endpoint, sub.p256dh, sub.auth, sub.service, at, at);
+      this.db.query("DELETE FROM lost WHERE device = ?").run(device);
+    })();
     return this.subscription(device)!;
   }
 
@@ -134,9 +151,30 @@ export class NotifyStore {
     this.db.query("UPDATE subscriptions SET endpoint = ?, service = ?, updated_at = ? WHERE device = ?").run(endpoint, service, this.now(), device);
   }
 
+  /** This device's subscription goes, and with it what was kept for it and any record that it was lost (turned off, or
+   * revoked, it isn't lost). Whether it had a subscription. */
   remove(device: string): boolean {
     this.db.query("DELETE FROM collect WHERE device = ?").run(device);
+    this.forgetLost(device);
     return this.db.query("DELETE FROM subscriptions WHERE device = ?").run(device).changes > 0;
+  }
+
+  /* ---------- subscriptions their push service dropped ---------- */
+
+  /** This device's subscription was dropped by its push service: remembered as lost, not as turned off. */
+  lose(device: string, lost: { service: string; why: string }): void {
+    this.db
+      .query("INSERT INTO lost (device, at, service, why) VALUES (?, ?, ?, ?) ON CONFLICT (device) DO UPDATE SET at = excluded.at, service = excluded.service, why = excluded.why")
+      .run(device, this.now(), lost.service.slice(0, 80), lost.why.slice(0, 200));
+  }
+
+  /** The devices whose subscriptions were lost, the most recent first. */
+  lost(): LostRow[] {
+    return this.db.query<LostRow, []>("SELECT device, at, service, why FROM lost ORDER BY at DESC, device").all();
+  }
+
+  forgetLost(device: string): void {
+    this.db.query("DELETE FROM lost WHERE device = ?").run(device);
   }
 
   /** How a send to a device went. */

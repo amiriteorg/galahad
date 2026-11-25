@@ -134,6 +134,71 @@ describe("what couldn't be told in time", () => {
   });
 });
 
+describe("a subscription its push service drops: lost, not turned off", () => {
+  const TOKEN = "cd".repeat(32);
+  const gone = (): PushOutcome => ({ ok: false, gone: true, status: 410, error: "Apple's push service says this subscription is gone (410)", attempts: 1 });
+  const done = (h: ReturnType<typeof harness>, quest: string) => {
+    h.quest({ quest, state: "working" });
+    h.quest({ quest, state: "done" });
+  };
+
+  test("is remembered for that device (when, the service, why; never where it was sent) until it turns them on again", async () => {
+    const h = harness({ answer: gone });
+    done(h, "q-1");
+    await h.look();
+    expect(h.db.subscription("c_phone")).toBeNull();
+    const seen = await h.service.view("c_phone");
+    expect(JSON.stringify(seen)).not.toContain("stand-in");
+    expect(seen.subscribed).toBe(false);
+    expect(seen.reachable).toBe(0);
+    expect(seen.lost).toEqual({ at: h.now(), service: "Apple", why: "Apple's push service says this subscription is gone (410)" });
+    // Said only to the device it was: a terminal is no device.
+    expect((await h.service.view(null)).lost).toBeNull();
+    // That device turns them on again: on, and no longer lost.
+    h.service.subscribeApple("c_phone", { token: TOKEN, environment: "production" });
+    expect(await h.service.view("c_phone")).toMatchObject({ subscribed: true, lost: null, reachable: 1 });
+  });
+
+  test("turned off by you, or a device revoked, is not lost", async () => {
+    const devices = [
+      { id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read"] },
+      { id: "c_ipad", name: "iPad", kind: "client" as const, scopes: ["mind:read"] },
+    ];
+    const h = harness({ devices, answer: gone });
+    h.service.subscribeApple("c_ipad", { token: TOKEN, environment: "production" });
+    done(h, "q-1");
+    await h.look();
+    expect(h.db.lost().map((row) => row.device).sort()).toEqual(["c_ipad", "c_phone"]);
+    // Your own act on the phone: off, not lost.
+    expect(h.service.unsubscribe("c_phone")).toBe(false);
+    expect((await h.service.view("c_phone")).lost).toBeNull();
+    // The iPad revoked (wherever it was): its record goes at the next look at who is lost.
+    devices.splice(1, 1);
+    await h.service.view(null);
+    expect(h.db.lost()).toEqual([]);
+  });
+
+  test("a device whose sends keep failing isn't one he can reach", async () => {
+    const devices = [
+      { id: "c_phone", name: "phone", kind: "client" as const, scopes: ["mind:read"] },
+      { id: "c_ipad", name: "iPad", kind: "client" as const, scopes: ["mind:read"] },
+    ];
+    const failing = (target: PushTarget): PushOutcome | undefined => (target.endpoint.startsWith("apns:") ? { ok: false, gone: false, status: 500, error: "Apple's push service answered 500", attempts: 3 } : undefined);
+    const h = harness({ devices, answer: failing });
+    h.service.subscribeApple("c_ipad", { token: TOKEN, environment: "production" });
+    expect((await h.service.view(null)).reachable).toBe(2);
+    done(h, "q-1");
+    await h.look();
+    // Once is a failure; twice running, it keeps failing.
+    expect((await h.service.view(null)).reachable).toBe(2);
+    done(h, "q-2");
+    await h.look();
+    expect((await h.service.view("c_ipad")).reachable).toBe(1);
+    expect((await h.service.view("c_ipad")).lost).toBeNull();
+    expect(h.service.doctorFacts().failing).toEqual([{ device: "iPad", error: "Apple's push service answered 500" }]);
+  });
+});
+
 describe("quiet hours' time zone", () => {
   test("until you set one, the node's own; a zone you set is kept, whatever the node's", () => {
     const tokyo = new NotifyStore(":memory:", Date.now, "Asia/Tokyo");
