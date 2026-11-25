@@ -614,7 +614,9 @@ export const inboxView: View = (root, ctx, { scope }) => {
   renderQuestions();
   renderNotices();
   void ctx.live.refreshInbox();
-  scope.interval(() => void ctx.live.refreshInbox(), 2000);
+  // Each part is read again as the node's live stream says it changed (live.ts); while that stream is down, the whole
+  // Inbox every two seconds while it is open.
+  scope.add(ctx.live.follow([], () => ctx.live.refreshInbox(), 2000));
   // Deadlines tick without a re-render (that would lose a half-made decision).
   scope.interval(() => {
     for (const el of root.querySelectorAll<HTMLElement>(".expires")) {

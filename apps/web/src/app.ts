@@ -3,6 +3,7 @@ import { errorMessage } from "./context.ts";
 import { type BrowserIdentity, createIdentity, KeyStoreUnavailable, loadIdentity } from "./identity.ts";
 import { syncThemeColor } from "./prefs.ts";
 import { renderClockSkew, renderInsecure, renderKeyStoreUnavailable, renderPairFailed, renderRevoked, renderUnreachable, renderWelcome } from "./screens.ts";
+import { openLink } from "./live.ts";
 import { renderShell } from "./shell.ts";
 import type { WhoAmI } from "./types.ts";
 import { toast } from "./ui/toast.ts";
@@ -110,11 +111,15 @@ async function boot(): Promise<void> {
 
   const api = apiFor(identity);
   setUnauthorizedHandler(() => {});
+  // The node's live stream (live.ts), opened beside the first question: by the time the shell is drawn it has said
+  // what it tells of, and what the shell shows is read once, after that.
+  const link = openLink(api);
   let whoami: WhoAmI;
   try {
     whoami = await api.get<WhoAmI>("/api/whoami", AbortSignal.timeout(WHOAMI_TIMEOUT_MS));
     unreachable = 0;
   } catch (error) {
+    link.stop();
     if (error instanceof ApiError && error.status === 401) renderRefused(root, error);
     else {
       const timedOut = error instanceof DOMException && error.name === "TimeoutError";
@@ -128,7 +133,7 @@ async function boot(): Promise<void> {
   // turned off; one its push service dropped is made again). Begun before the views, whose card says he can't reach
   // this device only once this is done.
   void syncPush(api);
-  const shell = renderShell(root, { api, identity, whoami });
+  const shell = renderShell(root, { api, identity, whoami, link });
 
   // One refused request isn't proof of revocation: ask once more before leaving the app.
   let state: "ok" | "checking" | "refused" = "ok";

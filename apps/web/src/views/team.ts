@@ -688,7 +688,9 @@ export const teamView: View = (root, ctx, { scope, opts }) => {
   scope.listen(document, "visibilitychange", () => {
     if (!document.hidden) void load(true);
   });
-  scope.interval(() => void load(), 2000);
+  // The room read again when the team changes (the node's live stream says so: at most every two seconds while it is
+  // busy), and every two seconds while that stream is down.
+  scope.add(ctx.live.follow(["team"], () => load(), 2000, 2000));
   scope.add(ctx.live.team.subscribe(() => draw()));
   // (Who leads, as you just chose it, before the node has said so.)
   scope.add(pending.subscribe(() => draw(true)));

@@ -1,4 +1,5 @@
 import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, QuestionView, ScreenSessionView, SecretRequestView } from "@galahad/core";
+import type { LiveTopic } from "@galahad/core/live";
 import type { TeamSnapshot } from "@galahad/core/team";
 import type { Api } from "./api.ts";
 import type { BrowserIdentity } from "./identity.ts";
@@ -27,7 +28,7 @@ export interface NavigateOptions {
   task?: string;
 }
 
-/** Live data shared by the shell and the views, polled while the app is visible. */
+/** Live data shared by the shell and the views, read again as the node says it changed, while the app is visible. */
 export interface Live {
   fleet: Signal<FleetView | null>;
   pairings: Signal<PairingView[]>;
@@ -67,6 +68,15 @@ export interface Live {
   refreshConnectorRequests(): Promise<void>;
   /** Pairings, secret requests, actions, notices and loop drafts. */
   refreshInbox(): Promise<void>;
+  /** The node's live stream is open: what changes there is told as it changes, and nothing is polled. */
+  streaming: Signal<boolean>;
+  /**
+   * Runs `run` when one of these topics changes on the node (the live stream says so), once whenever the stream comes
+   * up, and every `everyMs` while it is down (null: once, and `run`'s owner keeps its own time then); never while the
+   * app is hidden. `run` is told which of its topics changed (null: everything). Runs come one at a time, no closer
+   * than `gapMs` (half a second unless said). Returns how to stop.
+   */
+  follow(topics: readonly LiveTopic[], run: (changed: readonly LiveTopic[] | null) => unknown, everyMs: number | null, gapMs?: number): () => void;
   /** Stops polling and listening (when the app shell is torn down). */
   stop(): void;
 }

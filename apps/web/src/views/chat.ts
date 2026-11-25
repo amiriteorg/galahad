@@ -2,7 +2,7 @@ import type { AttachmentRef, AwayView, ChatMessage, ChatStreamEvent, Conversatio
 import { findSecrets } from "@galahad/core/secret-scan";
 import type { QueuedMessage, QueueHold, TurnView } from "@galahad/core/turns";
 import { type Api, ApiError, isAbort } from "../api.ts";
-import { errorMessage, type View } from "../context.ts";
+import { errorMessage, type Live, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { type ChatAction, chatActions, CHATS_MENU, filterConversations, groupConversations, mostRecent } from "../lib/chats.ts";
 import { galahadNow, type NowInput } from "../lib/now.ts";
@@ -631,11 +631,12 @@ export const queueActions = (api: Api) => {
  * While a chat is on screen: notice a turn that started in it elsewhere (another device, the queue going
  * on) and attach to it; keep the list's states fresh; and when anything kept changed (the node's `chats`:
  * a chat begun, answered or renamed on another device, maybe while this one was hidden), read the list and
- * the chat on screen again. Asks the node only while the app is visible.
+ * the chat on screen again. Asks the node only while the app is visible: when its live stream says the turns
+ * or the chats changed, or every four seconds while that stream is down (`follow`, the app's live.ts).
  */
 /** Which writing of the chats the last look saw ("": none yet), kept while the chat is off screen, so what changed then is read on return. */
 let seen = "";
-export function watchTurns(api: Api, signal: AbortSignal): void {
+export function watchTurns(api: Api, signal: AbortSignal, follow: Live["follow"]): void {
   let known = "";
   const look = async (): Promise<void> => {
     if (document.hidden) return;
@@ -658,8 +659,7 @@ export function watchTurns(api: Api, signal: AbortSignal): void {
       /* out of reach just now: the next look tries again */
     }
   };
-  const timer = setInterval(() => void look(), 4000);
-  signal.addEventListener("abort", () => clearInterval(timer));
+  signal.addEventListener("abort", follow(["turns"], () => look(), 4000));
   void look();
 }
 
@@ -1233,13 +1233,13 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
     if (nearBottom()) jump.hidden = true;
   }, { passive: true });
   // A turn that started in this chat elsewhere (another device, the queue going on) is noticed and attached to.
-  if (canChat) watchTurns(ctx.api, scope.signal);
+  if (canChat) watchTurns(ctx.api, scope.signal, ctx.live.follow);
   // What he has in hand beside this chat: the header's line says so.
   scope.add(nodeTurns.subscribe(renderNow));
   scope.add(questsInHand.subscribe(renderNow));
   scope.add(ctx.live.inboxCount.subscribe(renderNow));
   scope.add(ctx.live.inboxLoaded.subscribe(renderNow));
-  if (ctx.can("mind:read")) scope.interval(() => void lookQuests(ctx.api, scope.signal), 15_000);
+  if (ctx.can("mind:read")) scope.add(ctx.live.follow(["quests"], () => lookQuests(ctx.api, scope.signal), 15_000));
   // The minute "stops by itself in …" names moves on while he works.
   const ticking = setInterval(() => live && syncComposer(), 30_000);
   scope.add(() => clearInterval(ticking));

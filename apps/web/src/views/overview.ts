@@ -209,4 +209,7 @@ export const overviewView: View = (root, ctx, { scope }) => {
   scope.add(() => clearInterval(usageTimer));
   void loadLedger();
   scope.interval(() => void loadLedger(), 15_000);
+  // The mind's count of events moves with every one of them: the live stream doesn't tell of it, so it is asked for
+  // while this page shows it, as often as the app asked for the fleet before there was a stream.
+  scope.interval(() => void ctx.live.refreshFleet(), 10_000);
 };

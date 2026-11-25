@@ -26,8 +26,10 @@ test("a chat another device answered while this one was on another page is read 
     post: async (path: string) => (asked.push(`POST ${path}`), { conversation: { ...summary, messages: [], turn: null, queue: [] } }),
   } as unknown as Api;
   await openConversation(api, id);
+  // (What the node's live stream would say changed doesn't come here: only the look on screen is asked.)
+  const follow = () => () => {};
   const shown = new AbortController();
-  watchTurns(api, shown.signal);
+  watchTurns(api, shown.signal, follow);
   await Bun.sleep(10);
   // To another page of the app: the chat is off screen, and nothing watches it.
   shown.abort();
@@ -35,7 +37,7 @@ test("a chat another device answered while this one was on another page is read 
   chats = "lz1.9";
   asked.length = 0;
   const back = new AbortController();
-  watchTurns(api, back.signal);
+  watchTurns(api, back.signal, follow);
   await Bun.sleep(10);
   back.abort();
   expect(asked).toContain("POST /api/conversations/get");

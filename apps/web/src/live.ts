@@ -1,23 +1,51 @@
 import type { ActionView, ConnectorRequestView, FleetView, LoopDraftView, MemoryView, NoticeView, PairingView, QuestionView, ScreenSessionView, SecretRequestView } from "@galahad/core";
+import type { LiveEvent, LiveTopic } from "@galahad/core/live";
 import type { TeamSnapshot } from "@galahad/core/team";
-import type { Api } from "./api.ts";
+import { type Api, ApiError } from "./api.ts";
 import type { Live } from "./context.ts";
+import { type After, Followers, type LiveLink, liveLink } from "./lib/live-link.ts";
 import type { AnyScope } from "./types.ts";
 import { signal } from "./ui/signal.ts";
 
 /*
- * Background polling for what the shell shows everywhere: fleet health, the
- * inbox (pairing requests, secret requests, actions waiting for your answer,
- * the heartbeat's notices) and the team (the knights, their rooms and work:
- * the roster's rows and every timeline read the one snapshot). It pauses while
- * the app is hidden and catches up the moment it's visible again.
+ * What the shell shows everywhere: fleet health, the inbox (pairing requests, secret requests, actions waiting for your
+ * answer, the heartbeat's notices, …) and the team (the knights, their rooms and work: the roster's rows and every
+ * timeline read the one snapshot). The node's live stream (lib/live-link.ts, core's live.ts) says which of them changed,
+ * as it changes, and only that is read again; nothing is asked for while nothing changes. While the stream is down (the
+ * node away or restarting, an older node without it), each is asked for every FALLBACK_MS instead, and the stream is
+ * opened again. Nothing at all while the app is hidden; it catches up the moment it's visible again.
  */
 
-const FLEET_MS = 10_000;
-const PAIRINGS_MS = 3_000;
-const REQUESTS_MS = 15_000;
-const ACTIONS_MS = 5_000;
-const NOTICES_MS = 15_000;
+/** While the stream is down, what the shell shows everywhere is asked for this often. */
+const FALLBACK_MS = 15_000;
+/** The team is read again at most this often however busy it is (it is the largest answer). */
+const TEAM_GAP_MS = 2_000;
+/** A read that failed after the stream said it changed is asked again this much later. */
+const READ_AGAIN_MS = 5_000;
+
+/** The Inbox's parts, each read by its own route. */
+const INBOX: readonly LiveTopic[] = ["pairings", "secretRequests", "actions", "screenSessions", "questions", "notices", "loopDrafts", "connectorRequests", "aboutYou"];
+
+const after: After = (ms, run) => {
+  const timer = setTimeout(run, ms);
+  return () => clearTimeout(timer);
+};
+
+/**
+ * The node's live stream for this app, opened beside its first request (app.ts), so it has said hello by the time the
+ * shell is drawn. A node without one (404), a device that may not read it (403) or one revoked (401, which the app's
+ * own check of the device then says) isn't asked again on a timer.
+ */
+export function openLink(api: Api): LiveLink {
+  const link = liveLink({
+    open: (signal, alive) => api.listen<LiveEvent>("/api/live", signal, alive),
+    refused: (error) => error instanceof ApiError && (error.status === 401 || error.status === 403 || error.status === 404),
+    after,
+    now: () => Date.now(),
+  });
+  if (!document.hidden) link.start();
+  return link;
+}
 
 export interface LiveEvents {
   /** A device asked to join since the last look. */
@@ -29,7 +57,15 @@ export interface LiveEvents {
 /** Waiting, and not yet past its deadline (the node says expired on its next answer). */
 export const isWaiting = (action: ActionView, now = Date.now()): boolean => action.state === "waiting" && action.expires > now;
 
-export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: LiveEvents): Live {
+export interface LiveOptions {
+  /** The stream, opened earlier (openLink); one is opened here otherwise. */
+  link?: LiveLink;
+  /** The clock (tests hold it). */
+  after?: After;
+  now?: () => number;
+}
+
+export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: LiveEvents, opts: LiveOptions = {}): Live {
   const fleet = signal<FleetView | null>(null);
   const pairings = signal<PairingView[]>([]);
   const secretRequests = signal<SecretRequestView[]>([]);
@@ -67,6 +103,19 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
         connectorRequests.value.length +
         aboutYou.value.length,
     );
+  // A read that failed after the stream said its topic changed is asked again a little later (while the stream is
+  // up; while it's down the slow poll has it): a hiccup on the way never leaves a place showing what was. One the node
+  // refused or doesn't have (a 4xx) isn't: asking again would only be refused again.
+  const later = opts.after ?? after;
+  const failing = new Set<LiveTopic>();
+  const readAgain = (topic: LiveTopic) => (error: unknown): void => {
+    if ((error instanceof ApiError && error.status >= 400 && error.status < 500) || failing.has(topic)) return;
+    failing.add(topic);
+    later(READ_AGAIN_MS, () => {
+      failing.delete(topic);
+      followers.changed([topic]);
+    });
+  };
   pairings.subscribe(recount);
   secretRequests.subscribe(recount);
   loopDrafts.subscribe(recount);
@@ -87,8 +136,9 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
         lastFleet = signature;
         fleet.set(next);
       }
-    } catch {
-      /* the shell shows offline state; views show their own errors */
+    } catch (error) {
+      // (The shell shows offline state; views show their own errors.)
+      readAgain("fleet")(error);
     }
   }
 
@@ -106,8 +156,8 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
       primed = true;
       const same = list.length === pairings.value.length && list.every((p, i) => p.device === pairings.value[i]?.device && p.conflict === pairings.value[i]?.conflict);
       if (!same) pairings.set(list);
-    } catch {
-      /* transient; next poll retries */
+    } catch (error) {
+      readAgain("pairings")(error);
     }
   }
 
@@ -117,8 +167,8 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
       const { requests } = await api.get<{ requests: SecretRequestView[] }>("/api/secret-requests");
       const same = requests.length === secretRequests.value.length && requests.every((r, i) => r.name === secretRequests.value[i]?.name);
       if (!same) secretRequests.set(requests);
-    } catch {
-      /* transient */
+    } catch (error) {
+      readAgain("secretRequests")(error);
     }
   }
 
@@ -127,8 +177,9 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     try {
       const { drafts } = await api.get<{ drafts: LoopDraftView[] }>("/api/loops/drafts");
       if (JSON.stringify(drafts.map((d) => d.id)) !== JSON.stringify(loopDrafts.value.map((d) => d.id))) loopDrafts.set(drafts);
-    } catch {
-      /* transient, or an older node with no drafts */
+    } catch (error) {
+      // (Or an older node with no drafts.)
+      readAgain("loopDrafts")(error);
     }
   }
 
@@ -137,8 +188,9 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     try {
       const { requests } = await api.get<{ requests: ConnectorRequestView[] }>("/api/connectors/requests");
       if (JSON.stringify(requests.map((r) => r.id)) !== JSON.stringify(connectorRequests.value.map((r) => r.id))) connectorRequests.set(requests);
-    } catch {
-      /* transient, or an older node that takes no requests */
+    } catch (error) {
+      // (Or an older node that takes no requests.)
+      readAgain("connectorRequests")(error);
     }
   }
 
@@ -148,8 +200,9 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     try {
       const { proposed } = await api.get<{ proposed: MemoryView[] }>("/api/about-you");
       if (JSON.stringify(proposed.map((m) => m.id)) !== JSON.stringify(aboutYou.value.map((m) => m.id))) aboutYou.set(proposed);
-    } catch {
-      /* transient, or an older node that keeps nothing about you */
+    } catch (error) {
+      // (Or an older node that keeps nothing about you.)
+      readAgain("aboutYou")(error);
     }
   }
 
@@ -168,8 +221,9 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
         lastActions = signature;
         actions.set(list);
       }
-    } catch {
-      /* transient; an older node without the outbox answers 404 and shows nothing */
+    } catch (error) {
+      // (An older node without the outbox answers 404 and shows nothing.)
+      readAgain("actions")(error);
     }
   }
 
@@ -183,8 +237,9 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
         lastScreen = signature;
         screenSessions.set(sessions);
       }
-    } catch {
-      /* transient, or an older node without screen sessions */
+    } catch (error) {
+      // (Or an older node without screen sessions.)
+      readAgain("screenSessions")(error);
     }
   }
 
@@ -198,8 +253,9 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
         lastQuestions = signature;
         questions.set(list);
       }
-    } catch {
-      /* transient, or an older node without questions */
+    } catch (error) {
+      // (Or an older node without questions.)
+      readAgain("questions")(error);
     }
   }
 
@@ -212,8 +268,8 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
         lastNotices = signature;
         notices.set(list);
       }
-    } catch {
-      /* transient */
+    } catch (error) {
+      readAgain("notices")(error);
     }
   }
 
@@ -229,65 +285,93 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
           teamProblem.set(null);
           team.set(next);
         },
-        (error: unknown) => teamProblem.set(error),
+        (error: unknown) => {
+          teamProblem.set(error);
+          readAgain("team")(error);
+        },
       )
       .finally(() => (teamAsking = null));
     return teamAsking;
   }
-  let teamEvery: number | null = null;
-  let teamTimer: ReturnType<typeof setInterval> | undefined;
-  function watchTeam(everyMs: number | null = teamEvery): void {
-    if (everyMs === teamEvery && teamTimer) return;
-    teamEvery = everyMs;
-    clearInterval(teamTimer);
-    teamTimer = undefined;
-    if (everyMs === null || document.hidden) return;
-    void refreshTeam();
-    teamTimer = setInterval(() => void refreshTeam(), everyMs);
-  }
-
-  const refreshInbox = async () => {
-    await Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshScreenSessions(), refreshQuestions(), refreshNotices(), refreshLoopDrafts(), refreshConnectorRequests(), refreshAboutYou()]);
-    inboxLoaded.set(true);
+  // One asking of the whole Inbox at a time: whoever asks meanwhile is given the same answer.
+  let inboxAsking: Promise<void> | null = null;
+  const refreshInbox = (): Promise<void> =>
+    (inboxAsking ??= Promise.all([refreshPairings(), refreshRequests(), refreshActions(), refreshScreenSessions(), refreshQuestions(), refreshNotices(), refreshLoopDrafts(), refreshConnectorRequests(), refreshAboutYou()])
+      .then(() => inboxLoaded.set(true))
+      .finally(() => (inboxAsking = null)));
+  /** Each of the Inbox's parts, read again alone when it changed. */
+  const inboxPart: Partial<Record<LiveTopic, () => Promise<void>>> = {
+    pairings: refreshPairings,
+    secretRequests: refreshRequests,
+    actions: refreshActions,
+    screenSessions: refreshScreenSessions,
+    questions: refreshQuestions,
+    notices: refreshNotices,
+    loopDrafts: refreshLoopDrafts,
+    connectorRequests: refreshConnectorRequests,
+    aboutYou: refreshAboutYou,
   };
 
-  const timers: ReturnType<typeof setInterval>[] = [];
-  function start(): void {
-    stop();
-    void refreshFleet();
-    void refreshInbox();
-    timers.push(setInterval(() => void refreshFleet(), FLEET_MS));
-    timers.push(setInterval(() => void refreshPairings(), PAIRINGS_MS));
-    timers.push(setInterval(() => void refreshRequests(), REQUESTS_MS));
-    timers.push(setInterval(() => void refreshLoopDrafts(), REQUESTS_MS));
-    timers.push(setInterval(() => void refreshConnectorRequests(), REQUESTS_MS));
-    timers.push(setInterval(() => void refreshAboutYou(), REQUESTS_MS));
-    timers.push(setInterval(() => void refreshActions(), ACTIONS_MS));
-    timers.push(setInterval(() => void refreshScreenSessions(), ACTIONS_MS));
-    // (A question holds a call: it's looked for as often as an action is.)
-    timers.push(setInterval(() => void refreshQuestions(), ACTIONS_MS));
-    timers.push(setInterval(() => void refreshNotices(), NOTICES_MS));
-    watchTeam();
+  const link = opts.link ?? openLink(api);
+  const followers = new Followers(opts.after ?? after, opts.now ?? (() => Date.now()));
+  const streaming = signal(false);
+  const follow: Live["follow"] = (topics, run, everyMs, gapMs) => followers.follow(topics, run, everyMs, gapMs);
+
+  // The team, while something shows it: read again when it changes (or, while the stream is down, as often as the
+  // shell says), and at once whenever the shell asks for another pace (another place came on screen).
+  let teamEvery: number | null = null;
+  let unfollowTeam: (() => void) | null = null;
+  function watchTeam(everyMs: number | null = teamEvery): void {
+    if (everyMs === teamEvery && (unfollowTeam || everyMs === null)) return;
+    teamEvery = everyMs;
+    unfollowTeam?.();
+    unfollowTeam = null;
+    if (everyMs === null) return;
+    unfollowTeam = followers.follow(["team"], () => refreshTeam(), everyMs, TEAM_GAP_MS, !document.hidden);
   }
-  function stop(): void {
-    for (const t of timers.splice(0)) clearInterval(t);
-    clearInterval(teamTimer);
-    teamTimer = undefined;
-  }
+
+  followers.follow(["fleet"], () => refreshFleet(), FALLBACK_MS);
+  followers.follow(INBOX, (changed) => (changed ? Promise.all(changed.map((topic) => inboxPart[topic]?.())) : refreshInbox()), FALLBACK_MS);
+  link.attach({
+    up: () => {
+      streaming.set(true);
+      followers.up();
+    },
+    changed: (topics) => followers.changed(topics),
+    down: () => {
+      streaming.set(false);
+      followers.down();
+    },
+  });
 
   const listeners = new AbortController();
   const until = listeners.signal;
-  document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()), { signal: until });
-  window.addEventListener("online", () => {
-    online.set(true);
-    start();
-  }, { signal: until });
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (document.hidden) {
+        link.stop();
+        followers.off();
+        streaming.set(false);
+      } else link.start();
+    },
+    { signal: until },
+  );
+  window.addEventListener(
+    "online",
+    () => {
+      online.set(true);
+      link.retry();
+    },
+    { signal: until },
+  );
   window.addEventListener("offline", () => online.set(false), { signal: until });
-  if (!document.hidden) start();
 
   const dispose = () => {
-    stop();
+    link.stop();
+    followers.off();
+    unfollowTeam?.();
     listeners.abort();
   };
-  return { fleet, pairings, secretRequests, actions, screenSessions, refreshScreenSessions, questions, refreshQuestions, notices, loopDrafts, connectorRequests, aboutYou, refreshAboutYou, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshLoopDrafts, refreshConnectorRequests, refreshInbox, stop: dispose };
+  return { fleet, pairings, secretRequests, actions, screenSessions, refreshScreenSessions, questions, refreshQuestions, notices, loopDrafts, connectorRequests, aboutYou, refreshAboutYou, online, inboxLoaded, inboxCount, team, teamProblem, refreshTeam, watchTeam, refreshFleet, refreshActions, refreshNotices, refreshLoopDrafts, refreshConnectorRequests, refreshInbox, streaming, follow, stop: dispose };
 }

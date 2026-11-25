@@ -433,8 +433,9 @@ export function openInvite(ctx: Ctx, initialKind: "client" | "node" = "client"):
       );
     };
     inviteScope.add(ctx.live.pairings.watch(renderPending));
-    // Poll faster while someone is in the middle of pairing.
-    inviteScope.interval(() => void ctx.live.refreshInbox(), 1500);
+    // The device asking to join is told by the node's live stream as it asks; while that is down, asked for faster
+    // while someone is in the middle of pairing.
+    inviteScope.add(ctx.live.follow([], () => ctx.live.refreshInbox(), 1500));
   }
 
   chooser();
@@ -673,6 +674,9 @@ export const fleetView: View = (root, ctx, { scope, opts }) => {
   });
   void loadCompute();
   scope.interval(() => void loadCompute(), 5_000);
+  // Each node's load and round trip, and the mind's count, move all the time: the live stream doesn't tell of them, so
+  // they are asked for while this page shows them, as often as the app asked for the fleet before there was a stream.
+  scope.interval(() => void ctx.live.refreshFleet(), 10_000);
   if (opts.intent === "invite") openInvite(ctx, "client");
   if (opts.intent === "place") requestAnimationFrame(() => root.querySelector("#placement")?.scrollIntoView({ block: "start", behavior: "smooth" }));
 };

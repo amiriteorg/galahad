@@ -145,6 +145,11 @@ export interface Api {
   events(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<ChatStreamEvent>;
   /** A POST that answers with events of another kind (a terminal's screen). Aborting the signal ends the watching. */
   stream<T>(path: string, body: unknown, signal: AbortSignal): AsyncGenerator<T>;
+  /**
+   * A GET that answers with events as they come (the node's live stream): `alive` is told of everything that arrives,
+   * its keep-alives too, so a stream gone quiet can be told from a dead one. Aborting the signal ends it.
+   */
+  listen<T>(path: string, signal: AbortSignal, alive?: () => void): AsyncGenerator<T>;
 }
 
 /**
@@ -198,6 +203,17 @@ export function apiFor(identity: BrowserIdentity): Api {
     changing(path);
     return stream<ChatStreamEvent>(path, body, signal);
   };
+  async function* listen<T>(path: string, signal: AbortSignal, alive?: () => void): AsyncGenerator<T> {
+    const response = await signedFetch(identity, "GET", path, undefined, signal);
+    if (!response.body) return;
+    for await (const data of sseData(response.body, alive)) {
+      try {
+        yield JSON.parse(data) as T;
+      } catch {
+        /* ignore malformed frames */
+      }
+    }
+  }
   return {
     get<T>(path: string, signal?: AbortSignal) {
       const key = keyOf(path);
@@ -228,11 +244,12 @@ export function apiFor(identity: BrowserIdentity): Api {
     chat: (body: unknown, signal: AbortSignal) => events("/api/chat", body, signal),
     events,
     stream,
+    listen,
   };
 }
 
-/** Server-sent events reader; skips ": keep-alive" comments. */
-export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+/** Server-sent events reader; skips ": keep-alive" comments, though `alive` hears of everything that arrives. */
+export async function* sseData(body: ReadableStream<Uint8Array>, alive?: () => void): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -240,6 +257,7 @@ export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
+      alive?.();
       buffer += decoder.decode(value, { stream: true });
       let boundary: number;
       while ((boundary = buffer.indexOf("\n\n")) >= 0) {

@@ -3,6 +3,7 @@ import { type Api, nodeReachable, setNetworkHandler } from "./api.ts";
 import type { Ctx, NavigateOptions, Route, View } from "./context.ts";
 import type { BrowserIdentity } from "./identity.ts";
 import { startLive } from "./live.ts";
+import type { LiveLink } from "./lib/live-link.ts";
 import { shortId } from "./lib/text.ts";
 import { setMotion, setSidebarCollapsed, setTheme, sidebarCollapsed } from "./prefs.ts";
 import type { AnyScope, WhoAmI } from "./types.ts";
@@ -78,6 +79,8 @@ export interface ShellBase {
   api: Api;
   identity: BrowserIdentity;
   whoami: WhoAmI;
+  /** The node's live stream, opened as the app booted (live.ts openLink); one is opened with the shell otherwise. */
+  link?: LiveLink;
 }
 
 export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): void } {
@@ -115,7 +118,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
         duration: 12_000,
       });
     },
-  });
+  }, { link: base.link });
   // One failed request is doubted, and the node asked once more, before the banner says it can't be reached (lib/reach.ts).
   setNetworkHandler(
     reachability({
@@ -624,8 +627,8 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const work = (): void => {
     if (roster && (!narrow.matches || shell.dataset.pane === "roster")) void lookAtWork(base.api, { chat: can("chat"), read: can("mind:read") });
   };
-  const working = setInterval(work, 15_000);
-  lifetime.signal.addEventListener("abort", () => clearInterval(working));
+  // (Asked again when the turns or the quests change; every 15 s while the node's stream is down.)
+  lifetime.signal.addEventListener("abort", live.follow(["turns", "quests"], work, 15_000));
   chatFromAddress();
   const initial = routeFromHash() ?? home();
   // (Tidied to its page; Team's address keeps its room and tab, which is what a reload comes back to.)
