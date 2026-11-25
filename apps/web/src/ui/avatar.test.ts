@@ -1,12 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { AVATAR_EXPRESSIONS, AVATAR_LOOKS, defaultAvatar, lookProfile } from "@galahad/core/avatar";
-import { avatarSheet } from "../../design/avatars.ts";
-import { eyeScale } from "../lib/knight-eyes.ts";
-import { KNIGHT_CSS, leadMark, seat, stateChip, workerAvatar, type WorkerAvatarOptions } from "./avatar.ts";
+import { AVATAR_EXPRESSIONS, defaultAvatar, KNIGHT_TINTS, knightColors, lookProfile } from "@galahad/core/avatar";
+import { avatarEditor, KNIGHT_CSS, leadMark, seat, stateChip, workerAvatar, type WorkerAvatarOptions } from "./avatar.ts";
 
-/** Captures the renderer's real createElement and createElementNS calls, without an HTML parser or a browser. */
+/** Captures the renderer's real createElement and createElementNS calls, without an HTML parser or a browser (and with
+ * no canvas, so every orb is drawn as it is still: SVG). */
 class Node_ {
   readonly attrs: Record<string, string> = {};
   readonly children: Node_[] = [];
@@ -14,6 +11,10 @@ class Node_ {
   setAttribute(key: string, value: string) { this.attrs[key] = value; }
   appendChild(child: Node_) { this.children.push(child); return child; }
   addEventListener() {}
+  get firstChild(): Node_ | null { return this.children[0] ?? null; }
+  removeChild(child: Node_) { this.children.splice(this.children.indexOf(child), 1); return child; }
+  replaceChildren(...nodes: Node_[]) { this.children.splice(0, this.children.length, ...nodes); }
+  append(...nodes: Node_[]) { this.children.push(...nodes); }
 }
 function render(...options: WorkerAvatarOptions[]): Node_[] {
   return withDocument(() => options.map((option) => workerAvatar(option) as unknown as Node_));
@@ -32,98 +33,62 @@ function withDocument<T>(draw: () => T): T {
   finally { if (original) Object.defineProperty(globalThis, "document", original); else Reflect.deleteProperty(globalThis, "document"); }
 }
 const walk = (node: Node_): Node_[] => [node, ...node.children.flatMap(walk)];
-const parts = (node: Node_, name: string) => walk(node).filter((child) => child.attrs.class?.split(" ").includes(name));
-const img = (node: Node_) => walk(node).find((child) => child.tag === "img")!;
+const orbOf = (node: Node_) => walk(node).find((child) => child.attrs.class === "knight-orb")!;
 const HEX = /^#[0-9a-f]{6}$/i;
-const KNIGHTS_DIR = join(import.meta.dir, "../knights");
 
 describe("knights at the page's boundary", () => {
-  test("every picture is one of the app's own files: nothing from a profile or a name reaches a URL, a style or a paint", () => {
+  test("nothing from a profile or a name reaches a URL, a style or a paint, but a colour checked to be six hex digits", () => {
     const name = '<image href="https://invalid.example/pixel" onload="alert(1)">';
-    const profile = { ...defaultAvatar("ada"), color: "url(https://invalid.example/paint)", accent: '#fff" onload="alert(1)', form: "foreignObject", onload: "alert(1)" };
-    const [node] = render({ id: "ada", name, profile, expression: 'idle" onload="alert(1)' as never });
-    expect(node!.attrs["aria-label"]).toBe(`${name} · idle`);
-    expect(node!.attrs["data-expression"]).toBe("idle");
-    for (const drawn of render(...AVATAR_EXPRESSIONS.flatMap((expression) => [{ id: "ada", name, profile, expression, size: 96 }, { id: "galahad", name, expression, beast: true, size: 200 }]))) {
-      expect(img(drawn).attrs.src).toMatch(/^\/knights\/[a-z-]+\.webp$/);
+    const profiles = [
+      { ...defaultAvatar("ada"), color: "url(https://invalid.example/paint)", accent: '#fff" onload="alert(1)', form: "foreignObject", onload: "alert(1)" },
+      { v: 2, color: "url(https://invalid.example/paint)" },
+      { v: 2, color: '#3abeff" onload="alert(1)' },
+      { v: 2, color: "#3abeff", onload: "alert(1)" },
+    ];
+    for (const profile of profiles) {
+      const [node] = render({ id: "ada", name, profile, expression: 'idle" onload="alert(1)' as never });
+      expect(orbOf(node!).attrs["aria-label"]).toBe(`${name} · idle`);
+      expect(node!.attrs["data-expression"]).toBe("idle");
+      // A colour that isn't one is its handle's.
+      expect(orbOf(node!).attrs["data-tint"]).toBe(knightColors("ada").tint);
+    }
+    for (const drawn of render(...AVATAR_EXPRESSIONS.flatMap((expression) => [{ id: "ada", name, profile: profiles[0], expression, size: 96 }, { id: "ada", name, profile: { v: 2, color: "#3ABEFF" }, expression, size: 200 }]))) {
       for (const child of walk(drawn)) {
-        expect(child.ns === "html" ? ["span", "img"] : ["svg", "g", "circle", "path"]).toContain(child.tag);
+        expect(child.ns === "html" ? ["span", "#text"] : ["svg", "defs", "radialGradient", "stop", "circle", "path", "text"]).toContain(child.tag);
         for (const [key, value] of Object.entries(child.attrs)) {
-          expect(key).not.toMatch(/^(on|href|xlink)/i);
+          expect(key).not.toMatch(/^(on|href|xlink|src)/i);
           if (key !== "aria-label") expect(value).not.toContain("invalid.example");
-          if (key === "style") expect(value).toMatch(/^--kn-size:\d+px$/);
-          if (key === "srcset") expect(value).toMatch(/^\/knights\/[a-z-]+\.webp 288w, \/knights\/[a-z-]+@2x\.webp 576w$/);
-          if (key === "fill") expect(value === "none" || HEX.test(value)).toBe(true);
-          if (key === "stroke") expect(value).toMatch(HEX);
+          if (key === "style") expect(value).toMatch(/^--orb-size:\d+px$/);
+          if (key === "fill") expect(HEX.test(value) || value === "none" || /^url\(#orb-\d+\)$/.test(value)).toBe(true);
+          if (key === "stop-color" || key === "data-tint" || key === "stroke") expect(value).toMatch(HEX);
+          if (child.tag === "#text") expect(child.text).toMatch(/^[.·':\-+=ox*0#@0-9A-F]$/);
         }
       }
     }
   });
 
-  test("a knight is the drawing it chose, else the one its name is, else one from its handle; Galahad is his own", () => {
-    const look = (options: WorkerAvatarOptions) => render(options)[0]!.attrs["data-look"];
-    expect(look({ id: "ada", name: "Ada", profile: lookProfile("bors") })).toBe("bors");
-    expect(look({ id: "ada", name: "Gareth", profile: lookProfile("bors") })).toBe("bors");
-    expect(look({ id: "gareth", name: "Gareth", profile: defaultAvatar("gareth") })).toBe("gareth");
-    expect(look({ id: "ada", name: "Ada" })).toBe(look({ id: "ada", name: "Ada", profile: "not a profile" }));
-    expect(AVATAR_LOOKS.map((each) => each.id)).toContain(look({ id: "ada", name: "Ada" }) as never);
-    expect(look({ id: "galahad", name: "Kay" })).toBe("galahad");
-    expect(look({ id: "galahad", name: "Galahad", beast: true })).toBe("black-knight");
-    // Only Galahad becomes the Black Knight.
-    expect(look({ id: "ada", name: "Ada", beast: true })).not.toBe("black-knight");
+  test("its colour is the one you chose for it, or its handle's; a look from the drawings colours nothing", () => {
+    const [chosen, handle, look] = render({ id: "ada", name: "Ada", profile: { v: 2, color: "#3ABEFF" }, still: true }, { id: "ada", name: "Ada", still: true }, { id: "ada", name: "Ada", profile: lookProfile("bors"), still: true });
+    expect(orbOf(chosen!).attrs["data-tint"]).toBe("#3abeff");
+    expect(orbOf(handle!).attrs["data-tint"]).toBe(knightColors("ada").tint);
+    expect(orbOf(look!).attrs["data-tint"]).toBe(knightColors("ada").tint);
+    expect(KNIGHT_TINTS).toContain(orbOf(handle!).attrs["data-tint"] as never);
+    // Still, as a speaker in a conversation's history: named as the knight's orb, and doing nothing.
+    expect(orbOf(handle!).attrs["aria-label"]).toBe("Ada's orb");
   });
 
-  test("what a knight is doing shows in its eyes, and its asking in a red mark where the mark can be read", () => {
-    for (const expression of AVATAR_EXPRESSIONS) {
-      const [small, large] = render({ id: "ada", name: "Ada", expression, size: 40 }, { id: "ada", name: "Ada", expression, size: 96 });
-      expect(large!.attrs["data-expression"]).toBe(expression);
-      expect(large!.attrs["aria-label"]).toBe(`Ada · ${expression}`);
-      // The drawn eyes are covered and drawn again: two of each, whatever the state.
-      expect(parts(large!, "kn-eye")).toHaveLength(2);
-      expect(parts(large!, "kn-gaze")).toHaveLength(2);
-      const drawnEye = parts(large!, "kn-eye")[0]!.children[0]!;
-      expect(drawnEye.tag).toBe(expression === "pleased" || expression === "resting" ? "path" : "circle");
-      expect(parts(large!, "kn-ask")).toHaveLength(expression === "asking" ? 1 : 0);
-      // On a row's face the row says it needs you; the face stays a face.
-      expect(parts(small!, "kn-ask")).toHaveLength(0);
-    }
-    // Looking up while it thinks, down at its work: the same eyes, moved.
-    const [thinking, working] = render({ id: "ada", name: "Ada", expression: "thinking", size: 96 }, { id: "ada", name: "Ada", expression: "working", size: 96 });
-    const y = (node: Node_) => Number(parts(node, "kn-eye")[0]!.children[0]!.attrs.cy);
-    expect(y(thinking!)).toBeLessThan(y(working!));
-  });
-
-  test("in beast mode Galahad's eyes are embers; nowhere else", () => {
-    const [beast, plain] = render({ id: "galahad", name: "Galahad", beast: true, size: 96 }, { id: "galahad", name: "Galahad", size: 96 });
-    expect(beast!.attrs["data-beast"]).toBe("true");
-    expect(beast!.attrs["aria-label"]).toBe("Galahad · idle · beast mode");
-    expect(parts(beast!, "kn-ember")).toHaveLength(2);
-    expect(parts(plain!, "kn-ember")).toHaveLength(0);
-    expect(plain!.attrs["data-beast"]).toBeUndefined();
-  });
-
-  test("historical speakers stay still and neutral, and sizes cannot break the layout", () => {
-    const [still] = render({ id: "ada", name: "Ada", expression: "asking", still: true, size: 96 });
-    expect(still!.attrs["data-still"]).toBe("true");
-    expect(still!.attrs["data-expression"]).toBe("idle");
-    expect(still!.attrs["aria-label"]).toBe("Ada's avatar");
-    expect(parts(still!, "kn-ask")).toHaveLength(0);
-    const sizes = render(...[-5, 0, 7, 40, 999, Number.NaN, Infinity].map((size) => ({ id: "ada", name: "Ada", size }))).map((node) => node.attrs.style);
-    expect(sizes).toEqual(["--kn-size:20px", "--kn-size:20px", "--kn-size:20px", "--kn-size:40px", "--kn-size:256px", "--kn-size:40px", "--kn-size:40px"]);
-  });
-
-  test("Galahad drawn large uses his larger file, so he is sharp on a dense screen; small, and every knight, the one file", () => {
-    const [big, small, beast, knight] = render({ id: "galahad", name: "Galahad", size: 200 }, { id: "galahad", name: "Galahad", size: 40 }, { id: "galahad", name: "Galahad", beast: true, size: 220 }, { id: "ada", name: "Ada", size: 200 });
-    expect(img(big!).attrs.srcset).toBe("/knights/galahad.webp 288w, /knights/galahad@2x.webp 576w");
-    expect(img(big!).attrs.sizes).toBe("200px");
-    expect(img(small!).attrs.srcset).toBeUndefined();
-    expect(img(beast!).attrs.srcset).toContain("black-knight@2x.webp");
-    expect(img(knight!).attrs.srcset).toBeUndefined();
+  test("the larger the face, the more and finer its glyphs; arcs of its own from a card's size", () => {
+    const [small, large] = render({ id: "ada", name: "Ada", still: true, size: 28 }, { id: "ada", name: "Ada", still: true, size: 160 });
+    const glyphs = (node: Node_) => walk(node).filter((child) => child.tag === "text").length;
+    expect(glyphs(small!)).toBeLessThan(glyphs(large!));
+    const arcs = (node: Node_) => walk(node).filter((child) => child.tag === "path").length;
+    expect(arcs(small!)).toBe(0);
+    expect(arcs(large!)).toBeGreaterThan(0);
   });
 });
 
 describe("a knight in its seat", () => {
-  test("its ring says its state; the face in it is the knight's own, at the size asked, and the seat's size follows it", () => {
+  test("its ring says its state; the orb in it is the knight's own, at the size asked, and the seat's size follows it", () => {
     const [working, resting, portrait, card] = withDocument(() => [
       seat({ id: "ada", name: "Ada", state: "working", expression: "working", size: 32 }),
       seat({ id: "ada", name: "Ada", size: 32 }),
@@ -133,26 +98,27 @@ describe("a knight in its seat", () => {
     expect([working!.attrs.class, working!.attrs["data-state"]]).toEqual(["seat seat-s", "working"]);
     expect(resting!.attrs["data-state"]).toBe("resting");
     expect([portrait!.attrs.class, card!.attrs.class]).toEqual(["seat seat-l", "seat seat-m"]);
-    // Nothing but the face inside, named as the face is, and no style of the seat's own: its size is the stylesheet's.
+    // Nothing but the face inside (no canvas here, so no lights), named for its state, and no style of the seat's own.
     expect(working!.children).toHaveLength(1);
-    expect(working!.children[0]!.attrs["aria-label"]).toBe("Ada · working");
+    expect(orbOf(working!).attrs["aria-label"]).toBe("Ada · Working");
+    expect(orbOf(working!).attrs.style).toBe("--orb-size:32px");
+    expect(orbOf(resting!).attrs["aria-label"]).toBe("Ada");
     expect(working!.attrs.style).toBeUndefined();
   });
 
-  test("Galahad's seat is his orb, in the room a face and its ring take, in the colour of where he stands; the Black Knight is drawn", () => {
-    const [needs, resting, card, beast] = withDocument(() => [
+  test("Galahad's seat is his orb, in the room a face and its ring take, in the colour of where he stands", () => {
+    const [needs, resting, card] = withDocument(() => [
       seat({ id: "galahad", name: "Galahad", state: "needs", expression: "asking", size: 32 }),
       seat({ id: "galahad", name: "Galahad", size: 32 }),
       seat({ id: "galahad", name: "Galahad", state: "working", size: 88 }),
-      seat({ id: "galahad", name: "Galahad", state: "working", beast: true, size: 88 }),
     ] as unknown as Node_[]);
     expect([needs!.attrs.class, needs!.attrs["data-state"]]).toEqual(["seat seat-s seat-orb", "needs"]);
     const shown = (node: Node_) => node.children[0]!.attrs;
     expect([shown(needs!).class, shown(needs!)["data-tone"], shown(needs!).style]).toEqual(["orb", "warn", "--orb-size:40px"]);
     expect([shown(resting!)["data-tone"], shown(card!)["data-tone"], shown(card!).style]).toEqual(["neutral", "accent", "--orb-size:102px"]);
     expect(shown(needs!)["aria-label"]).toBe("Galahad");
-    expect(beast!.attrs.class).toBe("seat seat-m");
-    expect(beast!.children[0]!.attrs["data-look"]).toBe("black-knight");
+    // His sphere of points is among his parts.
+    expect(walk(card!).some((child) => child.attrs.class === "orb-sphere")).toBe(true);
   });
 
   test("its state is said in words beside its name, in its tone; working with a live dot, so it isn't read as a quiet one", () => {
@@ -172,52 +138,18 @@ describe("a knight in its seat", () => {
   });
 });
 
-describe("live eyes where there is room", () => {
-  test("as drawn on a row's face, a quarter larger on a portrait, in proportion between", () => {
-    expect([20, 32, 40, 56].map(eyeScale)).toEqual([1, 1, 1, 1]);
-    expect([84, 112, 160, 256].map(eyeScale)).toEqual([1.13, 1.25, 1.25, 1.25]);
-  });
-
-  test("a large face draws its eyes larger about their own middles, glances and all; a small one as drawn", () => {
-    const [small, large, beast] = render({ id: "ada", name: "Ada", profile: lookProfile("kay"), expression: "working", size: 40 }, { id: "ada", name: "Ada", profile: lookProfile("kay"), expression: "working", size: 112 }, { id: "galahad", name: "Galahad", beast: true, size: 112 });
-    const scaled = (node: Node_) => walk(node).filter((child) => child.tag === "g" && child.attrs.transform);
-    expect(scaled(small!)).toHaveLength(0);
-    // Kay's left eye is at (271, 304): scaled 1.25 about it.
-    expect(scaled(large!).map((group) => group.attrs.transform)).toEqual(["matrix(1.25 0 0 1.25 -67.7 -76)", "matrix(1.25 0 0 1.25 -111 -76)"]);
-    // Each holds the eye that glances, so its glances grow with it.
-    for (const group of scaled(large!)) expect(group.children[0]!.attrs.class).toBe("kn-gaze");
-    // Embers glow as they are.
-    expect(scaled(beast!)).toHaveLength(0);
-  });
-
-  test("the eyes stop moving when the device asks for less motion, or when Settings does", () => {
-    expect(KNIGHT_CSS).toContain('@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) :is(.knight, .knight *) { animation: none !important; } }');
-    expect(KNIGHT_CSS).toContain(':root[data-motion="reduce"] :is(.knight, .knight *) { animation: none !important; }');
+describe("choosing a knight's colour", () => {
+  test("untouched, it keeps what is saved; a swatch chooses that colour; its handle's colour lets it go", () => {
+    const editor = withDocument(() => avatarEditor({ id: () => "ada", name: () => "Ada", profile: { v: 2, color: "#3abeff" } }));
+    expect(editor.value()).toBeUndefined();
+    const swatches = walk(editor.element as unknown as Node_).filter((child) => child.attrs.class === "orb-swatch");
+    expect(swatches).toHaveLength(24);
+    expect(swatches.filter((swatch) => swatch.attrs["aria-pressed"] === "true").map((swatch) => swatch.attrs.style)).toEqual(["--swatch:#3abeff"]);
+    for (const swatch of swatches) expect(swatch.attrs["aria-label"]).toMatch(/^[A-Z][a-z]+$/);
   });
 });
 
-test("every drawing the app can show is a file it has", () => {
-  for (const name of [...AVATAR_LOOKS.map((look) => look.id), "galahad", "black-knight", "galahad@2x", "black-knight@2x"]) {
-    const file = join(KNIGHTS_DIR, `${name}.webp`);
-    expect(existsSync(file)).toBe(true);
-    // RIFF....WEBP: a WebP, and small enough for a phone.
-    const bytes = readFileSync(file);
-    expect(bytes.subarray(0, 4).toString("latin1")).toBe("RIFF");
-    expect(bytes.subarray(8, 12).toString("latin1")).toBe("WEBP");
-    expect(bytes.length).toBeLessThan(name.includes("@2x") ? 64_000 : 24_000);
-  }
-});
-
-test("the design sheet in apps/web/design is the one these knights draw", () => {
-  // `bun apps/web/design/avatars.ts` writes it again after a change to the drawings.
-  expect(readFileSync(join(import.meta.dir, "../../design/avatars.html"), "utf8")).toBe(avatarSheet());
-});
-
-test("the knights' bodies stay still: only their eyes move (and beast mode's embers glow), and the ask mark stands", () => {
-  // (Every rule that sets an animation, but the ones that turn animation off.)
-  const animated = [...KNIGHT_CSS.matchAll(/([^{}]+)\{[^{}]*\banimation:(?!\s*none)[^;}]+/g)].map(([, selector]) => selector!.trim());
-  expect(animated.length).toBeGreaterThan(0);
-  for (const selector of animated) expect([selector, /\.kn-(eye|gaze|ember)$/.test(selector)]).toEqual([selector, true]);
-  // Working has eyes of its own: down at the work, moving along it.
-  expect(animated.some((selector) => selector.includes('[data-expression="working"]'))).toBe(true);
+test("a face moves by the orbs' one clock, which stops for reduced motion: its stylesheet animates nothing", () => {
+  expect(KNIGHT_CSS).not.toMatch(/\banimation\s*:/);
+  expect(KNIGHT_CSS).not.toContain("@keyframes");
 });

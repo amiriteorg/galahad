@@ -1,15 +1,20 @@
 import { ORB_MOVES, ORB_STAGES, ORB_STILL, orbBursts, orbClock, orbFps, orbFrame, orbMoodOfState, orbSeed, orbStep, shownMotes, type OrbClock, type OrbFrame, type OrbMood, type OrbStage } from "../lib/orb-motion.ts";
 import { orbLevel, orbPalette, orbParts, orbTone, orbToneOfState, type OrbInk, type OrbPalette, type OrbPart, type OrbStop, type OrbTone } from "../lib/orb.ts";
+import { dataGlyph, KNIGHT_SPHERE, knightArcs, orbSphere, paperShades, SPHERE_TURN, sphereFrame, spherePoints, sphereShades, type ShownGlyph } from "../lib/orb-sphere.ts";
+import { blendHex, knightColors } from "@galahad/core/avatar";
 import { h, svg } from "./dom.ts";
 import { motionAllowed, move } from "./motion.ts";
 
 /*
  * Galahad as an orb (your word, 23 November 2026: "a Jarvis … like visual, the orb graphic", the one you talk to): the
- * parts lib/orb.ts gives, in the colour of his state (lib/now.ts's tone). Where he is doing something, it moves as his
- * mood does (lib/orb-motion.ts; your word, 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting,
- * done"). It is drawn on a canvas a frame at a time, its motes and waves reaching out past it. Still, as an answer in a
- * conversation's history shows him, and wherever motion is reduced, it is the same parts, unmoved. The Apple and
- * Android apps draw the same. Drawn from fixed shapes; nothing in it comes from a name, a profile or a model.
+ * parts lib/orb.ts gives, in the colour of his state (lib/now.ts's tone), his sphere of points of light among them.
+ * Where he is doing something, it moves as his mood does (lib/orb-motion.ts; your word, 24 November 2026:
+ * "pulsing/moving when doing a task, sitting idle, waiting, done"): it is drawn on a canvas a frame at a time, its
+ * sphere turning, its motes and waves reaching out past it. Still, as an answer in a conversation's history shows him,
+ * and wherever motion is reduced, it is the same parts, unmoved. A knight's face is a sphere too, in its own colours
+ * (knightFace; your word, 25 November 2026). The Apple and Android apps draw the same. Nothing in it comes from a name's
+ * meaning, a profile's words or a model: a knight's colour is one you chose or its handle's, and its handle seeds its
+ * sphere.
  */
 
 export type { OrbTone };
@@ -86,6 +91,132 @@ export function seatLights(options: { box: number; ring: number; state: string |
   return canvas;
 }
 
+/** A knight's face options: whose (its handle), its saved avatar (a colour you chose for it, core's knightColors), its
+ * size in CSS pixels, and its mood (lib/orb-motion.ts; left out, still: as a speaker in a conversation's history). */
+export interface KnightFaceOptions {
+  id: string;
+  profile?: unknown;
+  size: number;
+  mood?: OrbMood;
+  /** Its accessible name; left out, it is decorative (its name is beside it). */
+  label?: string;
+  /** Which course it moves on (a seat's face shares its seat's lights' course, `seat:<handle>`). */
+  key?: string;
+}
+
+/**
+ * A knight's face: its sphere of glyphs round a bright nucleus, in its own colours, with an arc or two of its own turning
+ * round it (your words, 25 November 2026: "custom/procedurally generated colored particle orbs", "glyph and randomness
+ * … like Jarvis/Ultron", "slow and calming movement"). Its colour is one you chose or its handle's, and its sphere and
+ * arcs its handle's (lib/orb-sphere.ts): every knight's is its own, the same on every device. In a mood it turns and
+ * breathes as its seat's lights do, on the same course (the seat's key), so its face and its ring move as one; still,
+ * and wherever motion is reduced, it is drawn once.
+ */
+export function knightFace(options: KnightFaceOptions): HTMLElement {
+  const size = Number.isFinite(options.size) ? Math.round(Math.max(16, Math.min(256, options.size))) : 40;
+  const id = String(options.id ?? "");
+  const colors = knightColors(id, options.profile);
+  const level = orbLevel(size);
+  const look = KNIGHT_SPHERE[level];
+  const sphere = orbSphere(id);
+  const points = spherePoints(sphere, look.count);
+  const arcs = knightArcs(sphere, level);
+  const secondLight = blendHex(colors.second, "#ffffff", 0.45);
+  const secondDeep = blendHex(colors.second, "#000000", 0.52);
+  const inks = (onPaper: boolean) =>
+    onPaper
+      ? { tint: paperShades(colors.tint, colors.deep), second: paperShades(colors.second, secondDeep), line: colors.deep, heart: colors.deep }
+      : { tint: sphereShades(colors.tint, colors.light, colors.deep), second: sphereShades(colors.second, secondLight, secondDeep), line: colors.light, heart: "#fff8eb" };
+  const named = options.label ? { role: "img", "aria-label": options.label } : { "aria-hidden": "true" };
+  const box = { class: "knight-orb", style: `--orb-size:${size}px`, "data-tint": colors.tint, ...named };
+  const prepared = options.mood ? canvasFor(size, ORB_STAGES.badge, 100) : null;
+  if (prepared && options.mood) {
+    const { canvas, g, k } = prepared;
+    canvas.className = "knight-orb-canvas";
+    const seed = orbSeed(id);
+    const course = keep(options.key ?? `face:${id}`, options.mood, seed);
+    const draw = (t: number, moving: boolean) => {
+      clear(g, canvas, k);
+      const frame = moving ? advance(course, t, seed) : ORB_STILL;
+      const onPaper = paper();
+      const ink = inks(onPaper);
+      g.globalAlpha = Math.min(1, frame.glow) * (onPaper ? 0.6 : 1);
+      g.fillStyle = faceLight(g, colors.tint);
+      g.fillRect(-100, -100, 200, 200);
+      g.globalAlpha = 1;
+      for (const arc of arcs) {
+        const from = arc.from + arc.speed * frame.ring;
+        g.beginPath();
+        g.arc(0, 0, arc.r, radians(from - 90), radians(from + arc.length - 90));
+        g.lineWidth = arc.width;
+        g.lineCap = "round";
+        g.strokeStyle = rgba(ink.line, 0.5);
+        g.stroke();
+      }
+      heart(g, look.nucleus * 2.2 * frame.scale, ink.heart, colors.tint, frame.glow);
+      glyphs(g, sphereFrame(sphere, points, { angle: SPHERE_TURN * frame.ring, radius: look.r, scale: frame.scale, glyph: look.glyph, t: moving ? t : 0, mood: moving ? course.mood : "idle", paper: onPaper }), ink);
+    };
+    draw(now(), motionAllowed());
+    move(canvas, draw, () => orbFps(course.mood, level, since(course)));
+    return h("span", box, canvas);
+  }
+  const ink = inks(paper());
+  const glowId = `orb-${++drawn}`;
+  const heartId = `orb-${++drawn}`;
+  return h(
+    "span",
+    box,
+    svg(
+      "svg",
+      { viewBox: "-100 -100 200 200", focusable: "false" },
+      svg(
+        "defs",
+        {},
+        svg("radialGradient", { id: glowId }, svg("stop", { offset: "0", "stop-color": colors.tint, "stop-opacity": "0.42" }), svg("stop", { offset: "0.55", "stop-color": colors.tint, "stop-opacity": "0.16" }), svg("stop", { offset: "1", "stop-color": colors.tint, "stop-opacity": "0" })),
+        svg("radialGradient", { id: heartId }, svg("stop", { offset: "0", "stop-color": ink.heart, "stop-opacity": "0.95" }), svg("stop", { offset: "0.3", "stop-color": colors.tint, "stop-opacity": "0.65" }), svg("stop", { offset: "1", "stop-color": colors.tint, "stop-opacity": "0" })),
+      ),
+      svg("circle", { r: "96", fill: `url(#${glowId})` }),
+      ...arcs.map((arc) => svg("path", { d: `M${point(arc.r, arc.from)}A${arc.r} ${arc.r} 0 ${arc.length > 180 ? 1 : 0} 1 ${point(arc.r, arc.from + arc.length)}`, fill: "none", stroke: ink.line, "stroke-width": String(arc.width), "stroke-linecap": "round", opacity: "0.5" })),
+      svg("circle", { r: String(look.nucleus * 2.2), fill: `url(#${heartId})` }),
+      ...stillGlyphs(sphereFrame(sphere, points, { angle: 0, radius: look.r, scale: 1, glyph: look.glyph, t: 0, mood: "idle", paper: paper() }), ink),
+    ),
+  );
+}
+
+/** The light a face sits in, made once a context. */
+const faceLights = new WeakMap<CanvasRenderingContext2D, Map<string, CanvasGradient>>();
+function faceLight(g: CanvasRenderingContext2D, tint: string): CanvasGradient {
+  let made = faceLights.get(g)?.get(tint);
+  if (made) return made;
+  made = g.createRadialGradient(0, 0, 0, 0, 0, 96);
+  for (const [at, alpha] of [[0, 0.42], [0.55, 0.16], [1, 0]] as const) made.addColorStop(at, rgba(tint, alpha));
+  if (!faceLights.has(g)) faceLights.set(g, new Map());
+  faceLights.get(g)!.set(tint, made);
+  return made;
+}
+
+/** The bright nucleus (Phren's): `heart` at its middle (white on a dark page, the deep tint on a light one), into the
+ * tint, and gone, `r` across. */
+function heart(g: CanvasRenderingContext2D, r: number, heartInk: string, tint: string, glow: number): void {
+  const made = g.createRadialGradient(0, 0, 0, 0, 0, r);
+  made.addColorStop(0, rgba(heartInk, Math.min(1, 0.95 * glow)));
+  made.addColorStop(0.3, rgba(tint, Math.min(1, 0.65 * glow)));
+  made.addColorStop(1, rgba(tint, 0));
+  g.fillStyle = made;
+  g.beginPath();
+  g.arc(0, 0, r, 0, 2 * Math.PI);
+  g.fill();
+}
+
+/** Whether the page is light (the app's theme, or the device's when it follows the device): glyphs are ink on paper
+ * there. */
+function paper(): boolean {
+  if (typeof document === "undefined" || !document.documentElement?.dataset) return false;
+  const theme = document.documentElement.dataset.theme;
+  if (theme === "light" || theme === "dark") return theme === "light";
+  return typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: light)").matches;
+}
+
 // ---- each orb's own course: its mood, the one before, when it changed, and its clock, kept by its key --------------
 
 interface Kept {
@@ -130,12 +261,12 @@ const since = (course: Kept, t = now()): number | null => (Number.isFinite(cours
 
 /** A canvas for an orb or a seat `size` CSS pixels wide, wide enough for its stage's reach, sharp on this screen: its
  * context, and `k`, device pixels to a unit of the orb's square. */
-function canvasFor(size: number, stage: OrbStage): { canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; k: number } | null {
+function canvasFor(size: number, stage: OrbStage, reach = stage.reach): { canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; k: number } | null {
   if (typeof document === "undefined" || typeof window === "undefined") return null;
   const canvas = document.createElement("canvas");
   const g = typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
   if (!g) return null;
-  const css = Math.ceil((size * stage.reach) / 100);
+  const css = Math.ceil((size * reach) / 100);
   const dpr = Math.min(3, window.devicePixelRatio || 1);
   canvas.width = canvas.height = Math.round(css * dpr);
   canvas.style.width = canvas.style.height = `${css}px`;
@@ -162,7 +293,7 @@ function liveCanvas(size: number, tone: OrbTone, mood: OrbMood, key: string): HT
   const course = keep(key, mood, seed);
   const draw = (t: number, moving: boolean) => {
     clear(g, canvas, k);
-    paint(g, parts, palette, moving ? advance(course, t, seed) : ORB_STILL, stage);
+    paint(g, parts, palette, moving ? advance(course, t, seed) : ORB_STILL, stage, { t: moving ? t : 0, mood: moving ? course.mood : "idle", paper: paper() });
   };
   draw(now(), motionAllowed());
   move(canvas, draw, () => orbFps(course.mood, level, since(course)));
@@ -178,15 +309,23 @@ interface Ready {
   name: string;
   turn: "ring" | "ticks" | "segments" | null;
   swells: boolean;
-  draw: (g: CanvasRenderingContext2D, glow: number) => void;
+  draw: (g: CanvasRenderingContext2D, frame: OrbFrame, moment: Moment) => void;
+}
+
+/** When a frame is drawn: the time its glyphs change by, its mood, and whether the page is light. */
+interface Moment {
+  t: number;
+  mood: OrbMood;
+  paper: boolean;
 }
 
 function prepare(g: CanvasRenderingContext2D, part: OrbPart, palette: OrbPalette): Ready {
   const has = (list: readonly string[]) => list.includes(part.name);
   const turn = has(ORB_MOVES.ring) ? "ring" : has(ORB_MOVES.ticks) ? "ticks" : has(ORB_MOVES.segments) ? "segments" : null;
-  const ink = (name: OrbInk) => (name === "white" ? "#ffffff" : palette[name]);
-  const gradient = (made: CanvasGradient, stops: readonly OrbStop[], glow: number) => {
-    for (const s of stops) made.addColorStop(s.at, rgba(ink(s.ink), Math.min(1, s.opacity * glow)));
+  // (On a light page his white is his deep tint: a white heart there would be a hole in the paper.)
+  const ink = (name: OrbInk, onPaper = false) => (name === "white" ? (onPaper ? palette.deep : "#ffffff") : palette[name]);
+  const gradient = (made: CanvasGradient, stops: readonly OrbStop[], glow: number, onPaper = false) => {
+    for (const s of stops) made.addColorStop(s.at, rgba(ink(s.ink, onPaper), Math.min(1, s.opacity * glow)));
     return made;
   };
   const ready = (draw: Ready["draw"]): Ready => ({ name: part.name, turn, swells: has(ORB_MOVES.swell), draw });
@@ -195,10 +334,10 @@ function prepare(g: CanvasRenderingContext2D, part: OrbPart, palette: OrbPalette
       // As SVG's radial gradient in its box: lit from (cx, cy) of the box, reaching `spread` of its width.
       const [cx, cy] = [-part.r + part.cx * 2 * part.r, -part.r + part.cy * 2 * part.r];
       const shape = path((p) => p.arc(0, 0, part.r, 0, 2 * Math.PI));
-      const paint = (glow: number) => gradient(g.createRadialGradient(cx, cy, 0, cx, cy, part.spread * 2 * part.r), part.stops, glow);
-      const still = paint(1);
-      return ready((g, glow) => {
-        g.fillStyle = has(ORB_MOVES.glow) && glow !== 1 ? paint(glow) : still;
+      const paint = (glow: number, onPaper: boolean) => gradient(g.createRadialGradient(cx, cy, 0, cx, cy, part.spread * 2 * part.r), part.stops, glow, onPaper);
+      const still = [paint(1, false), paint(1, true)] as const;
+      return ready((g, frame, moment) => {
+        g.fillStyle = has(ORB_MOVES.glow) && frame.glow !== 1 ? paint(frame.glow, moment.paper) : still[moment.paper ? 1 : 0];
         fill(g, shape);
       });
     }
@@ -225,24 +364,40 @@ function prepare(g: CanvasRenderingContext2D, part: OrbPart, palette: OrbPalette
       const color = rgba(ink(part.ink), part.opacity);
       return ready((g) => strokeWith(g, shape, part.width, color, "butt"));
     }
-    case "rim": {
-      const shape = path((p) => p.arc(0, 0, part.r, 0, 2 * Math.PI));
-      const lit = gradient(g.createLinearGradient(part.from[0], part.from[1], part.to[0], part.to[1]), part.stops, 1);
-      return ready((g) => strokeWith(g, shape, part.width, lit, "butt"));
-    }
-    case "shine": {
-      const shape = path((p) => p.ellipse(part.cx, part.cy, part.rx, part.ry, radians(part.rotate), 0, 2 * Math.PI));
-      const color = rgba("#ffffff", part.opacity);
-      return ready((g) => {
-        g.fillStyle = color;
-        fill(g, shape);
+    case "glyphs": {
+      // His data ring: hex digits in about `share` of its places, each changing on a slow beat of its own, upright to
+      // the ring as a dial's numbers are.
+      const seed = orbSeed("galahad");
+      return ready((g, _frame, moment) => {
+        const color = moment.paper ? palette.deep : ink(part.ink);
+        for (let k = 0; k < part.count; k++) {
+          const lit = dataGlyph(seed, k, moment.t, part.share);
+          if (!lit) continue;
+          const angle = (360 * k) / part.count;
+          const [x, y] = at(part.r, angle);
+          g.save();
+          g.translate(x, y);
+          g.rotate(radians(angle));
+          g.globalAlpha = lit.alpha;
+          drawGlyph(g, lit.char, color, true, 0, 0, part.size);
+          g.restore();
+        }
+        g.globalAlpha = 1;
       });
+    }
+    case "sphere": {
+      // His own sphere, turning as his ring does, three times as far.
+      const sphere = orbSphere("galahad");
+      const points = spherePoints(sphere, part.count);
+      const dark = { tint: sphereShades(palette.tint, palette.light, palette.deep), second: sphereShades(ink(part.second), ink(part.second), palette.light) };
+      const light = { tint: paperShades(palette.tint, palette.deep), second: paperShades(palette.deep, blendHex(palette.deep, "#000000", 0.4)) };
+      return ready((g, frame, moment) => glyphs(g, sphereFrame(sphere, points, { angle: SPHERE_TURN * frame.ring, radius: part.r, scale: 1, glyph: part.glyph, t: moment.t, mood: moment.mood, paper: moment.paper }), moment.paper ? light : dark));
     }
   }
 }
 
 /** The orb's parts as a frame moves them, with its lights among them (lib/orb-motion.ts' ORB_MOVES). */
-function paint(g: CanvasRenderingContext2D, parts: readonly Ready[], palette: OrbPalette, frame: OrbFrame, stage: OrbStage): void {
+function paint(g: CanvasRenderingContext2D, parts: readonly Ready[], palette: OrbPalette, frame: OrbFrame, stage: OrbStage, moment: Moment): void {
   if (!parts.some((part) => part.name === "halo")) waves(g, frame, stage, palette);
   for (const part of parts) {
     if (part.name === ORB_MOVES.lightsBefore) {
@@ -256,7 +411,7 @@ function paint(g: CanvasRenderingContext2D, parts: readonly Ready[], palette: Or
       if (turn) g.rotate(radians(turn));
       if (swell) g.scale(frame.scale, frame.scale);
     }
-    part.draw(g, frame.glow);
+    part.draw(g, frame, moment);
     if (turn || swell) g.restore();
     if (part.name === "halo") waves(g, frame, stage, palette);
   }
@@ -363,6 +518,59 @@ function sprite(palette: OrbPalette): HTMLCanvasElement {
   return made;
 }
 
+/** A sphere's glyphs as a frame shows them, back to front, each in its colour's shade for how near it is (data in its
+ * second colour, as it reads). */
+function glyphs(g: CanvasRenderingContext2D, shown: readonly ShownGlyph[], shades: { tint: readonly string[]; second: readonly string[] }): void {
+  for (const glyph of shown) {
+    if (glyph.alpha < 0.02) continue;
+    g.globalAlpha = Math.min(1, glyph.alpha);
+    const color = glyph.data ? shades.second[Math.max(3, glyph.shade)]! : (glyph.second ? shades.second : shades.tint)[glyph.shade]!;
+    drawGlyph(g, glyph.char, color, glyph.data, glyph.x, glyph.y, glyph.size);
+  }
+  g.globalAlpha = 1;
+}
+
+/** One glyph `size` high, centred on (x, y), in `color`: drawn once into a sprite of its own and stamped from it after,
+ * as Phren draws its field from an atlas. */
+const GLYPH_PX = 48;
+const glyphSprites = new Map<string, HTMLCanvasElement | null>();
+function drawGlyph(g: CanvasRenderingContext2D, char: string, color: string, bold: boolean, x: number, y: number, size: number): void {
+  const key = `${char}${color}${bold ? "!" : ""}`;
+  let sprite = glyphSprites.get(key);
+  if (sprite === undefined) {
+    sprite = null;
+    if (typeof document !== "undefined") {
+      const made = document.createElement("canvas");
+      const c = typeof made.getContext === "function" ? made.getContext("2d") : null;
+      if (c) {
+        made.width = made.height = GLYPH_PX;
+        c.font = `${bold ? 600 : 500} ${GLYPH_PX * 0.78}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+        c.textAlign = "center";
+        c.textBaseline = "middle";
+        c.fillStyle = color;
+        c.fillText(char, GLYPH_PX / 2, GLYPH_PX * 0.52);
+        sprite = made;
+      }
+    }
+    glyphSprites.set(key, sprite);
+  }
+  if (sprite) g.drawImage(sprite, x - size * 0.64, y - size * 0.64, size * 1.28, size * 1.28);
+}
+
+/** The same glyphs, still, as SVG text. */
+function stillGlyphs(shown: readonly ShownGlyph[], shades: { tint: readonly string[]; second: readonly string[] }): SVGElement[] {
+  const n = (value: number) => String(Math.round(value * 100) / 100);
+  return shown
+    .filter((glyph) => glyph.alpha >= 0.02)
+    .map((glyph) =>
+      svg(
+        "text",
+        { x: n(glyph.x), y: n(glyph.y), "font-size": n(glyph.size), "text-anchor": "middle", "dominant-baseline": "central", "font-family": "ui-monospace, SFMono-Regular, Menlo, monospace", "font-weight": glyph.data ? "600" : "500", fill: glyph.data ? shades.second[Math.max(3, glyph.shade)]! : (glyph.second ? shades.second : shades.tint)[glyph.shade]!, opacity: n(Math.min(1, glyph.alpha)) },
+        glyph.char,
+      ),
+    );
+}
+
 function stroke(g: CanvasRenderingContext2D, r: number, width: number, color: string): void {
   g.beginPath();
   g.arc(0, 0, r, 0, 2 * Math.PI);
@@ -402,11 +610,20 @@ function shape(part: OrbPart, id: string, palette: OrbPalette, defs: SVGElement[
         .join("");
       return svg("path", { ...named, d, fill: "none", stroke: ink(part.ink), "stroke-width": String(part.width), opacity: String(part.opacity) });
     }
-    case "rim":
-      defs.push(svg("linearGradient", { id, gradientUnits: "userSpaceOnUse", x1: String(part.from[0]), y1: String(part.from[1]), x2: String(part.to[0]), y2: String(part.to[1]) }, ...stops(part.stops)));
-      return svg("circle", { ...named, r: String(part.r), fill: "none", stroke: `url(#${id})`, "stroke-width": String(part.width) });
-    case "shine":
-      return svg("ellipse", { ...named, cx: String(part.cx), cy: String(part.cy), rx: String(part.rx), ry: String(part.ry), fill: "#ffffff", opacity: String(part.opacity), transform: `rotate(${part.rotate} ${part.cx} ${part.cy})` });
+    case "glyphs": {
+      const seed = orbSeed("galahad");
+      const placed = Array.from({ length: part.count }, (_, k) => ({ k, lit: dataGlyph(seed, k, 0, part.share) })).filter((each) => each.lit);
+      return svg("g", named, ...placed.map(({ k, lit }) => {
+        const angle = (360 * k) / part.count;
+        const [x, y] = point(part.r, angle).split(" ");
+        return svg("text", { x, y, "font-size": String(part.size), "text-anchor": "middle", "dominant-baseline": "central", "font-family": "ui-monospace, SFMono-Regular, Menlo, monospace", "font-weight": "600", fill: ink(part.ink), opacity: String(Math.round(lit!.alpha * 100) / 100), transform: `rotate(${Math.round(angle * 100) / 100} ${x} ${y})` }, lit!.char);
+      }));
+    }
+    case "sphere": {
+      const sphere = orbSphere("galahad");
+      const shades = { tint: sphereShades(palette.tint, palette.light, palette.deep), second: sphereShades(ink(part.second), ink(part.second), palette.light) };
+      return svg("g", named, ...stillGlyphs(sphereFrame(sphere, spherePoints(sphere, part.count), { angle: 0, radius: part.r, scale: 1, glyph: part.glyph, t: 0, mood: "idle" }), shades));
+    }
   }
 }
 

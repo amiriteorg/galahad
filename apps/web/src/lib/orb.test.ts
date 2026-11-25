@@ -13,16 +13,19 @@ function reach(part: OrbPart): number {
     case "disc":
       return part.r;
     case "ring":
-    case "rim":
       return part.r + part.width / 2;
     case "ticks":
       return part.r + part.length / 2;
-    case "shine":
-      return Math.hypot(part.cx, part.cy) + Math.max(part.rx, part.ry);
+    case "glyphs":
+      return part.r + part.size / 2;
+    case "sphere":
+      // Its nearest glyphs are at most 1.15 times its glyph high (lib/orb-sphere.ts), and reach half of that out.
+      return part.r + (1.15 * part.glyph) / 2;
   }
 }
 
-// Your word, 23 November 2026: Galahad, the one you talk to, as a Jarvis-like orb; every app draws these same parts.
+// Your word, 23 November 2026: Galahad, the one you talk to, as a Jarvis-like orb; every app draws these same parts. On
+// 25 November 2026 his sphere became points of light.
 describe("Galahad's orb, as data", () => {
   test("each state has its own light, lit and shaded from it, in every theme", () => {
     expect(ORB_TONES.map((tone) => orbPalette(tone).tint)).toEqual(["#8ab8ff", "#58a6ff", "#f0b549", "#4cc38a", "#ff6b6b"]);
@@ -42,9 +45,9 @@ describe("Galahad's orb, as data", () => {
   test("small beside his words, a seat's rings at the Roundtable, the whole display on his welcome", () => {
     expect([orbLevel(16), orbLevel(ORB_SEAT_FROM - 1), orbLevel(ORB_SEAT_FROM), orbLevel(ORB_FULL_FROM - 1), orbLevel(ORB_FULL_FROM), orbLevel(320)]).toEqual(["badge", "badge", "seat", "seat", "full", "full"]);
     const names = (size: number) => orbParts(size).map((part) => part.name);
-    expect(names(28)).toEqual(["ring", "body", "rim", "core", "shine"]);
-    expect(names(64)).toEqual(["halo", "ring", "notches", "segments", "body", "rim", "core", "shine"]);
-    expect(names(168)).toEqual(["halo", "ring", "notches", "ticks", "marks", "segments", "inner", "body", "rim", "core", "shine", "glint"]);
+    expect(names(28)).toEqual(["ring", "glow", "nucleus", "sphere"]);
+    expect(names(64)).toEqual(["halo", "ring", "notches", "segments", "glow", "nucleus", "sphere"]);
+    expect(names(168)).toEqual(["halo", "ring", "notches", "ticks", "marks", "data", "segments", "glow", "nucleus", "sphere"]);
   });
 
   test("every part stays in its square, its arcs go round clockwise, its gradients run from 0 to 1", () => {
@@ -52,17 +55,34 @@ describe("Galahad's orb, as data", () => {
       for (const part of orbParts(size)) {
         expect(reach(part)).toBeLessThanOrEqual(100);
         if (part.kind === "ring") for (const [from, to] of part.arcs ?? []) expect(0 <= from && from < to && to <= 360).toBe(true);
-        if (part.kind === "disc" || part.kind === "rim") {
+        if (part.kind === "disc") {
           const at = part.stops.map((stop) => stop.at);
           expect([at[0], at.at(-1)]).toEqual([0, 1]);
           expect([...at].sort((a, b) => a - b)).toEqual(at);
         }
       }
     }
-    // The sphere is always the brightest thing in it, lit from above on the left.
-    for (const size of [28, 64, 168]) {
-      const body = orbParts(size).find((part) => part.name === "body");
-      expect(body?.kind === "disc" && body.cx < 0.5 && body.cy < 0.5).toBe(true);
+    // His sphere of glyphs is the last thing drawn, over his nucleus and the light it sits in, inside every ring; finer
+    // the larger he is (your word, 25 November 2026: his orb too is glyphs, round a nucleus, with a ring of data).
+    const spheres = [28, 64, 168].map((size) => orbParts(size).at(-1)!);
+    for (const sphere of spheres) expect(sphere.kind).toBe("sphere");
+    const [badge, seat, full] = spheres.map((part) => (part.kind === "sphere" ? part : null)!);
+    expect(badge!.count < seat!.count && seat!.count < full!.count).toBe(true);
+    expect(badge!.glyph > seat!.glyph && seat!.glyph > full!.glyph).toBe(true);
+    for (const size of [64, 168]) {
+      const parts = orbParts(size);
+      const sphere = parts.at(-1)!;
+      for (const ring of parts.filter((part) => part.kind === "ring")) expect(ring.r - (ring.kind === "ring" ? ring.width / 2 : 0)).toBeGreaterThan(reach(sphere));
+    }
+    // The data ring sits between the ticks and the segments, touching neither.
+    const display = orbParts(168);
+    const data = display.find((part) => part.name === "data")!;
+    const ticks = display.find((part) => part.name === "marks")!;
+    const segments = display.find((part) => part.name === "segments")!;
+    expect(data.kind === "glyphs" && ticks.kind === "ticks" && segments.kind === "ring").toBe(true);
+    if (data.kind === "glyphs" && ticks.kind === "ticks" && segments.kind === "ring") {
+      expect(data.r + data.size / 2).toBeLessThan(ticks.r - ticks.length / 2);
+      expect(data.r - data.size / 2).toBeGreaterThan(segments.r + segments.width / 2);
     }
   });
 });

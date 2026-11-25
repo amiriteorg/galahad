@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { sphereShades } from "../lib/orb-sphere.ts";
 import { orbPalette, orbParts } from "../lib/orb.ts";
 import { orb, type OrbTone } from "./orb.ts";
 
@@ -6,6 +7,7 @@ import { orb, type OrbTone } from "./orb.ts";
 class Node_ {
   readonly attrs: Record<string, string> = {};
   readonly children: Node_[] = [];
+  text = "";
   constructor(readonly tag: string, readonly ns: "html" | "svg") {}
   setAttribute(key: string, value: string) { this.attrs[key] = value; }
   appendChild(child: Node_) { this.children.push(child); return child; }
@@ -19,7 +21,7 @@ function draw(...options: Parameters<typeof orb>[0][]): Node_[] {
       expect(namespace).toBe("http://www.w3.org/2000/svg");
       return new Node_(tag, "svg");
     },
-    createTextNode: () => new Node_("#text", "html"),
+    createTextNode: (text: string) => Object.assign(new Node_("#text", "html"), { text }),
   } });
   try { return options.map((option) => orb(option) as unknown as Node_); }
   finally { if (original) Object.defineProperty(globalThis, "document", original); else Reflect.deleteProperty(globalThis, "document"); }
@@ -37,13 +39,20 @@ describe("Galahad's orb", () => {
       expect(node!.attrs["data-tone"]).toBe(tone);
       expect(node!.attrs.style).toBe("--orb-size:168px");
       for (const child of walk(node!)) {
-        expect(child.ns === "html" ? ["span"] : ["svg", "defs", "radialGradient", "linearGradient", "stop", "circle", "path", "ellipse"]).toContain(child.tag);
+        expect(child.ns === "html" ? ["span", "#text"] : ["svg", "defs", "radialGradient", "stop", "circle", "path", "g", "text"]).toContain(child.tag);
         for (const key of Object.keys(child.attrs)) expect(key).not.toMatch(/^(on|href|xlink)/i);
       }
-      // Its colours are its state's own, the lit sphere's and the rings' alike.
+      // Its colours are its state's own, its rings' and its glows' its tint; its points its tint's shades, and white's
+      // (lib/orb-sphere.ts' sphereShades), lit by how near they are.
       const colors = new Set(walk(node!).flatMap((child) => [child.attrs.stroke, child.attrs["stop-color"]]).filter((c) => c?.startsWith("#")));
       const { tint, light, deep } = orbPalette(tone);
-      expect([...colors].sort()).toEqual([tint, light, deep, "#ffffff"].sort());
+      // (Its nucleus is white at its heart.)
+      expect([...colors].sort()).toEqual([tint, "#ffffff"].sort());
+      // His data ring is lit in his light.
+      for (const digit of classed(node!, "orb-data")[0]!.children) expect([digit.attrs.fill, "0123456789ABCDEF".includes(digit.children[0]!.text)]).toEqual([light, true]);
+      const points = new Set(classed(node!, "orb-sphere")[0]!.children.map((child) => child.attrs.fill));
+      for (const fill of points) expect([...sphereShades(tint, light, deep), ...sphereShades("#ffffff", "#ffffff", light)]).toContain(fill as string);
+      expect(points.has("#ffffff")).toBe(true);
     }
     // A tone it doesn't know is its rest; a size past its bounds is held to them.
     const [odd, tiny, huge] = draw({ tone: "pulse" as OrbTone, size: 36 }, { size: 4 }, { size: 900 });

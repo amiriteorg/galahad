@@ -221,9 +221,9 @@ const PAGES: { name: string; hash: string }[] = [
 const ATTACHING = `(async () => {
   const input = document.querySelector(".composer input[type=file]");
   if (!input) throw new Error("this app takes no files with a message");
-  const drawing = await (await fetch("/knights/kay.webp")).blob();
+  const picture = await (await fetch("/icon-192.png")).blob();
   const files = new DataTransfer();
-  files.items.add(new File([drawing], "kay.webp", { type: "image/webp" }));
+  files.items.add(new File([picture], "icon.png", { type: "image/png" }));
   files.items.add(new File(["FAIL db.test.ts\\n  connect ECONNREFUSED 127.0.0.1:5432\\n"], "test.log", { type: "text/plain" }));
   input.files = files.files;
   input.dispatchEvent(new Event("change"));
@@ -632,17 +632,17 @@ try {
   if (!asked.ok || !conversation) throw new Error(`the kept chat wasn't made: ${asked.status}`);
   await until("the kept chat's turn to end", async () => (await admin("turns")).turns.length === 0);
   PAGES.push({ name: "Kept chat", hash: `#/chat?c=${conversation}` });
-  // A kept chat whose message carried a picture and a text (where the node takes files with a message): Kay as the owner
-  // drew him, and notes on him.
+  // A kept chat whose message carried a picture and a text (where the node takes files with a message): the app's icon,
+  // and notes on it.
   let attachedChat: string | null = null;
   if (routes.uploadAttachment) {
     const up = async (name: string, type: string, bytes: Uint8Array) => (await admin("uploadAttachment", { name, type, data: Buffer.from(bytes).toString("base64") })).attachment;
-    const drawing = await up("kay.webp", "image/webp", new Uint8Array(readFileSync(join(REPO, "apps/web/src/knights/kay.webp"))));
-    const notes = await up("kay-notes.md", "text/plain", new TextEncoder().encode("# Kay\n\nThe steward. Reads every import's dates; trusts no format he hasn't seen.\n"));
+    const drawing = await up("icon.png", "image/png", new Uint8Array(readFileSync(join(REPO, "apps/web/src/icon-192.png"))));
+    const notes = await up("icon-notes.md", "text/plain", new TextEncoder().encode("# The icon\n\nGalahad's helm, as the home screen shows it: 192 pixels square.\n"));
     const sent = await fetch(`http://127.0.0.1:${port}${routes.chat!.path}`, {
       method: "POST",
       headers: { authorization: `Bearer ${home.adminToken()}`, "content-type": "application/json" },
-      body: JSON.stringify({ role: "planner", save: true, tools: false, messages: [{ role: "user", content: "Is this how Kay should look in the app?", attachments: [drawing, notes] }] }),
+      body: JSON.stringify({ role: "planner", save: true, tools: false, messages: [{ role: "user", content: "Is this how the icon should look on a phone?", attachments: [drawing, notes] }] }),
     });
     attachedChat = /"(cv_[A-Za-z0-9_-]{22})"/.exec(await sent.text())?.[1] ?? null;
     if (!sent.ok || !attachedChat) throw new Error(`the kept chat with files wasn't made: ${sent.status}`);

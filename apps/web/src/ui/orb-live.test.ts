@@ -143,9 +143,11 @@ describe("his orb, moving", () => {
   test("still where motion is reduced: the same parts, with no light, motes or waves, and nothing more drawn", () => {
     root.dataset.motion = "reduce";
     const canvas = canvasOf(orb({ size: 168, mood: "working", key: "test:still" }) as unknown as Node_)!;
-    expect(count(canvas.calls, "drawImage")).toBe(0);
-    // (The halo, the sphere and its core.)
-    expect(count(canvas.calls, "createRadialGradient")).toBe(3);
+    // (The halo, the light the sphere sits in and its nucleus, each made once for a dark page and once for a light one;
+    // then each glyph stamped once, his sphere's and his data ring's, and no light or mote among them.)
+    expect(count(canvas.calls, "createRadialGradient")).toBe(6);
+    expect(count(canvas.calls, "drawImage")).toBeGreaterThan(48);
+    expect(count(canvas.calls, "drawImage")).toBeLessThanOrEqual(170 + 48);
     const before = canvas.calls.length;
     run(1000);
     run(2000);

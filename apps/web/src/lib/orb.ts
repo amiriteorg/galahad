@@ -1,11 +1,15 @@
 /*
  * Galahad's orb, as data (your word, 23 November 2026: he is the one you talk to, "a Jarvis … like visual, the orb
- * graphic"): a sphere of light inside the still rings of a heads-up display, in the colour of his state. Pure: the parts
+ * graphic"): a sphere of glyphs round a bright nucleus inside the rings of a heads-up display, with a ring of data
+ * turning in it, in the colour of his state. On 25 November 2026 his glass sphere became glyphs, as every knight's orb
+ * is (your words: "custom/procedurally generated colored particle orbs", "also update Galahad's orb", "use glyph and
+ * randomness on the orbs, like Jarvis/Ultron in the movies, and my other project Phren"); the glyphs are
+ * lib/orb-sphere.ts's. Pure: the parts
  * it is drawn from, in a square 200 wide centred on its middle (y down), and each state's colours. The PWA draws them
- * as SVG (ui/orb.ts); the Apple and Android apps draw the same parts (held to these by the vectors,
+ * (ui/orb.ts); the Apple and Android apps draw the same parts (held to these by the vectors,
  * apps/apple/scripts/vectors.ts), so he is the same orb wherever you meet him. These are the orb at rest. How it moves
  * in each mood (your word of 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done") is
- * lib/orb-motion.ts. Nothing in it comes from a name, a profile or a model.
+ * lib/orb-motion.ts. Nothing in it comes from a name, a profile or a model but his own handle's sphere.
  */
 
 export type OrbTone = "neutral" | "accent" | "warn" | "ok" | "danger";
@@ -39,15 +43,17 @@ export interface OrbStop {
  * - disc: a circle filled by a radial gradient, lit from (cx, cy) as fractions of its box, reaching `spread` of its width.
  * - ring: a circle's stroke, whole or only its arcs ([from, to] each).
  * - ticks: `count` short strokes across a circle, evenly round from `offset`, each `length` long and `width` wide.
- * - rim: a circle's stroke lit along the line from `from` to `to` (a linear gradient).
- * - shine: an ellipse of white, turned by `rotate` about its middle.
+ * - glyphs: `count` places round a circle `r` from the middle, about `share` of them lit with a hex digit `size` high,
+ *   each changing on a slow beat of its own (lib/orb-sphere.ts' dataGlyph): his data ring.
+ * - sphere: `count` glyphs on a sphere `r` from the middle, its nearest `glyph` high (lib/orb-sphere.ts), his own
+ *   handle's sphere; some of them are `second`'s colour.
  */
 export type OrbPart =
   | { name: string; kind: "disc"; r: number; cx: number; cy: number; spread: number; stops: readonly OrbStop[] }
   | { name: string; kind: "ring"; r: number; width: number; ink: OrbInk; opacity: number; arcs: readonly (readonly [from: number, to: number])[] | null }
   | { name: string; kind: "ticks"; r: number; count: number; offset: number; length: number; width: number; ink: OrbInk; opacity: number }
-  | { name: string; kind: "rim"; r: number; width: number; from: readonly [x: number, y: number]; to: readonly [x: number, y: number]; stops: readonly OrbStop[] }
-  | { name: string; kind: "shine"; cx: number; cy: number; rx: number; ry: number; rotate: number; opacity: number };
+  | { name: string; kind: "glyphs"; r: number; count: number; size: number; share: number; ink: OrbInk }
+  | { name: string; kind: "sphere"; r: number; count: number; glyph: number; second: OrbInk };
 
 /** How much of him a size can show: a badge (beside his words), a seat (at the Roundtable), or all of him (his welcome). */
 export type OrbLevel = "badge" | "seat" | "full";
@@ -64,45 +70,39 @@ const thirds: [number, number][] = [[20, 90], [140, 210], [260, 330]];
 
 const stop = (at: number, ink: OrbInk, opacity: number): OrbStop => ({ at, ink, opacity });
 const halo: OrbPart = { name: "halo", kind: "disc", r: 99, cx: 0.5, cy: 0.5, spread: 0.5, stops: [stop(0, "tint", 0.55), stop(0.62, "tint", 0.2), stop(1, "tint", 0)] };
-const bodyStops: readonly OrbStop[] = [stop(0, "white", 0.96), stop(0.24, "light", 1), stop(0.64, "tint", 1), stop(1, "deep", 1)];
-const body = (r: number): OrbPart => ({ name: "body", kind: "disc", r, cx: 0.4, cy: 0.36, spread: 0.72, stops: bodyStops });
-// Light through the glass, gathered at its lower edge as a marble's is: lit along the diagonal, from `reach` up and left
-// of the middle to as far down and right.
-const rim = (r: number, width: number, reach: number): OrbPart => ({ name: "rim", kind: "rim", r, width, from: [-reach, -reach], to: [reach, reach], stops: [stop(0, "white", 0), stop(0.55, "white", 0), stop(1, "white", 0.55)] });
-const core = (r: number): OrbPart => ({ name: "core", kind: "disc", r, cx: 0.5, cy: 0.5, spread: 0.5, stops: [stop(0, "white", 0.85), stop(1, "white", 0)] });
-const shine = (cx: number, cy: number, rx: number, ry: number): OrbPart => ({ name: "shine", kind: "shine", cx, cy, rx, ry, rotate: -28, opacity: 0.3 });
+// The light the sphere sits in, brightest at its middle: its glyphs are seen against it.
+const glow = (r: number): OrbPart => ({ name: "glow", kind: "disc", r, cx: 0.5, cy: 0.5, spread: 0.5, stops: [stop(0, "tint", 0.45), stop(0.55, "tint", 0.16), stop(1, "tint", 0)] });
+// The bright nucleus at its heart (Phren's): white at its middle, into his tint, and gone.
+const nucleus = (r: number): OrbPart => ({ name: "nucleus", kind: "disc", r, cx: 0.5, cy: 0.5, spread: 0.5, stops: [stop(0, "white", 0.95), stop(0.3, "tint", 0.65), stop(1, "tint", 0)] });
+const sphere = (r: number, count: number, glyph: number): OrbPart => ({ name: "sphere", kind: "sphere", r, count, glyph, second: "white" });
 
 const PARTS: Record<OrbLevel, readonly OrbPart[]> = {
   full: [
     halo,
     { name: "ring", kind: "ring", r: 95, width: 1.1, ink: "tint", opacity: 0.5, arcs: quarters(6) },
     { name: "notches", kind: "ticks", r: 95, count: 4, offset: 0, length: 9, width: 1.6, ink: "tint", opacity: 0.8 },
-    { name: "ticks", kind: "ticks", r: 86.5, count: 72, offset: 0, length: 3, width: 0.8, ink: "tint", opacity: 0.45 },
-    { name: "marks", kind: "ticks", r: 86.5, count: 12, offset: 0, length: 7, width: 1.4, ink: "tint", opacity: 0.75 },
-    { name: "segments", kind: "ring", r: 77, width: 2.6, ink: "tint", opacity: 0.55, arcs: thirds },
-    { name: "inner", kind: "ring", r: 70.5, width: 0.8, ink: "tint", opacity: 0.28, arcs: null },
-    body(60),
-    rim(58.6, 1.8, 41),
-    core(26),
-    shine(-21, -27, 19, 10),
-    { name: "glint", kind: "shine", cx: -31, cy: -35, rx: 3.4, ry: 2.6, rotate: -28, opacity: 0.8 },
+    { name: "ticks", kind: "ticks", r: 89, count: 72, offset: 0, length: 3, width: 0.8, ink: "tint", opacity: 0.45 },
+    { name: "marks", kind: "ticks", r: 89, count: 12, offset: 0, length: 7, width: 1.4, ink: "tint", opacity: 0.75 },
+    { name: "data", kind: "glyphs", r: 80.5, count: 48, size: 7, share: 0.62, ink: "light" },
+    { name: "segments", kind: "ring", r: 72, width: 2.4, ink: "tint", opacity: 0.55, arcs: thirds },
+    glow(64),
+    nucleus(37),
+    sphere(54, 170, 14),
   ],
   seat: [
     halo,
     { name: "ring", kind: "ring", r: 94, width: 2.4, ink: "tint", opacity: 0.55, arcs: quarters(8) },
     { name: "notches", kind: "ticks", r: 94, count: 4, offset: 0, length: 12, width: 3.2, ink: "tint", opacity: 0.85 },
     { name: "segments", kind: "ring", r: 80, width: 4.5, ink: "tint", opacity: 0.5, arcs: thirds },
-    body(66),
-    rim(64.4, 2.6, 45),
-    core(28),
-    shine(-23, -30, 21, 11),
+    glow(74),
+    nucleus(44),
+    sphere(64, 72, 22),
   ],
   badge: [
     { name: "ring", kind: "ring", r: 94, width: 5, ink: "tint", opacity: 0.5, arcs: null },
-    body(78),
-    rim(76, 3.5, 53),
-    core(30),
-    shine(-27, -34, 24, 13),
+    glow(88),
+    nucleus(53),
+    sphere(70, 30, 30),
   ],
 };
 

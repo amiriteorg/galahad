@@ -21,9 +21,9 @@ import { highlight } from "../../web/src/lib/highlight.ts";
 import { parseMarkdown } from "../../web/src/lib/markdown.ts";
 import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web/src/lib/text.ts";
 import { desktopAddress, screenPoint, shotSource } from "../../web/src/lib/desktop.ts";
-import { ART, CANVAS, SHOWN } from "../../web/src/lib/knight-eyes.ts";
+import { DATA_GLYPHS, dataGlyph, GLYPH_LADDER, KNIGHT_SPHERE, knightArcs, orbSphere, paperShades, SPHERE_FLASH, SPHERE_TURN, sphereFrame, sphereGlyph, spherePoints, sphereShades } from "../../web/src/lib/orb-sphere.ts";
 import { ORB_TONES, orbLevel, orbPalette, orbParts, orbToneOfState } from "../../web/src/lib/orb.ts";
-import { ORB_ARRIVE, ORB_BURST, ORB_BURST_MOTES, ORB_EASE, ORB_LONGEST_STEP, ORB_MOODS, ORB_MOTION, ORB_MOVES, ORB_STAGES, orbBursts, orbClock, orbFrame, orbMoodOfState, orbRand, orbSeed, orbStep, type OrbClock, type OrbMood } from "../../web/src/lib/orb-motion.ts";
+import { ORB_ARRIVE, ORB_BURST, ORB_BURST_MOTES, ORB_EASE, ORB_LONGEST_STEP, ORB_MOODS, ORB_MOTION, ORB_MOVES, ORB_STAGES, orbBursts, orbClock, orbFrame, orbMoodOfExpression, orbMoodOfState, orbRand, orbSeed, orbStep, type OrbClock, type OrbMood } from "../../web/src/lib/orb-motion.ts";
 import { connectorState } from "../../web/src/lib/connector-state.ts";
 import { noticeFrom } from "../../web/src/lib/notices.ts";
 import { PRESETS, SIGN_INS } from "../../../packages/brain/src/providers.ts";
@@ -176,25 +176,30 @@ const pairing = {
 
 // ---- which drawing a knight wears -------------------------------------------------------------------------------------
 const profile = (color: string, extra: Record<string, unknown> = {}) => ({ v: 1, form: "armored", color, accent: "#2fa36b", eyes: "oval", accessory: "none", temperament: "calm", ...extra });
-const looks = [
-  { id: "ada", name: "Ada" },
-  { id: "lin", name: "Lin" },
-  { id: "gareth", name: "Gareth" },
-  { id: "x1", name: "gareth the bold" },
-  { id: "x2", name: "Sir Kay" },
-  { id: "x3", name: "  Percival  " },
-  { id: "x4", name: "LANCELOT" },
-  { id: "x5", name: "Ada", avatar: core.lookProfile("bors") },
-  { id: "x6", name: "Ada", avatar: profile("#BE7153") },
-  { id: "x7", name: "Ada", avatar: profile("#4f8fe0") },
-  { id: "x8", name: "Ada", avatar: profile("#123456") },
-  { id: "x9", name: "Gareth", avatar: profile("#d9a43c") },
-  { id: "x10", name: "Ada", avatar: profile("#be7153", { extra: true }) },
-  { id: "x11", name: "Ada", avatar: { ...profile("#be7153"), v: "1" } },
-  { id: "x12", name: "Ada", avatar: profile("#be7153", { form: "square" }) },
-  { id: "percival-2", name: "Nobody" },
-  { id: "zz", name: "" },
-].map((knight) => ({ ...knight, look: core.avatarLook(knight.id, knight.name, knight.avatar) }));
+// ---- a knight's orb's colours (core's knightColors): the one you chose for it, or its handle's ---------------------------
+const knightOrbs = {
+  tints: core.KNIGHT_TINTS,
+  names: core.KNIGHT_TINT_NAMES,
+  knights: [
+    { id: "ada" },
+    { id: "lin" },
+    { id: "gareth" },
+    { id: "" },
+    { id: "Will’s “iPad” \\ 🛡️" },
+    { id: "x5", avatar: core.lookProfile("bors") },
+    { id: "x6", avatar: profile("#4f8fe0") },
+    { id: "x7", avatar: { v: 2, color: "#3ABEFF" } },
+    { id: "x8", avatar: { v: 2, color: "#123456" } },
+    { id: "x9", avatar: { v: 2, color: "blue" } },
+    { id: "x10", avatar: { v: 2, color: "#3abeff", form: "round" } },
+    { id: "x11", avatar: { v: "2", color: "#3abeff" } },
+    { id: "x12", avatar: { v: 2, color: "#000000" } },
+    { id: "x13", avatar: { v: 2, color: "#ffffff" } },
+  ].map((knight) => ({ ...knight, colors: core.knightColors(knight.id, knight.avatar) })),
+  seeds: ["", "a", "foobar", "gareth", "Will’s “iPad” \\ 🛡️"].map((id) => ({ id, seed: core.handleSeed(id) })),
+  blends: ([["#000000", "#ffffff", 0.5], ["#3abeff", "#ffffff", 0.45], ["#3abeff", "#000000", 0.52], ["#fe879c", "#0a0b0c", 1 / 3], ["#123456", "#fedcba", 2 / 3], ["#050505", "#fafafa", 0.55]] as [string, string, number][]).map(([from, to, t]) => ({ from, to, t, blend: core.blendHex(from, to, t) })),
+  nearest: ["#000000", "#ffffff", "#ff8d65", "#3abeff", "#808080", "#00ff00", "#FE879C"].map((color) => ({ color, at: core.nearestTint(color) })),
+};
 
 // ---- the Roundtable's lines (the PWA's own roster) ----------------------------------------------------------------------
 const NOW = 1763200000000;
@@ -465,12 +470,10 @@ const desktop = {
   ].map((view) => ({ view, shown: shotSource(view) !== null })),
 };
 
-// ---- the knights' live eyes (the PWA's own lib/knight-eyes.ts and core's taskStep) ------------------------------------
-const eyes = {
-  canvas: CANVAS,
-  art: Object.fromEntries(Object.entries(ART).map(([art, { eyes: pair }]) => [art, pair.map(([x, y, r, slit]) => ({ x, y, r, slit }))])),
-  shown: Object.fromEntries(Object.entries(SHOWN).map(([expression, { eyes: shape, gaze }]) => [expression, { eyes: shape, gaze }])),
+// ---- a knight's face (core's taskStep, and the mood its orb takes from what it is doing) ------------------------------
+const faces = {
   steps: ["Plan · read the code", "Thinking · which test", "Running · desktop open https://x", "Running · desktop", "Running · bun test", "Exit 0 · 12 passed", "Exit -1 · killed", "Gate 1/2 · bun test", "Gates · 1. bun test", "Gates · all 2 passed", "Gates · 1 of 2 failed: back to the work", "Gates before the work · 2", "Review · PASS", "Submitted for review · now", "gates", "gated", "  Running · ls", "Something else", ""].map((line) => ({ line, step: core.taskStep(line) })),
+  moods: core.AVATAR_EXPRESSIONS.map((expression) => ({ expression, mood: orbMoodOfExpression(expression) })),
 };
 
 // ---- Galahad's orb (the PWA's own lib/orb.ts): each state's colours, the parts of each level, and the level of each size ----
@@ -481,7 +484,40 @@ const orb = {
   // Where he stands at the Roundtable, as his seat's orb shows it.
   states: ["working", "needs", "failed", "paused", "queued", "verified", "unread", "resting"].map((state) => ({ state, tone: orbToneOfState(state) })),
   motion: orbMotion(),
+  sphere: orbSpheres(),
 };
+
+/** The orbs' spheres of glyphs (the PWA's own lib/orb-sphere.ts): each handle's sphere, its points, its glyphs as they
+ * change, what is seen of them at given turns, sizes, breaths, moods and pages, the shades, a knight's arcs and
+ * Galahad's data ring, for every app to draw the same glyphs. (Times are picked well away from a beat's edge.) */
+function orbSpheres() {
+  const handles = ["galahad", "gareth", "ada", "", "Will’s “iPad” \\ 🛡️"];
+  const gareth = orbSphere("gareth");
+  const galahad = orbSphere("galahad");
+  const frame = (sphere: ReturnType<typeof orbSphere>, handle: string, count: number, angle: number, scale: number, radius: number, glyph: number, t: number, mood: OrbMood, paper: boolean) =>
+    ({ handle, count, angle, scale, radius, glyph, t, mood, paper, shown: sphereFrame(sphere, spherePoints(sphere, count), { angle, scale, radius, glyph, t, mood, paper }) });
+  return {
+    knight: KNIGHT_SPHERE,
+    turn: SPHERE_TURN,
+    ladder: GLYPH_LADDER,
+    data: DATA_GLYPHS,
+    flash: SPHERE_FLASH,
+    spheres: handles.map((handle) => ({ handle, sphere: orbSphere(handle) })),
+    points: ([["gareth", 30], ["galahad", 72], ["ada", 7]] as [string, number][]).map(([handle, count]) => ({ handle, count, points: spherePoints(orbSphere(handle), count) })),
+    glyphs: ([[gareth.seed, 0, 0, 0.25, 0], [gareth.seed, 7, 3, 31.5, 0.03], [gareth.seed, 12, 5, 1234.567, 0.5], [galahad.seed, 3, 1, 77.7, 0.01], [galahad.seed, 40, 4, 9.25, 1]] as [number, number, number, number, number][])
+      .map(([seed, i, level, t, flash]) => ({ seed, i, level, t, flash, glyph: sphereGlyph(seed, i, level, t, flash) })),
+    frames: [
+      frame(gareth, "gareth", 30, 0, 1, 74, 32, 0.25, "idle", false),
+      frame(gareth, "gareth", 72, 123.4, 1.02, 72, 24, 31.5, "working", false),
+      frame(gareth, "gareth", 72, 400, 0.97, 72, 24, 47.3, "failed", false),
+      frame(gareth, "gareth", 30, -37.5, 1, 74, 32, 8.1, "waiting", true),
+      frame(galahad, "galahad", 72, 210, 1, 64, 22, 12.6, "working", false),
+    ],
+    shades: ([["#3abeff", "#9cdfff", "#1c5b7a"], ["#ffffff", "#ffffff", "#cae0ff"]] as [string, string, string][]).map(([ink, light, deep]) => ({ ink, light, deep, shades: sphereShades(ink, light, deep), paper: paperShades(ink, deep) })),
+    arcs: handles.flatMap((handle) => (["badge", "seat", "full"] as const).map((level) => ({ handle, level, arcs: knightArcs(orbSphere(handle), level) }))),
+    ring: ([[galahad.seed, 0.25], [galahad.seed, 31.6], [gareth.seed, 7.75]] as [number, number][]).map(([seed, t]) => ({ seed, t, share: 0.62, places: Array.from({ length: 48 }, (_, k) => dataGlyph(seed, k, t, 0.62)) })),
+  };
+}
 
 /** How the orb moves (the PWA's own lib/orb-motion.ts): each mood's motion, each state's mood, the stages, its random
  * numbers, and its clock and frames as they stand at given moments, for every app to draw the same. */
@@ -867,14 +903,14 @@ const vectors = {
   requests,
   canonical,
   pairing,
-  looks,
+  knightOrbs,
   roundtable,
   unread,
   rooms,
   knightForms,
   keys,
   desktop,
-  eyes,
+  faces,
   orb,
   connectorStates,
   threads,

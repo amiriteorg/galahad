@@ -95,33 +95,6 @@ describe("opening the app offline", () => {
   });
 });
 
-describe("the knights' faces", () => {
-  test("a drawing is kept once it has been fetched, and shown from the cache when the network is gone", async () => {
-    const drawing = () => new Response(new Uint8Array([82, 73, 70, 70]), { headers: { "content-type": "image/webp" } });
-    pages["/knights/gareth.webp"] = drawing;
-    const fetchFor = async (path: string): Promise<Response | null> => {
-      let answer: Promise<Response> | null = null;
-      const pending: Promise<unknown>[] = [];
-      onFetch({ request: { method: "GET", mode: "no-cors", url: `${ORIGIN}${path}` }, respondWith: (r: Promise<Response>) => (answer = r), waitUntil: (p: Promise<unknown>) => pending.push(p) });
-      const response = answer ? await answer : null;
-      await Promise.all(pending);
-      return response;
-    };
-    expect((await fetchFor("/knights/gareth.webp"))?.status).toBe(200);
-    expect(stored.has("/knights/gareth.webp")).toBe(true);
-    delete pages["/knights/gareth.webp"];
-    const offline = globalThis.fetch;
-    (globalThis as any).fetch = async () => { throw new TypeError("offline"); };
-    try {
-      expect((await fetchFor("/knights/gareth.webp"))?.headers.get("content-type")).toBe("image/webp");
-    } finally {
-      (globalThis as any).fetch = offline;
-    }
-    // Anything else the worker doesn't name is left to the browser, as before.
-    expect(await fetchFor("/elsewhere.webp")).toBeNull();
-  });
-});
-
 /** Delivers an event to the worker and waits for everything it started. */
 async function dispatch(type: string, event: Record<string, unknown>): Promise<void> {
   const listener = listeners.get(type);

@@ -21,7 +21,7 @@ const sources = [...files(join(app, "src")), ...files(join(app, "design"))].map(
 describe("the app's words", () => {
   test("it reads the files it is about", () => {
     expect(sources.map((source) => source.path)).toContain("src/views/roster.ts");
-    expect(sources.map((source) => source.path)).toContain("design/avatars.html");
+    expect(sources.map((source) => source.path)).toContain("design/gallery.ts");
   });
 
   test("nothing in it says hivemind", () => {

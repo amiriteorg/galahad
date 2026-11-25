@@ -15,7 +15,9 @@ import type { OrbLevel } from "./orb.ts";
  * - done: a burst, then green with a glint going round.
  * - failed: the turning stops and the motes run down its sides.
  *
- * This replaces the stillness asked for on 18 November 2026, on your later word. Nothing moves when the device asks for
+ * All of it slow and calm (your word, 25 November 2026: "slow and calming movement"): a breath takes 4 to 12 seconds, a
+ * ring turns a few degrees a second, and a mood arrives over more than a second. This replaces the stillness asked for
+ * on 18 November 2026, on your later word. Nothing moves when the device asks for
  * reduced motion: the still orb (lib/orb.ts) is drawn then, which is this function's frame with nothing under way.
  * Nothing here comes from a name's meaning, a profile or a model; a knight's handle only seeds where its motes start.
  */
@@ -48,20 +50,21 @@ export interface OrbMotion {
 }
 
 export const ORB_MOTION: Readonly<Record<OrbMood, OrbMotion>> = {
-  idle: { breath: 6.5, swell: 0.012, turn: { ring: 3, ticks: 0, segments: -4.5 }, comet: null, ripple: null, motes: { count: 14, speed: 7, sway: 0.25, flow: "orbit" }, aura: 0.12 },
-  working: { breath: 2.6, swell: 0.022, turn: { ring: 24, ticks: 6, segments: -40 }, comet: { speed: 160, tail: 90 }, ripple: null, motes: { count: 26, speed: 30, sway: 0, flow: "inward" }, aura: 0.34 },
-  waiting: { breath: 2.2, swell: 0.03, turn: { ring: 6, ticks: 0, segments: -8 }, comet: null, ripple: 2.2, motes: { count: 12, speed: 10, sway: 0.45, flow: "orbit" }, aura: 0.42 },
-  queued: { breath: 4.5, swell: 0.012, turn: { ring: 10, ticks: 0, segments: -10 }, comet: { speed: 40, tail: 50 }, ripple: null, motes: { count: 8, speed: 14, sway: 0.15, flow: "orbit" }, aura: 0.16 },
-  paused: { breath: 9, swell: 0.006, turn: { ring: 0, ticks: 0, segments: 0 }, comet: null, ripple: null, motes: { count: 0, speed: 0, sway: 0, flow: "orbit" }, aura: 0.06 },
-  done: { breath: 5, swell: 0.015, turn: { ring: 2, ticks: 0, segments: -3 }, comet: { speed: 50, tail: 30 }, ripple: null, motes: { count: 10, speed: 9, sway: 0.3, flow: "orbit" }, aura: 0.3 },
-  failed: { breath: 3.4, swell: 0.018, turn: { ring: 0, ticks: 0, segments: 0 }, comet: null, ripple: null, motes: { count: 8, speed: 0, sway: 0, flow: "fall" }, aura: 0.3 },
+  idle: { breath: 9, swell: 0.01, turn: { ring: 1.6, ticks: 0, segments: -2.4 }, comet: null, ripple: null, motes: { count: 10, speed: 3.5, sway: 0.2, flow: "orbit" }, aura: 0.1 },
+  working: { breath: 5.2, swell: 0.016, turn: { ring: 9, ticks: 2.2, segments: -14 }, comet: { speed: 55, tail: 110 }, ripple: null, motes: { count: 16, speed: 9, sway: 0, flow: "inward" }, aura: 0.26 },
+  waiting: { breath: 4.2, swell: 0.024, turn: { ring: 2.5, ticks: 0, segments: -3.5 }, comet: null, ripple: 4.2, motes: { count: 10, speed: 4, sway: 0.35, flow: "orbit" }, aura: 0.34 },
+  queued: { breath: 7, swell: 0.01, turn: { ring: 4, ticks: 0, segments: -4 }, comet: { speed: 18, tail: 60 }, ripple: null, motes: { count: 6, speed: 5, sway: 0.12, flow: "orbit" }, aura: 0.14 },
+  paused: { breath: 12, swell: 0.005, turn: { ring: 0, ticks: 0, segments: 0 }, comet: null, ripple: null, motes: { count: 0, speed: 0, sway: 0, flow: "orbit" }, aura: 0.05 },
+  done: { breath: 8, swell: 0.012, turn: { ring: 1, ticks: 0, segments: -1.5 }, comet: { speed: 20, tail: 40 }, ripple: null, motes: { count: 8, speed: 4, sway: 0.25, flow: "orbit" }, aura: 0.24 },
+  failed: { breath: 6, swell: 0.014, turn: { ring: 0, ticks: 0, segments: 0 }, comet: null, ripple: null, motes: { count: 6, speed: 0, sway: 0, flow: "fall" }, aura: 0.24 },
 };
 
-/** Seconds a new mood takes to arrive: its motes, its light and its waves fade in over them. */
-export const ORB_ARRIVE = 0.8;
-/** Seconds a burst takes (done, and a task's end), and how many motes fly out in it. */
-export const ORB_BURST = 1.6;
-export const ORB_BURST_MOTES = 16;
+/** Seconds a new mood takes to arrive: its motes, its light and its waves fade in over them (slowly: your word, 25
+ * November 2026, "slow and calming movement"). */
+export const ORB_ARRIVE = 1.6;
+/** Seconds a burst takes (done, and a task's end), and how many motes drift out in it: a soft one. */
+export const ORB_BURST = 2.6;
+export const ORB_BURST_MOTES = 12;
 
 /**
  * Where a knight stands at the Roundtable (lib/knight-state.ts' state), as its seat moves. Work is working. Needing you
@@ -69,6 +72,17 @@ export const ORB_BURST_MOTES = 16;
  */
 const STATE_MOODS: Readonly<Record<string, OrbMood>> = { working: "working", needs: "waiting", failed: "failed", paused: "paused", queued: "queued", verified: "done", unread: "done" };
 export const orbMoodOfState = (state: string | undefined): OrbMood => STATE_MOODS[state ?? ""] ?? "idle";
+
+/**
+ * What a knight is doing where only that is known (core's avatarExpression), as its orb's mood: thinking, at work,
+ * reading, browsing and checking are work; waiting is queued; asking your leave waits on you; pleased is done;
+ * concerned is failed; resting is paused; idle is idle.
+ */
+const EXPRESSION_MOODS: Readonly<Record<string, OrbMood>> = {
+  idle: "idle", thinking: "working", working: "working", reading: "working", browsing: "working", checking: "working",
+  waiting: "queued", asking: "waiting", pleased: "done", concerned: "failed", resting: "paused",
+};
+export const orbMoodOfExpression = (expression: string | undefined): OrbMood => EXPRESSION_MOODS[expression ?? ""] ?? "idle";
 
 /** Whether a change of mood bursts: arriving at done from any other mood, or at idle straight from work (a task's end
  * you watched). Never on first sight (`from` null): opening a page shows where things stand, settled. */
@@ -251,18 +265,18 @@ function moodMotes(mood: OrbMood, seed: number, t: number, share: number): OrbMo
   for (let i = 0; i < m.motes.count; i++) {
     const [a, s, u0, p, z] = [0, 1, 2, 3, 4].map((k) => orbRand(seed, i, k)) as [number, number, number, number, number];
     const speed = m.motes.speed * (0.5 + s);
-    // Each twinkles on a breath of its own, between 1.8 and 4.2 seconds.
-    const twinkle = 0.5 + 0.5 * Math.sin(2 * Math.PI * (t / (1.8 + 2.4 * s) + p));
+    // Each twinkles on a slow breath of its own, between 3 and 7 seconds.
+    const twinkle = 0.5 + 0.5 * Math.sin(2 * Math.PI * (t / (3 + 4 * s) + p));
     let angle: number, u: number, alpha: number;
     if (m.motes.flow === "inward") {
-      // From the band's outer edge to its inner one, turning as it comes, 2.2 to 3.8 seconds a pass, then again.
-      const phase = fract(t / (2.2 + 1.6 * s) + p);
+      // From the band's outer edge to its inner one, turning as it comes, 4 to 7 seconds a pass, then again.
+      const phase = fract(t / (4 + 3 * s) + p);
       angle = 360 * a + speed * t + 120 * phase;
       u = 1 - phase;
       alpha = Math.sin(Math.PI * phase) * (0.55 + 0.45 * twinkle);
     } else if (m.motes.flow === "fall") {
-      // Down one side, from high on it to the foot, faster as it goes, fading, 3.5 to 6 seconds a run.
-      const phase = fract(t / (3.5 + 2.5 * s) + p);
+      // Down one side, from high on it to the foot, faster as it goes, fading, 6 to 10 seconds a run.
+      const phase = fract(t / (6 + 4 * s) + p);
       const side = a < 0.5 ? -1 : 1;
       const from = side * (20 + 70 * u0);
       angle = from + (side * 180 - from) * phase * phase;
@@ -308,18 +322,20 @@ export const ORB_STAGES: Readonly<Record<OrbLevel | "ring", OrbStage>> = {
 /**
  * How a frame moves the orb's parts (lib/orb.ts' names), and where its lights are drawn among them:
  * - The outer ring and its notches turn with the frame's `ring`, the ticks and their marks with its `ticks`, and the
- *   segments with its `segments`.
- * - The sphere swells with its `scale`, and its glow (the halo, the core) brightens with its `glow`.
+ *   segments and the data ring with its `segments`.
+ * - The sphere, its nucleus and the light it sits in swell with its `scale`, and its glows (the halo, the light round the
+ *   sphere, the nucleus) brighten with its `glow`. The sphere turns with its `ring`, three times as far
+ *   (lib/orb-sphere.ts' SPHERE_TURN).
  * - The waves are drawn after the halo, under every ring. The light and the motes are drawn after the rings, just before
- *   the sphere, which they pass behind.
+ *   the sphere's light, which they pass behind.
  */
 export const ORB_MOVES = {
   ring: ["ring", "notches"],
   ticks: ["ticks", "marks"],
-  segments: ["segments"],
-  swell: ["body", "rim", "core", "shine", "glint"],
-  glow: ["halo", "core"],
-  lightsBefore: "body",
+  segments: ["segments", "data"],
+  swell: ["glow", "nucleus", "sphere"],
+  glow: ["halo", "glow", "nucleus"],
+  lightsBefore: "glow",
 } as const;
 
 /**
