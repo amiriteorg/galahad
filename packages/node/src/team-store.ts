@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { chmodSync, closeSync, existsSync, openSync } from "node:fs";
 import { AttachmentRef, findSecrets, randomId, readAlike, redact } from "@galahad/core";
-import { defaultAvatar, resolveAvatar, type AvatarActivity } from "@galahad/core/avatar";
+import { defaultAvatar, isOrbProfile, resolveAvatar, type AvatarActivity } from "@galahad/core/avatar";
 import { z } from "zod";
 import {
   TEAM_GALAHAD, TEAM_LIMITS, TEAM_OWNER, TeammateInput, TeamRecruitInput, TeamRoomInput, TeamPostInput, TeamSayInput, TeamTaskChanges, TeamTaskInput, TeamTaskRecord, type TeamTrailEntry, TeamWorkspace,
@@ -234,7 +234,7 @@ export class TeamStore {
     const row = this.db.query<DocRow, [string]>("SELECT value FROM team_teammates WHERE id = ?").get(id);
     if (!row) return null;
     const value = JSON.parse(row.value) as Teammate;
-    return { ...value, avatar: resolveAvatar(id, value.avatar), repository: value.repository ?? null, workspaceNode: value.workspaceNode ?? value.workspace?.node ?? null, createdBy: value.createdBy ?? TEAM_OWNER, instructionsBy: value.instructionsBy ?? TEAM_OWNER, turnsToday: this.turns(id) };
+    return { ...value, avatar: isOrbProfile(value.avatar) ? value.avatar : resolveAvatar(id, value.avatar), repository: value.repository ?? null, workspaceNode: value.workspaceNode ?? value.workspace?.node ?? null, createdBy: value.createdBy ?? TEAM_OWNER, instructionsBy: value.instructionsBy ?? TEAM_OWNER, turnsToday: this.turns(id) };
   }
   private records(): Teammate[] { return this.db.query<{ id: string }, []>("SELECT id FROM team_teammates ORDER BY id").all().map((r) => this.record(r.id)!); }
   /** A worker that is here. One that was removed is nobody's to work with, write to or change (null), though its record is kept. */

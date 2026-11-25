@@ -138,12 +138,9 @@ of its own; "roundtable", "squires" and "team" are the same command)
                                     usage budget) waits for you (galahad roundtable approve <task>); on until you turn it off
   roundtable order <knight,knight,...>  your order of the knights, on every device (those not named come after)
   roundtable primary <knight|galahad>   who leads the Roundtable: it answers what you say to a room without a name
-  roundtable avatar <id> [--look kay|gaheris|percival|palamedes|gawain|tristan|lancelot|bedivere|bors|gareth]
-                  [--temperament calm|curious|lively] [--reset]
-                                    choose which of the drawings that knight is, or read its saved appearance
-                                    (one called by a drawing's name is that drawing until another is chosen);
-                                    the older --form, --color, --accent, --eyes and --accessory still save, and
-                                    a colour no look has is drawn as the look nearest it
+  roundtable avatar <id> [--color #rrggbb | --reset]
+                                    a knight is an orb: choose its colour, or let it go back to the one its
+                                    handle gives it; with neither, its orb's colours are printed
   roundtable pause|resume|stop <room|knight|task> <id>
   roundtable remove <id> [--destroy-workspace] [--yes]
                                     remove a knight for good: it leaves its rooms and does no more work; what it

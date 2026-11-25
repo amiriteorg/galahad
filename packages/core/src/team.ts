@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TEAM_LIMITS } from "./team-limits.ts";
 import { sha256Bytes } from "./crypto.ts";
 import { utf8 } from "./bytes.ts";
-import { AVATAR_FORMS, AVATAR_EYES, AVATAR_ACCESSORIES, AVATAR_TEMPERAMENTS, type AvatarProfile } from "./avatar.ts";
+import { AVATAR_FORMS, AVATAR_EYES, AVATAR_ACCESSORIES, AVATAR_TEMPERAMENTS, type AvatarProfile, type OrbProfile } from "./avatar.ts";
 import { hasUndrawn, oneScript, readAlike } from "./lookalike.ts";
 import { SpendLines } from "./usage.ts";
 import { ATTACHMENT_LIMITS } from "./attachments.ts";
@@ -52,10 +52,15 @@ export function teamArmLabel(controller: string, teammate: string): string {
 }
 
 const AvatarColor = z.string().regex(/^#[0-9a-f]{6}$/i, "a six-digit hex color").transform((color) => color.toLowerCase());
-export const AvatarProfileSchema = z.strictObject({
-  v: z.literal(1), form: z.enum(AVATAR_FORMS), color: AvatarColor, accent: AvatarColor,
-  eyes: z.enum(AVATAR_EYES), accessory: z.enum(AVATAR_ACCESSORIES), temperament: z.enum(AVATAR_TEMPERAMENTS),
-});
+/** A knight's avatar as saved: the colour you chose for its orb (v 2), or the look from before the orbs (v 1), still taken
+ * from an app that sends one, though it colours nothing now (core's knightColors). */
+export const AvatarProfileSchema = z.union([
+  z.strictObject({ v: z.literal(2), color: AvatarColor }),
+  z.strictObject({
+    v: z.literal(1), form: z.enum(AVATAR_FORMS), color: AvatarColor, accent: AvatarColor,
+    eyes: z.enum(AVATAR_EYES), accessory: z.enum(AVATAR_ACCESSORIES), temperament: z.enum(AVATAR_TEMPERAMENTS),
+  }),
+]);
 
 /** The model role a knight works on: one of the roster's, built in or one you made. */
 export const TeammateRole = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
@@ -339,8 +344,9 @@ export interface Teammate {
   workspaceNode: string | null;
   workspace: TeamWorkspace | null;
   memory: string;
-  /** Absent in older snapshots; use resolveAvatar(id, avatar) when rendering. */
-  avatar?: AvatarProfile;
+  /** The colour you chose for its orb (v 2), or a look from before the orbs (v 1, which colours nothing); absent: none
+   * chosen. Drawn with core's knightColors(id, avatar). */
+  avatar?: AvatarProfile | OrbProfile;
   /** Who made this worker, and whose words its instructions are: TEAM_OWNER (you: also what an older
    * snapshot without them means), TEAM_GALAHAD (himself, in your conversation) or the worker that made it.
    * Instructions you save are yours from then on. */

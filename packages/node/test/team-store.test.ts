@@ -81,6 +81,19 @@ describe("private team persistence", () => {
     expect(reopened.teammate("ada")?.avatar).toEqual(avatar);
     expect(reopened.saveTeammate({ id: "ada", name: "Augusta", avatar: null }).avatar).toEqual(defaultAvatar("ada"));
   });
+  test("a colour chosen for a knight's orb is kept as it was chosen, through edits that leave it out and a reopen; a bad one is refused", () => {
+    const dir = mkdtempSync(join(tmpdir(), "galahad-team-avatar-")); dirs.push(dir); const path = join(dir, "team.db");
+    const store = make(path);
+    expect(store.saveTeammate({ id: "ada", name: "Ada", avatar: { v: 2, color: "#3ABEFF" } }).avatar).toEqual({ v: 2, color: "#3abeff" });
+    store.saveTeammate({ id: "ada", name: "Augusta" }); close(store);
+    const reopened = make(path);
+    expect(reopened.teammate("ada")?.avatar).toEqual({ v: 2, color: "#3abeff" });
+    for (const avatar of [{ v: 2, color: "blue" }, { v: 2, color: "#3abeff", form: "round" }, { v: 3, color: "#3abeff" }]) {
+      expect(() => reopened.saveTeammate({ id: "ada", name: "Augusta", avatar: avatar as never })).toThrow(TeamError);
+    }
+    expect(reopened.teammate("ada")?.avatar).toEqual({ v: 2, color: "#3abeff" });
+    expect(reopened.saveTeammate({ id: "ada", name: "Augusta", avatar: null }).avatar).toEqual(defaultAvatar("ada"));
+  });
   test("legacy records get deterministic appearances without rewriting their saved JSON", () => {
     const dir = mkdtempSync(join(tmpdir(), "galahad-team-avatar-")); dirs.push(dir); const path = join(dir, "team.db");
     const store = make(path);

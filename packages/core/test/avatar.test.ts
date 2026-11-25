@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AVATAR_ACCESSORIES, AVATAR_EYES, AVATAR_FORMS, AVATAR_LOOKS, AVATAR_PALETTES, AVATAR_TEMPERAMENTS, avatarExpression, avatarLook, defaultAvatar, isAvatarProfile, lookProfile, matchingAccent, resolveAvatar, taskStep, withBodyColor, type AvatarActivity } from "../src/avatar.ts";
+import { AVATAR_ACCESSORIES, AVATAR_EYES, AVATAR_FORMS, AVATAR_LOOKS, AVATAR_PALETTES, AVATAR_TEMPERAMENTS, avatarExpression, avatarLook, blendHex, defaultAvatar, handleSeed, isAvatarProfile, isOrbProfile, KNIGHT_TINTS, knightColors, lookProfile, matchingAccent, nearestTint, resolveAvatar, taskStep, withBodyColor, type AvatarActivity } from "../src/avatar.ts";
 import { AvatarProfileSchema } from "../src/team.ts";
 
 const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
@@ -204,5 +204,53 @@ describe("expressions from observable work", () => {
     for (const words of ["I failed, sorry", "Great, all done and verified!", "Waiting for you", "Paused", "Exit · ok", "plan · lower case"]) {
       expect(avatarExpression(member, { tasks: [task("running", { progress: words })], deliveries: [] }, now)).toBe("working");
     }
+  });
+});
+
+describe("a knight's orb", () => {
+  test("its colour is one of the 24 tints, picked by its handle: the same every time, and spread round the circle", () => {
+    expect(KNIGHT_TINTS).toHaveLength(24);
+    expect(new Set(KNIGHT_TINTS).size).toBe(24);
+    for (const tint of KNIGHT_TINTS) expect(tint).toMatch(/^#[0-9a-f]{6}$/);
+    const colors = knightColors("gareth");
+    expect(knightColors("gareth")).toEqual(colors);
+    expect(colors.tint).toBe(KNIGHT_TINTS[handleSeed("gareth") % 24]!);
+    expect(colors.chosen).toBe(false);
+    // Many handles reach every tint.
+    expect(new Set(Array.from({ length: 400 }, (_, n) => knightColors(`knight-${n}`).tint))).toEqual(new Set(KNIGHT_TINTS));
+  });
+
+  test("a colour you chose is its tint; a look from the drawings colours nothing", () => {
+    expect(knightColors("gareth", { v: 2, color: "#3ABEFF" })).toMatchObject({ tint: "#3abeff", chosen: true });
+    expect(knightColors("gareth", { v: 2, color: "#123456" })).toMatchObject({ tint: "#123456", chosen: true });
+    expect(knightColors("gareth", lookProfile("bors"))).toEqual(knightColors("gareth"));
+    for (const odd of [null, "blue", { v: 2, color: "url(x)" }, { v: 2, color: "#3abeff", form: "round" }, { v: 3, color: "#3abeff" }]) expect(knightColors("gareth", odd)).toEqual(knightColors("gareth"));
+  });
+
+  test("lit and shadowed in whole channels, and a second colour three to six tints on from its own", () => {
+    expect(blendHex("#000000", "#ffffff", 0.5)).toBe("#808080");
+    expect(blendHex("#3abeff", "#3abeff", 0.7)).toBe("#3abeff");
+    const { tint, light, deep, second } = knightColors("ada", { v: 2, color: "#ff8d65" });
+    expect(light).toBe(blendHex(tint, "#ffffff", 0.45));
+    expect(deep).toBe(blendHex(tint, "#000000", 0.52));
+    const steps = (KNIGHT_TINTS.indexOf(second as never) - nearestTint(tint) + 24) % 24;
+    expect(steps).toBeGreaterThanOrEqual(3);
+    expect(steps).toBeLessThanOrEqual(6);
+    expect(nearestTint("#ff8d65")).toBe(2);
+    expect(nearestTint("#000000")).toBeGreaterThanOrEqual(0);
+  });
+
+  test("its seed is FNV-1a over the handle's UTF-16 code units", () => {
+    expect(handleSeed("")).toBe(0x811c9dc5);
+    expect(handleSeed("a")).toBe(0xe40c292c);
+    expect(handleSeed("foobar")).toBe(0xbf9cf968);
+  });
+
+  test("a chosen colour is saved as exactly that, and a look from before the orbs is still taken", () => {
+    expect(AvatarProfileSchema.parse({ v: 2, color: "#3ABEFF" })).toEqual({ v: 2, color: "#3abeff" });
+    expect(AvatarProfileSchema.safeParse(lookProfile("kay")).success).toBe(true);
+    for (const odd of [{ v: 2, color: "blue" }, { v: 2, color: "#3abeff", accent: "#000000" }, { v: 2 }]) expect(AvatarProfileSchema.safeParse(odd).success).toBe(false);
+    expect(isOrbProfile({ v: 2, color: "#3abeff" })).toBe(true);
+    expect(isOrbProfile(lookProfile("kay"))).toBe(false);
   });
 });

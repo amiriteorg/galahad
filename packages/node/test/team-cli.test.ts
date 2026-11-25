@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TeammateInput, type RouteName, type Teammate, type TeamMessage, type TeamRoom, type TeamRoomView, type TeamSnapshot } from "@galahad/core";
-import { defaultAvatar, lookProfile, matchingAccent } from "@galahad/core/avatar";
+import { defaultAvatar, knightColors } from "@galahad/core/avatar";
 import { teamCommand } from "../src/team-cli.ts";
 
 /* `galahad roundtable` at a terminal, against what the node would answer. */
@@ -135,42 +135,34 @@ test("names, titles and notes a model can write are shown as plain text too", as
   for (const line of [...lines, ...notes]) expect(line).not.toMatch(STEERS);
 });
 
-test("a new body color brings its matching accent; an accent you name, or chose apart before, is kept", async () => {
-  const sand = { ...defaultAvatar("ada"), color: "#e8c8a5", accent: matchingAccent("#e8c8a5") };
-  const { api, saved } = node([member("ada", { avatar: sand })]);
-  const quiet = () => {};
-  await teamCommand(api, "avatar", ["ada"], { color: "#A8C9DB" }, quiet);
-  expect(saved.at(-1)).toEqual({ name: "saveTeammate", input: { id: "ada", name: "Ada", avatar: { ...sand, color: "#a8c9db", accent: matchingAccent("#a8c9db") } } });
-  await teamCommand(api, "avatar", ["ada"], { color: "#a8c9db", accent: "#112233" }, quiet);
-  expect(saved.at(-1)!.input.avatar).toEqual({ ...sand, color: "#a8c9db", accent: "#112233" });
-  await teamCommand(api, "avatar", ["ada"], { form: "round" }, quiet);
-  expect(saved.at(-1)!.input.avatar).toEqual({ ...sand, form: "round" });
-  // What isn't a color is the node's to refuse, as it was: nothing here guesses at it.
-  await teamCommand(api, "avatar", ["ada"], { color: "blue" }, quiet);
-  expect(saved.at(-1)!.input.avatar).toEqual({ ...sand, color: "blue" });
-  await teamCommand(api, "avatar", ["ada"], { reset: true }, quiet);
+test("a knight's orb is the colour you choose for it, or its handle's: --color saves it, --reset lets it go, reading saves nothing", async () => {
+  const { api, saved } = node([member("ada")]);
+  const lines: string[] = [];
+  const say = (line: string) => lines.push(line);
+  await teamCommand(api, "avatar", ["ada"], { color: "#A8C9DB" }, say);
+  expect(saved.at(-1)).toEqual({ name: "saveTeammate", input: { id: "ada", name: "Ada", avatar: { v: 2, color: "#a8c9db" } } });
+  expect(JSON.parse(lines.at(-1)!)).toEqual(knightColors("ada", { v: 2, color: "#a8c9db" }));
+  // What isn't a colour is the node's to refuse, as it was: nothing here guesses at it.
+  await teamCommand(api, "avatar", ["ada"], { color: "blue" }, say);
+  expect(saved.at(-1)!.input.avatar).toEqual({ v: 2, color: "blue" });
+  await teamCommand(api, "avatar", ["ada"], { reset: true }, say);
   expect(saved.at(-1)!.input.avatar).toBeNull();
-  const apart = node([member("ada", { avatar: { ...sand, accent: "#3355aa" } })]);
-  await teamCommand(apart.api, "avatar", ["ada"], { color: "#a8c9db" }, quiet);
-  expect(apart.saved.at(-1)!.input.avatar).toEqual({ ...sand, color: "#a8c9db", accent: "#3355aa" });
-  // Reading it changes nothing.
+  // Reading it changes nothing, and says its colours: here, the ones its handle gives it.
   const before = saved.length;
-  await teamCommand(api, "avatar", ["ada"], {}, quiet);
+  const read = node([member("ada")]);
+  const shown: string[] = [];
+  await teamCommand(read.api, "avatar", ["ada"], {}, (line) => shown.push(line));
+  expect(read.saved).toHaveLength(0);
   expect(saved).toHaveLength(before);
+  expect(JSON.parse(shown[0]!)).toEqual({ ...knightColors("ada"), chosen: false });
 });
 
-test("a look is one of the owner's drawings by name: it keeps how lively the knight is, and a name that is none is refused", async () => {
-  const lively = { ...defaultAvatar("ada"), temperament: "lively" as const };
-  const { api, saved } = node([member("ada", { avatar: lively })]);
-  const quiet = () => {};
-  await teamCommand(api, "avatar", ["ada"], { look: "Percival" }, quiet);
-  expect(saved.at(-1)!.input.avatar).toEqual(lookProfile("percival", "lively"));
-  await teamCommand(api, "avatar", ["ada"], { look: "gareth", temperament: "calm" }, quiet);
-  expect(saved.at(-1)!.input.avatar).toEqual(lookProfile("gareth", "calm"));
-  const before = saved.length;
-  await expect(teamCommand(api, "avatar", ["ada"], { look: "merlin" }, quiet)).rejects.toThrow(/kay, gaheris, percival/);
-  await expect(teamCommand(api, "avatar", ["ada"], { look: "bors", color: "#112233" }, quiet)).rejects.toThrow(/not both/);
-  expect(saved).toHaveLength(before);
+test("the drawings are gone: a look, a shape, eyes or a temperament is refused, saying what to give instead", async () => {
+  const { api, saved } = node([member("ada")]);
+  for (const flags of [{ look: "percival" }, { form: "round" }, { accent: "#112233" }, { eyes: "visor" }, { accessory: "crown" }, { temperament: "lively" }, { look: "bors", color: "#112233" }]) {
+    await expect(teamCommand(api, "avatar", ["ada"], flags, () => {})).rejects.toThrow(/an orb now.*--color/);
+  }
+  expect(saved).toHaveLength(0);
 });
 
 test("removing a knight asks first and says what goes with it; a no, or a VM nobody said may go, removes nothing", async () => {

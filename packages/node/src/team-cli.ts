@@ -1,5 +1,5 @@
 import { interventionWords, knightFromFile, knightToFile, plainLine, plainText, type Prices, type TeamChangesView, type TeamFilesView, type TeamFileView, type RouteName, taskRecordFacts, type TeamModelChoice, type TeamSnapshot, type TeamRoomView, type TeamRoom, type TeamTask, type Teammate, type TeamCheckpoint } from "@galahad/core";
-import { AVATAR_LOOKS, lookProfile, resolveAvatar, withBodyColor } from "@galahad/core/avatar";
+import { knightColors } from "@galahad/core/avatar";
 
 interface Api { call<T>(name: RouteName, input?: unknown): Promise<T> }
 type Flags = Record<string, unknown>;
@@ -191,21 +191,16 @@ export async function teamCommand(api: Api, sub: string | undefined, args: strin
     const state = await api.call<TeamSnapshot>("team");
     const member = state.teammates.find((m) => m.id === args[0]);
     if (!member) throw new Error("No such knight");
-    const fields = ["form", "accent", "eyes", "accessory", "temperament"] as const;
-    const changes = Object.fromEntries(fields.flatMap((key) => string(key) !== undefined ? [[key, string(key)]] : []));
+    // The drawings are gone (25 November 2026): a knight is an orb, and its colour is all there is to choose.
+    if (["look", "form", "accent", "eyes", "accessory", "temperament"].some((key) => flags[key] !== undefined)) {
+      throw new Error("A knight is an orb now, and its colour is all there is to choose: give --color #rrggbb, or --reset for the one its handle gives it.");
+    }
     const color = string("color");
-    // A look is one of the owner's drawings, by name; its colour is what names it, so it comes with no other colour.
-    const lookName = string("look")?.trim().toLowerCase();
-    const look = lookName === undefined ? undefined : AVATAR_LOOKS.find((each) => each.id === lookName);
-    if (lookName !== undefined && !look) throw new Error(`No such look: ${plainLine(lookName)}. The looks are ${AVATAR_LOOKS.map((each) => each.id).join(", ")}.`);
-    if (look && color !== undefined) throw new Error("Give a --look or a --color, not both: a look's colour is its own.");
-    if (flags.reset || look || color !== undefined || Object.keys(changes).length) {
-      // A new body color brings its matching accent, unless an accent is named too (or was chosen apart before).
-      const current = resolveAvatar(member.id, member.avatar);
-      const base = look ? lookProfile(look.id, current.temperament) : color === undefined ? current : withBodyColor(current, color);
-      const { teammate } = await api.call<{ teammate: Teammate }>("saveTeammate", { id: member.id, name: member.name, avatar: flags.reset ? null : { ...base, ...changes } });
-      print(JSON.stringify(resolveAvatar(teammate.id, teammate.avatar), null, 2));
-    } else print(JSON.stringify(resolveAvatar(member.id, member.avatar), null, 2));
+    if (flags.reset || color !== undefined) {
+      // What isn't a colour is the node's to refuse: nothing here guesses at it.
+      const { teammate } = await api.call<{ teammate: Teammate }>("saveTeammate", { id: member.id, name: member.name, avatar: flags.reset ? null : { v: 2, color: color!.trim().toLowerCase() } });
+      print(JSON.stringify(knightColors(teammate.id, teammate.avatar)));
+    } else print(JSON.stringify(knightColors(member.id, member.avatar)));
     return;
   }
   if (sub === "room") {

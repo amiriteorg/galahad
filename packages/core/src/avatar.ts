@@ -1,9 +1,9 @@
 import type { Teammate, TeamTask, TeamDelivery } from "./team.ts";
 
-/** Cosmetic identity only. This module stays schema-free for the PWA and world. A knight is drawn as one of the
- * owner's ten drawings (AVATAR_LOOKS; the PWA has the pictures), which a saved profile names by that drawing's colour.
- * The profile's other fields are older than the drawings and still kept: its shape, eyes and headwear name no look,
- * and how lively it is at rest still moves it. */
+/** Cosmetic identity only. This module stays schema-free for the apps. A knight is an orb (KNIGHT_TINTS, knightColors):
+ * its colour one you chose (OrbProfile) or one picked by its handle. The older profile (AvatarProfile, v 1) is still
+ * read and kept, so an app from before the orbs can save one, but it colours nothing now: it named one of the owner's
+ * drawings, which are gone (25 November 2026). */
 export const AVATAR_FORMS = ["round", "armored", "hooded"] as const;
 export const AVATAR_EYES = ["oval", "round", "visor"] as const;
 export const AVATAR_ACCESSORIES = ["none", "plume", "ears", "crown"] as const;
@@ -87,6 +87,81 @@ export function isAvatarProfile(profile: unknown): profile is AvatarProfile {
   return Object.keys(p).length === PROFILE_KEYS.length && Object.keys(p).every((key) => PROFILE_KEYS.includes(key))
     && p.v === 1 && memberOf(AVATAR_FORMS, p.form) && hexColor(p.color) && hexColor(p.accent)
     && memberOf(AVATAR_EYES, p.eyes) && memberOf(AVATAR_ACCESSORIES, p.accessory) && memberOf(AVATAR_TEMPERAMENTS, p.temperament);
+}
+
+/**
+ * A knight is an orb (your word, 25 November 2026: "drop the knight avatars, and just use custom/procedurally generated
+ * colored particle orbs"): a sphere of points of light, turning, in a colour of its own. Its colour is one you chose for
+ * it (an OrbProfile, saved as its avatar), or else one of these 24, picked by its handle, the same on every device. Each
+ * is OKLCH lightness 0.76 and chroma 0.15 (less where a screen can't show it), every 15 degrees round the hue circle
+ * from 10. A profile from the drawings (AvatarProfile, v 1) colours nothing any more: its colour was a drawing's.
+ */
+export const KNIGHT_TINTS = [
+  "#fe879c", "#ff8a83", "#ff8d65", "#f99549", "#ed9e2f", "#dca81c", "#c8b222", "#afbc3a", "#91c456", "#6eca73", "#41ce90", "#0cceac",
+  "#0dcbc3", "#11c8d8", "#04c4ed", "#3abeff", "#6fb6fe", "#8bafff", "#a2a8fe", "#b89ffe", "#ce94f8", "#e08ee5", "#ef89cf", "#fa86b6",
+] as const;
+/** Each tint's name, as a colour picker says it. */
+export const KNIGHT_TINT_NAMES = [
+  "Rose", "Coral", "Salmon", "Orange", "Amber", "Gold", "Mustard", "Olive", "Lime", "Green", "Jade", "Mint",
+  "Teal", "Turquoise", "Cyan", "Sky", "Azure", "Cornflower", "Periwinkle", "Lavender", "Violet", "Orchid", "Pink", "Blush",
+] as const;
+
+/** A colour you chose for a knight's orb: a six-digit hex colour, and nothing else. */
+export interface OrbProfile {
+  v: 2;
+  color: string;
+}
+
+export function isOrbProfile(profile: unknown): profile is OrbProfile {
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) return false;
+  const p = profile as Record<string, unknown>;
+  return Object.keys(p).length === 2 && p.v === 2 && hexColor(p.color);
+}
+
+/** A whole number for a handle: FNV-1a over its UTF-16 code units, unsigned 32-bit (the apps' orbSeed is the same). */
+export function handleSeed(id: string): number {
+  let seed = 0x811c9dc5;
+  for (let n = 0; n < id.length; n++) seed = Math.imul(seed ^ id.charCodeAt(n), 0x01000193) >>> 0;
+  return seed >>> 0;
+}
+
+/** Each channel `t` of the way from one colour to another (sRGB, as whole numbers: `c + (to - c) * t`, rounded), so
+ * every app comes to the same colour. */
+export function blendHex(from: string, to: string, t: number): string {
+  const channel = (hex: string, at: number) => parseInt(hex.slice(at, at + 2), 16);
+  return `#${[1, 3, 5].map((at) => { const c = channel(from, at); return Math.round(c + (channel(to, at) - c) * t).toString(16).padStart(2, "0"); }).join("")}`;
+}
+
+/** Which of the 24 tints is nearest a colour (by the sum of each channel's difference squared; the first, on a tie). */
+export function nearestTint(color: string): number {
+  const rgb = (hex: string) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+  const [r, g, b] = rgb(color.toLowerCase());
+  let best = 0, bestApart = Infinity;
+  KNIGHT_TINTS.forEach((tint, n) => {
+    const [tr, tg, tb] = rgb(tint);
+    const apart = (r! - tr!) ** 2 + (g! - tg!) ** 2 + (b! - tb!) ** 2;
+    if (apart < bestApart) [best, bestApart] = [n, apart];
+  });
+  return best;
+}
+
+/** A knight's orb's colours: its tint, the tint lit (45 % of the way to white) and in shadow (52 % of the way to black),
+ * a second colour a few of its points are (the tint three to six steps on round the circle from its own), and whether
+ * you chose its tint. */
+export interface KnightColors {
+  tint: string;
+  light: string;
+  deep: string;
+  second: string;
+  chosen: boolean;
+}
+
+export function knightColors(id: string, profile?: unknown): KnightColors {
+  const seed = handleSeed(String(id ?? ""));
+  const chosen = isOrbProfile(profile) ? profile.color.toLowerCase() : null;
+  const at = chosen ? nearestTint(chosen) : seed % KNIGHT_TINTS.length;
+  const tint = chosen ?? KNIGHT_TINTS[at]!;
+  return { tint, light: blendHex(tint, "#ffffff", 0.45), deep: blendHex(tint, "#000000", 0.52), second: KNIGHT_TINTS[(at + 3 + ((seed >>> 8) % 4)) % KNIGHT_TINTS.length]!, chosen: chosen !== null };
 }
 
 /** Old or malformed snapshots get a safe deterministic appearance. Never pass
