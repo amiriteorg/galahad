@@ -65,4 +65,13 @@ enum UnderwayWords {
     static func looked(_ look: StoredMessage.Look, now: Date = .now, zone: TimeZone = .current) -> String {
         "He looked again, as he said at \(when(Date(timeIntervalSince1970: look.set / 1000), now: now, zone: zone)) he would: \(look.note)"
     }
+
+    /// How soon to ask the node again (the PWA's nextLookMs): soon while a task is under way or he is answering; just
+    /// after a look of his comes due, then soon until the node takes it (it is gone from the row then); else seldom.
+    static func nextAsk(_ shown: UnderwayView, answering: Bool, now: Date = .now) -> Duration {
+        if !shown.tasks.isEmpty || answering { return .seconds(5) }
+        guard let soonest = shown.looks.map(\.at).min() else { return .seconds(30) }
+        let ms = soonest - now.timeIntervalSince1970 * 1000
+        return ms <= 0 ? .seconds(5) : .milliseconds(Int(min(30_000, ms + 1_000)))
+    }
 }

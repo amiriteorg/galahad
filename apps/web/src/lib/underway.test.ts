@@ -23,8 +23,17 @@ describe("what is under way in a chat", () => {
   });
 
   test("asked again every few seconds while a task is under way or he is answering, else every half minute", () => {
-    expect(nextLookMs({ tasks: 1, looks: 0 }, false)).toBe(5_000);
-    expect(nextLookMs({ tasks: 0, looks: 2 }, true)).toBe(5_000);
-    expect(nextLookMs({ tasks: 0, looks: 2 }, false)).toBe(30_000);
+    expect(nextLookMs({ tasks: 1, looks: [] }, false, T)).toBe(5_000);
+    expect(nextLookMs({ tasks: 0, looks: [T + 3_600_000] }, true, T)).toBe(5_000);
+    expect(nextLookMs({ tasks: 0, looks: [T + 3_600_000, T + 7_200_000] }, false, T)).toBe(30_000);
+    expect(nextLookMs({ tasks: 0, looks: [] }, false, T)).toBe(30_000);
+  });
+
+  test("a look's row goes when it comes: asked just after it comes due, then every few seconds until the node takes it", () => {
+    // Its turn starts within the node's tick of it coming due, and the look is gone from the row then: never half a
+    // minute of a Cancel on a look he has already taken.
+    expect(nextLookMs({ tasks: 0, looks: [T + 3_600_000, T + 12_000] }, false, T)).toBe(13_000);
+    expect(nextLookMs({ tasks: 0, looks: [T + 12_000] }, false, T + 12_000)).toBe(5_000);
+    expect(nextLookMs({ tasks: 0, looks: [T + 12_000] }, false, T + 20_000)).toBe(5_000);
   });
 });

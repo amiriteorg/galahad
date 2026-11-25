@@ -29,7 +29,12 @@ export function lookedWords(look: { set: number; note: string }, now: number, tz
   return `He looked again, as he said at ${whenWords(look.set, now, tz)} he would: ${look.note}`;
 }
 
-/** How soon to ask again: soon while anything is under way or he is answering (he may give work); else seldom. */
-export function nextLookMs(shown: { tasks: number; looks: number }, answering: boolean): number {
-  return shown.tasks > 0 || answering ? 5_000 : 30_000;
+/**
+ * How soon to ask again: soon while a task is under way or he is answering (he may give work); just after a look of his
+ * comes due, then soon until the node takes it (within its tick, and the look is gone from the row then); else seldom.
+ */
+export function nextLookMs(shown: { tasks: number; looks: readonly number[] }, answering: boolean, now: number): number {
+  if (shown.tasks > 0 || answering) return 5_000;
+  const soonest = Math.min(...shown.looks);
+  return soonest <= now ? 5_000 : Math.min(30_000, soonest - now + 1_000);
 }

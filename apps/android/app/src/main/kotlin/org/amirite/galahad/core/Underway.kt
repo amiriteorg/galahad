@@ -59,4 +59,14 @@ object UnderwayWords {
 
     fun looked(look: LookNote, now: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): String =
         "He looked again, as he said at ${whenWords(look.set, now, zone)} he would: ${look.note}"
+
+    /**
+     * How soon to ask the node again (the PWA's nextLookMs): soon while a task is under way or he is answering; just after
+     * a look of his comes due, then soon until the node takes it (it is gone from the row then); else every half minute.
+     */
+    fun nextAskMs(shown: Underway, answering: Boolean, now: Long = System.currentTimeMillis()): Long {
+        if (shown.tasks.isNotEmpty() || answering) return 5_000
+        val soonest = shown.looks.minOfOrNull { it.at } ?: return 30_000
+        return if (soonest <= now) 5_000 else minOf(30_000, soonest - now + 1_000)
+    }
 }

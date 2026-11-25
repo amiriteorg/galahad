@@ -3,7 +3,8 @@ import SwiftUI
 /// Above a chat's message box, what is under way there (your word, 24 November 2026, after OpenMausBot's hand-off rows):
 /// each task he gave a knight from this chat that hasn't ended, its knight's face and how it stands, opened with a tap
 /// and stopped with its own Stop; and each look he set himself here, when it comes and what at, called off with Cancel.
-/// Asked of the node every few seconds while anything is under way or he is answering, else every half minute.
+/// Asked of the node every few seconds while a task is under way or he is answering, just after a look of his comes due
+/// (so it goes from here as he takes it), else every half minute.
 struct UnderwayBar: View {
     let session: Session
     let chat: ChatModel
@@ -80,7 +81,8 @@ struct UnderwayBar: View {
         .padding(.vertical, Space.s2)
     }
 
-    /// Asked now, then again in a few seconds while anything is under way or he is answering, else in half a minute.
+    /// Asked now, then again when UnderwayWords.nextAsk says: in a few seconds while a task is under way or he is answering,
+    /// just after a look comes due, else in half a minute.
     private func keepAsking() async {
         guard let conversation = chat.conversation else { shown = .none; return }
         while !Task.isCancelled {
@@ -88,8 +90,7 @@ struct UnderwayBar: View {
             if let view = try? await session.client.post("/api/conversations/underway", Asked(id: conversation), as: UnderwayView.self) {
                 if view != shown { withAnimation(.snappy) { shown = view } }
             }
-            let busy = !shown.tasks.isEmpty || chat.answering
-            try? await Task.sleep(for: .seconds(busy ? 5 : 30))
+            try? await Task.sleep(for: UnderwayWords.nextAsk(shown, answering: chat.answering))
         }
     }
 

@@ -13,7 +13,8 @@ import { controlTeam } from "./team-forms.ts";
  * Above a chat's message box, what is under way there (your word, 24 November 2026, after OpenMausBot's hand-off rows):
  * each task he gave a knight from this chat that hasn't ended, its knight's face and how it stands, opened at a tap and
  * stopped with its own Stop; and each look he set himself here, when it comes and what at, called off with Cancel.
- * Asked of the node every few seconds while anything is under way or he is answering, else every half minute.
+ * Asked of the node every few seconds while a task is under way or he is answering, just after a look of his comes due
+ * (so it goes from here as he takes it), else every half minute.
  */
 
 export interface Underway {
@@ -49,7 +50,7 @@ export function underway(ctx: Ctx): Underway {
       const view = await ctx.api.post<UnderwayView>("/api/conversations/underway", { id: asked }, controller.signal);
       if (asked !== conversation || stopped) return;
       draw(view);
-      schedule(nextLookMs({ tasks: view.tasks.length, looks: view.looks.length }, answering));
+      schedule(nextLookMs({ tasks: view.tasks.length, looks: view.looks.map((look) => look.at) }, answering, Date.now()));
     } catch (error) {
       if (isAbort(error)) return;
       // A node from before this, or a chat gone: nothing is shown, and it is asked again in a while.

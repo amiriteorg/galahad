@@ -27,6 +27,26 @@ struct UnderwayTests {
         #expect(UnderwayWords.looked(back, now: now.addingTimeInterval(3600), zone: copenhagen) == "He looked again, as he said at 21:07 he would: Is the site live?")
     }
 
+    @Test func askedAgainSoonWhileATaskIsUnderWayOrHeIsAnsweringElseEveryHalfMinute() {
+        let task = UnderwayView.Task(id: "task-1", title: "T", assignee: "gareth", name: "Gareth", status: "running", progress: "", room: "r")
+        #expect(UnderwayWords.nextAsk(UnderwayView(tasks: [task], looks: []), answering: false, now: now) == .seconds(5))
+        #expect(UnderwayWords.nextAsk(UnderwayView(tasks: [], looks: [look(in: 3600)]), answering: true, now: now) == .seconds(5))
+        #expect(UnderwayWords.nextAsk(UnderwayView(tasks: [], looks: [look(in: 3600), look(in: 7200)]), answering: false, now: now) == .seconds(30))
+        #expect(UnderwayWords.nextAsk(.none, answering: false, now: now) == .seconds(30))
+    }
+
+    /// Its turn starts within the node's tick of it coming due, and the look is gone from the row then: never half a
+    /// minute of a Cancel on a look he has already taken.
+    @Test func aLooksRowGoesWhenItComes() {
+        #expect(UnderwayWords.nextAsk(UnderwayView(tasks: [], looks: [look(in: 3600), look(in: 12)]), answering: false, now: now) == .seconds(13))
+        #expect(UnderwayWords.nextAsk(UnderwayView(tasks: [], looks: [look(in: 12)]), answering: false, now: now.addingTimeInterval(12)) == .seconds(5))
+        #expect(UnderwayWords.nextAsk(UnderwayView(tasks: [], looks: [look(in: 12)]), answering: false, now: now.addingTimeInterval(20)) == .seconds(5))
+    }
+
+    private func look(in seconds: Double) -> UnderwayView.Look {
+        UnderwayView.Look(id: "lk_AAAAAAAAAAAAAAAA", at: (now.timeIntervalSince1970 + seconds) * 1000, note: "N")
+    }
+
     @Test func theNodesAnswerIsReadAsItComes() throws {
         let json = #"{"tasks":[{"id":"task-1","title":"T","assignee":"gareth","name":"Gareth","status":"running","progress":"","room":"room-1","createdAt":1,"updatedAt":2}],"looks":[{"id":"lk_AAAAAAAAAAAAAAAA","conversation":"cv_x","at":1795558051000,"note":"N","set":1795550851000,"zone":"Europe/Copenhagen","state":"waiting","why":null}]}"#
         let view = try JSONDecoder().decode(UnderwayView.self, from: Data(json.utf8))

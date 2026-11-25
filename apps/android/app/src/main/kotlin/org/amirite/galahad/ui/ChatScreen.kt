@@ -132,7 +132,8 @@ fun ChatScreen(app: AppModel, back: () -> Unit, openKnight: (String) -> Unit = {
  * Above a chat's message box, what is under way there (your word, 24 November 2026, after OpenMausBot's hand-off rows):
  * each task he gave a knight from this chat that hasn't ended, its knight's face and how it stands, opened with a tap and
  * stopped with its own Stop; and each look he set himself here, when it comes and what at, called off with Cancel. Asked
- * of the node every few seconds while anything is under way or he is answering, else every half minute.
+ * of the node every few seconds while a task is under way or he is answering, just after a look of his comes due (so it
+ * goes from here as he takes it), else every half minute.
  */
 @Composable
 private fun UnderwayBar(app: AppModel, live: Boolean, openKnight: (String) -> Unit) {
@@ -145,7 +146,7 @@ private fun UnderwayBar(app: AppModel, live: Boolean, openKnight: (String) -> Un
         val id = conversation ?: run { shown = Underway(); return@LaunchedEffect }
         while (true) {
             runCatching { app.client?.post("/api/conversations/underway", Json.obj("id" to id)) }.getOrNull()?.let { shown = Underway.of(it) }
-            delay(if (shown.tasks.isNotEmpty() || live) 5_000 else 30_000)
+            delay(UnderwayWords.nextAskMs(shown, live))
         }
     }
     if (shown.isEmpty) return

@@ -31,6 +31,25 @@ class UnderwayTest {
     }
 
     @Test
+    fun askedAgainSoonWhileATaskIsUnderWayOrHeIsAnsweringElseEveryHalfMinute() {
+        val task = UnderwayTask("task-1", "T", "gareth", "Gareth", "running", "", "r")
+        assertEquals(5_000L, UnderwayWords.nextAskMs(Underway(listOf(task)), answering = false, now = now))
+        assertEquals(5_000L, UnderwayWords.nextAskMs(Underway(looks = listOf(look(3_600_000))), answering = true, now = now))
+        assertEquals(30_000L, UnderwayWords.nextAskMs(Underway(looks = listOf(look(3_600_000), look(7_200_000))), answering = false, now = now))
+        assertEquals(30_000L, UnderwayWords.nextAskMs(Underway(), answering = false, now = now))
+    }
+
+    /** Its turn starts within the node's tick of it coming due, and the look is gone from the row then: never half a minute of a Cancel on a look he has already taken. */
+    @Test
+    fun aLooksRowGoesWhenItComes() {
+        assertEquals(13_000L, UnderwayWords.nextAskMs(Underway(looks = listOf(look(3_600_000), look(12_000))), answering = false, now = now))
+        assertEquals(5_000L, UnderwayWords.nextAskMs(Underway(looks = listOf(look(12_000))), answering = false, now = now + 12_000))
+        assertEquals(5_000L, UnderwayWords.nextAskMs(Underway(looks = listOf(look(12_000))), answering = false, now = now + 20_000))
+    }
+
+    private fun look(inMs: Long) = UnderwayLook("lk_AAAAAAAAAAAAAAAA", now + inMs, "N")
+
+    @Test
     fun theNodesAnswerIsReadLeniently() {
         val json = Json.parse("""{"tasks":[{"id":"task-1","title":"T","assignee":"gareth","name":"Gareth","status":"running","progress":"","room":"room-1"},{"title":"no id"}],"looks":[{"id":"lk_AAAAAAAAAAAAAAAA","at":1795558051000,"note":"N"}]}""")
         val view = Underway.of(json)
