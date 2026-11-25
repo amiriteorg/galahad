@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { LiveEvent, LiveTopic } from "@galahad/core/live";
-import { Followers, GAP_MS, HELLO_WAIT_MS, type LinkHandlers, liveLink, RETRY_FIRST_MS, RETRY_MAX_MS, SILENT_MS, STEADY_MS } from "./live-link.ts";
+import { type FirstRead, Followers, GAP_MS, HELLO_WAIT_MS, type LinkHandlers, liveLink, RETRY_FIRST_MS, RETRY_MAX_MS, SILENT_MS, STEADY_MS } from "./live-link.ts";
 
 /*
  * The node's live stream as the app keeps it (live-link.ts): open while the app is shown, opened again when it ends
@@ -219,23 +219,39 @@ describe("what the app reads", () => {
     const c = clock();
     const f = new Followers(c.after, c.now);
     const runs: string[] = [];
-    const follow = (name: string, topics: LiveTopic[], everyMs: number | null, gapMs?: number) =>
-      f.follow(topics, (changed) => void runs.push(`${name}${changed ? ` ${changed.join(",")}` : ""}`), everyMs, gapMs);
+    const follow = (name: string, topics: LiveTopic[], everyMs: number | null, first: FirstRead = "owner", gapMs?: number) =>
+      f.follow(topics, (changed) => void runs.push(`${name}${changed ? ` ${changed.join(",")}` : ""}`), everyMs, gapMs, first);
     return { c, f, runs, follow };
   }
 
-  test("each runs once when the stream comes up, then only when its topics change: at rest, nothing for a minute", async () => {
+  test("when the stream comes up, what was read before its hello is read once, and what was read since is not; at rest, nothing for a minute", async () => {
     const { c, f, runs, follow } = followers();
-    follow("inbox", ["actions", "notices"], 15_000);
+    // Nothing of the Inbox read yet; the fleet read by its page at once; the team read after the stream said hello.
+    follow("inbox", ["actions", "notices"], 15_000, "later");
     follow("fleet", ["fleet"], 15_000);
-    f.up();
-    await c.flush();
+    await c.advance(200);
+    follow("team", ["team"], 2_000);
+    f.up(100);
+    // (The fleet no sooner than its gap after its page read it.)
+    await c.advance(GAP_MS);
     expect(runs).toEqual(["inbox", "fleet"]);
     await c.advance(60_000);
     expect(runs).toHaveLength(2);
     f.changed(["notices", "team"]);
     await c.advance(GAP_MS);
-    expect(runs).toEqual(["inbox", "fleet", "inbox notices"]);
+    expect(runs).toEqual(["inbox", "fleet", "inbox notices", "team team"]);
+  });
+
+  test("one its owner just read waits its gap before a change runs it again", async () => {
+    const { c, f, runs, follow } = followers();
+    f.up(0);
+    await c.advance(1_000);
+    follow("team", ["team"], 2_000, "owner", 2_000);
+    f.changed(["team"]);
+    await c.advance(1_999);
+    expect(runs).toEqual([]);
+    await c.advance(1);
+    expect(runs).toEqual(["team team"]);
   });
 
   test("while the stream is down each runs at once and then at its own pace; up again, the polling stops", async () => {
@@ -247,7 +263,8 @@ describe("what the app reads", () => {
     expect(runs.filter((r) => r === "fleet")).toHaveLength(2);
     expect(runs.filter((r) => r === "room")).toHaveLength(8);
     runs.length = 0;
-    f.up();
+    await c.advance(500);
+    f.up(c.now());
     // Each once, for what changed while it was down (no sooner than its gap after its last run), then nothing.
     await c.advance(60_000);
     expect(runs.sort()).toEqual(["fleet", "room"]);
@@ -261,8 +278,8 @@ describe("what the app reads", () => {
     f.follow(["actions", "notices", "questions"], (changed) => {
       runs.push(changed);
       return new Promise<void>((resolve) => (finish = resolve));
-    }, null, 1_000);
-    f.up();
+    }, null, 1_000, "later");
+    f.up(c.now());
     await c.flush();
     f.changed(["actions"]);
     f.changed(["notices"]);

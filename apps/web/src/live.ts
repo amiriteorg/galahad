@@ -3,7 +3,7 @@ import type { LiveEvent, LiveTopic } from "@galahad/core/live";
 import type { TeamSnapshot } from "@galahad/core/team";
 import { type Api, ApiError } from "./api.ts";
 import type { Live } from "./context.ts";
-import { type After, Followers, type LiveLink, liveLink } from "./lib/live-link.ts";
+import { type After, Followers, GAP_MS, type LiveLink, liveLink } from "./lib/live-link.ts";
 import type { AnyScope } from "./types.ts";
 import { signal } from "./ui/signal.ts";
 
@@ -318,7 +318,8 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
   const follow: Live["follow"] = (topics, run, everyMs, gapMs) => followers.follow(topics, run, everyMs, gapMs);
 
   // The team, while something shows it: read again when it changes (or, while the stream is down, as often as the
-  // shell says), and at once whenever the shell asks for another pace (another place came on screen).
+  // shell says), and at once whenever the shell asks for another pace (another place came on screen). That first read
+  // is asked for here and now, ahead of anything the stream's coming up reads: the Roundtable waits on it.
   let teamEvery: number | null = null;
   let unfollowTeam: (() => void) | null = null;
   function watchTeam(everyMs: number | null = teamEvery): void {
@@ -327,15 +328,18 @@ export function startLive(api: Api, can: (scope: AnyScope) => boolean, events: L
     unfollowTeam?.();
     unfollowTeam = null;
     if (everyMs === null) return;
-    unfollowTeam = followers.follow(["team"], () => refreshTeam(), everyMs, TEAM_GAP_MS, !document.hidden);
+    const shown = !document.hidden;
+    if (shown) void refreshTeam();
+    unfollowTeam = followers.follow(["team"], () => refreshTeam(), everyMs, TEAM_GAP_MS, shown ? "owner" : "later");
   }
 
-  followers.follow(["fleet"], () => refreshFleet(), FALLBACK_MS);
-  followers.follow(INBOX, (changed) => (changed ? Promise.all(changed.map((topic) => inboxPart[topic]?.())) : refreshInbox()), FALLBACK_MS);
+  // (Read first when the stream comes up or goes down: after the page's own first reads, which are asked for as it is drawn.)
+  followers.follow(["fleet"], () => refreshFleet(), FALLBACK_MS, GAP_MS, "later");
+  followers.follow(INBOX, (changed) => (changed ? Promise.all(changed.map((topic) => inboxPart[topic]?.())) : refreshInbox()), FALLBACK_MS, GAP_MS, "later");
   link.attach({
-    up: () => {
+    up: (_topics, at) => {
       streaming.set(true);
-      followers.up();
+      followers.up(at);
     },
     changed: (topics) => followers.changed(topics),
     down: () => {

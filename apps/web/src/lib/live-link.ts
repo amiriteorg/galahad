@@ -10,11 +10,12 @@ import { LIVE_BEAT_MS, type LiveEvent, type LiveTopic } from "@galahad/core/live
  * back. One that says nothing at all for SILENT_MS (the node beats every LIVE_BEAT_MS) is taken for dead and opened
  * again.
  *
- * Followers are what the app reads, each for its topics. Each runs once whenever the stream comes up (for what changed
- * while it was closed), and then only when one of its topics changes. While the stream is down (no hello within
- * HELLO_WAIT_MS, or it can't be opened) each runs at once and then every so often, at its own interval, as the app did
- * before there was a stream. A follower runs one at a time: what comes meanwhile is merged into one more run after it,
- * and runs come no closer together than its gap.
+ * Followers are what the app reads, each for its topics. When the stream comes up, each whose last read began before
+ * the stream said hello runs once (what it shows may be from before the node was telling of changes); one read since
+ * can't have missed anything. Then each runs only when one of its topics changes. While the stream is down (no hello
+ * within HELLO_WAIT_MS, or it can't be opened) each runs at once and then every so often, at its own interval, as the
+ * app did before there was a stream. A follower runs one at a time: what comes meanwhile is merged into one more run
+ * after it, and runs come no closer together than its gap.
  */
 
 /** Runs `run` after `ms`; returns how to call it off. */
@@ -43,8 +44,8 @@ export interface LinkOptions {
 
 /** Who hears where the stream stands. */
 export interface LinkHandlers {
-  /** It is open and tells of these topics: read them now. */
-  up(topics: LiveTopic[]): void;
+  /** It is open, since `at` (when it said hello), and tells of these topics: read now what was read before then. */
+  up(topics: LiveTopic[], at: number): void;
   changed(topics: LiveTopic[]): void;
   /** It isn't open, and hasn't been for a while (or can't be): ask for what is shown on a timer until it is. */
   down(): void;
@@ -68,6 +69,8 @@ export function liveLink(o: LinkOptions): LiveLink {
   /** The stream being opened or open; null: none. */
   let current: AbortController | null = null;
   let isUp = false;
+  /** When the open stream said hello. */
+  let upAt = 0;
   let topics: LiveTopic[] = [];
   /** Down has been said since it was last up. */
   let saidDown = false;
@@ -82,10 +85,11 @@ export function liveLink(o: LinkOptions): LiveLink {
   };
   const goUp = (told: LiveTopic[]) => {
     isUp = true;
+    upAt = o.now();
     saidDown = false;
     downing = off(downing);
     topics = told;
-    handlers?.up(told);
+    handlers?.up(told, upAt);
   };
   const goDown = () => {
     downing = off(downing);
@@ -174,7 +178,7 @@ export function liveLink(o: LinkOptions): LiveLink {
     },
     attach(next) {
       handlers = next;
-      if (isUp) next.up(topics);
+      if (isUp) next.up(topics, upAt);
       else if (saidDown) next.down();
     },
     get up() {
@@ -186,12 +190,14 @@ export function liveLink(o: LinkOptions): LiveLink {
 /** What a follower runs: `changed` names its topics that changed, or is null when everything is to be read. */
 export type FollowerRun = (changed: readonly LiveTopic[] | null) => unknown;
 
-/** `run`, one at a time: what is asked for meanwhile is merged into one more run after it, never closer than `gapMs`. */
-export function paced(run: FollowerRun, gapMs: number, after: After, now: () => number): { want(topics: readonly LiveTopic[] | null): void; cancel(): void } {
+/**
+ * `run`, one at a time: what is asked for meanwhile is merged into one more run after it, never closer than `gapMs` to
+ * the last (`last`: when it last ran before this, if it did).
+ */
+export function paced(run: FollowerRun, gapMs: number, after: After, now: () => number, last = -Infinity): { want(topics: readonly LiveTopic[] | null): void; cancel(): void } {
   let running = false;
   /** null: nothing; "all": everything; otherwise these. */
   let wanted: Set<LiveTopic> | "all" | null = null;
-  let last = -Infinity;
   let waiting: (() => void) | null = null;
   const go = (): void => {
     if (running || wanted === null || waiting) return;
@@ -234,7 +240,15 @@ interface Follower {
   /** null: it keeps its own time while the stream is down. */
   everyMs: number | null;
   timer: (() => void) | null;
+  /** When what it shows was last read (its owner's read, then each run's start); -Infinity: never. */
+  since: number;
 }
+
+/**
+ * Who reads first: "owner", whoever follows has just read what it shows (the way of the views); "later", nothing is
+ * read yet, and the stream's coming up (or down) reads it.
+ */
+export type FirstRead = "owner" | "later";
 
 /** What the app reads, each for its topics, as the stream stands (above). */
 export class Followers {
@@ -247,16 +261,31 @@ export class Followers {
   ) {}
 
   /**
-   * `run` when one of these topics changes while the stream is up (and once whenever it comes up); at once and then
-   * every `everyMs` while it is down (null: once, and it keeps its own time from there); never while the app is
-   * hidden. Now as well only if `now` says so: most who follow read what they show themselves first. Returns how to
-   * stop following.
+   * `run` when one of these topics changes while the stream is up (and once when it comes up, if what it shows was
+   * read before); at once and then every `everyMs` while it is down (null: once, and it keeps its own time from there);
+   * never while the app is hidden. Not now: whoever follows has read what it shows itself (`first`), or it is read when
+   * the stream comes up or goes down. Returns how to stop following.
    */
-  follow(topics: readonly LiveTopic[], run: FollowerRun, everyMs: number | null, gapMs = GAP_MS, now = false): () => void {
-    const follower: Follower = { topics: new Set(topics), pace: paced(run, gapMs, this.after, this.now), everyMs, timer: null };
+  follow(topics: readonly LiveTopic[], run: FollowerRun, everyMs: number | null, gapMs = GAP_MS, first: FirstRead = "owner"): () => void {
+    const read = first === "owner" ? this.now() : -Infinity;
+    const follower: Follower = {
+      topics: new Set(topics),
+      pace: paced(
+        (changed) => {
+          follower.since = this.now();
+          return run(changed);
+        },
+        gapMs,
+        this.after,
+        this.now,
+        read,
+      ),
+      everyMs,
+      timer: null,
+      since: read,
+    };
     this.all.add(follower);
     if (this.mode === "down") this.poll(follower);
-    if (now) follower.pace.want(null);
     return () => {
       this.all.delete(follower);
       follower.timer?.();
@@ -265,13 +294,13 @@ export class Followers {
     };
   }
 
-  /** The stream is up: each runs once now, then when its topics change. */
-  up(): void {
+  /** The stream is up, since `at`: each that last read before then runs once now; then each runs when its topics change. */
+  up(at: number): void {
     this.mode = "up";
     for (const follower of this.all) {
       follower.timer?.();
       follower.timer = null;
-      follower.pace.want(null);
+      if (follower.since < at) follower.pace.want(null);
     }
   }
 

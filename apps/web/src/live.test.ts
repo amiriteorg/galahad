@@ -87,7 +87,7 @@ function app() {
   const link: LiveLink = { start: () => void calls.push("start"), stop: () => void calls.push("stop"), retry: () => void calls.push("retry"), attach: (h) => void (handlers = h), up: false };
   const live = startLive(api, () => true, { onNewPairing: () => {}, onNewAction: () => {} }, { link, after: c.after, now: c.now });
   const stream = {
-    up: (...topics: LiveTopic[]) => handlers!.up(topics),
+    up: (...topics: LiveTopic[]) => handlers!.up(topics, c.now()),
     changed: (...topics: LiveTopic[]) => handlers!.changed(topics),
     down: () => handlers!.down(),
   };
