@@ -12,6 +12,7 @@
 #  site-gate  │
 #  vectors    │ the parity vectors the Apple and Android apps test against are what the web app's code makes now
 #  android    │ the Android app's JVM tests (held to the same vectors)
+#  apple      │ the iPhone's tests and the Mac build, on sovware.io's Mac mini runner (skipped on GitHub)
 #  secrets    ┘ gitleaks over what the push (or the pull request) adds
 #  sandbox    real-Docker sandbox tests; opt-in via the repo variable SANDBOX_TESTS=true (GitHub's runner
 #             has Docker and no KVM: the microVM cases are skipped there)
@@ -214,6 +215,45 @@ jobs:
           if [ -z "$from" ] || ! git cat-file -e "$from^{commit}" 2>/dev/null; then from=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1); fi
           echo "scanning $from..HEAD ($(git rev-list --count "$from..HEAD") commits)"
           "$RUNNER_TEMP/gitleaks" git --log-opts="$from..HEAD" --no-banner --redact
+
+  # The iPhone's tests and the Mac build, as the push gate ran them on the owner's Mac (PLAN #54): on sovware.io alone, on
+  # the Mac mini's runner for this repository (label macos-xcode, on its host: Xcode 27 and xcodegen), on a simulator made
+  # for the run and deleted after, the Mac app built and never launched (it would load that Mac's own device key), and
+  # unregistered from Launch Services after. GitHub's macOS runners have no macOS 27 SDK, so it is skipped there.
+  apple:
+    name: iPhone tests and Mac build
+    if: github.server_url != 'https://github.com'
+    runs-on: macos-xcode
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      # The host runner has no Node, so no actions/checkout.
+      - name: Check out
+        run: |
+          git init -q .
+          git -c "http.extraHeader=Authorization: token ${{ github.token }}" fetch -q --depth 1 \
+            "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.ref }}"
+          git checkout -q FETCH_HEAD
+          git log --oneline -1
+      - name: iPhone tests, on a simulator of their own
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          xcodegen generate --quiet
+          # The newest iOS runtime the Mac has (the mini's is 27.2; the push gate's Mac, 27.0).
+          runtime=$(xcrun simctl list runtimes iOS -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("isAvailable")]; print(max(r, key=lambda x: [int(n) for n in x["version"].split(".")])["identifier"])')
+          udid=$(xcrun simctl create "Galahad CI ${GITHUB_RUN_NUMBER:-0}" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$runtime")
+          trap 'xcrun simctl delete "$udid"' EXIT
+          xcrun simctl bootstatus "$udid" -b > /dev/null
+          xcodebuild -project Galahad.xcodeproj -scheme Galahad -destination "platform=iOS Simulator,id=$udid" \
+            -derivedDataPath build test -skip-testing:GalahadTests/MacShotsTests -quiet
+      - name: Mac build (never launched)
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          trap '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$PWD/build/Build/Products/Debug/Galahad.app" 2>/dev/null || true' EXIT
+          xcodebuild -project Galahad.xcodeproj -scheme GalahadMac -destination 'platform=macOS' -derivedDataPath build build -quiet
 
   sandbox:
     name: Sandbox (real Docker)
