@@ -22,6 +22,8 @@ class ArmClient implements ToolApi {
   constructor(
     private readonly base: string,
     private readonly token: string,
+    /** The call's own: a caller's cancel (MCP's notifications/cancelled) aborts its requests to the node. */
+    private readonly signal?: AbortSignal,
   ) {}
 
   async call<T>(name: RouteName, input?: unknown): Promise<T> {
@@ -32,8 +34,10 @@ class ArmClient implements ToolApi {
         method: route.method,
         headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
         body: route.method === "POST" ? JSON.stringify(input ?? {}) : undefined,
+        signal: this.signal,
       });
     } catch {
+      if (this.signal?.aborted) throw new Error("the caller cancelled this call");
       throw new Error(`no Galahad node is running at ${this.base}; start it with \`galahad serve\``);
     }
     const body = (await response.json().catch(() => ({}))) as { error?: string; status?: number };
@@ -50,6 +54,7 @@ class ArmClient implements ToolApi {
       method: route.method,
       headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
       body: JSON.stringify(input ?? {}),
+      signal: this.signal,
     });
     if (!response.ok) {
       const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -72,9 +77,10 @@ export function createMcpServer(opts: McpOptions): McpServer {
   const server = new McpServer({ name: "galahad", title: "Galahad", version: opts.version }, { instructions: INSTRUCTIONS });
 
   for (const t of toolsFor(opts.scopes ?? ARM_DEFAULT_SCOPES)) {
-    server.registerTool(t.name, { title: t.title, description: t.description, inputSchema: t.input, ...(t.annotations ? { annotations: t.annotations } : {}) }, async (args: unknown) => {
+    server.registerTool(t.name, { title: t.title, description: t.description, inputSchema: t.input, ...(t.annotations ? { annotations: t.annotations } : {}) }, async (args: unknown, extra: { signal?: AbortSignal }) => {
       try {
-        const result = await t.run(api, args ?? {});
+        // Its requests to the node go with the call's signal, so a caller's cancel stops them there.
+        const result = await t.run(extra?.signal ? new ArmClient(opts.base, opts.token, extra.signal) : api, args ?? {});
         if (typeof result === "string") return { content: [{ type: "text" as const, text: result }] };
         // A picture goes as MCP image content, after its words.
         return { content: [{ type: "text" as const, text: result.text }, ...(result.images ?? []).map((i) => ({ type: "image" as const, data: i.data, mimeType: i.mediaType }))] };
