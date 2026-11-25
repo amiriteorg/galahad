@@ -46,7 +46,7 @@ export function pairingNote(env: { ios: boolean; standalone: boolean }): "home-s
   return env.ios ? "home-screen-first" : null;
 }
 
-export const WHAT_IS_SENT = "A short title and one line, with where it opens: a finding that needs you, an approval that's waiting, that he has finished or has a question. It's encrypted to this browser, so the push service that carries it can't read it. Never a key, never anything about the bank, never a model's own words.";
+export const WHAT_IS_SENT = "A short title and one line, with where it opens: a finding that needs you, an approval that's waiting, that he has finished or has a question. Fixed words only, never your own (a chat's title, a name you gave) or a model's: the app shows those once you open it. It's encrypted to this browser, so the push service that carries it can't read it. What needs you sounds; news comes quietly.";
 
 export const PUSH_STATE_TEXT: Record<PushState, string> = {
   unsupported: "This browser can't receive notifications from a web app.",
@@ -147,10 +147,25 @@ export function perDayProblem(value: string): string | null {
   return /^\d+$/.test(value.trim()) && n >= NOTIFY_PER_DAY.min && n <= NOTIFY_PER_DAY.max ? null : `A whole number from ${NOTIFY_PER_DAY.min} to ${NOTIFY_PER_DAY.max}.`;
 }
 
-/** Quiet hours in a line. */
-export function quietLine(prefs: NotifyPrefs): string {
+/** Quiet hours in a line. `zone`: the one your day is read in now (your devices'), when the node said it. */
+export function quietLine(prefs: NotifyPrefs, zone?: string): string {
   if (!prefs.quiet.on) return "No quiet hours: he tells you whenever it happens.";
-  return `From ${prefs.quiet.from} to ${prefs.quiet.to}, ${prefs.quiet.tz.replace(/_/g, " ")} time, everything but an alert waits; then one message says what waited.`;
+  return `From ${prefs.quiet.from} to ${prefs.quiet.to}, ${(zone ?? prefs.quiet.tz).replace(/_/g, " ")} time, everything but an alert waits; then one message says what waited.`;
+}
+
+/** The day's digest in a line. */
+export function digestLine(prefs: NotifyPrefs, zone?: string): string {
+  if (!prefs.digest?.on) return "No digest: what he doesn't buzz you for waits in your Inbox.";
+  return `At ${prefs.digest.at}, ${(zone ?? prefs.quiet.tz).replace(/_/g, " ")} time, one quiet message says what happened that he didn't buzz you for, and what still waits.`;
+}
+
+/**
+ * The notifications this browser still shows whose matter was answered, dismissed, cleared or lapsed (on any device):
+ * the ones to take down, by tag (the node's `withdrawn`).
+ */
+export function toTakeDown(shown: readonly { tag: string }[], withdrawn: readonly string[] | undefined): string[] {
+  const gone = new Set(withdrawn ?? []);
+  return [...new Set(shown.map((n) => n.tag).filter((tag) => gone.has(tag)))];
 }
 
 /** Today's count against the limit, and what's held, in a line. */

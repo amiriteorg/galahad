@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { NOTIFY_DEFAULTS } from "@galahad/core/notify";
-import { clockProblem, isIos, keyBytes, pairingNote, perDayProblem, PUSH_STATE_TEXT, type PushEnv, pushState, pushSync, quietLine, REACH_DISMISS_MS, reachCard, reachDismissed, readOpenMessage, sameKey, todayLine } from "./push.ts";
+import { clockProblem, digestLine, isIos, keyBytes, pairingNote, perDayProblem, PUSH_STATE_TEXT, type PushEnv, pushState, pushSync, quietLine, REACH_DISMISS_MS, reachCard, reachDismissed, readOpenMessage, sameKey, todayLine, toTakeDown } from "./push.ts";
 
 /* Notifications on this device: the state it's in, and the checks the Settings fields make. */
 
@@ -136,8 +136,23 @@ describe("the settings' own checks, before anything is sent", () => {
   test("in a line: quiet hours, and today", () => {
     expect(quietLine({ ...NOTIFY_DEFAULTS, quiet: { ...NOTIFY_DEFAULTS.quiet, tz: "Europe/Copenhagen" } })).toBe("From 22:00 to 07:00, Europe/Copenhagen time, everything but an alert waits; then one message says what waited.");
     expect(quietLine({ ...NOTIFY_DEFAULTS, quiet: { ...NOTIFY_DEFAULTS.quiet, on: false } })).toBe("No quiet hours: he tells you whenever it happens.");
+    // Read in the zone your devices say, when the node says it is another than the setting's.
+    expect(quietLine({ ...NOTIFY_DEFAULTS, quiet: { ...NOTIFY_DEFAULTS.quiet, tz: "Europe/London" } }, "Europe/Copenhagen")).toBe("From 22:00 to 07:00, Europe/Copenhagen time, everything but an alert waits; then one message says what waited.");
+    expect(digestLine({ ...NOTIFY_DEFAULTS, quiet: { ...NOTIFY_DEFAULTS.quiet, tz: "America/New_York" } })).toBe("At 08:00, America/New York time, one quiet message says what happened that he didn't buzz you for, and what still waits.");
+    expect(digestLine({ ...NOTIFY_DEFAULTS, digest: { on: false, at: "08:00" } })).toBe("No digest: what he doesn't buzz you for waits in your Inbox.");
     expect(todayLine({ today: { day: "2026-11-12", sent: [], count: 0, limit: 12 }, quiet: false, held: 0 })).toBe("Nothing sent today (a test doesn't count).");
     expect(todayLine({ today: { day: "2026-11-12", sent: [], count: 3, limit: 12 }, quiet: true, held: 2 })).toBe("3 of 12 sent today; 2 things wait for quiet hours to end.");
     expect(todayLine({ today: { day: "2026-11-12", sent: [], count: 3, limit: 12 }, quiet: true, held: 1 })).toBe("3 of 12 sent today; 1 thing waits for quiet hours to end.");
   });
 });
+
+describe("what was answered elsewhere", () => {
+  test("is taken down where it's still shown, by its tag, once; nothing else is", () => {
+    const shown = [{ tag: "t-a" }, { tag: "t-b" }, { tag: "t-a" }, { tag: "galahad" }];
+    expect(toTakeDown(shown, ["t-a", "t-z"])).toEqual(["t-a"]);
+    expect(toTakeDown(shown, [])).toEqual([]);
+    // A node from before withdrawals says none.
+    expect(toTakeDown(shown, undefined)).toEqual([]);
+  });
+});
+

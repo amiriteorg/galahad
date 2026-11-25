@@ -1,7 +1,7 @@
 import { NOTIFY_DEFAULTS, NOTIFY_KIND_INFO, NOTIFY_KINDS, NOTIFY_PER_DAY, type NotifyKind, type NotifyPrefs, type NotifyView } from "@galahad/core/notify";
 import { type Api, isUnavailable } from "../api.ts";
 import { type Ctx, errorMessage } from "../context.ts";
-import { clockProblem, isIos, keyBytes, lostLine, perDayProblem, PUSH_STATE_TEXT, type PushEnv, type PushState, pushState, pushSync, quietLine, reachCard, reachDismissed, sameKey, todayLine, WHAT_IS_SENT } from "../lib/push.ts";
+import { clockProblem, digestLine, isIos, keyBytes, lostLine, perDayProblem, PUSH_STATE_TEXT, type PushEnv, type PushState, pushState, pushSync, quietLine, reachCard, reachDismissed, sameKey, todayLine, toTakeDown, WHAT_IS_SENT } from "../lib/push.ts";
 import { relativeTime } from "../lib/time.ts";
 import { putReachAway, reachPutAway } from "../prefs.ts";
 import { busy, button, callout, list, listRow, note as noteLine, section, switchControl } from "../ui/controls.ts";
@@ -92,6 +92,34 @@ export async function dropBrowserSubscription(): Promise<void> {
 let syncing: Promise<void> = Promise.resolve();
 
 /**
+ * What this browser still shows whose matter was answered, dismissed, cleared or lapsed, on this device or another (the
+ * node's `withdrawn`): taken down. Asks nothing of you; a convenience, so a failure is silent.
+ */
+async function takeDown(reg: ServiceWorkerRegistration, withdrawn: readonly string[] | undefined): Promise<void> {
+  if (!withdrawn?.length) return;
+  try {
+    const shown = await reg.getNotifications();
+    const tags = new Set(toTakeDown(shown, withdrawn));
+    for (const n of shown) if (tags.has(n.tag)) n.close();
+  } catch {
+    /* nothing shown, or a browser that can't list them */
+  }
+}
+
+/** When the app comes back into view: what was answered elsewhere meanwhile is taken down here (at most once a minute). */
+let lastTakeDown = 0;
+export async function takeDownWithdrawn(api: Api): Promise<void> {
+  if (!capable() || Notification.permission !== "granted" || Date.now() - lastTakeDown < 60_000) return;
+  lastTakeDown = Date.now();
+  try {
+    const reg = await registration();
+    if (reg) await takeDown(reg, (await api.get<NotifyView>("/api/notify")).withdrawn);
+  } catch {
+    /* a convenience */
+  }
+}
+
+/**
  * When the app opens (and when the browser replaced the subscription): keep the node's copy current. Never asks
  * for permission, and never turns back on what you turned off: if the node no longer lists this device, the
  * browser's subscription is dropped too, so both agree. One the push service dropped (the node says lost: it was
@@ -106,6 +134,8 @@ export function syncPush(api: Api): Promise<void> {
       if (!reg) return;
       let sub = await reg.pushManager.getSubscription();
       const view = await api.get<NotifyView>("/api/notify");
+      lastTakeDown = Date.now();
+      await takeDown(reg, view.withdrawn);
       const action = pushSync({ subscribed: view.subscribed === true, lost: !!view.lost, browser: sub !== null, sameKey: sameKey(sub?.options.applicationServerKey, view.key) });
       if (action === "none") return;
       if (action === "drop") {
@@ -259,7 +289,7 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
 
     const from = h("input", { class: "input notify-time", type: "time", value: prefs.quiet.from, disabled: !may || !prefs.quiet.on, "aria-label": "Quiet hours begin" });
     const to = h("input", { class: "input notify-time", type: "time", value: prefs.quiet.to, disabled: !may || !prefs.quiet.on, "aria-label": "Quiet hours end" });
-    const hoursNote = h("div", { class: "tiny subtle", role: "status" }, quietLine(prefs));
+    const hoursNote = h("div", { class: "tiny subtle", role: "status" }, quietLine(prefs, view?.zone));
     const setClock = (which: "from" | "to", input: HTMLInputElement) => {
       const problem = clockProblem(input.value);
       if (problem) {
@@ -271,6 +301,19 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
     };
     from.addEventListener("change", () => setClock("from", from));
     to.addEventListener("change", () => setClock("to", to));
+
+    const digest = prefs.digest ?? NOTIFY_DEFAULTS.digest;
+    const digestAt = h("input", { class: "input notify-time", type: "time", value: digest.at, disabled: !may || !digest.on, "aria-label": "The digest comes at" });
+    const digestNote = h("div", { class: "tiny subtle", role: "status" }, digestLine({ ...prefs, digest }, view?.zone));
+    digestAt.addEventListener("change", () => {
+      const problem = clockProblem(digestAt.value);
+      if (problem) {
+        digestNote.textContent = problem;
+        digestNote.className = "error";
+        return;
+      }
+      if (digestAt.value !== digest.at) void save({ digest: { at: digestAt.value } });
+    });
 
     const perDay = h("input", { class: "input notify-count", type: "number", inputmode: "numeric", min: NOTIFY_PER_DAY.min, max: NOTIFY_PER_DAY.max, step: 1, value: prefs.perDay, disabled: !may, id: "notify-per-day", "aria-describedby": "notify-per-day-note" });
     const perDayNote = h("div", { class: "tiny subtle", id: "notify-per-day-note", role: "status" }, view ? todayLine(view) : "Nothing sent today (a test doesn't count).");
@@ -301,7 +344,14 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
             h("div", { class: "notify-hours" }, from, h("span", { class: "tiny subtle" }, "to"), to),
           ),
           h("div", { class: "item" }, hoursNote),
-          listRow({ title: h("label", { for: "notify-per-day" }, "At most a day"), sub: "So a fault can't buzz you all day. The last one or two are kept for alerts; when ordinary news reaches the limit, one message says so.", trail: perDay, wrap: true }),
+          h(
+            "div",
+            { class: "item notify-row wrap" },
+            switchControl("The day's digest", digest.on, (checked) => void save({ digest: { on: checked } }), { hint: "What he didn't buzz you for, once a day, quietly.", disabled: !may }),
+            h("div", { class: "notify-hours" }, digestAt),
+          ),
+          h("div", { class: "item" }, digestNote),
+          listRow({ title: h("label", { for: "notify-per-day" }, "At most a day"), sub: "So a fault can't buzz you all day. News alone has a share of its own, so it never spends what an ask needs; the last one or two are kept for alerts; when what needs you reaches the limit, one message says so.", trail: perDay, wrap: true }),
           h("div", { class: "item" }, perDayNote),
         ),
         locked ? noteLine(locked) : null,
@@ -378,7 +428,7 @@ export function notificationsSection(ctx: Ctx, scope: Scope): HTMLElement | null
     if (!scope.disposed) await refresh();
   }
 
-  async function save(change: { kinds?: Partial<Record<NotifyKind, boolean>>; quiet?: Partial<NotifyPrefs["quiet"]>; perDay?: number }): Promise<void> {
+  async function save(change: { kinds?: Partial<Record<NotifyKind, boolean>>; quiet?: Partial<NotifyPrefs["quiet"]>; perDay?: number; digest?: Partial<NotifyPrefs["digest"]> }): Promise<void> {
     try {
       const { prefs } = await ctx.api.post<{ prefs: NotifyPrefs }>("/api/notify", change, scope.signal);
       if (view) view = { ...view, prefs, today: { ...view.today, limit: prefs.perDay } };

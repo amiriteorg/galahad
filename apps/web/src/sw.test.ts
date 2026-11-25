@@ -112,7 +112,7 @@ async function tap(): Promise<{ closed: boolean }> {
 }
 
 const CHAT = "cv_1234567890123456789012";
-const finished = { v: 1, kind: "finished", title: "Galahad has finished", body: "“Plan the garden shed”.", open: "chat", conversation: CHAT, tag: "t-AbCdEfGhIjKlMnOpQrStUv" };
+const finished = { v: 1, kind: "finished", title: "Galahad has finished", body: "A chat you left him working in has his answer.", open: "chat", conversation: CHAT, tag: "t-AbCdEfGhIjKlMnOpQrStUv" };
 
 describe("he comes to you: a push becomes a notification", () => {
   test("a payload of ours is shown as it is: its title, its one line, where it opens", async () => {
@@ -120,11 +120,20 @@ describe("he comes to you: a push becomes a notification", () => {
     await push(finished);
     expect(shown).toHaveLength(1);
     expect(shown[0]!.title).toBe("Galahad has finished");
-    expect(shown[0]!.options).toMatchObject({ body: "“Plan the garden shed”.", tag: "t-AbCdEfGhIjKlMnOpQrStUv", renotify: true, icon: "/icon-192.png", data: { open: "chat", conversation: CHAT } });
+    // News is told quietly: no sound, and told again it replaces itself without a word (PLAN #59).
+    expect(shown[0]!.options).toMatchObject({ body: "A chat you left him working in has his answer.", tag: "t-AbCdEfGhIjKlMnOpQrStUv", silent: true, renotify: false, icon: "/icon-192.png", data: { open: "chat", conversation: CHAT } });
     // In Android's status bar, the helm's silhouette: the system draws a badge from its alpha alone, so the tile would be a white square.
     expect(shown[0]!.options.badge).toBe("/icon-mono-96.png");
-    await push({ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "ultra is low on disk", open: "inbox", tag: "t-0123456789abcdefghijkl" });
-    expect(shown[1]!.options.data).toEqual({ open: "inbox" });
+    // What needs you lets you know, every time, even replacing its own.
+    await push({ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "Something in your Inbox needs you.", open: "inbox", tag: "t-0123456789abcdefghijkl" });
+    expect(shown[1]!.options).toMatchObject({ silent: false, renotify: true, data: { open: "inbox" } });
+    for (const kind of ["told", "limit"]) {
+      await push({ v: 1, kind, title: "Galahad", body: "x", open: "inbox", tag: "t-0123456789abcdefghijkl" });
+      expect(shown.at(-1)!.options).toMatchObject({ silent: true, renotify: false });
+    }
+    // Anything that isn't one of ours is the plain one, which may need you: it lets you know.
+    await push({ kind: "advert" });
+    expect(shown.at(-1)!.options).toMatchObject({ silent: false, renotify: true });
   });
 
   test("anything that isn't one of ours still shows a notification, and only the plain one: never what it says, never nothing", async () => {

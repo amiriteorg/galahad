@@ -1,4 +1,4 @@
-import { GENERIC_NOTIFICATION, isConversationId, NOTIFY_OPENS, type NotifyOpen, type NotifyPayload, notifyUrl, readNotifyPayload } from "@galahad/core/notify-payload";
+import { GENERIC_NOTIFICATION, isConversationId, isQuietKind, NOTIFY_OPENS, type NotifyOpen, type NotifyPayload, notifyUrl, readNotifyPayload } from "@galahad/core/notify-payload";
 import { afterPush, badgeCount, type BadgeState, type Badging, NO_BADGE, readBadgeMessage, readBadgeState, showBadge } from "./lib/badge.ts";
 
 /*
@@ -174,11 +174,14 @@ async function showPush(event: PushEventLike): Promise<void> {
     payload = null;
   }
   const shown = payload ?? GENERIC_NOTIFICATION;
+  // News (a news kind) is told quietly: no sound or vibration, and the same thing told again replaces it without a
+  // word. What needs you lets you know, every time, even when it replaces its own notification.
+  const quiet = isQuietKind(shown.kind);
   await sw.registration.showNotification(shown.title, {
     body: shown.body,
-    // The same thing told again replaces its notification, and still lets you know.
     tag: shown.tag,
-    renotify: true,
+    silent: quiet,
+    renotify: !quiet,
     icon: "/icon-192.png",
     // Android's status bar draws a badge from its alpha alone: the helm's silhouette, not the tile (a white square).
     badge: "/icon-mono-96.png",

@@ -11,7 +11,7 @@ import { readBankCallback } from "./lib/bank.ts";
 import { handBankCallback } from "./views/bank.ts";
 import { handShared } from "./views/chat.ts";
 import { isShare, readShare } from "./lib/share.ts";
-import { syncPush } from "./views/notifications.ts";
+import { syncPush, takeDownWithdrawn } from "./views/notifications.ts";
 
 /*
  * Boot: secure context → device key → (pairing | welcome | the app).
@@ -133,6 +133,8 @@ async function boot(): Promise<void> {
   // turned off; one its push service dropped is made again). Begun before the views, whose card says he can't reach
   // this device only once this is done.
   void syncPush(api);
+  // What was answered on another device meanwhile is taken down here when the app is looked at again.
+  document.addEventListener("visibilitychange", () => void (!document.hidden && takeDownWithdrawn(api)));
   const shell = renderShell(root, { api, identity, whoami, link });
 
   // One refused request isn't proof of revocation: ask once more before leaving the app.
