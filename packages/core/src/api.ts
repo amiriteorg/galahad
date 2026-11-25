@@ -570,6 +570,12 @@ export const routes = {
     input: z.strictObject({ id: SandboxId, on: NodeRef.optional(), quest: TeamWorkspaceQuest }),
   },
   whoami: { method: "GET", path: "/api/whoami", scope: null, input: null },
+  /**
+   * What changed, as it changes (core's live.ts): one answer that stays open, server-sent events naming the routes whose
+   * answers changed, never what they hold, each only to a device that holds that route's scope. Your devices' alone; it
+   * ends when the device is revoked or its scopes change, and when the node stops.
+   */
+  live: { method: "GET", path: "/api/live", scope: "mind:read", input: null },
   fleet: { method: "GET", path: "/api/fleet", scope: "mind:read", input: null },
   recall: {
     method: "POST",

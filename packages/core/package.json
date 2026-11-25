@@ -14,6 +14,7 @@
     "./galahad-index": "./src/galahad-index.ts",
     "./identity": "./src/identity.ts",
     "./interventions": "./src/interventions.ts",
+    "./live": "./src/live.ts",
     "./notify": "./src/notify.ts",
     "./notify-payload": "./src/notify-payload.ts",
     "./pairing": "./src/pairing.ts",

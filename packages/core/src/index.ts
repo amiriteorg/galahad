@@ -13,6 +13,7 @@ export * from "./terminal-input.ts";
 export * from "./quests.ts";
 export * from "./turns.ts";
 export * from "./lookalike.ts";
+export * from "./live.ts";
 export * from "./plain.ts";
 export * from "./skills.ts";
 export * from "./skills-input.ts";

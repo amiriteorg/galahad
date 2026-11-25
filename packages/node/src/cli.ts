@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { type ArtifactView, type AwayView, b64u, type LookView, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type SlackView, SLACK_APP_MANIFEST, type TelegramView, type TrialView, type QuestionView, plainLine } from "@galahad/core";
+import { type ArtifactView, type AwayView, b64u, type LookView, type ChatStreamEvent, decodeInvite, encodeQr, type FleetView, type InvestigationView, qrToTerminal, type RouteName, routes, type SandboxView, type ScreenSessionView, type ScreenStatus, type ScreenView, type TeamOutcome, type SlackView, SLACK_APP_MANIFEST, type TelegramView, type TrialView, type QuestionView, plainLine, type LiveEvent } from "@galahad/core";
 import { onPlan, planOf, sseData } from "@galahad/brain";
 import { requestPairing, signedPost, type SyncPage, waitForApproval } from "@galahad/link";
 import { foundFleet, MindStore } from "@galahad/mind";
@@ -158,6 +158,8 @@ Set up
   revoke <device> [--reason text]
   grant <device> <scope…>                                   give a paired phone/browser more permissions (e.g. sandbox)
   status                                                   fleet, peers, capabilities
+  live                                                     what your devices are told as it changes: which of what they
+                                                           show changed (their live stream), until Ctrl-C
   away [--since 6h]                                        while you were away: tasks that ended, his outcomes' questions,
                                                            loops that failed, what waits on you (default: the last day)
   looks [cancel <id>]                                      what he set himself to look at again later, in your chats
@@ -1007,6 +1009,17 @@ Next:
       if (!lines.length) console.log(dim(`Nothing happened since ${new Date(since).toLocaleString()}.`));
       const mark = { ok: "✓", danger: "✗", warn: "!", neutral: "·" } as const;
       for (const line of lines) console.log(`  ${mark[line.tone]} ${line.tone === "neutral" ? line.text : bold(line.text)}`);
+      return;
+    }
+
+    case "live": {
+      // What your devices' live stream tells (core's live.ts): the topics they read again, as they change.
+      const at = () => new Date().toLocaleTimeString([], { hour12: false });
+      for await (const event of new Admin(home).stream<LiveEvent>("live", undefined)) {
+        if (event.type === "hello") console.log(`${dim(at())}  telling of ${event.topics.join(", ")}`);
+        else if (event.type === "changed") console.log(`${dim(at())}  changed: ${event.topics.join(", ")}`);
+        else console.log(`${dim(at())}  ended: ${event.reason === "stopping" ? "the node is stopping" : event.reason}`);
+      }
       return;
     }
 

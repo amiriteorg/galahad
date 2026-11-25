@@ -116,6 +116,11 @@ import {
   pricesOf,
   moneyPrices,
   type AwayView,
+  LIVE_BEAT_MS,
+  LIVE_TOPICS,
+  type LiveBye,
+  type LiveEvent,
+  type LiveTopic,
 } from "@galahad/core";
 import type { McpIndex } from "./mcp-index.ts";
 import {
@@ -228,6 +233,7 @@ import { galahadRevision } from "./revision.ts";
 import { localModelsOf, type ModelPeer, serves, viaFleet } from "./local-models.ts";
 import { githubRepo, shipBranch } from "./quest-cli.ts";
 import type { Terminals } from "./terminals.ts";
+import { LiveChanges, MindCounts, timedStamp } from "./live.ts";
 
 /**
  * loopback  127.0.0.1:<port>         local processes only: CLI (admin token), model gateway
@@ -1757,6 +1763,142 @@ export function createApp(ctx: AppContext) {
   }
 
   /*
+   * What changed, for your devices' live streams (core's live.ts; the stamps: live.ts). Each topic's stamp is read from
+   * what its route answers from, the mind's by the events it took; nothing is read while nobody listens.
+   */
+  const mindCounts = new MindCounts();
+  const liveChanges = new LiveChanges(
+    {
+      // A device joined, left or changed, or a node went on- or offline (its load and round trip: the pages that show them).
+      fleet: () => `${mindCounts.of("fleet")}.${ctx.sync.status().map((peer) => `${peer.device}${peer.online ? "+" : "-"}`).join(",")}`,
+      pairings: () => ctx.pairing.pending().map((r) => `${r.invite}.${r.device}.${r.conflict ? 1 : 0}`).join(","),
+      secretRequests: () => String(mindCounts.of("secretRequests")),
+      loopDrafts: () => ctx.loopDrafts.list().map((draft) => draft.id).join(","),
+      connectorRequests: () => `${mindCounts.of("connectorRequests")}.${ctx.connectorRequests.list().map((request) => request.id).join(",")}`,
+      aboutYou: () => String(mindCounts.of("aboutYou")),
+      // An ask you didn't answer expires, and an approval not sent by its time never will be.
+      actions: timedStamp(() => mindCounts.of("actions"), () => ctx.connectors.actions(), (a) => (a.state === "waiting" ? a.expires : a.state === "approved" ? a.sendBy : null)),
+      // An ask to use a Mac's screen lapses, and a session runs out.
+      screenSessions: timedStamp(() => mindCounts.of("screenSessions"), (now) => screenSessionViews(now), (s) => (s.state === "waiting" ? s.answerBy : s.state === "allowed" ? s.until : null)),
+      questions: () => (ctx.questions?.list() ?? []).map((q) => q.id).join(","),
+      notices: () => String(mindCounts.of("notices")),
+      // Which quests are in hand and how each stands; not each step one reports.
+      quests: () => ctx.quests.list().map((q) => `${q.by}\u0000${q.quest}\u0000${q.state}\u0000${q.silent ? 1 : 0}`).join("\u0001"),
+      team: () => ctx.team?.store.version() ?? "",
+      // Your chats as kept, and which turns run; not each step a turn takes.
+      turns: () => `${ctx.chats.version()}.${ctx.turns.running().map((turn) => turn.id).join(",")}`,
+    },
+    { log: ctx.log },
+  );
+  const stopMind = ctx.store.onApplied((events, rebuilt) => {
+    if (mindCounts.take(events, rebuilt)) liveChanges.poke();
+  });
+  ctx.shutdown?.addEventListener(
+    "abort",
+    () => {
+      stopMind();
+      liveChanges.close();
+    },
+    { once: true },
+  );
+
+  /** A device with more live streams open than this closes its oldest (a page that left without a word, a tab too many). */
+  const LIVE_PER_DEVICE = 8;
+  /** Each device's open streams, the oldest first: how each is ended. */
+  const liveOpen = new Map<string, Set<(why: LiveBye) => void>>();
+
+  /**
+   * What changed, as it changes (core's live.ts), to one of your devices: the topics it may read (each route's own
+   * scope), then each change among them. It ends when the device is no longer what it was when it opened it (revoked,
+   * or its scopes changed), when the node stops, and when the device goes away; one that can't keep up (a megabyte
+   * unread) is let go, and opens it again.
+   */
+  function liveStream(p: Principal, req: Request): Response {
+    if (!isOwner(p)) throw new HttpError(403, "the live stream is your own devices': an agent or a node keeps up its own way");
+    const topics = new Set<LiveTopic>(
+      LIVE_TOPICS.filter((topic) => {
+        const scope: Scope | null = routes[topic].scope;
+        return scope === null || p.scopes.includes(scope);
+      }),
+    );
+    const encoder = new TextEncoder();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    let open = true;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let leave: () => void = () => {};
+    const mine = liveOpen.get(p.device) ?? new Set<(why: LiveBye) => void>();
+    liveOpen.set(p.device, mine);
+    const stopping = () => end("stopping");
+    const finish = (): boolean => {
+      if (!open) return false;
+      open = false;
+      clearInterval(heartbeat);
+      leave();
+      mine.delete(end);
+      if (!mine.size && liveOpen.get(p.device) === mine) liveOpen.delete(p.device);
+      ctx.shutdown?.removeEventListener("abort", stopping);
+      return true;
+    };
+    const close = (): void => {
+      if (!finish()) return;
+      try {
+        controller.close();
+      } catch {
+        /* already closed */
+      }
+    };
+    const write = (text: string): void => {
+      if (!open) return;
+      if ((controller.desiredSize ?? 0) < -1024 * 1024) return close();
+      try {
+        controller.enqueue(encoder.encode(text));
+      } catch {
+        close();
+      }
+    };
+    const send = (event: LiveEvent): void => write(`data: ${JSON.stringify(event)}\n\n`);
+    function end(why: LiveBye): void {
+      if (!open) return;
+      send({ type: "bye", reason: why });
+      close();
+    }
+    // Still the device it was opened as: enrolled, with the scopes it had (a terminal's always is).
+    const changedUnder = (): LiveBye | null => {
+      if (p.kind !== "client") return null;
+      const device = ctx.store.activeDevice(p.device);
+      if (!device) return "revoked";
+      const now = new Set(device.scopes);
+      return now.size === new Set(p.scopes).size && p.scopes.every((scope) => now.has(scope)) ? null : "rescoped";
+    };
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        start: (c) => void (controller = c),
+        cancel: () => void finish(),
+      },
+      new ByteLengthQueuingStrategy({ highWaterMark: 16 * 1024 }),
+    );
+    if (mine.size >= LIVE_PER_DEVICE) [...mine][0]!("replaced");
+    mine.add(end);
+    send({ type: "hello", topics: [...topics] });
+    // (Nothing can change between the hello and this: no write runs until this returns.)
+    const unsubscribe = liveChanges.subscribe((changed) => {
+      if (changed.includes("fleet")) {
+        const why = changedUnder();
+        if (why) return end(why);
+      }
+      const told = changed.filter((topic) => topics.has(topic));
+      if (told.length) send({ type: "changed", topics: told });
+    });
+    if (open) leave = unsubscribe;
+    else unsubscribe();
+    heartbeat = setInterval(() => write(": keep-alive\n\n"), LIVE_BEAT_MS);
+    req.signal.addEventListener("abort", close);
+    ctx.shutdown?.addEventListener("abort", stopping, { once: true });
+    if (ctx.shutdown?.aborted) stopping();
+    return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", ...SECURITY_HEADERS } });
+  }
+
+  /*
    * Side questions: answered from a chat's context without his tools, kept apart (here, in memory, for the
    * device that asked, for half an hour) and part of nothing unless brought back. A few at once, no more.
    */
@@ -2749,6 +2891,7 @@ export function createApp(ctx: AppContext) {
       fleet: ctx.store.fleet,
       fleetName: ctx.store.genesis?.name ?? null,
     }),
+    live: (_input, p, req) => liveStream(p, req),
     fleet: () => fleetView(),
     recall: (input) => ({ memories: ctx.store.recall(input.q, input.limit ?? 50) }),
     remember: (input, p) => {
@@ -4333,6 +4476,9 @@ export function createApp(ctx: AppContext) {
       if (/not authorized|already|unknown or|refusing|no secret|not configured/.test(message)) return json({ error: message }, 409);
       ctx.log(`error ${req.method} ${new URL(req.url).pathname}: ${message}`);
       return json({ error: "internal error" }, 500);
+    } finally {
+      // What a request wrote reaches your devices' streams as soon as it is answered (what else changes, within LOOK_MS).
+      if (req.method !== "GET" && listener !== "sandbox") liveChanges.poke();
     }
   };
 }

@@ -742,6 +742,15 @@ export class TeamStore {
     const { order, primary } = this.arrangement();
     return { northStar: this.northStar(this.now() - 30 * 86_400_000), teammates: this.teammates(), rooms: this.openRooms(), tasks: this.tasks(), deliveries: [...this.deliveries(), ...this.galahadAnswers()], ...(removed.length ? { removed } : {}), ...(this.engram() ? { engram: true } : {}), ...(this.ciBack() ? { ciBack: true } : {}), ...(this.backlog() ? { backlog: true } : {}), ...(computer ? { computer } : {}), order, primary, seen: this.seen() };
   }
+  /**
+   * Which writing of the team this is, for the live stream: the rows this store has written, and the database's
+   * count of what another connection wrote. Says nothing of what changed.
+   */
+  version(): string {
+    const { n } = this.db.query<{ n: number }, []>("SELECT total_changes() AS n").get()!;
+    const { data_version } = this.db.query<{ data_version: number }, []>("PRAGMA data_version").get()!;
+    return `${n}.${data_version}`;
+  }
   /** When you last looked at each knight's page (`knight:<id>`) and each room (`room:<id>`), on any device. */
   seen(): Record<string, number> {
     return Object.fromEntries(this.db.query<{ key: string; at: number }, []>("SELECT key, at FROM team_seen").all().map((row) => [row.key, row.at]));
