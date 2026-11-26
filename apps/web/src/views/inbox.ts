@@ -71,9 +71,8 @@ function keptWork(ctx: Ctx, action: ActionView): HTMLElement | null {
   );
 }
 
-/** An action Galahad wants to take that the oath says to ask about. Nothing leaves until you approve it. */
 /** A loop Galahad drafted when you asked for one in chat: it runs nothing until you add it here (or dismiss it). */
-function loopDraftCard(ctx: Ctx, draft: LoopDraftView): HTMLElement {
+export function loopDraftCard(ctx: Ctx, draft: LoopDraftView): HTMLElement {
   const outcome = h("div");
   const mayAdd = ctx.can("brain:write");
   const add = button(draft.replaces ? "Add, replacing yours" : "Add loop", { variant: "primary", icon: "check" });
@@ -175,7 +174,64 @@ function openEdit(ctx: Ctx, action: ActionView, node: string): void {
   const sheet = openSheet({ title: "Edit, then approve", description: `${action.connector}.${action.tool}, asked by ${callerName(action.by)}`, body: form, size: "wide", initialFocus: () => fields[0]?.area });
 }
 
-/** An approval waiting for you, as the Inbox shows it, and Galahad's welcome too (galahad-asks.ts). */
+/**
+ * Your answer to an action that waits for you, said to the node (`yes`: approve it, as it is). What became of it is a
+ * toast; a refusal is handed to `problem`, where the card that asked shows it.
+ */
+export async function answerAction(ctx: Ctx, action: ActionView, yes: boolean, trigger: HTMLButtonElement, problem: (callout: HTMLElement) => void): Promise<void> {
+  const node = deviceName(ctx, action.node);
+  await busy(trigger, async () => {
+    try {
+      await ctx.api.post("/api/actions/decide", { id: action.id, approve: yes });
+      toast(yes ? "Approved" : "Declined", {
+        tone: yes ? "ok" : "info",
+        description: yes ? `${node} sends it once, now.` : "Nothing was sent.",
+      });
+      await ctx.live.refreshActions();
+    } catch (error) {
+      problem(callout("danger", errorMessage(error), { title: yes ? "Couldn't approve" : "Couldn't decline" }));
+      await ctx.live.refreshActions();
+    }
+  });
+}
+
+/** Approve an action: the card says what and why; this says what happens next, once more, before anything leaves (a
+ * delete makes you type what it deletes). */
+export async function approveAction(ctx: Ctx, action: ActionView, trigger: HTMLButtonElement, problem: (callout: HTMLElement) => void): Promise<void> {
+  const destructive = action.class === "delete";
+  const node = deviceName(ctx, action.node);
+  const ok = await confirmAction({
+    title: destructive ? "Approve this delete?" : "Approve and send?",
+    body: [
+      h("p", {}, h("span", { class: "mono strong wrap-anywhere" }, action.target), ` through ${action.connector}.`),
+      h(
+        "p",
+        {},
+        destructive
+          ? `${node} deletes it once, as soon as you approve. It can't be brought back.`
+          : `${node} sends it once, as soon as you approve. It can't be called back, and if it fails it isn't retried.`,
+      ),
+    ],
+    confirmLabel: destructive ? "Approve delete" : "Approve and send",
+    tone: destructive ? "danger" : "primary",
+    typeToConfirm: destructive ? deleteName(action) : undefined,
+  });
+  if (ok) await answerAction(ctx, action, true, trigger, problem);
+}
+
+/** Approve it, and answer calls like it the same way next time: a standing order, signed in the same step. */
+export function allowSimilar(ctx: Ctx, action: ActionView): void {
+  openOrderFromAction(ctx, action, {
+    rows: rowsFromCall(action),
+    caller: callerName(action.by),
+    label: defaultLabel(action),
+    node: deviceName(ctx, action.node),
+    confirmName: deleteName(action),
+    onDone: () => void ctx.live.refreshActions(),
+  });
+}
+
+/** An approval waiting for you, as the Inbox shows it, and Galahad's welcome too (galahad-asks.ts). Nothing leaves until you approve it. */
 export function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
   const info = CLASS_INFO[action.class as ActionClass];
   const destructive = action.class === "delete";
@@ -191,54 +247,11 @@ export function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
   // Your own words in it before your yes (never a delete's: what it deletes is typed to approve it).
   const edit = !destructive && editableTexts(action).length ? button("Edit…", { icon: "edit" }) : null;
   edit?.addEventListener("click", () => openEdit(ctx, action, node));
+  const problem = (shown: HTMLElement) => replace(outcome, shown);
 
-  async function decide(yes: boolean, trigger: HTMLButtonElement): Promise<void> {
-    await busy(trigger, async () => {
-      try {
-        await ctx.api.post("/api/actions/decide", { id: action.id, approve: yes });
-        toast(yes ? "Approved" : "Declined", {
-          tone: yes ? "ok" : "info",
-          description: yes ? `${node} sends it once, now.` : "Nothing was sent.",
-        });
-        await ctx.live.refreshActions();
-      } catch (error) {
-        replace(outcome, callout("danger", errorMessage(error), { title: yes ? "Couldn't approve" : "Couldn't decline" }));
-        await ctx.live.refreshActions();
-      }
-    });
-  }
-
-  approve.addEventListener("click", async () => {
-    // The card says what and why; this says what happens next, once more, before anything leaves.
-    const ok = await confirmAction({
-      title: destructive ? "Approve this delete?" : "Approve and send?",
-      body: [
-        h("p", {}, h("span", { class: "mono strong wrap-anywhere" }, action.target), ` through ${action.connector}.`),
-        h(
-          "p",
-          {},
-          destructive
-            ? `${node} deletes it once, as soon as you approve. It can't be brought back.`
-            : `${node} sends it once, as soon as you approve. It can't be called back, and if it fails it isn't retried.`,
-        ),
-      ],
-      confirmLabel: destructive ? "Approve delete" : "Approve and send",
-      tone: destructive ? "danger" : "primary",
-      typeToConfirm: destructive ? deleteName(action) : undefined,
-    });
-    if (ok) await decide(true, approve);
-  });
-  decline.addEventListener("click", () => void decide(false, decline));
-  similar.addEventListener("click", () =>
-    openOrderFromAction(ctx, action, {
-      rows: rowsFromCall(action),
-      caller: callerName(action.by),
-      label: defaultLabel(action),
-      node,
-      confirmName: deleteName(action),
-      onDone: () => void ctx.live.refreshActions(),
-    }),
-  );
+  approve.addEventListener("click", () => void approveAction(ctx, action, approve, problem));
+  decline.addEventListener("click", () => void answerAction(ctx, action, false, decline, problem));
+  similar.addEventListener("click", () => allowSimilar(ctx, action));
 
   return card(
     { tone: destructive ? "danger" : "accent", label: `Galahad asks to ${info?.label.toLowerCase() ?? action.class}: ${action.target}` },
@@ -271,7 +284,7 @@ export function actionCard(ctx: Ctx, action: ActionView): HTMLElement {
  * His ask to use a Mac itself (docs/MAC.md, M4), or his session there while it lasts: what for (his words), for how
  * long, and your answer: let him (asked once more, saying what it gives him), say no, or end it sooner.
  */
-function screenSessionCard(ctx: Ctx, s: ScreenSessionView): HTMLElement {
+export function screenSessionCard(ctx: Ctx, s: ScreenSessionView): HTMLElement {
   const outcome = h("div");
   const admin = ctx.can("fleet:admin");
   const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
