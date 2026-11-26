@@ -415,6 +415,22 @@ export function fieldInk(inks: FieldInks, lit: number, rim: number): { rgb: [num
   return { rgb: [mix(0), mix(1), mix(2)], alpha: FIELD_INK.floor + (1 - FIELD_INK.floor) * Math.pow(light, FIELD_INK.curve) };
 }
 
+/** fieldInk for each point of each frame on a light page, making nothing: its colour into `out` (0 to 255 a channel) and
+ * its opacity as `out[3]`, read from FIELD_INK's curve taken in 1024 steps (within a thousandth of fieldInk's; a stroke is
+ * drawn in sixteen steps of it anyway). */
+export function fieldInkInto(inks: FieldInks, lit: number, rim: number, out: Float64Array | number[]): void {
+  const total = lit + rim;
+  const share = total > 0 ? rim / total : 0;
+  const S = FIELD_INK.sheen;
+  const sheen = S.most * Math.max(0, Math.min(1, (lit - S.from) / (1 - S.from))) * (1 - share);
+  for (let c = 0; c < 3; c++) {
+    const ink = inks.key[c]! + (inks.rim[c]! - inks.key[c]!) * share;
+    out[c] = ink + (inks.sheen[c]! - ink) * sheen;
+  }
+  out[3] = INK_ALPHA[Math.round(Math.min(1, Math.max(0, lit, rim)) * 1023)]!;
+}
+const INK_ALPHA = Float64Array.from({ length: 1024 }, (_, i) => FIELD_INK.floor + (1 - FIELD_INK.floor) * Math.pow(i / 1023, FIELD_INK.curve));
+
 // (Colour in OKLab, Björn Ottosson's: a lightness and two axes of hue, so an ink keeps its hue as it darkens.)
 /** The light page's own luminance (#fafafa, --bg). */
 const PAGE_LUMINANCE = Math.pow((250 / 255 + 0.055) / 1.055, 2.4);

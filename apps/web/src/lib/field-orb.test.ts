@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { blendHex, KNIGHT_TINTS, knightColors } from "@galahad/core/avatar";
 import { AURUM, fieldPoints, project } from "./field.ts";
 import {
-  FIELD_EASE, FIELD_EMBERS, FIELD_INK, FIELD_MOTION, FIELD_STROKE, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInk, fieldInks, fieldLook, fieldMotion, fieldSettled, fieldStep, fieldStill, fieldTone,
+  FIELD_EASE, FIELD_EMBERS, FIELD_INK, FIELD_MOTION, FIELD_STROKE, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInk, fieldInkInto, fieldInks, fieldLook, fieldMotion, fieldSettled, fieldStep, fieldStill, fieldTone,
   GALAHAD_FIELD, GALAHAD_LANCE, knightField, lanceAt, lanceLine, RIM_ANGLE, RIM_DIM, type FieldClock, type FieldMotion,
 } from "./field-orb.ts";
 import { ORB_LONGEST_STEP, ORB_MOODS } from "./orb-motion.ts";
@@ -300,6 +300,14 @@ describe("its colours", () => {
     expect(fieldInk(inks, 0, 0)).toEqual({ rgb: inks.key, alpha: FIELD_INK.floor });
     expect(FIELD_INK.floor).toBeGreaterThan(0.15);
     expect(fieldInk(inks, 1, 0).alpha).toBe(1);
+    // As a frame draws it (making nothing): the same colour, its opacity within a thousandth.
+    const out = new Float64Array(4);
+    for (const [lit, rim] of [[0, 0], [0.2, 0.05], [0.5, 0.5], [0.8, 0], [1, 0], [0, 1], [0.37, 0.61]] as [number, number][]) {
+      fieldInkInto(inks, lit, rim, out);
+      const exact = fieldInk(inks, lit, rim);
+      for (const c of [0, 1, 2]) expect(out[c]).toBeCloseTo(exact.rgb[c]!, 9);
+      expect(Math.abs(out[3]! - exact.alpha)).toBeLessThan(0.001);
+    }
   });
 
   test("on a light page, its lines hold at the smallest size and his lance holds as a blade", () => {

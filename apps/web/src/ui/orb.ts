@@ -1,6 +1,6 @@
 import { fieldAt, fieldBuffer, fieldLight, fieldModel, type FieldBuffer, type FieldModel } from "../lib/field.ts";
 import {
-  FIELD_STROKE, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInk, fieldInks, fieldLook, fieldMotion, fieldStep, fieldStill, fieldTone, GALAHAD_FIELD, GALAHAD_LANCE, knightField, lanceAt, lanceLine, strokeLight,
+  FIELD_STROKE, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInkInto, fieldInks, fieldLook, fieldMotion, fieldStep, fieldStill, fieldTone, GALAHAD_FIELD, GALAHAD_LANCE, knightField, lanceAt, lanceLine, strokeLight,
   type FieldClock, type FieldFrame, type FieldIdentity, type FieldInks, type FieldLook, type FieldMotion,
 } from "../lib/field-orb.ts";
 import type { FieldColours } from "../lib/field.ts";
@@ -223,6 +223,7 @@ const DISTANCE = 8.3;
 /** What a frame draws, kept from one to the next: each point's place on the canvas and the stroke it belongs to. */
 let placed = { x: new Float32Array(0), y: new Float32Array(0), stroke: new Int32Array(0) };
 const toned: [number, number, number] = [0, 0, 0];
+const inked = new Float64Array(4);
 
 /**
  * A frame of a field on `g`, a square `px` device pixels wide (`size` CSS pixels at `dpr`): its lines turned as the frame
@@ -251,11 +252,12 @@ function drawField(g: CanvasRenderingContext2D, px: number, dpr: number, size: n
     placed.y[i] = half - (buffer.y[i]! * f) / depth;
     let r: number, gg: number, b: number, level: number;
     if (inks) {
-      const ink = fieldInk(inks, buffer.lit[i]!, buffer.rim[i]!);
-      r = ink.rgb[0] / 255;
-      gg = ink.rgb[1] / 255;
-      b = ink.rgb[2] / 255;
-      level = Math.min(1, ink.alpha * glow);
+      // (Into one array kept from frame to frame: a frame makes nothing for each of its thousands of points.)
+      fieldInkInto(inks, buffer.lit[i]!, buffer.rim[i]!, inked);
+      r = inked[0]! / 255;
+      gg = inked[1]! / 255;
+      b = inked[2]! / 255;
+      level = Math.min(1, inked[3]! * glow);
     } else {
       fieldTone(buffer.r[i]! * glow * light, buffer.g[i]! * glow * light, buffer.b[i]! * glow * light, undefined, toned);
       // Its colour at full brightness, and how bright: so a stroke of one colour can be drawn at a step of brightness.
