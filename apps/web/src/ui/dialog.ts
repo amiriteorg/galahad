@@ -7,6 +7,12 @@ import { icon } from "./icons.ts";
  * down to dismiss on phones (Vaul-style: follows the finger 1:1, settles with
  * the drawer curve, dismisses on distance or a quick flick). Built on
  * <dialog>.showModal(), so focus is trapped and the page behind is inert.
+ *
+ * The page behind dims and blurs; a centred one arrives on a short spring and
+ * leaves quicker than it came. One that does what can't be taken back (tone
+ * "danger", every confirmation but a primary one) has its edge, its mark and
+ * its button in red; where its name must be typed, that stays (docs/DESIGN.md,
+ * Safety patterns).
  */
 
 export interface SheetOptions {
@@ -20,6 +26,8 @@ export interface SheetOptions {
   onClose?: () => void;
   /** Accessible role; alertdialog for confirmations. */
   role?: "dialog" | "alertdialog";
+  /** "danger": what it does can't be taken back; its edge and its mark beside the title are red. */
+  tone?: "danger";
 }
 
 export interface Sheet {
@@ -49,6 +57,7 @@ export function openSheet(options: SheetOptions): Sheet {
   const head = h(
     "header",
     { class: "sheet-head" },
+    options.tone === "danger" ? h("span", { class: "sheet-mark", "aria-hidden": "true" }, icon("alert", { size: 16 })) : null,
     h("div", { class: "grow" }, h("h2", { id: titleId }, options.title), options.description ? h("div", { class: "sub", id: descId }, options.description) : null),
     closeButton,
   );
@@ -61,6 +70,7 @@ export function openSheet(options: SheetOptions): Sheet {
       "aria-labelledby": titleId,
       "aria-describedby": options.description ? descId : null,
       role: options.role ?? null,
+      "data-tone": options.tone ?? null,
     },
     handle,
     head,
@@ -213,6 +223,7 @@ export function confirmAction(options: ConfirmOptions): Promise<boolean> {
       title: options.title,
       size: "small",
       role: "alertdialog",
+      tone: options.tone === "primary" ? undefined : "danger",
       body: form,
       initialFocus: () => typed ?? cancel,
       onClose: () => decide(false),

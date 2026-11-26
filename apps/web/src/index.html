@@ -908,18 +908,24 @@
       .ring { --p: 1; width: 22px; height: 22px; border-radius: 50%; background: conic-gradient(var(--accent-fill) calc(var(--p) * 360deg), var(--surface-3) 0); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px)); flex: none; }
 
       /* ---------- dialogs: centered on desktop, bottom sheet on phones ---------- */
+      /* What opens over the page (ui/dialog.ts): the page behind dims and blurs; a centred one arrives on a short spring
+         and closes quicker than it came, gathering speed (its resting state is where it starts and where it ends). One
+         that does what can't be taken back (data-tone="danger") has its edge, a faint light at its head, its mark and
+         its button in red. */
       dialog.sheet {
         padding: 0; border: 1px solid var(--border); border-radius: var(--r-xl); background: var(--surface); color: var(--text);
-        width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 860px); box-shadow: var(--shadow-3); overflow: hidden;
-        display: flex; flex-direction: column; opacity: 0; transform: translateY(8px) scale(0.98);
-        transition: opacity var(--d-2) var(--ease-out), transform var(--d-2) var(--ease-out), overlay var(--d-2) allow-discrete, display var(--d-2) allow-discrete;
+        width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 860px); box-shadow: inset 0 1px 0 var(--alert-lit), var(--shadow-3); overflow: hidden;
+        display: flex; flex-direction: column; opacity: 0; transform: translateY(8px) scale(0.97);
+        transition: opacity var(--d-2) var(--ease-exit), transform var(--d-2) var(--ease-exit), overlay var(--d-2) allow-discrete, display var(--d-2) allow-discrete;
       }
       dialog.sheet:not([open]) { display: none; }
-      dialog.sheet[open].shown { opacity: 1; transform: none; }
+      dialog.sheet[open].shown { opacity: 1; transform: none; transition: opacity var(--d-2) var(--ease-out), transform var(--d-spring) var(--ease-spring), overlay var(--d-spring) allow-discrete, display var(--d-spring) allow-discrete; }
       dialog.sheet.wide { width: min(760px, calc(100vw - 32px)); }
       dialog.sheet.small { width: min(440px, calc(100vw - 32px)); }
-      dialog.sheet::backdrop { background: var(--overlay); opacity: 0; transition: opacity var(--d-2) var(--ease-out); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
-      dialog.sheet.shown::backdrop { opacity: 1; }
+      dialog.sheet::backdrop { background: var(--overlay); opacity: 0; transition: opacity var(--d-2) var(--ease-exit); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+      dialog.sheet.shown::backdrop { opacity: 1; transition: opacity var(--d-3) var(--ease-out); }
+      dialog.sheet[data-tone="danger"] { border-color: color-mix(in oklab, var(--danger) 34%, var(--border)); background: radial-gradient(320px 120px at 36px 0, var(--danger-soft), transparent), var(--surface); }
+      .sheet-mark { flex: none; display: grid; place-items: center; width: 32px; height: 32px; margin-top: -3px; border-radius: 50%; color: var(--danger); background: var(--danger-soft); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 26%, transparent); }
       .sheet-handle { display: none; }
       .sheet-head { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5) var(--sp-5) var(--sp-3); }
       .sheet-head h2 { font-size: var(--fs-18); font-weight: 650; letter-spacing: -0.015em; }
@@ -932,8 +938,8 @@
           width: calc(100vw - 16px); max-width: calc(100vw - 16px); max-height: calc(100dvh - var(--safe-top) - 32px); margin: auto auto calc(8px + var(--safe-bottom)); border-radius: 32px;
           transform: translateY(calc(100% + 16px)); opacity: 1; transition: transform var(--d-sheet) var(--ease-drawer), overlay var(--d-sheet) allow-discrete, display var(--d-sheet) allow-discrete;
         }
-        dialog.sheet[open].shown { transform: translateY(var(--drag, 0px)); }
-        dialog.sheet.dragging { transition: none; }
+        dialog.sheet[open].shown { transform: translateY(var(--drag, 0px)); transition: transform var(--d-sheet) var(--ease-drawer), overlay var(--d-sheet) allow-discrete, display var(--d-sheet) allow-discrete; }
+        dialog.sheet.dragging, dialog.sheet[open].shown.dragging { transition: none; }
         .sheet-handle { display: block; flex: none; height: 22px; touch-action: none; cursor: grab; position: relative; }
         .sheet-handle::after { content: ""; position: absolute; left: 50%; top: 8px; width: 36px; height: 5px; margin-left: -18px; border-radius: 99px; background: var(--border-strong); }
         .sheet-head { padding-top: var(--sp-1); }
