@@ -341,9 +341,16 @@
       }
       .side-fold:hover { background: var(--surface-3); color: var(--text-2); }
       .side-fold-count { font-weight: 500; }
-      /* A failure folded into Done is still said on the fold, in red: "Done  4 · 1 failed" (views/work-rows.ts failedNote). */
-      .fold-failed { color: var(--tone); font-weight: 600; }
+      /* A failure folded into Done is still said beside the fold, in red, and opens it: "Done  4 · 1 failed" (views/work-rows.ts
+         failedNote, foldLine). */
+      .fold-line { display: flex; align-items: stretch; min-width: 0; }
+      .fold-line > :is(.side-fold, .home-fold) { flex: 1; min-width: 0; }
+      .fold-failed {
+        flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 0 var(--sp-2); border-radius: var(--r-md);
+        color: var(--tone); font-size: var(--fs-12); font-weight: 600; text-decoration: none; transition: background-color var(--d-1) var(--ease-out);
+      }
       .fold-failed::before { content: "· "; color: var(--text-3); font-weight: 500; }
+      .fold-failed:hover { background: color-mix(in srgb, var(--tone) 9%, transparent); }
       .side-fold .chev, .home-fold .chev { transition: transform var(--d-1) var(--ease-out); }
       .side-fold[aria-expanded="true"] .chev, .home-fold[aria-expanded="true"] .chev { transform: rotate(90deg); }
       .side-inbox { display: flex; align-items: center; gap: var(--sp-2); min-height: 34px; padding: 0 9px; border-radius: var(--r-md); color: var(--text); text-decoration: none; font-size: var(--fs-13); font-weight: 500; }
@@ -457,11 +464,13 @@
       .home-filter:first-child { padding-left: 10px; }
       .home-filter[aria-pressed="true"] { border-color: transparent; background: var(--accent-fill); color: var(--on-accent); }
       .home-filter[aria-pressed="true"] .work-badge { background: color-mix(in srgb, var(--on-accent) 18%, transparent); color: var(--on-accent); box-shadow: none; }
-      .home-work-rows > .work-row, .home-work-rows > .home-fold {
+      .home-work-rows > .work-row, .home-work-rows > .home-fold, .home-work-rows > .fold-line {
         border-radius: 0; border-top: 1px solid var(--border); padding: 10px calc(var(--sp-4) + var(--safe-right)) 11px calc(var(--sp-4) + var(--safe-left));
       }
       .home-fold { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; border: 0; background: none; color: var(--text-3); font: inherit; font-size: var(--fs-13); font-weight: 550; text-align: left; }
       .home-fold:active { background: var(--surface-3); }
+      .home-work-rows > .fold-line { padding-top: 0; padding-bottom: 0; }
+      .home-work-rows > .fold-line > .fold-failed { font-size: var(--fs-13); }
       .home-empty, .home-note { padding: var(--sp-6) calc(var(--sp-4) + var(--safe-right)) var(--sp-6) calc(var(--sp-4) + var(--safe-left)); border-top: 1px solid var(--border); color: var(--text-3); font-size: var(--fs-14); line-height: 1.5; }
       .home-empty p { max-width: 52ch; margin-bottom: var(--sp-3); }
       /* His message box, docked at the foot; the list fades out under it. */

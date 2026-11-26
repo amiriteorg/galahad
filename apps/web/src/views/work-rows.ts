@@ -95,7 +95,7 @@ export function workRow(row: WorkRow, opts: { face?: number; current?: boolean; 
 export function rowKeys(list: HTMLElement): void {
   list.addEventListener("keydown", (event: KeyboardEvent) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || event.altKey || event.metaKey || event.ctrlKey) return;
-    const rows = [...list.querySelectorAll<HTMLElement>(".work-row, .side-fold, .side-inbox, .home-fold")].filter((row) => row.getClientRects().length > 0);
+    const rows = [...list.querySelectorAll<HTMLElement>(".work-row, .side-fold, .side-inbox, .home-fold, .fold-failed")].filter((row) => row.getClientRects().length > 0);
     const at = rows.indexOf(event.target as HTMLElement);
     if (at < 0) return;
     const next = event.key === "Home" ? 0 : event.key === "End" ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)));
@@ -104,9 +104,18 @@ export function rowKeys(list: HTMLElement): void {
   });
 }
 
-/** On a folded Done, after its count, how many of it failed, in red and in words ("Done 4 · 1 failed"; lib/work.ts
- * failedIn): none, nothing. */
-export const failedNote = (failed: number): HTMLElement | null => (failed ? h("span", { class: "fold-failed tnum", "data-tone": "failed" }, `${failed} failed`) : null);
+/** Beside a folded Done, how many of it failed, in red and in words ("Done 4 · 1 failed"; lib/work.ts failedIn), and a
+ * tap away: it opens the latest that failed, so why one failed is one tap from the list even once it is settled. None
+ * failed: nothing. */
+export function failedNote(rows: readonly WorkRow[]): HTMLElement | null {
+  const failed = rows.filter((row) => row.state === "failed");
+  if (!failed.length) return null;
+  const latest = failed.reduce((a, b) => (b.at > a.at ? b : a));
+  return h("a", { class: "fold-failed tnum", "data-tone": "failed", href: hashOf("task", { task: latest.id }), title: `Why “${latest.title}” failed` }, `${failed.length} failed`);
+}
+
+/** A fold's line: its button (its name, its count, its chevron) and, beside it, what failed in it (failedNote). */
+export const foldLine = (fold: HTMLElement, failed: HTMLElement | null): HTMLElement => (failed ? h("div", { class: "fold-line" }, fold, failed) : fold);
 
 /** What a list of rows is drawn as, to be compared before drawing it again (a row that says the same is not redrawn). */
 export const rowsVersion = (rows: readonly WorkRow[]): string =>
