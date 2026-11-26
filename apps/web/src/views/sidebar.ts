@@ -125,7 +125,7 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
     drawGalahad();
     const now = settled() ? workNow(ctx) : null;
     const beyond = now ? inboxBeyond(ctx.live.inboxCount.value, ctx.live.actions.value.filter((action) => isWaiting(action)), now.needs) : 0;
-    const version = JSON.stringify([now && [rowsVersion(now.needs), rowsVersion(now.active), rowsVersion(now.working), rowsVersion(now.done)], beyond, where, [...open], Boolean(ctx.live.teamProblem.value)]);
+    const version = JSON.stringify([now && [rowsVersion(now.needs), rowsVersion(now.active), rowsVersion(now.working), rowsVersion(now.done)], beyond, where, [...open], Boolean(ctx.live.teamProblem.value), Boolean(ctx.live.team.value?.teammates.length)]);
     if (version === shown) return;
     shown = version;
     keepPlace(work, () => replace(work, ...(now ? sections(now, beyond) : [ctx.live.teamProblem.value ? h("p", { class: "side-note" }, "The work can't be read just now. ", button("Try again", { variant: "ghost", size: "sm", onClick: () => void ctx.live.refreshTeam() })) : skeletonRows(4)])));
@@ -147,8 +147,8 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
         h(
           "div",
           { class: "side-empty" },
-          h("p", {}, "No tasks yet. Each task you or Galahad give a knight is a row here: what needs you first, then what is new, at work, and done."),
-          canGive ? button("Give a task", { size: "sm", icon: "layers", onClick: () => giveToRoundtable(ctx) }) : null,
+          h("p", {}, ctx.live.team.value?.teammates.length ? "No tasks yet. Each task you or Galahad give a knight is a row here: what needs you first, then what is new, at work, and done." : "No knights yet. Seat your first, and each task you or Galahad give it is a row here: what needs you first, then what is new, at work, and done."),
+          canGive ? button(ctx.live.team.value?.teammates.length ? "Give a task" : "Seat a knight", { size: "sm", icon: ctx.live.team.value?.teammates.length ? "layers" : "plus", onClick: () => giveToRoundtable(ctx) }) : null,
         ),
       );
     }

@@ -26,7 +26,7 @@ import { renderMarkdown } from "../ui/markdown.ts";
 import { knightFace, orb } from "../ui/orb.ts";
 import { toast } from "../ui/toast.ts";
 import { askItem } from "./needs.ts";
-import { controlTeam, giveTask, shipTask } from "./team-forms.ts";
+import { controlTeam, giveTask, giveToRoundtable, shipTask } from "./team-forms.ts";
 import { openTerminal } from "./terminal.ts";
 import { askProjects, projectNames, projectTile, workNow } from "./work-rows.ts";
 import { openWorkspace } from "./workspace.ts";
@@ -247,8 +247,8 @@ export const taskView: View = (root, ctx, { scope, opts }) => {
         empty({
           icon: "layers",
           title: id ? "Nothing to show" : "Nothing given yet",
-          body: id ? "It may have been given on another node, or its knight was removed. Home has the work, by what needs you." : "Each task you or Galahad give a knight has a thread of its own here.",
-          actions: h("a", { class: "btn", href: "#/home" }, "Home"),
+          body: id ? "It may have been given on another node, or its knight was removed. Home has the work, by what needs you." : snapshot.teammates.length ? "Each task you or Galahad give a knight has a thread of its own here." : "Seat a knight first: each task you or Galahad give it then has a thread of its own here.",
+          actions: [canAct && !id ? button(snapshot.teammates.length ? "Give a task" : "Seat a knight", { variant: "primary", icon: snapshot.teammates.length ? "layers" : "plus", onClick: () => giveToRoundtable(ctx) }) : null, h("a", { class: "btn", href: "#/home" }, "Home")],
         }),
       );
       return;

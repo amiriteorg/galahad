@@ -145,6 +145,8 @@ export const homeView: View = (root, ctx, { scope }) => {
 
   let named = true;
   const rowEl = (row: WorkRow): HTMLElement => workRow(row, { face: 18, project: named });
+  /** A stranger's first day: no knight seated yet (Give a task seats one first). */
+  const firstDay = (): boolean => (ctx.live.team.value?.teammates.length ?? 0) === 0;
   /** The page is drawn once the team and the Inbox have both answered (or a moment has passed): what needs you comes in
    * with the work, rather than above it a moment later, pushing it down. */
   const started = Date.now();
@@ -153,7 +155,7 @@ export const homeView: View = (root, ctx, { scope }) => {
   function draw(): void {
     const all = settled() ? workNow(ctx) : null;
     drawHead(all, all ? needsCount(ctx, all) : 0);
-    const version = JSON.stringify([all && [rowsVersion(all.needs), rowsVersion(all.active), rowsVersion(all.working), rowsVersion(all.done), all.projects], filtered, [...open], needsVersion(ctx), Boolean(ctx.live.teamProblem.value)]);
+    const version = JSON.stringify([all && [rowsVersion(all.needs), rowsVersion(all.active), rowsVersion(all.working), rowsVersion(all.done), all.projects], filtered, [...open], needsVersion(ctx), Boolean(ctx.live.teamProblem.value), firstDay()]);
     if (version === shown) return;
     shown = version;
     // What needs you: amber, only when something waits.
@@ -196,8 +198,8 @@ export const homeView: View = (root, ctx, { scope }) => {
           ? h(
               "div",
               { class: "home-empty" },
-              h("p", {}, filtered ? "Nothing in this project." : "Nothing under way. Ask Galahad below, or give a knight a task: each is a row here, from its first step to verified."),
-              canGive && !filtered ? button("Give a task", { size: "sm", icon: "layers", onClick: () => giveToRoundtable(ctx) }) : null,
+              h("p", {}, filtered ? "Nothing in this project." : firstDay() ? "No knights yet. Ask Galahad below, or seat your first knight: a name, a lasting job and a workspace of its own. Each task you give is then a row here, from its first step to verified." : "Nothing under way. Ask Galahad below, or give a knight a task: each is a row here, from its first step to verified."),
+              canGive && !filtered ? button(firstDay() ? "Seat a knight" : "Give a task", { size: "sm", icon: firstDay() ? "plus" : "layers", onClick: () => giveToRoundtable(ctx) }) : null,
             )
           : null,
       ),
