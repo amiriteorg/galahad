@@ -416,12 +416,13 @@ object Work {
         return if (newest?.id == task.id) task.assignee else null
     }
 
-    /** Home's line under Galahad's name: how many are at work and how much needs you, else his own line. */
+    /** Home's line under Galahad's name: how much needs you, first (the line is amber then, and its first words agree with
+     * its colour), and how many are at work; else his own line. */
     data class Glance(val text: String, val needs: Boolean)
 
     fun atAGlance(working: List<Row>, needs: Int, his: String): Glance {
         val atWork = working.count { it.state == KnightState.WORKING }
-        val parts = listOfNotNull(if (atWork > 0) "$atWork at work" else null, if (needs > 0) "$needs need${if (needs == 1) "s" else ""} you" else null)
+        val parts = listOfNotNull(if (needs > 0) "$needs need${if (needs == 1) "s" else ""} you" else null, if (atWork > 0) "$atWork at work" else null)
         return if (parts.isNotEmpty()) Glance(parts.joinToString(" · "), needs > 0) else Glance(his, false)
     }
 

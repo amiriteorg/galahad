@@ -78,7 +78,8 @@ struct HomeView: View {
                             .tracking(-0.4)
                             .foregroundStyle(.primary)
                         // One line, whole where it can be: beside the machine chip on a phone it shrinks a little
-                        // ("1 at work · 5 need you" was cut to "5 nee…" on a 402-point iPhone) before it is cut.
+                        // ("1 at work · 5 need you", as it read then, was cut to "5 nee…" on a 402-point iPhone) before
+                        // it is cut.
                         Text(glance.0)
                             .font(.subheadline)
                             .foregroundStyle(glance.1 ? Color.needs : lineColor)

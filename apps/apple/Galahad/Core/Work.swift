@@ -382,10 +382,11 @@ enum Work {
         return newest?.id == task.id ? task.assignee : nil
     }
 
-    /// Home's line under Galahad's name: how many are at work and how much needs you, else his own line.
+    /// Home's line under Galahad's name: how much needs you, first (the line is amber then, and its first words agree with
+    /// its colour), and how many are at work; else his own line.
     static func atAGlance(_ work: Attended, needs: Int, his: String) -> (text: String, needs: Bool) {
         let atWork = work.working.filter { $0.state == .working }.count
-        let parts = [atWork > 0 ? "\(atWork) at work" : nil, needs > 0 ? "\(needs) need\(needs == 1 ? "s" : "") you" : nil].compactMap(\.self)
+        let parts = [needs > 0 ? "\(needs) need\(needs == 1 ? "s" : "") you" : nil, atWork > 0 ? "\(atWork) at work" : nil].compactMap(\.self)
         return parts.isEmpty ? (his, false) : (parts.joined(separator: " · "), needs > 0)
     }
 
