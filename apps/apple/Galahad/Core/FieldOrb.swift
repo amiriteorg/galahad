@@ -2,12 +2,13 @@ import Foundation
 
 /*
  * The orbs as fields (the PWA's lib/field-orb.ts, held to it by the vectors; 26 November 2026): Galahad's field
- * (Field.swift) is every orb, his in gold inside his heads-up ring, each knight's in its own colours. The owner's words:
- * the glyph spheres "still look a little strange/not cool enough, and almost like nipples", and "i dont want them to be
- * too visually distractin". So a field has no bright middle (its core stays dark), no regular lattice of dots, and no
- * ring round a knight; it is still where it is one of many, and moves slowly where it is the one you are looking at.
- * Pure: whose field an orb is, how it is drawn at a size, how it moves in each mood, its embers, and its ink on a light
- * page. FieldOrbView draws it.
+ * (Field.swift) is every orb, his in gold with his lance of light through it, each knight's in its own colours. The
+ * owner's words: the glyph spheres "still look a little strange/not cool enough, and almost like nipples", and "i dont
+ * want them to be too visually distractin"; then, of the heads-up ring he had worn round his field, "remove the old mark
+ * around galahad. make the primary agent distinct in some other cool way". So a field has no bright middle (its core
+ * stays dark), no regular lattice of dots, and no ring round it, his or a knight's; it is still where it is one of many,
+ * and moves slowly where it is the one you are looking at. Pure: whose field an orb is, how it is drawn at a size, his
+ * lance, how it moves in each mood, its embers, and its ink on a light page. FieldOrbView draws it.
  */
 
 /// Whose field an orb is: its seed (its lines' longitudes and widths), its lean (Field.model's tilt), how many lines, and
@@ -52,29 +53,76 @@ enum FieldOrb {
         let zoom: Double
     }
 
-    /// A field at a size. In Galahad's ring (`ringed`) it is drawn smaller, clear of the ring, and with fewer of his lines
-    /// where he is small; a knight's fills its square. The larger, the more points along a line, and the smaller, the bolder.
-    static func look(_ identity: FieldIdentity, size: Double, ringed: Bool) -> Look {
+    /// A field at a size. His (`galahad`) keeps fewer of his 46 lines where he is small, so it reads at 18 points; every
+    /// field fills its square alike (his no longer drawn in, clear of a ring). The larger, the more points along a line, and
+    /// the smaller, the bolder.
+    static func look(_ identity: FieldIdentity, size: Double, galahad: Bool) -> Look {
         let s = size.isFinite ? max(8, size) : 36
-        let lines = ringed ? min(identity.lines, s < 30 ? 26 : s < 56 ? 34 : 46) : identity.lines
-        return Look(lines: lines, steps: Int(jsRound(max(20, min(96, s * 0.55)))), weight: s <= 24 ? 1.5 : s <= 48 ? 1.25 : 1, zoom: ringed ? 0.86 : 0.94)
+        let lines = galahad ? min(identity.lines, s < 30 ? 26 : s < 56 ? 34 : 46) : identity.lines
+        return Look(lines: lines, steps: Int(jsRound(max(20, min(96, s * 0.55)))), weight: s <= 24 ? 1.5 : s <= 48 ? 1.25 : 1, zoom: 0.94)
     }
 
-    /// Galahad's heads-up ring round his field: five arcs of ink a sixth of the way round each, with gaps between, and at
-    /// the top, alone, his seat in oxblood. Angles are degrees clockwise from the top; the radius and widths are shares of
-    /// the orb's width, never thinner than a pixel.
-    enum Ring {
-        static let r = 0.465
-        static let width = 1.0 / 64
-        static let arcs: [(from: Double, to: Double)] = [(38, 82), (98, 142), (158, 202), (218, 262), (278, 322)]
-        static let seat = (from: -15.0, to: 15.0, width: 1.8)
-        static let ink = (dark: "#e8eaf0", paper: "#181a22")
-        static let inkAlpha = (dark: 0.26, paper: 0.28)
-        static let oxblood = (dark: "#c8323f", paper: "#9a1f2b")
+    /// His lance: what marks him out, now his heads-up ring has gone (the owner's word, 26 November 2026: "make the primary
+    /// agent distinct in some other cool way"). A blade of light along his field's own axis, out of both its poles, as a
+    /// pulsar's jets go: no knight has one. Each half runs from `from` to `to` of the field's units out of its middle (so the
+    /// core, r < 0.32, stays dark), `width` of the orb's width across at its root (never under a pixel), narrowing to
+    /// nothing at its tip, its light fading as it goes (`lanceAt`). On a dark page its light is added as the field's is,
+    /// with a close glow `glowWidth` times as wide and `glowAlpha` as strong (no fog); on a light page it is ink,
+    /// `inkWidth` times as wide and `inkAlpha` times as strong as its light (ink on white reads thinner than light on
+    /// black). Its outline is taken at `steps` steps along it. The field turns about it; it shines as the field does, never
+    /// past its light at rest (breathing while something waits, dimmer while queued or paused, its tip red-brown when its
+    /// work failed).
+    enum Lance {
+        static let from = 0.36
+        static let to = 1.72
+        static let width = 1.0 / 40
+        static let steps = 16
+        static let glowWidth = 3.2
+        static let glowAlpha = 0.2
+        static let inkWidth = 1.3
+        static let inkAlpha = 1.2
     }
 
-    /// How wide his ring's line is, in pixels, for an orb `size` pixels wide (its seat's is `Ring.seat.width` as wide).
-    static func ringWidth(_ size: Double) -> Double { max(1, size * Ring.width) }
+    /// A half of his lance in an orb's square (its middle 0, its edge 1; x right, y down, as an ember's): its root, out of
+    /// his core, and its tip.
+    struct Blade: Equatable, Sendable {
+        let root: [Double]
+        let tip: [Double]
+    }
+
+    /// A direction in the field's own space turned as its lean turns its points (Field.at: Rx·Ry·Rz).
+    static func leaned(_ v: [Double], _ tilt: [Double]) -> [Double] {
+        let (cx, sx, cy, sy, cz, sz) = (cos(tilt[0]), sin(tilt[0]), cos(tilt[1]), sin(tilt[1]), cos(tilt[2]), sin(tilt[2]))
+        var x = v[0] * cz - v[1] * sz, y = v[0] * sz + v[1] * cz, z = v[2]
+        let x2 = x * cy + z * sy, z2 = -x * sy + z * cy
+        x = x2
+        z = z2
+        let y3 = y * cx - z * sx, z3 = y * sx + z * cx
+        y = y3
+        z = z3
+        return [x, y, z]
+    }
+
+    /// His lance in an orb's square at a zoom: each half's root and tip, along his axis (Field.project's camera, as his
+    /// points are seen), the upper half first.
+    static func lanceLine(_ identity: FieldIdentity, zoom: Double) -> [Blade] {
+        let axis = leaned([0, 1, 0], identity.tilt)
+        func seen(_ k: Double) -> [Double] {
+            // (Placed as a point is: Field.at's points are its units times 1.05.)
+            let q = Field.project(x: axis[0] * k * 1.05, y: axis[1] * k * 1.05, z: axis[2] * k * 1.05, size: 0, picture: 2, zoom: zoom)
+            return [q.x - 1, q.y - 1]
+        }
+        let halves = [1.0, -1.0].map { dir in Blade(root: seen(dir * Lance.from), tip: seen(dir * Lance.to)) }
+        return halves[0].tip[1] <= halves[1].tip[1] ? halves : [halves[1], halves[0]]
+    }
+
+    /// Along a half of his lance, `u` of the way from its root (0) to its tip (1): its width as a share of the root's (it
+    /// narrows to a point), how much of its light is left, and how far its colour has gone from his key's lit gold (0)
+    /// through his gold (0.5) to his rim's copper (1).
+    static func lanceAt(_ u: Double) -> (width: Double, light: Double, hue: Double) {
+        let t = max(0, min(1, u))
+        return (pow(1 - t, 0.55), pow(1 - t, 1.1), t)
+    }
 
     // MARK: How it moves
 
@@ -181,7 +229,7 @@ enum FieldOrb {
 
     /// His embers: how many; each lives 2.8 to 4.4 seconds (then another sets out); where they set out (a share of the way
     /// from the middle to the edge of the orb's square) and how far each drifts; how much they rise as they go; how far
-    /// round from the rim's burning side they may set out (degrees either way); and their radius. Inside his ring always.
+    /// round from the rim's burning side they may set out (degrees either way); and their radius. Always inside his square.
     enum Embers {
         static let count = 7
         static let life = (2.8, 4.4)

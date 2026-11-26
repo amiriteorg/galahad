@@ -186,24 +186,6 @@ struct RoundtableMark: View {
     }
 }
 
-/// The app's icon, as the app draws it: the Roundtable in black on the white tile, Galahad's seat in red, as appIcon()
-/// seats it, with appIcon()'s faint dark edge (a pixel wide here), which keeps the white tile apart from a white page.
-struct AppTile: View {
-    var size: CGFloat = 88
-    @Environment(\.displayScale) private var displayScale
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous)
-                .fill(.white)
-                .strokeBorder(.black.opacity(0.1), lineWidth: 1 / displayScale)
-            Image(.roundtable).resizable().scaledToFit().padding(size * 0.11).environment(\.colorScheme, .light)
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
-    }
-}
-
 extension View {
     /// A field outside a form (a key to seal, text for a knight's screen): the system's quiet fill, the corners of what
     /// sits inside a card, and a thumb's height. Beside a button, the row is made as tall as its tallest, so the two match.

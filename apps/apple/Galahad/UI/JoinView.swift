@@ -14,7 +14,7 @@ struct JoinView: View {
             Form {
                 Section {
                     VStack(spacing: Space.s3) {
-                        AppTile(size: 88)
+                        AppMark(size: 88)
                         Text("Join your fleet").font(.largeTitle.bold())
                         Text("This \(ThisDevice.kind) gets its own key. It can sign, but it can never be read out, not even by this app.")
                             .font(.subheadline)

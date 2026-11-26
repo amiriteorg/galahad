@@ -3,17 +3,19 @@ import Synchronization
 
 /*
  * The orbs (26 November 2026), as the PWA's ui/orb.ts draws them: every orb is Galahad's field (Field.swift,
- * FieldOrb.swift). His is in gold, inside his heads-up ring with its oxblood seat; a knight's is in its own colours, with
- * no ring. Each line of a field is a stroke from point to point, added to the others on a dark page (.plusLighter) with a
- * close, faint glow under it and no fog; on a light page it is ink. Where it is one of many (a row, a conversation's
- * history) an orb is still, drawn once into a picture that every row showing the same orb shares; where it is the one you
- * are looking at, it moves as its mood does (slowly: "slow and calming movement", "i dont want them to be too visually
- * distractin"), only while the app is in front, never where the device asks for reduced motion, and not at all once it
- * has come to rest. Nothing in it comes from a name's meaning: a knight's colour is one you chose or its handle's, and its
- * handle gives its field.
+ * FieldOrb.swift). His is in gold, with his lance of light through it along his axis (your word, 26 November 2026, of the
+ * heads-up ring he wore until then: "remove the old mark around galahad. make the primary agent distinct in some other
+ * cool way"); a knight's is in its own colours, with no lance. The app's own mark is his field alone (AppMark). Each line
+ * of a field is a stroke from point to point, added to the others on a dark page (.plusLighter) with a close, faint glow
+ * under it and no fog; on a light page it is ink. Where it is one of many (a row, a conversation's history) an orb is
+ * still, drawn once into a picture that every row showing the same orb shares; where it is the one you are looking at, it
+ * moves as its mood does (slowly: "slow and calming movement", "i dont want them to be too visually distractin"), only
+ * while the app is in front, never where the device asks for reduced motion, and not at all once it has come to rest.
+ * Nothing in it comes from a name's meaning: a knight's colour is one you chose or its handle's, and its handle gives its
+ * field.
  */
 
-/// Galahad's orb: his field in gold inside his heads-up ring. `tone` is where he stands: his field is gold in every state,
+/// Galahad's orb: his field in gold, his lance through it. `tone` is where he stands: his field is gold in every state,
 /// his mood moves it, and the words beside him say where he stands. Decorative beside his name; named (`label`) where it
 /// stands alone.
 struct GalahadOrb: View {
@@ -26,8 +28,21 @@ struct GalahadOrb: View {
     var key = "galahad"
 
     var body: some View {
-        FieldOrbView(identity: FieldOrb.galahad, ringed: true, knight: false, size: size, mood: mood, key: key)
+        FieldOrbView(identity: FieldOrb.galahad, lance: true, knight: false, size: size, mood: mood, key: key)
             .orbLabel(label)
+    }
+}
+
+/// The app's mark where a page shows it (Settings' About, joining, a Mac's first run): the app icon's field, his in gold,
+/// alone (no lance: that is his as the one you talk to), still, and on nothing, so it sits on a light page as on a dark one
+/// (your word, 26 November 2026: "make sure the app icon is transparent so it works in dark and white mode"): light added
+/// to light on a dark page, ink on a light one, as every orb is. Decorative: what it is in is named.
+struct AppMark: View {
+    var size: CGFloat = 40
+
+    var body: some View {
+        FieldOrbView(identity: FieldOrb.galahad, lance: false, knight: false, size: size, key: "galahad:mark")
+            .accessibilityHidden(true)
     }
 }
 
@@ -47,7 +62,7 @@ struct KnightFace: View {
     var key: String? = nil
 
     var body: some View {
-        FieldOrbView(identity: FieldOrb.knight(id, profile: profile), ringed: false, knight: true, size: size, mood: mood, key: key ?? "face:\(id)")
+        FieldOrbView(identity: FieldOrb.knight(id, profile: profile), lance: false, knight: true, size: size, mood: mood, key: key ?? "face:\(id)")
             .orbLabel(label)
     }
 }
@@ -66,7 +81,8 @@ extension View {
 /// (the picture every such orb shares); moving otherwise.
 struct FieldOrbView: View {
     let identity: FieldIdentity
-    let ringed: Bool
+    /// His lance through it: his orb's, never a knight's nor the app's mark.
+    let lance: Bool
     let knight: Bool
     let size: CGFloat
     var mood: Orb.Mood? = nil
@@ -79,9 +95,9 @@ struct FieldOrbView: View {
         let motion = mood.map { FieldOrb.motion($0, knight: knight) }
         Group {
             if let mood, let motion, motion.moves || FieldCourses.shared.has(key) {
-                MovingField(identity: identity, ringed: ringed, knight: knight, size: size, mood: mood, key: key, paper: paper)
+                MovingField(identity: identity, lance: lance, knight: knight, size: size, mood: mood, key: key, paper: paper)
             } else {
-                StillField(identity: identity, ringed: ringed, size: size, frame: FieldOrb.still(motion ?? FieldOrb.Motion.still), paper: paper, scale: scale)
+                StillField(identity: identity, lance: lance, knight: knight, size: size, frame: FieldOrb.still(motion ?? FieldOrb.Motion.still), paper: paper, scale: scale)
                     .equatable()
             }
         }
@@ -100,14 +116,15 @@ extension FieldOrb.Motion {
 /// it. Compared by what it is drawn from, so a row drawn again draws nothing.
 private struct StillField: View, Equatable {
     let identity: FieldIdentity
-    let ringed: Bool
+    let lance: Bool
+    let knight: Bool
     let size: CGFloat
     let frame: FieldOrb.Frame
     let paper: Bool
     let scale: CGFloat
 
     var body: some View {
-        if let image = FieldStills.shared.image(identity: identity, ringed: ringed, size: size, frame: frame, paper: paper, scale: scale) {
+        if let image = FieldStills.shared.image(identity: identity, lance: lance, knight: knight, size: size, frame: frame, paper: paper, scale: scale) {
             Image(decorative: image, scale: scale)
                 .resizable()
                 .interpolation(.high)
@@ -123,7 +140,7 @@ private struct StillField: View, Equatable {
 /// front, or where the device asks for reduced motion (then one still frame in its mood's light).
 private struct MovingField: View {
     let identity: FieldIdentity
-    let ringed: Bool
+    let lance: Bool
     let knight: Bool
     let size: CGFloat
     let mood: Orb.Mood
@@ -144,7 +161,7 @@ private struct MovingField: View {
         let shown = frame ?? FieldCourses.shared.resting(key: key, motion: FieldOrb.motion(mood, knight: knight))
         Canvas { context, canvas in
             context.withCGContext { g in
-                FieldPainter.paint(g, size: canvas.width, identity: identity, ringed: ringed, frame: shown, paper: paper)
+                FieldPainter.paint(g, size: canvas.width, identity: identity, galahad: !knight, lance: lance, frame: shown, paper: paper)
             }
         }
         .frame(width: size, height: size)
@@ -217,8 +234,8 @@ final class FieldStills: Sendable {
     static let shared = FieldStills()
     private let kept = Mutex<(images: [String: CGImage], order: [String])>(([:], []))
 
-    func image(identity: FieldIdentity, ringed: Bool, size: CGFloat, frame: FieldOrb.Frame, paper: Bool, scale: CGFloat) -> CGImage? {
-        let key = "\(identity.seed)/\(identity.tilt)/\(identity.lines)/\(identity.colours.key)/\(identity.colours.rim)|\(ringed)|\(frame.glow)/\(frame.rim)/\(frame.turn)|\(size)@\(scale)|\(paper)"
+    func image(identity: FieldIdentity, lance: Bool, knight: Bool, size: CGFloat, frame: FieldOrb.Frame, paper: Bool, scale: CGFloat) -> CGImage? {
+        let key = "\(identity.seed)/\(identity.tilt)/\(identity.lines)/\(identity.colours.key)/\(identity.colours.rim)|\(lance)/\(knight)|\(frame.glow)/\(frame.rim)/\(frame.turn)|\(size)@\(scale)|\(paper)"
         if let image = kept.withLock({ $0.images[key] }) { return image }
         let px = Int((size * scale).rounded(.up))
         guard px > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -226,7 +243,7 @@ final class FieldStills: Sendable {
         // Its own coordinates, as a canvas's: points, from the top left, y down.
         g.translateBy(x: 0, y: CGFloat(px))
         g.scaleBy(x: scale, y: -scale)
-        FieldPainter.paint(g, size: size, identity: identity, ringed: ringed, frame: frame, paper: paper)
+        FieldPainter.paint(g, size: size, identity: identity, galahad: !knight, lance: lance, frame: frame, paper: paper)
         guard let image = g.makeImage() else { return nil }
         kept.withLock { kept in
             if kept.images[key] == nil { kept.order.append(key) }
@@ -240,7 +257,7 @@ final class FieldStills: Sendable {
 /// A frame of a field, drawn (ui/orb.ts' drawField): its lines turned as the frame says, as continuous strokes from point
 /// to point, each in its light as the icon shows it (FieldOrb.tone), added to the others on a dark page with a close,
 /// faint glow under them; on a light page, in ink. The strokes of one colour and brightness are one path, so a frame is a
-/// few dozen strokes, not one for each point. Then its embers, and his ring and seat.
+/// few dozen strokes, not one for each point; his lance goes under the lines. Then his embers.
 enum FieldPainter {
     /// How many steps of brightness (or of an ink's opacity) its strokes are drawn in, and of each colour channel.
     private static let levels = 16
@@ -252,8 +269,9 @@ enum FieldPainter {
     /// Each field's model and the buffer its points are written to, made once for each field and look.
     private static let models = Mutex<[String: (model: Field.Model, buffer: Field.Buffer)]>([:])
 
-    static func paint(_ g: CGContext, size: CGFloat, identity: FieldIdentity, ringed: Bool, frame: FieldOrb.Frame, paper: Bool) {
-        let look = FieldOrb.look(identity, size: Double(size), ringed: ringed)
+    /// `galahad`: his look (fewer of his lines where he is small; FieldOrb.look); `lance`: his lance through it.
+    static func paint(_ g: CGContext, size: CGFloat, identity: FieldIdentity, galahad: Bool, lance: Bool, frame: FieldOrb.Frame, paper: Bool) {
+        let look = FieldOrb.look(identity, size: Double(size), galahad: galahad)
         let colours = FieldOrb.colours(identity.colours, rim: frame.rim)
         let lightNow = colours == identity.colours ? nil : Field.light(colours)
         let modelKey = "\(identity.seed)/\(identity.tilt)/\(identity.colours.key)/\(identity.colours.rim)|\(look.lines)/\(look.steps)/\(look.weight)"
@@ -314,6 +332,8 @@ enum FieldPainter {
             CGColor(colorSpace: space ?? CGColorSpaceCreateDeviceRGB(), components: [r, gg, b, a]) ?? CGColor(gray: 0, alpha: a)
         }
         for glowing in paper ? [false] : [true, false] {
+            // His lance, under his lines (on a light page they cross over it; on a dark one light adds alike either way).
+            if !glowing && lance { self.lance(g, size: Double(size), zoom: look.zoom, identity: identity, colours: colours, glow: glow, inks: inks, color: color) }
             for (kind, path) in paths {
                 let level = Double(kind & 0xf) / Double(levels - 1)
                 let hue = kind >> 4
@@ -339,7 +359,6 @@ enum FieldPainter {
             }
         }
         g.restoreGState()
-        if ringed { ring(g, size: Double(size), paper: paper, color: color) }
     }
 
     /// An ember's colour on a dark page: its rim's, a third of the way to its key's deep gold.
@@ -349,30 +368,60 @@ enum FieldPainter {
         return (0..<3).map { a[$0] + (b[$0] - a[$0]) / 3 }
     }
 
-    /// His heads-up ring: five arcs of ink, and his seat at the top in oxblood.
-    private static func ring(_ g: CGContext, size: Double, paper: Bool, color: (Double, Double, Double, Double) -> CGColor) {
-        let ring = FieldOrb.Ring.self
-        let r = size * ring.r, c = size / 2
-        let width = FieldOrb.ringWidth(size)
-        func radians(_ degrees: Double) -> Double { ((degrees - 90) * Double.pi) / 180 }
-        func hex(_ value: String, _ alpha: Double) -> CGColor {
-            let v = Int(value.dropFirst(), radix: 16) ?? 0
-            return color(Double((v >> 16) & 0xff) / 255, Double((v >> 8) & 0xff) / 255, Double(v & 0xff) / 255, alpha)
+    /// His lance (FieldOrb.Lance, lanceLine, lanceAt; ui/orb.ts' lance): each half one blade, from its root out of his core
+    /// to its tip, narrowing to a point and fading as it goes, filled along its length with his lit gold going to his gold
+    /// and then his rim's copper (its light added, over a close glow), or on a light page his inks; as bright as his field
+    /// is now (`glow`). One path and one fill a half and a pass, so no seam shows where light is added to light. Drawn in
+    /// the blend the lines are (light added on a dark page).
+    private static func lance(_ g: CGContext, size: Double, zoom: Double, identity: FieldIdentity, colours: FieldColours, glow: Double, inks: FieldOrb.Inks?, color: (Double, Double, Double, Double) -> CGColor) {
+        let L = FieldOrb.Lance.self
+        let half = size / 2
+        // Half its width at its root, in points: never under half a point (a point across).
+        let root = max(0.5, (size * L.width) / 2)
+        let strength = min(1, max(0, glow))
+        func rgb(_ hex: String) -> [Double] { [1, 3, 5].map { Double(Int(hex.dropFirst($0).prefix(2), radix: 16) ?? 0) } }
+        func mix(_ a: [Double], _ b: [Double], _ t: Double) -> [Double] { (0..<3).map { FieldOrb.jsRound(a[$0] + (b[$0] - a[$0]) * t) } }
+        let (lit, gold, rim) = (rgb(colours.key[0]), rgb(colours.key[1]), rgb(colours.rim))
+        func colourAt(_ hue: Double) -> [Double] {
+            if let inks { return mix(inks.key, inks.rim, hue) }
+            return hue <= 0.5 ? mix(lit, gold, hue * 2) : mix(gold, rim, (hue - 0.5) * 2)
         }
-        g.saveGState()
-        g.setBlendMode(.normal)
-        g.setLineCap(.butt)
-        g.setLineWidth(width)
-        g.setStrokeColor(hex(paper ? ring.ink.paper : ring.ink.dark, paper ? ring.inkAlpha.paper : ring.inkAlpha.dark))
-        for arc in ring.arcs {
-            g.move(to: CGPoint(x: c + r * cos(radians(arc.from)), y: c + r * sin(radians(arc.from))))
-            g.addArc(center: CGPoint(x: c, y: c), radius: r, startAngle: radians(arc.from), endAngle: radians(arc.to), clockwise: false)
+        let stops = 8
+        let space = CGColorSpace(name: CGColorSpace.sRGB)
+        for blade in FieldOrb.lanceLine(identity, zoom: zoom) {
+            let (x0, y0) = (half + blade.root[0] * half, half + blade.root[1] * half)
+            let (x1, y1) = (half + blade.tip[0] * half, half + blade.tip[1] * half)
+            let length = hypot(x1 - x0, y1 - y0)
+            let along = length > 0 ? length : 1
+            let (nx, ny) = (-(y1 - y0) / along, (x1 - x0) / along)
+            for glowing in inks == nil ? [true, false] : [false] {
+                let spread = glowing ? L.glowWidth : inks != nil ? L.inkWidth : 1
+                let strong = strength * (glowing ? L.glowAlpha : inks != nil ? L.inkAlpha : 1)
+                let colors = (0...stops).map { i -> CGColor in
+                    let at = FieldOrb.lanceAt(Double(i) / Double(stops))
+                    let c = colourAt(at.hue)
+                    return color(c[0] / 255, c[1] / 255, c[2] / 255, FieldOrb.jsRound(min(1, at.light * strong) * 1000) / 1000)
+                }
+                let locations = (0...stops).map { CGFloat($0) / CGFloat(stops) }
+                guard let gradient = CGGradient(colorsSpace: space, colors: colors as CFArray, locations: locations) else { continue }
+                // One side from root to tip, the other back: its width at each step its root's times lanceAt's share.
+                let outline = CGMutablePath()
+                for i in 0...L.steps {
+                    let u = Double(i) / Double(L.steps), w = root * spread * FieldOrb.lanceAt(u).width
+                    let point = CGPoint(x: x0 + (x1 - x0) * u + nx * w, y: y0 + (y1 - y0) * u + ny * w)
+                    if i == 0 { outline.move(to: point) } else { outline.addLine(to: point) }
+                }
+                for i in stride(from: L.steps, through: 0, by: -1) {
+                    let u = Double(i) / Double(L.steps), w = root * spread * FieldOrb.lanceAt(u).width
+                    outline.addLine(to: CGPoint(x: x0 + (x1 - x0) * u - nx * w, y: y0 + (y1 - y0) * u - ny * w))
+                }
+                outline.closeSubpath()
+                g.saveGState()
+                g.addPath(outline)
+                g.clip()
+                g.drawLinearGradient(gradient, start: CGPoint(x: x0, y: y0), end: CGPoint(x: x1, y: y1), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                g.restoreGState()
+            }
         }
-        g.strokePath()
-        g.setLineWidth(width * ring.seat.width)
-        g.setStrokeColor(hex(paper ? ring.oxblood.paper : ring.oxblood.dark, 1))
-        g.addArc(center: CGPoint(x: c, y: c), radius: r, startAngle: radians(ring.seat.from), endAngle: radians(ring.seat.to), clockwise: false)
-        g.strokePath()
-        g.restoreGState()
     }
 }

@@ -223,7 +223,7 @@ struct FirstRunSteps: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
-            AppTile(size: 56)
+            AppMark(size: 56)
                 .padding(.bottom, Space.s4)
             ForEach(FirstRun.Step.allCases, id: \.self) { step in
                 HStack(spacing: Space.s2) {
@@ -328,7 +328,7 @@ struct LocalNodeOpen: View {
             Form {
                 Section {
                     VStack(spacing: Space.s3) {
-                        AppTile(size: 88)
+                        AppMark(size: 88)
                         Text("This Mac is a node").font(.largeTitle.bold())
                         Text(lines)
                             .font(.subheadline)

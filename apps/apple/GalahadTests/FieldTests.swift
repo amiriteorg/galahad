@@ -1,10 +1,11 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Galahad
 
 extension Vectors {
     /// The orbs as fields (the PWA's own lib/field.ts and lib/field-orb.ts): the lights, whose field each is, a field's
-    /// lines and points at given turns, where they fall on a picture, each size's look, his ring, how a field moves in each
+    /// lines and points at given turns, where they fall on a picture, each size's look, his lance, how a field moves in each
     /// mood (its clock, its frames, its embers), its tints and its light and ink.
     struct FieldCases: Decodable {
         struct Lights: Decodable { let key: [Double]; let rim: [Double]; let exposure: Double }
@@ -22,7 +23,7 @@ extension Vectors {
             struct Point: Decodable { let at: Int; let x: Double; let y: Double; let z: Double; let rgb: [Double]; let size: Double; let lit: Double; let rim: Double }
             let who: String
             let size: Double
-            let ringed: Bool
+            let galahad: Bool
             let turn: Double
             let rim: Double
             let options: Options
@@ -36,19 +37,20 @@ extension Vectors {
             let zoom: Double
             let shown: [Shown]
         }
-        struct LookCase: Decodable { let who: String; let size: Double; let ringed: Bool; let look: FieldOrb.Look }
-        struct Ring: Decodable {
-            struct Seat: Decodable { let from: Double; let to: Double; let width: Double }
-            struct Pair: Decodable { let dark: String; let paper: String }
-            struct Ink: Decodable { struct Alpha: Decodable { let dark: Double; let paper: Double }; let dark: String; let paper: String; let alpha: Alpha }
-            struct Width: Decodable { let size: Double; let width: Double }
-            let r: Double
+        struct LookCase: Decodable { let who: String; let size: Double; let galahad: Bool; let look: FieldOrb.Look }
+        struct Lance: Decodable {
+            struct Spread: Decodable { let width: Double; let alpha: Double }
+            struct Half: Decodable { let root: [Double]; let tip: [Double] }
+            struct Line: Decodable { let zoom: Double; let halves: [Half] }
+            struct Along: Decodable { let u: Double; let width: Double; let light: Double; let hue: Double }
+            let from: Double
+            let to: Double
             let width: Double
-            let arcs: [[Double]]
-            let seat: Seat
-            let ink: Ink
-            let oxblood: Pair
-            let widths: [Width]
+            let steps: Int
+            let glow: Spread
+            let ink: Spread
+            let lines: [Line]
+            let along: [Along]
         }
         struct Stroke: Decodable {
             struct Glow: Decodable { let width: Double; let alpha: Double }
@@ -90,7 +92,7 @@ extension Vectors {
         let points: [Points]
         let projections: [Projection]
         let looks: [LookCase]
-        let ring: Ring
+        let lance: Lance
         let stroke: Stroke
         let motion: [String: Motion]
         let knightMotion: [String: Motion]
@@ -106,7 +108,7 @@ extension Vectors {
 }
 
 /// Every orb as Galahad's field, as the PWA draws it (lib/field.ts, lib/field-orb.ts; 26 November 2026): its lights,
-/// whose field each is, its points at given turns, its looks, his ring, how it moves in each mood, its embers, tints,
+/// whose field each is, its points at given turns, its looks, his lance, how it moves in each mood, its embers, tints,
 /// light and ink, checked against the PWA's own output to within a billionth.
 struct FieldTests {
     let field = Vectors.shared.field
@@ -175,7 +177,7 @@ struct FieldTests {
             }
             // Its look at that size gives the same lines and weight as the vectors were made with.
             let identity = item.who.hasPrefix("galahad") ? FieldOrb.galahad : FieldOrb.knight(item.who.hasPrefix("ada") ? "ada" : item.who, profile: item.who == "ada, chosen" ? .object(["v": .number(2), "color": .string("#3ABEFF")]) : nil)
-            let look = FieldOrb.look(identity, size: item.size, ringed: item.ringed)
+            let look = FieldOrb.look(identity, size: item.size, galahad: item.galahad)
             #expect(look.lines == o.lines && look.weight == o.weight, "\(item.who)")
         }
     }
@@ -210,19 +212,70 @@ struct FieldTests {
     @Test func eachSizeLooksAsThePWAsDoes() {
         for item in field.looks {
             let identity = item.who == "galahad" ? FieldOrb.galahad : FieldOrb.knight(item.who)
-            #expect(FieldOrb.look(identity, size: item.size, ringed: item.ringed) == item.look, "\(item.who) \(item.size)")
+            #expect(FieldOrb.look(identity, size: item.size, galahad: item.galahad) == item.look, "\(item.who) \(item.size)")
         }
     }
 
-    @Test func hisRingIsThePWAs() {
-        let ring = field.ring
-        #expect(FieldOrb.Ring.r == ring.r && FieldOrb.Ring.width == ring.width)
-        #expect(FieldOrb.Ring.arcs.map { [$0.from, $0.to] } == ring.arcs)
-        #expect(FieldOrb.Ring.seat.from == ring.seat.from && FieldOrb.Ring.seat.to == ring.seat.to && FieldOrb.Ring.seat.width == ring.seat.width)
-        #expect(FieldOrb.Ring.ink.dark == ring.ink.dark && FieldOrb.Ring.ink.paper == ring.ink.paper)
-        #expect(FieldOrb.Ring.inkAlpha.dark == ring.ink.alpha.dark && FieldOrb.Ring.inkAlpha.paper == ring.ink.alpha.paper)
-        #expect(FieldOrb.Ring.oxblood.dark == ring.oxblood.dark && FieldOrb.Ring.oxblood.paper == ring.oxblood.paper)
-        for item in ring.widths { #expect(near(FieldOrb.ringWidth(item.size), item.width), "\(item.size)") }
+    @Test func hisLanceIsThePWAs() {
+        let lance = field.lance
+        #expect(FieldOrb.Lance.from == lance.from && FieldOrb.Lance.to == lance.to && FieldOrb.Lance.width == lance.width && FieldOrb.Lance.steps == lance.steps)
+        #expect(FieldOrb.Lance.glowWidth == lance.glow.width && FieldOrb.Lance.glowAlpha == lance.glow.alpha)
+        #expect(FieldOrb.Lance.inkWidth == lance.ink.width && FieldOrb.Lance.inkAlpha == lance.ink.alpha)
+        #expect(lance.lines.count == 3)
+        for line in lance.lines {
+            let mine = FieldOrb.lanceLine(FieldOrb.galahad, zoom: line.zoom)
+            #expect(mine.count == 2 && line.halves.count == 2, "\(line.zoom)")
+            for (blade, half) in zip(mine, line.halves) {
+                #expect(near(blade.root, half.root) && near(blade.tip, half.tip), "\(line.zoom)")
+            }
+        }
+        #expect(lance.along.count >= 5)
+        for item in lance.along {
+            let at = FieldOrb.lanceAt(item.u)
+            #expect(near([at.width, at.light, at.hue], [item.width, item.light, item.hue]), "\(item.u)")
+        }
+    }
+
+    @Test func hisLanceIsDrawnAlongHisAxisAndNowhereElse() {
+        // His orb 100 points wide, still, drawn with and without his lance, on a dark page and on a light one: along each
+        // half (a tenth to two thirds of the way out) the lance adds light, or ink; where neither half goes, it adds none.
+        let size = 100, scale = 2
+        func picture(lance: Bool, paper: Bool) -> [UInt8] {
+            var bytes = [UInt8](repeating: 0, count: size * scale * size * scale * 4)
+            bytes.withUnsafeMutableBytes { raw in
+                let g = CGContext(data: raw.baseAddress, width: size * scale, height: size * scale, bitsPerComponent: 8, bytesPerRow: size * scale * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                // As FieldStills draws: points, from the top left, y down.
+                g.translateBy(x: 0, y: CGFloat(size * scale))
+                g.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
+                FieldPainter.paint(g, size: CGFloat(size), identity: FieldOrb.galahad, galahad: true, lance: lance, frame: FieldOrb.still(FieldOrb.motion(.idle, knight: false)), paper: paper)
+            }
+            return bytes
+        }
+        // Its alpha at a point of the square (its middle 0, its edge 1; x right, y down), in the picture's rows from the top.
+        func alpha(_ bytes: [UInt8], _ x: Double, _ y: Double) -> Int {
+            let px = min(size * scale - 1, max(0, Int(((1 + x) / 2) * Double(size * scale))))
+            let py = min(size * scale - 1, max(0, Int(((1 + y) / 2) * Double(size * scale))))
+            return Int(bytes[(py * size * scale + px) * 4 + 3])
+        }
+        let blades = FieldOrb.lanceLine(FieldOrb.galahad, zoom: FieldOrb.look(FieldOrb.galahad, size: Double(size), galahad: true).zoom)
+        for paper in [false, true] {
+            let (with, without) = (picture(lance: true, paper: paper), picture(lance: false, paper: paper))
+            for blade in blades {
+                var added = 0
+                for step in 1...12 {
+                    let u = 0.1 + Double(step - 1) * 0.05
+                    let x = blade.root[0] + (blade.tip[0] - blade.root[0]) * u, y = blade.root[1] + (blade.tip[1] - blade.root[1]) * u
+                    #expect(alpha(with, x, y) >= alpha(without, x, y), "paper \(paper) at \(u)")
+                    added += alpha(with, x, y) - alpha(without, x, y)
+                }
+                #expect(added > 12 * 40, "paper \(paper): the lance added \(added)")
+            }
+            // Square across its axis, near the edge (the lance runs top to bottom, leaning a little): nothing added.
+            for (x, y) in [(-0.92, 0.0), (0.92, 0.0), (-0.9, -0.9), (0.9, 0.9)] {
+                #expect(alpha(with, x, y) == alpha(without, x, y), "paper \(paper) at \(x), \(y)")
+            }
+        }
     }
 
     @Test func itsStrokesAreThePWAs() {
@@ -301,7 +354,7 @@ struct FieldTests {
             #expect(frame.embers.count == item.frame.embers.count, "\(item.t)")
             for (mine, theirs) in zip(frame.embers, item.frame.embers) {
                 #expect(near([mine.x, mine.y, mine.r, mine.alpha], [theirs.x, theirs.y, theirs.r, theirs.alpha]), "\(item.t)")
-                // Inside his ring always.
+                // Always well inside his square.
                 #expect((mine.x * mine.x + mine.y * mine.y).squareRoot() < 0.93)
             }
         }

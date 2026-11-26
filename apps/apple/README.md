@@ -4,22 +4,25 @@ A SwiftUI client for a Galahad node: Apple's own components, with Galahad's acce
 and signs every request the way `packages/core` verifies it. The Mac's app is the same sources built for macOS
 (`GalahadMac`; [docs/MAC.md](../../docs/MAC.md)).
 
-On an iPhone it opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything): his
-tab, at the bar's right end, is his home (`Galahad/UI/GalahadHome.swift`), his orb large in the colour of where he
-stands, his line, what you might ask, what he asks you, your recent chats and the message box, each chat shown over it;
-the Roundtable, the Inbox and More are the tabs before his. A tap anywhere but a field closes the keyboard
-(`KeyboardCloser`). His orb (`Core/Orb.swift`, drawn by `UI/OrbView.swift`) is the PWA's, part for part, held to it by
-the parity vectors: the rings of a heads-up display, a ring of data turning in them, and a sphere of glyphs round a
-bright nucleus (`Core/OrbSphere.swift`, the PWA's `lib/orb-sphere.ts`; your words, 25 November 2026: "use glyph and
-randomness on the orbs, like Jarvis/Ultron in the movies, and my other project Phren"). It is his seat at the Roundtable
-and in the sidebar too, and beside each answer. Every knight is an orb as well (your word, 25 November 2026: "drop the
-knight avatars, and just use custom/procedurally generated colored particle orbs"): its own sphere of glyphs, in the
-colour you chose for it or one of 24 its handle picks (`Core/KnightOrb.swift`, core's `avatar.ts`), drawn by
-`KnightFace`. They move as they are (your words, 24 and 25 November 2026: "pulsing/moving when doing a task, sitting
-idle, waiting, done", "slow and calming movement"): `Core/OrbMotion.swift` is the PWA's `lib/orb-motion.ts`, its clock
-and frames held to it by the vectors too, and each knight's seat has its lights round its still ring (`SeatLights`), its
-orb turning on the same course; one still frame is drawn where the device asks for reduced motion. On a light page the
-glyphs are ink on paper.
+On an iPhone it opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything), with
+no tab bar (26 November 2026: "no tab bar, and Home is Galahad"): Home (`Galahad/UI/HomeView.swift`) is his orb, his
+name and how things stand, what needs you with each answer in place, the work by attention in three-line rows and his
+message box docked; a task opens as a thread of its own (`UI/TaskView.swift`: the brief, the work folded, the Verified
+card apart from the knight's words, its details in a sheet), and his conversation, the Roundtable, the Inbox and
+Settings are pushed over Home, with "…" for everything else. An iPad's and a Mac's window are three panes: the work by
+attention in a sidebar (`UI/Places.swift`), the place chosen, and a task's details beside it; ⌘K searches or asks. A
+tap anywhere but a field closes the keyboard (`KeyboardCloser`).
+
+Every orb is Galahad's field (your words, 26 November 2026: the glyph spheres looked "almost like nipples", and "i dont
+want them to be too visually distractin"): lines of force round a dark core (`Core/Field.swift`, `Core/FieldOrb.swift`,
+drawn by `UI/FieldOrbView.swift`), the PWA's `lib/field.ts` and `lib/field-orb.ts`, held to them by the parity vectors'
+`field` section. His is in gold with his lance of light through it along his axis (`GalahadOrb`; his heads-up ring went
+the same day: "remove the old mark around galahad. make the primary agent distinct in some other cool way"); each
+knight's is in the colour you chose for it or one of 24 its handle picks (`Core/KnightOrb.swift`, core's `avatar.ts`),
+with its handle's lean and lines (`KnightFace`). Where orbs are many (rows, the board, a conversation's history) they are
+still, drawn once; the one you are looking at moves slowly as its mood does (his turns once a minute at rest, a knight's
+moves only while it works), and none moves while the app is not in front or where the device asks for reduced motion. On a light page a field is ink on paper. The app's own mark
+inside the app (Settings' About, joining, a Mac's first run) is his field alone, on nothing (`AppMark`).
 
 On an iPhone or an iPad it keeps, besides its pairing, its key and your choices, the last Roundtable it saw, so it shows
 your Roundtable at once however slow the connection (your word, 21 November 2026). It is the record Galahad for

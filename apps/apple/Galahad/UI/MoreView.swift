@@ -63,7 +63,15 @@ struct MoreView<Leading: View>: View {
                 Section { Label(problem, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.siege) }
             }
             Section {
-                LabeledContent("Version", value: Self.version)
+                // The app's mark on nothing (AppMark: no tile on a light page), as the PWA's About row has it.
+                HStack(spacing: Space.s3) {
+                    AppMark(size: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Galahad").font(.body.weight(.semibold))
+                        Text("Version \(Self.version)").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
             }
         }
         .navigationTitle(places ? "More" : "This \(ThisDevice.kind)")

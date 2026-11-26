@@ -450,7 +450,7 @@ struct SeatFace: View {
         let ring = size >= Metrics.cardFace ? Metrics.cardRing : Metrics.rowRing
         Group {
             if id == "galahad" {
-                // Galahad himself is his orb, his heads-up ring round it.
+                // Galahad himself is his orb, his lance through it.
                 GalahadOrb(size: size + 2 * ring, tone: Orb.Tone(standing))
             } else {
                 KnightFace(id: id, profile: profile, size: size)
