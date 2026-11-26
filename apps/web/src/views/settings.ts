@@ -140,7 +140,7 @@ export const settingsView: View = (root, ctx, { scope }) => {
         {},
         list([
           listRow({
-            lead: h("img", { class: "about-icon", src: "/icon.svg", alt: "", width: 40, height: 40 }),
+            lead: h("img", { class: "about-icon", src: "/icon-192.png", alt: "", width: 40, height: 40 }),
             title: "Galahad",
             sub: `App ${APP_VERSION} · served by ${ctx.whoami.nodeName} · one mind, many bodies`,
             trail: button("Shortcuts", { size: "sm", variant: "ghost", icon: "command", onClick: () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "?" })) }),

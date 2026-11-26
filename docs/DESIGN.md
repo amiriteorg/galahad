@@ -19,10 +19,10 @@ This is how the PWA looks, moves and behaves, and why. It is the reference for a
 
 | File | Use |
 |---|---|
-| `assets/icon.svg` | App icon and favicon: the Roundtable (its ring and chairs in cream, Galahad's seat in the red that holds on black) on a black tile, drawn, so it is crisp from a tab's 16 px up (the owner's choice, 15 November 2026) |
-| `apps/web/src/icon-maskable.svg` | Full bleed for platform masks (`purpose: maskable`); the helm sits inside the central safe circle |
-| `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | Raster icons for iOS and launchers that won't take SVG, rendered from the same drawn icons at each size (iOS's full bleed with a larger table; Android's maskable one inside every mask's circle) |
-| `icon-mono-96.png` | A notification's badge in Android's status bar: the Roundtable in white on nothing (the system draws a badge from its alpha alone, so the tile would be a white square) |
+| `icon-64.png` (the favicon), `icon-192.png`, `icon-512.png`, `assets/icon.png` | The app icon: **Galahad's field in gold** (the owner's choice, 26 November 2026, "field aurum", then "less fog, so it reads clearer"): lines of force looping from pole to pole round a dark core, white-hot on the lobe the light strikes and burning copper on the far one, on a warm night. Not drawn but rendered as light (`apps/web/src/lib/field.ts` the points, `scripts/field-icon.ts` the renderer: soft sprites added in linear light, a close bloom, ACES tone mapping; deterministic, no browser). Rounded tiles where a platform shows the icon as it is |
+| `icon-maskable-512.png`, `apple-touch-icon.png` | The same field edge to edge: the maskable one drawn in so its lines stay inside the 80 % every mask keeps; the touch icon as iOS rounds it |
+| `icon-mono-96.png` | A notification's badge in Android's status bar: the field in white on nothing (the system draws a badge from its alpha alone) |
+| Apple `AppIcon`, Android `ic_launcher_*` | From the same renderer: iOS's icon with its dark form (the same picture) and its tinted one (its light in grey), the Mac's at each size; Android's adaptive icon as its night (background), its field inside the 66 dp safe zone (foreground) and its themed form in white (monochrome) |
 | `assets/galahad-mark.svg` | The flat mark in `currentColor`: the silhouette, the cross and the slit holes in it |
 | `ui/emblem.ts` → `emblem()` | The drawn helm inline in the PWA, on no tile: its own ink line holds it in either theme; the boot screen shows it too |
 | `icon("mark")` | The flat silhouette on the 24 px grid, for menus (Galahad's voice: chat, requests, trust) |

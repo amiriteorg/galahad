@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The splash screen's mark: the launcher's Roundtable (ic_launcher_foreground.xml), drawn on nothing in the theme's
+<!-- The splash screen's mark: the Roundtable the launcher icon drew until 26 November 2026, drawn on nothing in the theme's
      own ink, the Siege Perilous red at the top. Its seats sit inside the circle a splash icon is cut to. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"

@@ -47,7 +47,7 @@ The phone in one hand, often in short glances; work runs for minutes to hours un
 - The name Galahad, and the Arthurian vocabulary above.
 - Galahad's colours are oxblood, navy and off-white, used as accents only (binding). Oxblood marks what waits on the owner.
 - The knights are orbs of glyphs, each its own colour, moving slowly and calmly; Galahad's orb is his state's colour inside the rings of a heads-up display, with a ring of data (the owner's words, 25 November 2026: "custom/procedurally generated colored particle orbs", "glyph and randomness … like Jarvis/Ultron … and my other project Phren", "slow and calming movement"; this replaces the drawings of 14–15 November).
-- Galahad's helm, with the oxblood Templar cross, stays his emblem in the app and the website's crest (binding). The app's icon and favicon are the Roundtable, Galahad's seat in red (the owner's choice, 15 November 2026).
+- Galahad's helm, with the oxblood Templar cross, stays his emblem in the app and the website's crest (binding). The app's icon and favicon are Galahad's field in gold: lines of force round a dark core, white-hot where the light strikes and burning copper at the far rim (the owner's choice, 26 November 2026, replacing the Roundtable of 15 November).
 - The look around them takes after Vercel/shadcn (Geist, neutral greys, 1 px borders), Benji Taylor's trays and live pills, and T3 Code's composer (the owner's references).
 
 ## Evidence on Hand

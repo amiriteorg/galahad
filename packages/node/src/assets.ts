@@ -112,11 +112,9 @@ export async function buildAssets(webDir = join(REPO_ROOT, "apps/web")): Promise
       body: readFileSync(join(src, "manifest.webmanifest")),
       type: "application/manifest+json",
     });
-    files.set("/icon.svg", { body: readFileSync(join(REPO_ROOT, "assets/icon.svg")), type: "image/svg+xml" });
-    files.set("/icon-maskable.svg", { body: readFileSync(join(src, "icon-maskable.svg")), type: "image/svg+xml" });
-    // Raster icons for platforms that won't take SVG (iOS home screen, older Android launchers).
-    // Rendered from the one emblem definition by `bun scripts/brand.ts --png`.
-    for (const name of ["apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "icon-mono-96.png"]) {
+    // The icons: Galahad's field in gold, rendered as light by `bun scripts/brand.ts --png` (pictures, not drawings: the
+    // favicon is icon-64.png).
+    for (const name of ["apple-touch-icon.png", "icon-64.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "icon-mono-96.png"]) {
       files.set(`/${name}`, { body: new Uint8Array(readFileSync(join(src, name))), type: "image/png" });
     }
     // The app's typeface (Geist, under the SIL Open Font License beside it in src/fonts/), from the node like the rest.

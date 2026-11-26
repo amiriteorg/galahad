@@ -1,21 +1,18 @@
 #!/usr/bin/env bun
 /*
  * Writes the Apple app's brand assets from the PWA's own (apps/web/src/brand.ts), so the two can't drift:
- *   - the app icon: appIcon() rendered at 1024 px. iOS rounds an icon's corners itself and wants it opaque, so the
- *     drawing is the icon's tile edge to edge (its rounded corners and its edge's highlight are iOS's to draw); the
- *     Roundtable sits on the tile exactly as appIcon() seats it. The Mac's is the same icon at each size a Mac draws one
- *     at: macOS clips a tile edge to edge to its own rounded shape and inset (seen on macOS 27.2);
+ *   - the app icon: Galahad's field in gold, rendered as light by scripts/field-icon.ts (the same renderer as the web
+ *     app's icons): 1024 px edge to edge and opaque, with iOS's dark and tinted forms; the Mac's at each size it takes;
  *   - the Roundtable's mark (roundtableIcon()) in the black tile's ink for light mode and the cream ink for dark, Galahad's
  *     seat in his red for each;
  *   - Galahad's colours (INK): his red for what needs you, the cream ink, the black tile, and the app's ink accent.
  *
- *   bun apps/apple/scripts/brand.ts      (renders with headless Chrome and flattens with ImageMagick; GALAHAD_BROWSER
- *                                        names another Chromium-family browser)
+ *   bun apps/apple/scripts/brand.ts      (pure TypeScript: no browser, no ImageMagick)
  */
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { appIcon, INK, roundtableIcon, TILE, toSvg, type SvgNode } from "../../web/src/brand.ts";
+import { INK, roundtableIcon, toSvg } from "../../web/src/brand.ts";
+import { downscale, greyscale, png, renderField, rgba } from "../../../scripts/field-icon.ts";
 
 const ASSETS = join(import.meta.dir, "../Galahad/Assets.xcassets");
 const MAC_ICON = join(import.meta.dir, "../Galahad/Mac/MacAssets.xcassets/MacIcon.appiconset");
@@ -64,43 +61,29 @@ write(
 );
 
 // ---- the app icon ----------------------------------------------------------------------------------------------------
-function fullBleed(icon: SvgNode): SvgNode {
-  const [title, tile, table] = icon.children ?? [];
-  if (!title || tile?.tag !== "rect" || table?.tag !== "g") throw new Error("appIcon() is no longer a tile with the table on it: look again at this script");
-  return { ...icon, attrs: { ...icon.attrs, viewBox: `${TILE.x} ${TILE.y} ${TILE.width} ${TILE.height}` }, children: [title, { ...tile, attrs: { ...tile.attrs, rx: 0 } }, table] };
-}
-
-const browser = [process.env.GALAHAD_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].find((path): path is string => Boolean(path && existsSync(path)));
-const magick = Bun.which("magick");
-if (!browser || !magick) throw new Error("Rendering the icon takes a Chromium-family browser (GALAHAD_BROWSER) and ImageMagick (magick).");
-const work = mkdtempSync(join(tmpdir(), "galahad-apple-brand-"));
-try {
-  const page = join(work, "icon.html");
-  writeFileSync(page, `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:${INK.paper}}svg{display:block;width:1024px;height:1024px}</style>${toSvg(fullBleed(appIcon()))}`);
-  const shot = join(work, "shot.png");
-  const proc = Bun.spawn([browser, "--headless=new", "--disable-gpu", "--no-first-run", "--disable-extensions", `--user-data-dir=${join(work, "profile")}`, "--hide-scrollbars", "--window-size=1024,1024", `--screenshot=${shot}`, `file://${page}`], { stdout: "ignore", stderr: "ignore" });
-  const timer = setTimeout(() => proc.kill(), 30_000);
-  await proc.exited;
-  clearTimeout(timer);
-  if (!existsSync(shot)) throw new Error("the browser did not render the icon");
-  // Opaque, as iOS wants an icon: the tile's white under anything the render left transparent, and no metadata.
-  const flat = join(work, "flat.png");
-  const done = Bun.spawnSync([magick, shot, "-background", INK.paper, "-alpha", "remove", "-alpha", "off", "-strip", "-resize", "1024x1024!", `PNG24:${flat}`]);
-  if (done.exitCode !== 0 || !existsSync(flat)) throw new Error(`ImageMagick couldn't flatten the icon: ${done.stderr.toString()}`);
-  mkdirSync(join(ASSETS, "AppIcon.appiconset"), { recursive: true });
-  copyFileSync(flat, join(ASSETS, "AppIcon.appiconset/AppIcon.png"));
-  console.log("rendered AppIcon.appiconset/AppIcon.png");
-  write("AppIcon.appiconset/Contents.json", contents({ images: [{ filename: "AppIcon.png", idiom: "universal", platform: "ios", size: "1024x1024" }] }));
-  mkdirSync(MAC_ICON, { recursive: true });
-  for (const px of new Set(MAC_SIZES.map(([points, scale]) => points * scale))) {
-    const sized = Bun.spawnSync([magick, flat, "-resize", `${px}x${px}`, "-strip", `PNG24:${join(MAC_ICON, `icon_${px}.png`)}`]);
-    if (sized.exitCode !== 0) throw new Error(`ImageMagick couldn't size the Mac's icon: ${sized.stderr.toString()}`);
-  }
-  writeFileSync(
-    join(MAC_ICON, "Contents.json"),
-    contents({ images: MAC_SIZES.map(([points, scale]) => ({ filename: `icon_${points * scale}.png`, idiom: "mac", scale: `${scale}x`, size: `${points}x${points}` })) }),
-  );
-  console.log("rendered the Mac's MacIcon.appiconset");
-} finally {
-  rmSync(work, { recursive: true, force: true });
-}
+// Galahad's field in gold (apps/web/src/lib/field.ts; the owner's choice, 26 November 2026), rendered as light by
+// scripts/field-icon.ts: edge to edge and opaque, as iOS wants an icon (it rounds the corners itself). iOS 18 and later
+// also take a dark form (the same file: the icon is a night already) and a tinted one (its light in grey, for the system to
+// colour). The Mac's is the same picture at each size a Mac draws one at: macOS clips it to its own rounded shape.
+const icon = rgba(renderField(1024));
+mkdirSync(join(ASSETS, "AppIcon.appiconset"), { recursive: true });
+writeFileSync(join(ASSETS, "AppIcon.appiconset/AppIcon.png"), png(icon, 1024));
+writeFileSync(join(ASSETS, "AppIcon.appiconset/AppIcon-tinted.png"), png(greyscale(icon), 1024));
+console.log("rendered AppIcon.appiconset (any, dark, tinted)");
+write(
+  "AppIcon.appiconset/Contents.json",
+  contents({
+    images: [
+      { filename: "AppIcon.png", idiom: "universal", platform: "ios", size: "1024x1024" },
+      { appearances: [{ appearance: "luminosity", value: "dark" }], filename: "AppIcon.png", idiom: "universal", platform: "ios", size: "1024x1024" },
+      { appearances: [{ appearance: "luminosity", value: "tinted" }], filename: "AppIcon-tinted.png", idiom: "universal", platform: "ios", size: "1024x1024" },
+    ],
+  }),
+);
+mkdirSync(MAC_ICON, { recursive: true });
+for (const px of new Set(MAC_SIZES.map(([points, scale]) => points * scale))) writeFileSync(join(MAC_ICON, `icon_${px}.png`), png(px === 1024 ? icon : downscale(icon, 1024, px), px));
+writeFileSync(
+  join(MAC_ICON, "Contents.json"),
+  contents({ images: MAC_SIZES.map(([points, scale]) => ({ filename: `icon_${points * scale}.png`, idiom: "mac", scale: `${scale}x`, size: `${points}x${points}` })) }),
+);
+console.log("rendered the Mac's MacIcon.appiconset");
