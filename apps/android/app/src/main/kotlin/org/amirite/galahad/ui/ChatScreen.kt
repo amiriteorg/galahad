@@ -102,7 +102,7 @@ fun ChatScreen(app: AppModel, back: () -> Unit, openTask: (String) -> Unit = {})
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s2), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
                     // His orb, the one in focus here: moving while he answers (before the node has said so), else still.
                     GalahadOrb(40.dp, if (live) org.amirite.galahad.core.OrbMotion.Mood.WORKING else null, key = "galahad:chat")
-                    Text(table.galahad.text, style = Type.meta, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    Text(table.galahad.line, style = Type.meta, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 }
             }
             // A new conversation: what you might ask him first (the PWA's welcome's), a press puts it in the message box.

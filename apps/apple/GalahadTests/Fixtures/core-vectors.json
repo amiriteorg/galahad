@@ -1666,7 +1666,8 @@
         "text": "Idle",
         "expression": "idle",
         "tone": "neutral",
-        "state": "resting"
+        "state": "resting",
+        "needsFirst": "Idle"
       },
       {
         "input": {
@@ -1677,7 +1678,8 @@
         "text": "Idle · nothing needs you",
         "expression": "idle",
         "tone": "neutral",
-        "state": "resting"
+        "state": "resting",
+        "needsFirst": "Idle · nothing needs you"
       },
       {
         "input": {
@@ -1688,7 +1690,8 @@
         "text": "1 thing needs you",
         "expression": "asking",
         "tone": "warn",
-        "state": "needs"
+        "state": "needs",
+        "needsFirst": "1 thing needs you"
       },
       {
         "input": {
@@ -1699,7 +1702,8 @@
         "text": "3 things need you",
         "expression": "asking",
         "tone": "warn",
-        "state": "needs"
+        "state": "needs",
+        "needsFirst": "3 things need you"
       },
       {
         "input": {
@@ -1711,7 +1715,8 @@
         "text": "Starting · 2 things need you",
         "expression": "thinking",
         "tone": "warn",
-        "state": "needs"
+        "state": "needs",
+        "needsFirst": "2 things need you · Starting"
       },
       {
         "input": {
@@ -1723,7 +1728,8 @@
         "text": "Reading packages/link/src/sync.ts",
         "expression": "thinking",
         "tone": "accent",
-        "state": "working"
+        "state": "working",
+        "needsFirst": "Reading packages/link/src/sync.ts"
       },
       {
         "input": {
@@ -1738,7 +1744,8 @@
         "text": "Working in “The release plan” · 1 thing needs you",
         "expression": "working",
         "tone": "warn",
-        "state": "needs"
+        "state": "needs",
+        "needsFirst": "1 thing needs you · Working in “The release plan”"
       },
       {
         "input": {
@@ -1753,7 +1760,8 @@
         "text": "Working in a temporary chat",
         "expression": "working",
         "tone": "accent",
-        "state": "working"
+        "state": "working",
+        "needsFirst": "Working in a temporary chat"
       },
       {
         "input": {
@@ -1768,7 +1776,8 @@
         "text": "Working on: Make sync resume",
         "expression": "working",
         "tone": "accent",
-        "state": "working"
+        "state": "working",
+        "needsFirst": "Working on: Make sync resume"
       },
       {
         "input": {
@@ -1787,7 +1796,8 @@
         "text": "Working on 2 things · 4 things need you",
         "expression": "working",
         "tone": "warn",
-        "state": "needs"
+        "state": "needs",
+        "needsFirst": "4 things need you · Working on 2 things"
       },
       {
         "input": {
@@ -1803,7 +1813,8 @@
         "text": "New answer in “The release plan”",
         "expression": "idle",
         "tone": "ok",
-        "state": "unread"
+        "state": "unread",
+        "needsFirst": "New answer in “The release plan”"
       },
       {
         "input": {
@@ -1822,7 +1833,8 @@
         "text": "2 new answers",
         "expression": "idle",
         "tone": "ok",
-        "state": "unread"
+        "state": "unread",
+        "needsFirst": "2 new answers"
       },
       {
         "input": {
@@ -1838,7 +1850,8 @@
         "text": "1 thing needs you",
         "expression": "asking",
         "tone": "warn",
-        "state": "needs"
+        "state": "needs",
+        "needsFirst": "1 thing needs you"
       },
       {
         "input": {
@@ -1858,7 +1871,8 @@
         "text": "Working in “A”",
         "expression": "working",
         "tone": "accent",
-        "state": "working"
+        "state": "working",
+        "needsFirst": "Working in “A”"
       }
     ],
     "needs": [

@@ -68,7 +68,7 @@ struct MenuBarRoundtable: View {
                 ForEach(session.seats, id: \.self) { id in
                     if id == "galahad" {
                         MenuRow(action: { show(.galahad) }) {
-                            SidebarSeat(id: id, name: "Galahad", line: session.galahad.text, needs: session.galahad.tone == .warn, standing: session.galahadStanding, leads: session.primary == id)
+                            SidebarSeat(id: id, name: "Galahad", line: session.galahad.line, needs: session.galahad.tone == .warn, standing: session.galahadStanding, leads: session.primary == id)
                         }
                     } else if let row = rows[id] {
                         MenuRow(action: { show(.knight(id)) }) {

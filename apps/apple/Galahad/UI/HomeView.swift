@@ -66,7 +66,7 @@ struct HomeView: View {
     // MARK: His header
 
     private func header(_ work: Attended?) -> some View {
-        let glance = work.map { Work.atAGlance($0, needs: session.needsCount($0), his: session.galahad.text) } ?? (session.galahad.text, false)
+        let glance = work.map { Work.atAGlance($0, needs: session.needsCount($0), his: session.galahad.line) } ?? (session.galahad.line, false)
         return HStack(spacing: Space.s3) {
             Button { go(.galahad) } label: {
                 HStack(spacing: Space.s3) {

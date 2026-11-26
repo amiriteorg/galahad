@@ -251,14 +251,14 @@ struct GalahadPin: View {
             GalahadOrb(size: 34, tone: session.galahadTone, mood: still ? nil : session.galahadMood, key: "galahad:side")
             VStack(alignment: .leading, spacing: 1) {
                 Text("Galahad").font(.headline)
-                Text(session.galahad.text)
+                Text(session.galahad.line)
                     .font(.footnote)
                     .foregroundStyle(selected ? AnyShapeStyle(.secondary) : AnyShapeStyle(tone))
                     .lineLimit(1)
             }
         }
         .padding(.vertical, Space.s1)
-        .help("Galahad: \(session.galahad.text)")
+        .help("Galahad: \(session.galahad.line)")
         .accessibilityElement(children: .combine)
     }
 

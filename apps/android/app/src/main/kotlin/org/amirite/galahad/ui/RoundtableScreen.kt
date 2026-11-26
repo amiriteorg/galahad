@@ -113,7 +113,7 @@ fun RoundtableScreen(app: AppModel, back: () -> Unit, openChat: () -> Unit, open
                 profile = null,
                 name = "Galahad",
                 state = table.galahad.state,
-                line = table.galahad.text,
+                line = table.galahad.line,
                 needs = table.galahad.tone == "warn",
                 unread = table.unread.isNotEmpty(),
                 onClick = openChat,

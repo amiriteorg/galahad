@@ -81,7 +81,7 @@ struct ChatView: View {
         .hidingTabBar()
         #if os(macOS)
         // On a Mac, the window's own title and its subtitle (a Build thread's: its title, and the branch it works on).
-        .navigationSubtitle(build.map { [chat.title ?? "New thread", $0.branch].compactMap { $0 }.joined(separator: " · ") } ?? chat.title ?? session.galahad.text)
+        .navigationSubtitle(build.map { [chat.title ?? "New thread", $0.branch].compactMap { $0 }.joined(separator: " · ") } ?? chat.title ?? session.galahad.line)
         #endif
         .toolbar {
             if build == nil {
@@ -89,7 +89,7 @@ struct ChatView: View {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: Space.s2) {
                     GalahadOrb(size: 30, tone: session.galahadTone, mood: session.galahadMood)
-                    TimelineTitle(title: "Galahad", line: chat.title ?? session.galahad.text, needs: chat.title == nil && session.galahad.tone == .warn, alignment: .leading)
+                    TimelineTitle(title: "Galahad", line: chat.title ?? session.galahad.line, needs: chat.title == nil && session.galahad.tone == .warn, alignment: .leading)
                 }
             }
             #else

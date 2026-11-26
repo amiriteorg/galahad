@@ -55,6 +55,8 @@ class RosterTest {
                 needs = i["needs"].int, unread = i["unread"].list.map { it["title"].string },
             )
             assertEquals(i!!.text(), listOf(c["text"].string, c["expression"].string, c["tone"].string, c["state"].string), listOf(now.text, now.expression, now.tone, now.state.wire))
+            // As every app shows it: what needs you first when there is any (lib/now.ts's needsFirst).
+            assertEquals(i.text(), c["needsFirst"].string, now.line)
         }
         for (c in v["roundtable"]["needs"].list) {
             assertEquals(c["needs"].int, Roster.galahadNeeds(c["inbox"].int!!, asks(v["roundtable"]["asks"]), c["knights"].list.map { it.string!! }))

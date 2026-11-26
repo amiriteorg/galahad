@@ -105,7 +105,7 @@ fun HomeScreen(app: AppModel, nav: Nav, places: () -> Unit, give: () -> Unit) {
         }
     }
     val needs = work?.let { needsCount(app, it) } ?: 0
-    val glance = work?.let { Work.atAGlance(it.working, needs, table.galahad.text) } ?: Work.Glance(table.galahad.text, false)
+    val glance = work?.let { Work.atAGlance(it.working, needs, table.galahad.line) } ?: Work.Glance(table.galahad.line, false)
     // His orb: at work while he answers the chat you left, before the node has said so; else where he stands.
     val standing = if (live) KnightState.WORKING else table.galahad.state
 

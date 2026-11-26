@@ -254,7 +254,11 @@ object Roster {
         return line
     }
 
-    data class Now(val text: String, val expression: String, val tone: String) {
+    /** His line ([galahadNow]: the work first, then what needs you), and as every app shows it ([line]: lib/now.ts's
+     * needsFirst, 26 November 2026: when something needs you, that first, then what he is doing; the line is amber then,
+     * and a phone cuts its end, so "Working on: Make syn…" in amber said one thing in words and another in colour).
+     * Otherwise [line] is [text], word for word; the same tone. */
+    data class Now(val text: String, val expression: String, val tone: String, val line: String = text) {
         val state: KnightState get() = when {
             tone == "warn" -> KnightState.NEEDS
             tone == "accent" || expression == "thinking" || expression == "working" -> KnightState.WORKING
@@ -284,6 +288,6 @@ object Roster {
         val text = if (doing != null) listOfNotNull(doing, needsLine).joinToString(" · ") else needsLine ?: fresh ?: if (needs == 0) "Idle · nothing needs you" else "Idle"
         val expression = if (here) "thinking" else if (doing != null) "working" else if (needsLine != null) "asking" else "idle"
         val tone = if (needsLine != null) "warn" else if (doing != null) "accent" else if (fresh != null) "ok" else "neutral"
-        return Now(text, expression, tone)
+        return Now(text, expression, tone, if (doing != null && needsLine != null) "$needsLine · $doing" else text)
     }
 }

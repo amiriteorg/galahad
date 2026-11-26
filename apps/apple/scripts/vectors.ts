@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import * as core from "../../../packages/core/src/index.ts";
 import { besideChip, galahadState, type KnightState } from "../../web/src/lib/knight-state.ts";
 import { galahadNeeds, rosterRows } from "../../web/src/lib/roster.ts";
-import { galahadNow, type NowInput } from "../../web/src/lib/now.ts";
+import { galahadNow, needsFirst, type NowInput } from "../../web/src/lib/now.ts";
 import { groupConversations } from "../../web/src/lib/chats.ts";
 import { highlight } from "../../web/src/lib/highlight.ts";
 import { parseMarkdown } from "../../web/src/lib/markdown.ts";
@@ -295,8 +295,9 @@ const roundtable = {
   asks,
   rows,
   besides,
-  // (Galahad's state from his line; the app adds his own answer being written here, which a node's line doesn't know.)
-  galahad: nows.map((input) => ({ input, ...galahadNow(input), state: galahadState(galahadNow(input)) })),
+  // (Galahad's state from his line; the app adds his own answer being written here, which a node's line doesn't know.
+  // needsFirst: his line as every app shows it, what needs you first when there is any, its tone and state the same.)
+  galahad: nows.map((input) => ({ input, ...galahadNow(input), state: galahadState(galahadNow(input)), needsFirst: needsFirst(input).text })),
   needs: [
     { inbox: 5, knights: snapshot.teammates.map((t) => t.id), needs: galahadNeeds(5, asks, snapshot.teammates.map((t) => t.id)) },
     { inbox: 1, knights: ["max"], needs: galahadNeeds(1, asks, ["max"]) },

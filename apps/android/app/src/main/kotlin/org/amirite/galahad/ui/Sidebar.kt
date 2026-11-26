@@ -81,7 +81,7 @@ fun Sidebar(app: AppModel, nav: Nav, give: () -> Unit, places: () -> Unit, colla
         // ---- Galahad, pinned: his orb still beside a pane with orbs of its own, moving as he does beside any other ----
         val standing = if (live) KnightState.WORKING else table.galahad.state
         val elsewhere = top == Nav.HOME || top == "chat" || top == "roundtable" || top.startsWith("task:") || top.startsWith("knight:")
-        val line = table.galahad.text
+        val line = table.galahad.line
         Row(
             Modifier
                 .padding(horizontal = Space.s3, vertical = Space.s2)

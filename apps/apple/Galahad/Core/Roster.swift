@@ -309,12 +309,16 @@ struct GalahadWork: Decodable, Sendable, Equatable {
     }
 }
 
-/// His line (lib/now.ts's `galahadNow`): the work first, then what needs you.
+/// His line (lib/now.ts's `galahadNow`): the work first, then what needs you; and as every app shows it (`line`).
 struct GalahadNow: Equatable, Sendable {
     /// `ok`: an answer of his waits for you to read it, and nothing else is going on.
     enum Tone: String, Sendable { case neutral, accent, warn, ok }
     let text: String
     let tone: Tone
+    /// His line as it is shown (lib/now.ts's `needsFirst`, 26 November 2026): when something needs you, that first, then
+    /// what he is doing. The line is amber then, and a phone cuts its end: "Working on: Make syn…" in amber said one thing
+    /// in words and another in colour, its "· 2 things need you" cut off. Otherwise `text`, word for word; the same tone.
+    let line: String
 
     /// How much waits for you, as it's said everywhere.
     static func needsYou(_ n: Int) -> String { "\(n) \(n == 1 ? "thing needs" : "things need") you" }
@@ -335,6 +339,7 @@ struct GalahadNow: Equatable, Sendable {
         // An answer he finished while you were away, as an email you haven't opened.
         let fresh = work.unread.count > 1 ? "\(work.unread.count) new answers" : work.unread.first.map { title in title.flatMap { $0.isEmpty ? nil : "New answer in “\($0)”" } ?? "A new answer" }
         text = doing.map { [$0, needs].compactMap { $0 }.joined(separator: " · ") } ?? needs ?? fresh ?? (work.needs == 0 ? "Idle · nothing needs you" : "Idle")
+        line = doing.flatMap { doing in needs.map { "\($0) · \(doing)" } } ?? text
         tone = needs != nil ? .warn : doing != nil ? .accent : fresh != nil ? .ok : .neutral
     }
 }

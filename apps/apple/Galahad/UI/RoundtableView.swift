@@ -244,7 +244,7 @@ struct RoundtableView: View {
         let route = id == "galahad" ? Route.galahad : Route.knight(id)
         Button { open(route) } label: {
             if id == "galahad" {
-                SeatCard(name: "Galahad", line: session.galahad.text, needs: session.galahad.tone == .warn, standing: galahadStanding, selected: chosen(route)) {
+                SeatCard(name: "Galahad", line: session.galahad.line, needs: session.galahad.tone == .warn, standing: galahadStanding, selected: chosen(route)) {
                     SeatFace(id: id, size: Metrics.cardFace, standing: galahadStanding, leads: session.primary == id)
                 }
             } else if let row = rows[id] {

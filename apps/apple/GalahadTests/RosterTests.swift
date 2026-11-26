@@ -67,6 +67,8 @@ struct RosterTests {
             let now = GalahadNow(item.input)
             #expect(now.text == item.text)
             #expect(now.tone.rawValue == item.tone, "\(item.text)")
+            // As every app shows it: what needs you first when there is any (lib/now.ts's needsFirst).
+            #expect(now.line == item.needsFirst, "\(item.text)")
         }
     }
 
