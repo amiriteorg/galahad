@@ -309,9 +309,15 @@ private fun dispatchWords(task: TeamTask, knight: String, proposer: String?): St
     else -> "Given to $knight by name."
 }
 
+/** When something in a thread happened, as the thread says it: "just now" for the last minute, and for a moment a few
+ * seconds ahead (a node's clock can be ahead of this phone's), as Home and the Roundtable say it; Android's own words
+ * ("3 minutes ago") after that. */
+internal fun threadAgo(at: Long, now: Long = System.currentTimeMillis()): CharSequence =
+    if (now - at < 60_000) "just now" else android.text.format.DateUtils.getRelativeTimeSpanString(at, now, android.text.format.DateUtils.MINUTE_IN_MILLIS)
+
 @Composable
 private fun Dispatch(task: TeamTask, name: String, proposer: String?) {
-    val ago = android.text.format.DateUtils.getRelativeTimeSpanString(task.createdAt, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS)
+    val ago = threadAgo(task.createdAt)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
         if (task.givenBy == "galahad" || task.proposedBy == "galahad") GalahadOrb(18.dp) else Icon(LayersIcon, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
@@ -656,7 +662,7 @@ private fun Message(m: Json, teammates: List<org.amirite.galahad.core.Teammate>)
         "galahad" -> "Galahad"
         else -> m["speakerName"].string ?: teammates.firstOrNull { it.id == s }?.name ?: s
     }
-    val ago = android.text.format.DateUtils.getRelativeTimeSpanString(m["createdAt"].long ?: 0, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS)
+    val ago = threadAgo(m["createdAt"].long ?: 0)
     Column(
         Modifier.fillMaxWidth().then(if (owner) Modifier.clip(MaterialTheme.shapes.large).background(LocalBrand.current.raised).padding(Space.s3) else Modifier),
         verticalArrangement = Arrangement.spacedBy(2.dp),
