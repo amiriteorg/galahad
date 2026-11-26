@@ -101,6 +101,8 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   let viewScope: Scope | null = null;
   let pending: { route: Route; opts: NavigateOptions } | null = null;
   let titleObserver: IntersectionObserver | null = null;
+  let headingWatch: MutationObserver | null = null;
+  let headingLate: ReturnType<typeof setTimeout> | undefined;
 
   const live = startLive(base.api, can, {
     onNewPairing(pairing: PairingView) {
@@ -336,13 +338,33 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     document.title = `${n ? `(${n}) ` : ""}${spec.label} · Galahad`;
     replace(main);
     VIEWS[route](main, ctx, { scope: viewScope, opts });
-    // The top bar names the page only once the page's own heading has scrolled away.
+    // The top bar names the page only once the page's own heading has scrolled away (never both at once: the Roundtable's
+    // top bar said "Roundtable" over its "The Roundtable"). A page whose head comes with its data (the Roundtable's board)
+    // keeps it tucked until its heading is there to follow, or names it after 1.5 s if none comes (a page that couldn't
+    // be read, with no head).
     titleObserver?.disconnect();
-    const heading = main.querySelector<HTMLElement>(".page-head h1");
-    topTitle.classList.toggle("tucked", Boolean(heading));
-    if (heading) {
+    headingWatch?.disconnect();
+    clearTimeout(headingLate);
+    const follow = (heading: HTMLElement): void => {
       titleObserver = new IntersectionObserver(([entry]) => topTitle.classList.toggle("tucked", Boolean(entry?.isIntersecting)), { rootMargin: "-60px 0px 0px 0px" });
       titleObserver.observe(heading);
+    };
+    const heading = main.querySelector<HTMLElement>(".page-head h1");
+    topTitle.classList.add("tucked");
+    if (heading) follow(heading);
+    else {
+      headingWatch = new MutationObserver(() => {
+        const found = main.querySelector<HTMLElement>(".page-head h1");
+        if (!found) return;
+        headingWatch?.disconnect();
+        clearTimeout(headingLate);
+        follow(found);
+      });
+      headingWatch.observe(main, { childList: true, subtree: true });
+      headingLate = setTimeout(() => {
+        headingWatch?.disconnect();
+        if (!main.querySelector(".page-head h1")) topTitle.classList.remove("tucked");
+      }, 1500);
     }
     if (changed) {
       window.scrollTo({ top: 0 });

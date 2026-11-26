@@ -4,7 +4,7 @@ import type { QueuedMessage, QueueHold, TurnView } from "@galahad/core/turns";
 import { type Api, ApiError, isAbort } from "../api.ts";
 import { errorMessage, type Live, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
-import { type ChatAction, chatActions, CHATS_MENU, filterConversations, groupConversations, mostRecent } from "../lib/chats.ts";
+import { type ChatAction, chatActions, CHATS_MENU, filterConversations, groupConversations, mostRecent, titleRepeats } from "../lib/chats.ts";
 import { needsFirst, type NowInput } from "../lib/now.ts";
 import { questInHand } from "../lib/quests.ts";
 import { galahadNeeds } from "../lib/roster.ts";
@@ -974,6 +974,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
         return el;
       }),
     );
+    // (Whether its title repeats its first message is known once its turns are.)
+    renderSub();
   }
 
   let frame = 0;
@@ -1392,9 +1394,15 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   function renderSub(): void {
     options.refresh();
     if (current) {
+      // Its title, unless it is only its first message's first words, which the thread says right under it: then its
+      // place is kept, quiet (nothing under it moves), and Rename is in the ⋯ menu.
+      const first = thread.turns.find((turn) => turn.role === "user");
+      const repeats = first !== undefined && titleRepeats(current.title, first.content);
       replace(
         subHead,
-        h("button", { class: "chat-title", type: "button", title: "Rename", onclick: () => rename() }, current.pinned ? icon("pin", { size: 13, class: "subtle", label: "Pinned" }) : null, h("span", { class: "ellipsis" }, current.title)),
+        repeats
+          ? h("span", { class: "chat-sub-kept", "aria-hidden": "true" }, current.pinned ? icon("pin", { size: 13, class: "subtle" }) : null)
+          : h("button", { class: "chat-title", type: "button", title: "Rename", onclick: () => rename() }, current.pinned ? icon("pin", { size: 13, class: "subtle", label: "Pinned" }) : null, h("span", { class: "ellipsis" }, current.title)),
         current.project
           ? h("a", { class: "chip", href: "#/projects", onclick: (e: Event) => { e.preventDefault(); ctx.navigate("projects", { project: current!.project! }); } }, icon("folder", { size: 12 }), projectName(current.project))
           : null,
