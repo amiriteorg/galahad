@@ -124,7 +124,8 @@ export const homeView: View = (root, ctx, { scope }) => {
     if (line.textContent !== glance.text) line.textContent = glance.text;
     line.dataset.tone = glance.needs ? "needs" : now.tone;
     const fleet = ctx.live.fleet.value;
-    const self = fleet?.devices.find((device) => device.id === fleet.self)?.name ?? ctx.whoami.fleetName ?? "fleet";
+    // The machine he runs on, by its name from the first frame (its dot says how the fleet stands once it answers).
+    const self = ctx.whoami.nodeName || ctx.whoami.fleetName || "This node";
     const nodes = fleet ? fleet.devices.filter((device) => device.kind === "node" && !device.revokedAt) : [];
     const online = fleet ? nodes.filter((device) => device.id === fleet.self || fleet.peers.find((peer) => peer.device === device.id)?.online).length : 0;
     replace(machine, dot(!fleet ? null : online === nodes.length ? "ok" : online === 0 ? "danger" : "warn"), h("span", { class: "ellipsis" }, self));
@@ -132,8 +133,13 @@ export const homeView: View = (root, ctx, { scope }) => {
   };
 
   const rowEl = (row: WorkRow): HTMLElement => workRow(row, { face: 18 });
+  /** The page is drawn once the team and the Inbox have both answered (or a moment has passed): what needs you comes in
+   * with the work, rather than above it a moment later, pushing it down. */
+  const started = Date.now();
+  const settled = (): boolean => ctx.live.inboxLoaded.value || Date.now() - started >= 1500;
+  scope.timeout(() => draw(), 1500);
   function draw(): void {
-    const all = workNow(ctx);
+    const all = settled() ? workNow(ctx) : null;
     drawHead(all, all ? needsCount(ctx, all) : 0);
     const version = JSON.stringify([all && [rowsVersion(all.needs), rowsVersion(all.active), rowsVersion(all.working), rowsVersion(all.done), all.projects], filtered, [...open], needsVersion(ctx), Boolean(ctx.live.teamProblem.value)]);
     if (version === shown) return;

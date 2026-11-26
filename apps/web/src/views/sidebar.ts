@@ -112,9 +112,15 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
   };
   const rowEl = (row: WorkRow): HTMLElement => workRow(row, { face: 16, current: where.route === "task" && row.id === where.task });
 
+  /** The work is drawn once the team and the Inbox have both answered (or a moment has passed): what needs you then
+   * comes in with the rest, rather than above it a moment later, pushing it down. */
+  const started = Date.now();
+  const settled = (): boolean => ctx.live.inboxLoaded.value || Date.now() - started >= 1500;
+  const late = setTimeout(() => render(), 1500);
+
   function render(): void {
     drawGalahad();
-    const now = workNow(ctx);
+    const now = settled() ? workNow(ctx) : null;
     const beyond = now ? inboxBeyond(ctx.live.inboxCount.value, ctx.live.actions.value.filter((action) => isWaiting(action)), now.needs) : 0;
     const version = JSON.stringify([now && [rowsVersion(now.needs), rowsVersion(now.active), rowsVersion(now.working), rowsVersion(now.done)], beyond, where, [...open], Boolean(ctx.live.teamProblem.value)]);
     if (version === shown) return;
@@ -146,26 +152,28 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
   }
 
   // ---- the foot: the machine it talks to, the knights, everything else ----
+  // (The knights first and the machine after them: what either says when its answer comes changes no other's place.)
   const machine = h("a", { class: "side-pill", href: "#/fleet", hidden: !ctx.can("mind:read") });
   const knights = h("a", { class: "side-pill", href: "#/team", hidden: !ctx.can("chat") });
   const more = button("Everything else", { variant: "ghost", size: "sm", iconOnly: true, icon: "settings", title: "Everything else: places, settings, this device", onClick: (event) => openPlaces(ctx, event.currentTarget as Element) });
-  const foot = h("div", { class: "side-foot" }, machine, knights, h("span", { class: "grow" }), more);
+  const foot = h("div", { class: "side-foot" }, knights, machine, h("span", { class: "grow" }), more);
   const drawFoot = (): void => {
     const fleet = ctx.live.fleet.value;
     const nodes = fleet ? fleet.devices.filter((device) => device.kind === "node" && !device.revokedAt) : [];
     const online = fleet ? nodes.filter((device) => device.id === fleet.self || fleet.peers.find((peer) => peer.device === device.id)?.online).length : 0;
-    const self = fleet?.devices.find((device) => device.id === fleet.self)?.name ?? ctx.whoami.fleetName ?? "fleet";
+    // The machine this app talks to, by its name from the first frame; how many of the fleet's are online once it says.
+    const self = ctx.whoami.nodeName || ctx.whoami.fleetName || "This node";
     const tone = !fleet ? null : online === nodes.length ? "ok" : online === 0 ? "danger" : "warn";
-    // (As wide as it will be before the fleet answers: figure spaces hold the count's place.)
-    replace(machine, dot(tone), h("span", { class: "ellipsis tnum" }, fleet ? `${self}${nodes.length > 1 ? ` · ${online}/${nodes.length}` : ""}` : `${self}${" ".repeat(2)}`));
+    replace(machine, dot(tone), h("span", { class: "ellipsis tnum" }, fleet && nodes.length > 1 ? `${self} · ${online}/${nodes.length}` : self));
     machine.setAttribute("aria-label", fleet ? `${self}: ${online} of ${nodes.length} machines online` : self);
     const count = ctx.live.team.value?.teammates.length;
-    replace(knights, icon("roundtable", { size: 14 }), h("span", { class: "tnum" }, count === undefined ? "Knights" : `Knights ${count}`));
+    // (A figure space holds the count's place until the team answers.)
+    replace(knights, icon("roundtable", { size: 14 }), h("span", { class: "tnum" }, count === undefined ? "Knights \u2007" : `Knights ${count}`));
     knights.setAttribute("aria-label", count === undefined ? "The knights" : `The knights: ${count}`);
   };
 
   const el = h("aside", { class: "sidebar", "aria-label": "Galahad and the work" }, head, search, galahad, work, foot);
-  const stops = [...workSources(ctx), ...galahadSources(ctx), ctx.live.teamProblem].map((source) => source.subscribe(render));
+  const stops = [...workSources(ctx), ...galahadSources(ctx), ctx.live.teamProblem, ctx.live.inboxLoaded].map((source) => source.subscribe(render));
   stops.push(ctx.live.fleet.subscribe(drawFoot), ctx.live.team.subscribe(drawFoot));
   // "2 min ago" moves on, and a working row's time: drawn again each minute (only what changed is).
   const minute = setInterval(render, 60_000);
@@ -180,6 +188,7 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
     dispose() {
       stops.forEach((stopping) => stopping());
       clearInterval(minute);
+      clearTimeout(late);
     },
   };
 }
