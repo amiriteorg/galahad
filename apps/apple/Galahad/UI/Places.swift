@@ -1,18 +1,22 @@
 import SwiftUI
 
 /*
- * The wide window's places, a Mac's and an iPad's alike (docs/MAC.md): a sidebar that is the Roundtable as the PWA's wide
- * screen has it (its mark, which opens its board; the one who leads, then the knights in your order, each face in the
- * ring of where it stands with its state in a word, dragged into another order; the rooms; then the Inbox and More), and
- * the place chosen beside it. A chat, a knight or a room also opens in a window of its own.
+ * The wide window's places, a Mac's and an iPad's alike (docs/MAC.md), as T3 Code's three panes (your words, 26 November
+ * 2026: "agent first (Galahad), and project/tasks/coding t3code style for the knights"; the PWA's views/sidebar.ts): a
+ * sidebar with Home and Galahad pinned, his orb and what he is doing, then the work in one list by attention, every task a
+ * row of three lines: what needs you (with what else waits in the Inbox), what is new to you, what is at work (folded),
+ * what is settled (folded); at its foot the knights (the Roundtable), the machine, and everything else. Beside it the
+ * place chosen: Home, his conversation, a task's thread with its details beside it, the Roundtable, a knight's or a room's
+ * page, the Inbox, Settings. A chat, a knight or a room also opens in a window of its own.
  */
 
-/// What the wide window shows: Galahad's chat, the Roundtable's board, a knight's or a room's page, the Inbox, More, and
-/// on a Mac, This Mac (its node).
+/// What the wide window shows (and what an iPhone pushes over Home): Home, Galahad's chat, a task's thread, the
+/// Roundtable, a knight's or a room's page, the Inbox, Settings (More), and on a Mac, This Mac (its node).
 enum Place: Hashable, Codable {
-    case galahad, roundtable, inbox, more, thisMac
+    case home, galahad, roundtable, inbox, more, thisMac
     case knight(String)
     case room(String)
+    case task(String)
 
     init(_ route: Route) {
         switch route {
@@ -34,27 +38,20 @@ enum PlaceWindow: Hashable, Codable {
     case room(String)
 }
 
-extension Metrics {
-    /// A face in the sidebar: smaller than a row's on an iPhone, as a sidebar is narrow and close at hand.
-    static let sidebarFace: CGFloat = 32
-    /// The column the sidebar's faces stand in, ring and all, so every name starts at one edge.
-    static let sidebarSeat = sidebarFace + 2 * rowRing
-}
-
-/// The places, in a sidebar. Its foot is the window's to give: This Mac, on a Mac.
+/// The places, in a sidebar: Home and Galahad, then the work by attention. Its foot is the window's to give as well: This
+/// Mac, on a Mac.
 struct PlacesSidebar<Foot: View>: View {
     @Binding var place: Place
     let session: Session
-    /// What stands at its foot, under what troubles the node: This Mac, on a Mac.
+    /// What stands at its foot, under the knights and the machine: This Mac, on a Mac.
     let foot: Foot
     @Environment(\.openWindow) private var openWindow
     /// Whether a place can open in a window of its own: a Mac's, an iPad's (an iPhone has one window).
     @Environment(\.supportsMultipleWindows) private var windows
-    /// The sidebar's two sections, folded at their heads as this Mac last left them (the PWA's choice to fold them).
-    @AppStorage("sidebar.knights") private var knightsShown = true
-    @AppStorage("sidebar.rooms") private var roomsShown = true
-    /// A change of yours to the order, or to who leads, that didn't hold: what, and why.
-    @State private var refused: (what: String, why: String)?
+    /// The folded sections, as this device last left them.
+    @AppStorage("sidebar.working") private var workingShown = false
+    @AppStorage("sidebar.done") private var doneShown = false
+    @State private var giving = false
 
     init(place: Binding<Place>, session: Session, @ViewBuilder foot: () -> Foot) {
         _place = place
@@ -62,127 +59,145 @@ struct PlacesSidebar<Foot: View>: View {
         self.foot = foot()
     }
 
-    private var mayArrange: Bool { session.can("fleet:admin") && session.team != nil }
-    /// The head of the table: the one who leads, and Galahad after a knight that does.
-    private var head: [String] { Array(session.seats.prefix(session.primary == "galahad" ? 1 : 2)) }
-    /// The knights under it, in your order: those dragged into another.
-    private var rest: [String] { Array(session.seats.dropFirst(head.count)) }
+    private var mayGive: Bool { session.can("fleet:admin") && session.can("chat") && session.team != nil && !session.rows.isEmpty }
 
     var body: some View {
-        // Each knight's row, worked out once for all of them.
-        let rows = Dictionary(session.rows.map { ($0.id, $0) }) { first, _ in first }
+        let work = session.attended
+        let beyond = work.map { Work.inboxBeyond(session.inboxCount, asks: session.asks, needs: $0.needs) } ?? session.inboxCount
         List(selection: Binding<Place?>(get: { place }, set: { if let chosen = $0 { place = chosen } })) {
             Section {
-                Label {
-                    Text("Roundtable").font(.headline)
-                } icon: {
-                    RoundtableMark(size: 20)
-                }
-                .padding(.vertical, Space.line)
-                .tag(Place.roundtable)
+                Label("Home", systemImage: "house").tag(Place.home)
+                GalahadPin(session: session, still: [Place.home, .galahad, .roundtable].contains(place) || { if case .task = place { true } else { false } }())
+                    .tag(Place.galahad)
                 #if os(macOS)
                 BuildRow()
                 #endif
-                ForEach(head, id: \.self) { id in seat(id, rows) }
             }
-            if !rest.isEmpty {
-                Section("Knights", isExpanded: $knightsShown) {
-                    ForEach(rest, id: \.self) { id in seat(id, rows) }
-                        .onMove(perform: mayArrange ? { offsets, destination in move(offsets, to: destination) } : nil)
-                }
-            }
-            if !session.roomRows.isEmpty {
-                Section("Rooms", isExpanded: $roomsShown) {
-                    ForEach(session.roomRows) { row in
-                        SidebarRoom(row: row, faces: row.members.map { MemberFace(id: $0, profile: session.drawn($0)?.avatar) }).tag(Place.room(row.id))
+            if let work {
+                let needs = work.needs.count + (beyond > 0 ? 1 : 0)
+                if needs > 0 {
+                    Section {
+                        if beyond > 0 {
+                            HStack {
+                                Label("Inbox", systemImage: "tray")
+                                Spacer(minLength: Space.s2)
+                                Text("\(beyond) waiting").font(.subheadline.weight(.semibold)).foregroundStyle(Color.needs).monospacedDigit()
+                            }
+                            .tag(Place.inbox)
+                        }
+                        rows(work.needs)
+                    } header: {
+                        Text("Needs you · \(needs)").foregroundStyle(Color.needs).monospacedDigit()
                     }
                 }
-            }
-            Section {
-                // What waits for you, counted in red as the iPhone's tab counts it.
-                Label("Inbox", systemImage: "tray")
-                    .badge(session.inboxCount)
-                    .badgeProminence(session.inboxCount > 0 ? .increased : .standard)
-                    .tag(Place.inbox)
-                Label("More", systemImage: "ellipsis.circle").tag(Place.more)
+                if !work.active.isEmpty {
+                    Section("Active") { rows(work.active) }
+                }
+                if !work.working.isEmpty {
+                    Section(isExpanded: $workingShown) {
+                        rows(work.working)
+                    } header: {
+                        Text("Working \(work.working.count)").monospacedDigit()
+                    }
+                }
+                if !work.done.isEmpty {
+                    Section(isExpanded: $doneShown) {
+                        rows(work.done)
+                    } header: {
+                        Text("Done \(work.done.count)").monospacedDigit()
+                    }
+                }
+                if work.byAttention.isEmpty {
+                    Section {
+                        Text("No tasks yet. Each task you or Galahad give a knight is a row here: what needs you first, then what is new, at work, and done.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        if mayGive { Button("Give a task") { giving = true } }
+                    }
+                }
+            } else if let problem = session.teamProblem {
+                Section {
+                    Text("The work can't be read just now: \(problem)").font(.footnote).foregroundStyle(.secondary)
+                    Button("Try again") { Task { await session.refresh() } }
+                }
+            } else {
+                Section { ProgressView().frame(maxWidth: .infinity) }
             }
         }
         .listStyle(.sidebar)
-        // Who leads, and your order, move the rows to their seats rather than putting them there.
-        .animation(.default, value: session.seats)
+        // A task's state moving it from one section to another, as an animation of the list, never a jump.
+        .animation(.snappy, value: work.map { $0.byAttention.map(\.id) } ?? [])
         #if os(macOS)
         .contextMenu(forSelectionType: Place.self) { places in
-            if let place = places.first, places.count == 1 { menu(for: place) }
+            if let place = places.first, places.count == 1, windows, let window = window(for: place) {
+                Button("Open in New Window", systemImage: "macwindow.badge.plus") { openWindow(value: window) }
+            }
         } primaryAction: { places in
             // A double click opens it in a window of its own.
             if let place = places.first, let window = window(for: place) { openWindow(value: window) }
         }
         #else
-        // (A tap chooses a place, so a touch has no primary action here: a window of its own is in the row's menu.)
         .contextMenu(forSelectionType: Place.self) { places in
-            if let place = places.first, places.count == 1 { menu(for: place) }
+            if let place = places.first, places.count == 1, windows, let window = window(for: place) {
+                Button("Open in New Window", systemImage: "macwindow.badge.plus") { openWindow(value: window) }
+            }
         }
         #endif
+        .toolbar {
+            if mayGive {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { giving = true } label: { Label("Give a task", systemImage: "square.and.pencil") }
+                        .help("Give a task to the knight best suited to it, or to one by name")
+                }
+            }
+        }
+        .sheet(isPresented: $giving) { GiveSheet(session: session) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
-                // What the model calls came to, against your budget.
-                if session.usage != nil {
-                    UsageMeterView(session: session)
-                        .padding(.horizontal, Space.s4)
-                        .padding(.vertical, Space.s3)
-                }
                 if let trouble = session.trouble {
                     TroubleRow(trouble: trouble)
                         .font(.callout)
                         .padding(Space.s3)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.bar)
                 }
                 if let since = session.keptSince {
                     KeptLine(since: since)
                         .padding(Space.s3)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.bar)
                 }
+                // What the model calls came to, against your budget.
+                if session.usage != nil {
+                    UsageMeterView(session: session)
+                        .padding(.horizontal, Space.s4)
+                        .padding(.vertical, Space.s2)
+                }
+                HStack(spacing: Space.s2) {
+                    Button { place = .roundtable } label: {
+                        Label(session.rows.isEmpty ? "Knights" : "Knights \(session.rows.count)", systemImage: "person.3")
+                            .font(.footnote.weight(.medium))
+                            .monospacedDigit()
+                            .padding(.horizontal, Space.s2)
+                            .frame(minHeight: 28)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.capsule)
+                    .help("The Roundtable: your knights and their rooms")
+                    MachineChip(session: session) { place = .more }
+                    Spacer(minLength: 0)
+                    PlacesMenu(session: session, go: { place = $0 }, give: mayGive ? { giving = true } : nil)
+                }
+                .padding(.horizontal, Space.s3)
+                .padding(.vertical, Space.s2)
                 foot
             }
-        }
-        .alert(refused?.what ?? "", isPresented: .init(get: { refused != nil }, set: { if !$0 { refused = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(refused?.why ?? "")
+            .background(.bar)
         }
     }
 
-    /// A seat: Galahad's chat, or a knight's page.
-    @ViewBuilder private func seat(_ id: String, _ rows: [String: RosterRow]) -> some View {
-        if id == "galahad" {
-            SidebarSeat(id: id, name: "Galahad", line: session.galahad.text, needs: session.galahad.tone == .warn, standing: session.galahadStanding, leads: session.primary == id)
-                .tag(Place.galahad)
-        } else if let row = rows[id] {
-            SidebarSeat(id: id, profile: session.drawn(id)?.avatar, name: row.name, line: row.line, needs: row.needs, standing: row.standing, leads: session.primary == id)
-                .tag(Place.knight(id))
-        }
-    }
-
-    /// What a row's menu holds: a window of its own, and who leads.
-    @ViewBuilder private func menu(for place: Place) -> some View {
-        if windows, let window = window(for: place) {
-            Button("Open in New Window", systemImage: "macwindow.badge.plus") { openWindow(value: window) }
-        }
-        let id: String? = switch place {
-        case .galahad: "galahad"
-        case .knight(let knight): knight
-        default: nil
-        }
-        if let id, mayArrange {
-            if id != "galahad", session.primary != id {
-                Divider()
-                Button("Make Primary", systemImage: "crown") { arrange("Who leads didn't change") { try await session.arrange(primary: id) } }
-            } else if session.primary != "galahad" {
-                Divider()
-                Button("Galahad Leads", systemImage: "crown") { arrange("Who leads didn't change") { try await session.arrange(primary: "galahad") } }
-            }
+    /// Rows of the work, each its task's thread.
+    private func rows(_ rows: [WorkRow]) -> some View {
+        ForEach(rows) { row in
+            WorkRowView(row: row, face: 16, current: place == .task(row.id)).tag(Place.task(row.id))
         }
     }
 
@@ -192,25 +207,54 @@ struct PlacesSidebar<Foot: View>: View {
         case .galahad: session.chat.conversation.map(PlaceWindow.chat)
         case .knight(let id): .knight(id)
         case .room(let id): .room(id)
-        case .roundtable, .inbox, .more, .thisMac: nil
-        }
-    }
-
-    /// The knights under the one who leads, dragged into another order.
-    private func move(_ offsets: IndexSet, to destination: Int) {
-        let order = Roster.order(session.order, leader: Roster.leader(of: session.order, primary: session.primary), moving: offsets, to: destination)
-        arrange("Your order didn't change") { try await session.arrange(order: order) }
-    }
-
-    /// A change to the arrangement, shown at once, then saved; refused, the rows go back and `what` is said, with why.
-    private func arrange(_ what: String, _ change: @escaping @MainActor () async throws -> Void) {
-        Task.immediate {
-            do { try await change() } catch { refused = (what, error.localizedDescription) }
+        case .home, .roundtable, .inbox, .more, .thisMac, .task: nil
         }
     }
 }
 
-/// A seat in the sidebar: its face in the ring of where it stands (the one who leads with its mark on the ring's foot), its
+/// Galahad's row, pinned: his orb, his name and what he is doing, in his state's colour. His orb moves as he does, but is
+/// still beside a page with an orb of its own in focus (Home's, his conversation's, a task's knight's, the Roundtable's).
+struct GalahadPin: View {
+    let session: Session
+    var still = false
+    @Environment(\.backgroundProminence) private var prominence
+
+    var body: some View {
+        let selected = prominence == .increased
+        HStack(spacing: Space.s2) {
+            GalahadOrb(size: 34, tone: session.galahadTone, mood: still ? nil : session.galahadMood, key: "galahad:side")
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Galahad").font(.headline)
+                Text(session.galahad.text)
+                    .font(.footnote)
+                    .foregroundStyle(selected ? AnyShapeStyle(.secondary) : AnyShapeStyle(tone))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, Space.s1)
+        .help("Galahad: \(session.galahad.text)")
+        .accessibilityElement(children: .combine)
+    }
+
+    private var tone: Color {
+        switch session.galahadTone {
+        case .warn: .needs
+        case .accent: .working
+        case .ok: .done
+        case .danger: .failed
+        case .neutral: .secondary
+        }
+    }
+}
+
+extension Metrics {
+    /// A face in a seat's row of the menu bar's Roundtable: smaller than a row's on an iPhone.
+    static let sidebarFace: CGFloat = 32
+    /// The column the sidebar's faces stand in, ring and all, so every name starts at one edge.
+    static let sidebarSeat = sidebarFace + 2 * rowRing
+}
+
+/// A seat as the menu bar's Roundtable lists it (a Mac's): its face in the ring of where it stands (the one who leads with its mark on the ring's foot), its
 /// name and its state in a word, and what it is doing in a line, in Galahad's red when only you can move it on. Smaller
 /// than an iPhone's row, as a sidebar is; on the row a focused sidebar shows selected, it is all in the selection's white,
 /// its line's red too (the chip still says it needs you).
@@ -252,40 +296,6 @@ struct SidebarSeat: View {
         .padding(.bottom, leads ? Space.s1 : 0)
         // Its whole line, where the sidebar cut it short.
         .help(line)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// A room in the sidebar: who is in it (up to three faces, still, where a knight's face stands), its name, and where it
-/// stands in a line, with the mark of what needs you.
-private struct SidebarRoom: View {
-    let row: RoomRow
-    let faces: [MemberFace]
-    @Environment(\.backgroundProminence) private var prominence
-
-    var body: some View {
-        let selected = prominence == .increased
-        HStack(spacing: Space.s2) {
-            let shown = Array(faces.prefix(3))
-            ZStack {
-                ForEach(Array(shown.enumerated()), id: \.offset) { index, face in
-                    WorkerFace(id: face.id, profile: face.profile, size: Metrics.sidebarFace * 0.62)
-                        .offset(x: (CGFloat(index) - CGFloat(shown.count - 1) / 2) * Metrics.sidebarFace * 0.24, y: index % 2 == 0 ? -Space.line : Space.line)
-                }
-            }
-            .frame(width: Metrics.sidebarSeat, height: Metrics.sidebarSeat)
-            VStack(alignment: .leading, spacing: Space.line) {
-                Text(row.name).font(.headline).lineLimit(1)
-                Text(row.line)
-                    .font(.subheadline)
-                    .foregroundStyle(row.needs && !selected ? AnyShapeStyle(Color.needs) : AnyShapeStyle(.secondary))
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            if row.needs { NeedsMark() } else if row.unread { NewMark() }
-        }
-        .padding(.vertical, Space.s1)
-        .help(row.line)
         .accessibilityElement(children: .combine)
     }
 }

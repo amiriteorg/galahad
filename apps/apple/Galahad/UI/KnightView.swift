@@ -418,6 +418,8 @@ struct RoomComposer: View {
     var composing: FocusState<Bool>.Binding
     /// Who may be named here with @ (MentionChoices).
     var seats: [Mentions.Seat] = []
+    /// What the empty box says (nil: "Message" and its name).
+    var prompt: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -436,7 +438,7 @@ struct RoomComposer: View {
         return GlassEffectContainer(spacing: 10) {
             HStack(alignment: .bottom, spacing: Space.s2) {
                 AttachButton(outbox: room.outbox, client: client)
-                TextField("Message \(name)", text: $room.draft, axis: .vertical)
+                TextField(prompt ?? "Message \(name)", text: $room.draft, axis: .vertical)
                     .plainField()
                     .lineLimit(1...6)
                     .focused(composing)

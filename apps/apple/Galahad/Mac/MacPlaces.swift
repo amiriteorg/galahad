@@ -1,8 +1,9 @@
 #if os(macOS)
 import SwiftUI
 
-/// The main window once this Mac is paired: the places in a sidebar (Places.swift), This Mac at its foot, and the place
-/// chosen beside it; a chat, a knight or a room also opens in a window of its own.
+/// The main window once this Mac is paired: Home, Galahad and the work in a sidebar (Places.swift), This Mac at its foot,
+/// and the place chosen beside it (a task's thread with its details beside it); a chat, a knight or a room also opens in a
+/// window of its own.
 struct MacPlaces: View {
     @Bindable var mac: MacApp
     let session: Session
@@ -26,6 +27,8 @@ struct MacPlaces: View {
 
     @ViewBuilder private var detail: some View {
         switch mac.place {
+        case .home: HomeView(session: session, go: { mac.place = $0 }, give: mayGive ? { mac.giving = true } : nil)
+        case .task(let id): TaskView(session: session, id: id, wide: true)
         case .galahad: ChatView(session: session)
         case .roundtable: RoundtableView(session: session, selection: board) { mac.place = Place($0) }
         case .knight(let id): KnightView(session: session, id: id)
@@ -35,6 +38,9 @@ struct MacPlaces: View {
         case .thisMac: GroupedList { ThisMacSections(mac: mac) }.navigationTitle("This Mac")
         }
     }
+
+    /// The Roundtable is given a task from a Mac that may, with knights to take it, once the node has answered.
+    private var mayGive: Bool { session.can("fleet:admin") && session.can("chat") && session.team != nil && !session.rows.isEmpty }
 
     /// The board's rows lead to their pages in this window: chosen there, they are chosen in the sidebar.
     private var board: Binding<Route?> {

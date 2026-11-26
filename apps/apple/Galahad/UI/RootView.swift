@@ -40,7 +40,8 @@ private struct WindowTint: UIViewRepresentable {
 }
 
 /// The paired app, asked again every few seconds while a window of it is in front. On an iPhone (and an iPad's narrow
-/// window), three tabs; on an iPad, a Mac's window: the places in a sidebar and the place chosen beside them.
+/// window), Home with everything else pushed over it; on an iPad, a Mac's window: the work in a sidebar and the place
+/// chosen beside it.
 struct MainView: View {
     let app: AppModel
     let session: Session
@@ -50,7 +51,7 @@ struct MainView: View {
     var body: some View {
         Group {
             if width == .compact {
-                PhoneTabs(app: app, session: session)
+                PhoneRoot(app: app, session: session)
             } else {
                 SplitPlaces(app: app, session: session)
             }
@@ -66,71 +67,68 @@ struct MainView: View {
     }
 }
 
-/// An iPhone's tabs: the Roundtable with every knight, the Inbox, More, and Galahad at the right end, where the app opens
-/// (your word, 23 November 2026: he is the one you talk to, for nearly everything).
-enum PhoneTab: Hashable {
-    case roundtable, inbox, more, galahad
-}
-
-/// What shows over Galahad's home: the chat on screen.
-enum GalahadPage: Hashable {
-    case chat
-}
-
-struct PhoneTabs: View {
+/// An iPhone's app (your words, 26 November 2026: "no tab bar, and Home is Galahad"; "a '…' sheet for everything else"):
+/// Home, and over it, as Messages shows a conversation, his conversation, a task's thread, the Roundtable, a knight's or a
+/// room's page, the Inbox or Settings. Everything the tabs held is a tap from Home: his header opens his conversation, "…"
+/// holds the Roundtable, the Inbox and Settings, and a notification you tap opens where it leads, over Home.
+struct PhoneRoot: View {
     let app: AppModel
     let session: Session
-    @State private var tab: PhoneTab = .galahad
-    @State private var path: [Route] = []
-    @State private var talking: [GalahadPage] = []
-    @Environment(\.colorScheme) private var scheme
+    @State private var path: [Place] = []
+    @State private var everything = false
+    @State private var giving = false
+
+    /// The Roundtable is given a task from a device that may, with knights to take it, once the node has answered.
+    private var mayGive: Bool { session.can("fleet:admin") && session.can("chat") && session.team != nil && !session.rows.isEmpty }
 
     var body: some View {
-        TabView(selection: $tab) {
-            Tab("Roundtable", systemImage: "person.3", value: PhoneTab.roundtable) {
-                NavigationStack(path: $path) {
-                    RoundtableView(session: session) { path.append($0) }
-                        .navigationDestination(for: Route.self) { RouteView(session: session, route: $0) }
-                }
-            }
-            Tab("Inbox", systemImage: "tray", value: PhoneTab.inbox) {
-                NavigationStack { InboxView(session: session) }
-            }
-            .badge(session.inboxCount)
-            Tab("More", systemImage: "ellipsis.circle", value: PhoneTab.more) {
-                NavigationStack { MoreView(app: app, session: session) }
-            }
-            // At the bar's right end (your word, 23 November 2026: Galahad the right-most in the bar), and where it opens.
-            Tab(value: PhoneTab.galahad) {
-                NavigationStack(path: $talking) {
-                    GalahadHome(session: session) { talking = [.chat] }
-                        .navigationDestination(for: GalahadPage.self) { _ in ChatView(session: session) }
-                }
-            } label: {
-                // His orb, in the colour of where he stands, as everywhere he is.
-                Label { Text("Galahad") } icon: { OrbIcon.image(session.galahadTone, scheme) }
+        NavigationStack(path: $path) {
+            HomeView(session: session, go: go, everything: { everything = true }, give: mayGive ? { giving = true } : nil)
+                .navigationDestination(for: Place.self) { place in destination(place) }
+        }
+        .sheet(isPresented: $everything) {
+            EverythingSheet(session: session, give: mayGive ? { everything = false; giving = true } : nil) { place in
+                everything = false
+                go(place)
             }
         }
-        .environment(\.showInbox) { tab = .inbox }
-        .environment(\.showGalahad) { tab = .galahad }
+        .sheet(isPresented: $giving) { GiveSheet(session: session) }
+        .environment(\.showInbox) { go(.inbox) }
+        .environment(\.showGalahad) { go(.galahad) }
         .task(id: PushCenter.shared.opened) { await follow() }
     }
 
-    /// A notification you tapped: its place, and the chat it names over Galahad's home.
+    /// A place, over Home (Home itself: back to it).
+    private func go(_ place: Place) {
+        if place == .home { path = [] } else { path.append(place) }
+    }
+
+    @ViewBuilder private func destination(_ place: Place) -> some View {
+        switch place {
+        case .home: HomeView(session: session, go: go)
+        case .galahad: ChatView(session: session)
+        case .task(let id): TaskView(session: session, id: id)
+        case .roundtable: RoundtableView(session: session) { path.append(Place($0)) }
+        case .knight(let id): KnightView(session: session, id: id)
+        case .room(let id): RoomView(session: session, id: id)
+        case .inbox: InboxView(session: session)
+        case .more, .thisMac: MoreView(app: app, session: session)
+        }
+    }
+
+    /// A notification you tapped: where it leads, over Home.
     private func follow() async {
         guard let opened = PushCenter.shared.opened else { return }
         PushCenter.shared.opened = nil
         switch opened {
-        case .inbox: tab = .inbox
-        case .settings: tab = .more
-        case .overview: tab = .roundtable; path = []
+        case .inbox: path = [.inbox]
+        case .settings: path = [.more]
+        case .overview: path = [.roundtable]
         case .chat(let id):
-            tab = .galahad
-            guard let id else { talking = []; return }
-            await session.chat.open(id, with: session.client)
-            talking = [.chat]
+            if let id { await session.chat.open(id, with: session.client) }
+            path = [.galahad]
         case .approval(let id):
-            tab = .inbox
+            path = [.inbox]
             session.approvalToOpen = id
         }
     }
@@ -147,7 +145,7 @@ struct SplitPlaces: View {
     @State private var composerWanted = false
 
     private var place: Place {
-        get { (try? JSONDecoder().decode(Place.self, from: Data(kept.utf8))) ?? .galahad }
+        get { (try? JSONDecoder().decode(Place.self, from: Data(kept.utf8))) ?? .home }
         nonmutating set { kept = (try? JSONEncoder().encode(newValue)).map { String(decoding: $0, as: UTF8.self) } ?? "" }
     }
 
@@ -171,6 +169,8 @@ struct SplitPlaces: View {
 
     @ViewBuilder private var detail: some View {
         switch place {
+        case .home: HomeView(session: session, go: { place = $0 }, give: mayGive ? { giving = true } : nil)
+        case .task(let id): TaskView(session: session, id: id, wide: true)
         case .galahad: ChatView(session: session)
         case .roundtable: RoundtableView(session: session, selection: board) { place = Place($0) }
         case .knight(let id): KnightView(session: session, id: id)
@@ -230,7 +230,7 @@ extension FocusedValues {
 }
 
 /// The menus an iPad shows (its menu bar, and what holding ⌘ lists), as a Mac's: a new chat, a new window and a task for
-/// the Roundtable in File, the four places in View, each acting in the window in front.
+/// the Roundtable in File, Home and the four places in View, each acting in the window in front.
 struct PadCommands: Commands {
     @FocusedValue(\.placeActions) private var actions
     @Environment(\.openWindow) private var openWindow
@@ -247,6 +247,7 @@ struct PadCommands: Commands {
                 .disabled(actions?.give == nil)
         }
         CommandGroup(before: .sidebar) {
+            place("Home", .home, "0")
             place("Galahad", .galahad, "1")
             place("Roundtable", .roundtable, "2")
             place("Inbox", .inbox, "3")

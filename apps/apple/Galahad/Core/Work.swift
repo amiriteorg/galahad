@@ -124,6 +124,28 @@ enum Work {
         return "\(Int((hours / 24).rounded(.down)))d"
     }
 
+    /// A moment as people read it (the PWA's lib/time.ts relativeTime): "just now", "4 min ago", "3 h ago", "yesterday",
+    /// "Mon", "Nov 3"; ahead, "in a moment", "in 5 min", "in 3 h", "in 2 d". Said once, not counted down: it is read again
+    /// as the page is drawn again, never a second at a time.
+    static func relativeTime(_ ms: Double, now: Double = Date.now.timeIntervalSince1970 * 1000, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let hour = 60 * minute, day = 24 * hour
+        let delta = now - ms, future = delta < 0, gone = abs(delta)
+        func wrap(_ s: String) -> String { future ? "in \(s)" : "\(s) ago" }
+        if gone < 45_000 { return future ? "in a moment" : "just now" }
+        if gone < hour { return wrap("\(max(1, Int(FieldOrb.jsRound(gone / minute)))) min") }
+        if gone < day { return wrap("\(Int(FieldOrb.jsRound(gone / hour))) h") }
+        let date = Date(timeIntervalSince1970: ms / 1000), today = Date(timeIntervalSince1970: now / 1000)
+        if future { return gone < 7 * day ? "in \(Int(FieldOrb.jsRound(gone / day))) d" : shortDate(date, today, calendar, locale) }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: today), calendar.isDate(date, inSameDayAs: yesterday) { return "yesterday" }
+        if gone < 6 * day { return date.formatted(Date.FormatStyle(locale: locale, calendar: calendar).weekday(.abbreviated)) }
+        return shortDate(date, today, calendar, locale)
+    }
+
+    private static func shortDate(_ date: Date, _ now: Date, _ calendar: Calendar, _ locale: Locale) -> String {
+        let style = Date.FormatStyle(locale: locale, calendar: calendar).month(.abbreviated).day()
+        return calendar.isDate(date, equalTo: now, toGranularity: .year) ? date.formatted(style) : date.formatted(style.year())
+    }
+
     /// The letter on a project's badge: its name's first letter or digit, as a capital ("" for none).
     static func badge(_ name: String) -> String {
         guard let first = name.unicodeScalars.first(where: isLetterOrNumber) else { return "" }

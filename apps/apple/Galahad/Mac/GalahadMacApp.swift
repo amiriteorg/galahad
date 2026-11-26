@@ -82,7 +82,7 @@ struct GalahadMacApp: App {
     }
 
     private static func keptPlace() -> Place {
-        UserDefaults.standard.data(forKey: placeKey).flatMap { try? JSONDecoder().decode(Place.self, from: $0) } ?? .galahad
+        UserDefaults.standard.data(forKey: placeKey).flatMap { try? JSONDecoder().decode(Place.self, from: $0) } ?? .home
     }
 
     /// Reads this Mac's key, then asks the node again every few seconds while the app runs, windows or not (the menu bar
@@ -219,6 +219,7 @@ struct MacCommands: Commands {
             .disabled(mac.session == nil)
         }
         CommandGroup(before: .sidebar) {
+            place("Home", .home, "0")
             place("Galahad", .galahad, "1")
             place("Roundtable", .roundtable, "2")
             place("Inbox", .inbox, "3")

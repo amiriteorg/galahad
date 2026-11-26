@@ -304,6 +304,8 @@ struct Composer: View {
     var composing: FocusState<Bool>.Binding
     /// Told once a message has gone (the iPhone's home shows the chat it began).
     var sent: (() -> Void)? = nil
+    /// What the empty box says.
+    var prompt = "Message Galahad"
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -323,7 +325,7 @@ struct Composer: View {
                 // Made anew with each message sent: clearing a focused multi-line field can leave what was sent on
                 // screen, or let the keyboard put back what it still held (a word it was correcting, a dictation
                 // finishing). A new one is empty, and nothing late reaches it.
-                TextField("Message Galahad", text: $chat.draft, axis: .vertical)
+                TextField(prompt, text: $chat.draft, axis: .vertical)
                     .plainField()
                     .id(chat.sent)
                     .lineLimit(1...6)
