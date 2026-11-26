@@ -4,6 +4,7 @@ import { isWaiting } from "../live.ts";
 import { hashOf } from "../lib/nav.ts";
 import { type Attended, attended, type WorkRow } from "../lib/work.ts";
 export { namesProjects } from "../lib/work.ts";
+import { dot, type Tone } from "../ui/controls.ts";
 import { cx, h } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { knightFace } from "../ui/orb.ts";
@@ -75,7 +76,9 @@ export function workRow(row: WorkRow, opts: { face?: number; current?: boolean; 
       { class: cx("work-l1", !project && "is-unnamed") },
       project ? projectTile(row.project) : null,
       project ? h("span", { class: "work-project ellipsis" }, row.project.name) : null,
-      h("span", { class: "work-word", "data-tone": row.tone }, verified ? icon("check", { size: 12 }) : null, row.word),
+      // How it stands: a dot of its colour and its word (verified, its check), so neither colour nor the word is alone;
+      // at work the dot is lit.
+      h("span", { class: "work-word", "data-tone": row.tone }, verified ? icon("check", { size: 12 }) : dot(row.tone as Tone, { live: row.state === "working" }), row.word),
       row.age ? h("span", { class: "work-age tnum" }, row.age) : null,
     ),
     h("span", { class: "work-l2 ellipsis" }, row.title),
