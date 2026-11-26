@@ -14,7 +14,7 @@ import type { Signal } from "../ui/signal.ts";
 import { answerStep, chatActivity, galahadWork, nodeTurns, questsInHand, stopChat, unreadChats } from "./chat.ts";
 import { openPlaces } from "./places.ts";
 import { giveToRoundtable } from "./team-forms.ts";
-import { askProjects, failedNote, namesProjects, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
+import { askProjects, failedNote, namesProjects, rowKeys, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
 
 /*
  * A wide screen's sidebar, as T3 Code's (your words, 26 November 2026: "agent first (Galahad), and project/tasks/coding
@@ -92,6 +92,7 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
 
   // ---- the work, by attention ----
   const work = h("nav", { class: "side-work", "aria-label": "The work" }, skeletonRows(4));
+  rowKeys(work);
   let shown = "";
   const section = (label: string, tone: string | null, count: number | null, ...rows: Child[]): HTMLElement =>
     h("section", { class: "side-section", "aria-label": label }, h("h2", { class: "side-label", "data-tone": tone }, label, count !== null ? h("span", { class: "tnum" }, `· ${count}`) : null), ...rows);

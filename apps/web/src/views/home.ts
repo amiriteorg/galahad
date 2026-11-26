@@ -15,7 +15,7 @@ import { needsCount, needsItems, needsVersion, tickExpiries } from "./needs.ts";
 import { openPlaces } from "./places.ts";
 import { galahadLine } from "./sidebar.ts";
 import { giveToRoundtable } from "./team-forms.ts";
-import { askProjects, failedNote, namesProjects, projectTile, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
+import { askProjects, failedNote, namesProjects, projectTile, rowKeys, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
 
 /*
  * Home: Galahad, first (your words, 26 November 2026: "agent first (Galahad)"; on a phone no tab bar, "a '…' sheet for
@@ -57,6 +57,7 @@ export const homeView: View = (root, ctx, { scope }) => {
   let needsBefore: number | null = null;
   const filters = h("div", { class: "home-filters", role: "group", "aria-label": "Show the work of" });
   const list = h("div", { class: "home-work-rows" }, skeletonRows(4, { avatar: true }));
+  rowKeys(list);
   const work = h("section", { class: "home-work", "aria-labelledby": "home-work-head" }, h("div", { class: "home-work-head" }, h("h2", { id: "home-work-head" }, "Work"), filters), list);
 
   // ---- his message box, docked ----

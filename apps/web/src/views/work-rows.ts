@@ -89,6 +89,21 @@ export function workRow(row: WorkRow, opts: { face?: number; current?: boolean; 
   );
 }
 
+/** The rows of a list of the work by keyboard (as T3 Code's sidebar is): ArrowDown and ArrowUp go to the next and the
+ * last row (a fold's line among them), Home and End to the first and the last; Enter opens one, as a link does. Tab
+ * still leaves the list. */
+export function rowKeys(list: HTMLElement): void {
+  list.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || event.altKey || event.metaKey || event.ctrlKey) return;
+    const rows = [...list.querySelectorAll<HTMLElement>(".work-row, .side-fold, .side-inbox, .home-fold")].filter((row) => row.getClientRects().length > 0);
+    const at = rows.indexOf(event.target as HTMLElement);
+    if (at < 0) return;
+    const next = event.key === "Home" ? 0 : event.key === "End" ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)));
+    event.preventDefault();
+    rows[next]?.focus();
+  });
+}
+
 /** On a folded Done, after its count, how many of it failed, in red and in words ("Done 4 · 1 failed"; lib/work.ts
  * failedIn): none, nothing. */
 export const failedNote = (failed: number): HTMLElement | null => (failed ? h("span", { class: "fold-failed tnum", "data-tone": "failed" }, `${failed} failed`) : null);
