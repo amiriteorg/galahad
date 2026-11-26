@@ -112,6 +112,8 @@
         --alert-bg: light-dark(#ffffff, #101012);
         --alert-line: light-dark(rgb(10 10 12 / 0.12), rgb(255 255 255 / 0.11));
         --alert-lit: light-dark(rgb(255 255 255 / 0), rgb(255 255 255 / 0.06));
+        /* What floats over the page (a toast, the banner): the same surface, opaque until the page can be blurred under it */
+        --alert-glass: var(--alert-bg);
 
         /* Type */
         --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
@@ -156,10 +158,17 @@
         --ease-spring: linear(0, 0.027, 0.095, 0.188, 0.295, 0.405, 0.513, 0.613, 0.703, 0.781, 0.847, 0.901, 0.944, 0.977, 1.001, 1.018, 1.029, 1.036, 1.038, 1.038, 1.036, 1.033, 1.029, 1.025, 1.021, 1.017, 1.013, 1.01, 1.007, 1.005, 1.003, 1.001, 1);
         --d-1: 120ms; --d-2: 180ms; --d-3: 240ms; --d-sheet: 380ms;
         /* An alert coming into focus (a toast, the banner) · the spring's length · one slow breath of something new
-           that needs you, once · one pass of the banner's line of light while it tries again. (Where motion is
-           reduced the breath and the line are taken away, not quickened: a loop made near instant would flicker.) */
-        --d-enter: 420ms; --d-spring: 500ms; --d-breath: 2400ms; --d-sweep: 4200ms;
+           that needs you, once · one pass of the banner's line of light as it tries again. (Where motion is reduced the
+           breath and the line are taken away, not quickened.) */
+        --d-enter: 420ms; --d-spring: 500ms; --d-breath: 2400ms; --d-sweep: 2600ms;
       }
+      /* Where the browser can blur what is under it, a floating alert is a material: the page shows through it, blurred,
+         at 14 to 16 % (so its words keep 4.5:1 whatever is under it, white or black). Opaque where less transparency is
+         asked for. */
+      @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+        :root { --alert-glass: light-dark(rgb(255 255 255 / 0.84), rgb(16 16 18 / 0.86)); --alert-blur: blur(20px) saturate(1.6); }
+      }
+      @media (prefers-reduced-transparency: reduce) { :root { --alert-glass: var(--alert-bg); --alert-blur: none; } }
       :root[data-theme="light"] { color-scheme: light; }
       :root[data-theme="dark"] { color-scheme: dark; }
       :root[data-motion="reduce"] { --d-1: 0.01ms; --d-2: 0.01ms; --d-3: 0.01ms; --d-sheet: 0.01ms; --d-enter: 0.01ms; --d-spring: 0.01ms; }
@@ -506,10 +515,15 @@
         position: relative; display: flex; align-items: center; gap: var(--sp-2); width: min(600px, calc(100% - 2 * var(--sp-4))); margin-top: var(--sp-2);
         min-height: 36px; padding: 3px 4px 3px 12px; border-radius: 18px; overflow: hidden; pointer-events: auto;
         color: var(--text); font-size: var(--fs-13); line-height: 1.35;
-        background: var(--alert-bg); border: 1px solid color-mix(in oklab, var(--tone, var(--text-3)) 30%, var(--alert-line));
+        background: var(--alert-glass); -webkit-backdrop-filter: var(--alert-blur, none); backdrop-filter: var(--alert-blur, none);
+        border: 1px solid color-mix(in oklab, var(--tone, var(--text-3)) 30%, var(--alert-line));
         box-shadow: inset 0 1px 0 var(--alert-lit), var(--shadow-2);
-        transition: transform var(--d-enter) var(--ease-out), opacity var(--d-enter) var(--ease-out), filter var(--d-enter) var(--ease-out), border-color var(--d-3) var(--ease-out);
+        transition: transform var(--d-spring) var(--ease-spring), opacity var(--d-enter) var(--ease-out), filter var(--d-enter) var(--ease-out), border-color var(--d-3) var(--ease-out);
       }
+      @media (pointer: coarse) { .banner-pill { min-height: 44px; } }
+      /* Home has its own header in place of the top bar: the banner hangs under it. */
+      .shell[data-pane="home"] { --banner-top: calc(2 * var(--sp-3) + 48px); }
+      @media (min-width: 960px) { .shell[data-pane="home"] { --banner-top: calc(var(--sp-6) + var(--sp-3) + 48px); } }
       /* (One width while it is up, whatever it says: centred, a capsule that grew or shrank would move on the page.) */
       .banner-pill:not(:has(.btn)) { padding-right: 14px; }
       .banner-pill[data-said="reconnected"] { justify-content: center; }
@@ -520,13 +534,14 @@
       /* Coming: dropping in a few pixels, out of a slight blur. Going: a short fade, up and away. */
       .banner-pill.entering { opacity: 0; transform: translateY(-8px) scale(0.98); filter: blur(4px); }
       .banner-pill.leaving { opacity: 0; transform: translateY(-6px); transition: transform var(--d-2) var(--ease-exit), opacity var(--d-2) var(--ease-exit); }
-      /* Trying again: one slow pass of light along its foot, then a rest; taken away where motion is reduced. */
+      /* Trying again: one slow pass of light along its foot as it comes, and again at each Retry (ui/banner.ts), then
+         still; taken away where motion is reduced. */
       .banner-pill[data-trying]::after {
         content: ""; position: absolute; left: 0; bottom: 0; width: 40%; height: 1px; pointer-events: none;
         background: linear-gradient(90deg, transparent, var(--tone), transparent); transform: translateX(-100%);
-        animation: banner-sweep var(--d-sweep) var(--ease-in-out) infinite;
+        animation: banner-sweep var(--d-sweep) var(--ease-in-out) 1 both;
       }
-      @keyframes banner-sweep { 0% { transform: translateX(-100%); } 70%, 100% { transform: translateX(250%); } }
+      @keyframes banner-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
       :root[data-motion="reduce"] .banner-pill[data-trying]::after { animation: none; }
       @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .banner-pill[data-trying]::after { animation: none; } }
 
@@ -698,17 +713,14 @@
       /* Words in their tone (an action class beside a tool's name). */
       .toned { color: var(--tone); }
       /* A state's dot is a small orb of its colour, lit from above (your word, 24 November 2026: everything orbs); one
-         for something going on sends out a wave of its light, unless motion is reduced. */
+         for something going on is lit, a soft ring of its light round it, and still: nothing moves at rest (26 November
+         2026: only the orb you look at moves). */
       .dot {
         position: relative; width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block;
         background: radial-gradient(circle at 34% 30%, color-mix(in oklab, var(--tone, var(--text-3)), white 55%) 0, var(--tone, var(--text-3)) 55%, color-mix(in oklab, var(--tone, var(--text-3)), black 28%) 100%);
       }
       .dot:not([data-tone]) { --tone: var(--text-3); }
       .dot.live { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone, var(--text-3)) 22%, transparent), 0 0 8px 1px color-mix(in srgb, var(--tone, var(--text-3)) 45%, transparent); }
-      .dot.live::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--tone, var(--text-3)); opacity: 0; pointer-events: none; animation: dot-wave 2.2s var(--ease-out) infinite; }
-      @keyframes dot-wave { from { transform: scale(1); opacity: 0.55; } to { transform: scale(2.9); opacity: 0; } }
-      :root[data-motion="reduce"] .dot.live::after { animation: none; }
-      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .dot.live::after { animation: none; } }
       .count {
         display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-full);
         background: var(--accent-fill); color: var(--on-accent); font-size: 11px; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums;
@@ -941,6 +953,8 @@
       dialog.sheet::backdrop { background: var(--overlay); opacity: 0; transition: opacity var(--d-2) var(--ease-exit); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
       dialog.sheet.shown::backdrop { opacity: 1; transition: opacity var(--d-3) var(--ease-out); }
       dialog.sheet[data-tone="danger"] { border-color: color-mix(in oklab, var(--danger) 34%, var(--border)); background: radial-gradient(320px 120px at 36px 0, var(--danger-soft), transparent), var(--surface); }
+      /* A confirmation's answers are pills, as an alert's actions are everywhere (a toast's, a Needs-you card's). */
+      dialog.sheet[role="alertdialog"] .form-actions .btn { border-radius: var(--r-full); padding-inline: var(--sp-4); }
       .sheet-mark { flex: none; display: grid; place-items: center; width: 32px; height: 32px; margin-top: -3px; border-radius: 50%; color: var(--danger); background: var(--danger-soft); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 26%, transparent); }
       .sheet-handle { display: none; }
       .sheet-head { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5) var(--sp-5) var(--sp-3); }
@@ -1072,29 +1086,30 @@
       /* A precise surface with a hairline edge: its tone is in that edge and in a faint light behind its mark, never a
          coloured slab (ui/toast.ts). It comes into focus as it rises and leaves with a short fade and drop. On a phone
          the stack rises above what a page keeps docked at its foot (--dock-h: a composer's height, where there is one). */
-      .toaster { position: fixed; z-index: 1000; right: calc(var(--sp-4) + var(--safe-right)); bottom: calc(var(--sp-4) + var(--safe-bottom)); width: min(380px, calc(100vw - 32px)); pointer-events: none; }
-      @media (max-width: 959px) { .toaster { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(var(--tabbar-h) + var(--dock-h, 0px) + var(--safe-bottom) + var(--sp-3)); } }
+      .toaster { position: fixed; z-index: 1000; right: calc(var(--sp-4) + var(--safe-right)); bottom: max(calc(var(--sp-4) + var(--safe-bottom)), calc(var(--dock-h, 0px) + var(--sp-2))); width: min(380px, calc(100vw - 32px)); pointer-events: none; }
+      @media (max-width: 959px) { .toaster { left: 50%; right: auto; transform: translateX(-50%); bottom: max(calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-3)), calc(var(--dock-h, 0px) + var(--sp-2))); } }
       .toast {
         --i: 0; position: absolute; right: 0; bottom: 0; width: 100%; pointer-events: auto; overflow: hidden;
         display: flex; align-items: flex-start; gap: 10px; padding: var(--sp-3) var(--sp-2) var(--sp-3) 14px;
         color: var(--text); font-size: var(--fs-13); border-radius: var(--r-xl);
-        background: radial-gradient(112px 56px at 24px 22px, var(--tone-soft, transparent), transparent), var(--alert-bg);
+        background: radial-gradient(112px 56px at 24px 22px, var(--tone-soft, transparent), transparent), var(--alert-glass);
+        -webkit-backdrop-filter: var(--alert-blur, none); backdrop-filter: var(--alert-blur, none);
         border: 1px solid color-mix(in oklab, var(--tone, var(--text-3)) 22%, var(--alert-line));
         box-shadow: inset 0 1px 0 var(--alert-lit), var(--shadow-2);
         transform-origin: bottom center;
         transform: translateY(calc(var(--i) * -10px)) scale(calc(1 - var(--i) * 0.05), calc((1 - var(--i) * 0.05) * var(--fit, 1))); opacity: calc(1 - var(--i) * 0.2);
-        transition: transform var(--d-enter) var(--ease-out), opacity var(--d-enter) var(--ease-out), filter var(--d-enter) var(--ease-out);
+        transition: transform var(--d-spring) var(--ease-spring), opacity var(--d-enter) var(--ease-out), filter var(--d-enter) var(--ease-out);
       }
       @media (max-width: 639px) { .toast { font-size: var(--fs-14); } }
       /* Coming in: a few pixels below, out of a slight blur, a whisper smaller. */
       .toast.entering { opacity: 0; transform: translateY(14px) scale(0.97); filter: blur(6px); }
       /* Going: a short fade and drop, quicker than it came. */
-      .toast.leaving { opacity: 0; transform: translateY(calc(var(--i) * -10px + 10px)) scale(calc(1 - var(--i) * 0.05), calc((1 - var(--i) * 0.05) * var(--fit, 1))); transition: transform var(--d-2) var(--ease-exit), opacity var(--d-2) var(--ease-exit); }
+      .toast.leaving { opacity: 0; transform: translateY(calc(var(--i) * -10px + 10px)) scale(calc(1 - var(--i) * 0.05), calc((1 - var(--i) * 0.05) * var(--fit, 1))); transition: transform var(--d-2) var(--ease-exit), opacity var(--d-1) var(--ease-exit); }
       .toast[data-hidden="true"] { opacity: 0; pointer-events: none; }
       /* Fanned out under the pointer, or where a finger's focus is: each whole, above the newer ones. */
       .toaster:is(:hover, :focus-within) .toast { transform: translateY(calc(var(--offset, 0px) * -1)); opacity: 1; transition-duration: var(--d-3); }
       .toaster:is(:hover, :focus-within) .toast.entering { transform: translateY(calc(var(--offset, 0px) * -1 + 14px)) scale(0.97); opacity: 0; }
-      .toaster:is(:hover, :focus-within) .toast.leaving { transform: translateY(calc(var(--offset, 0px) * -1 + 10px)); opacity: 0; transition-duration: var(--d-2); }
+      .toaster:is(:hover, :focus-within) .toast.leaving { transform: translateY(calc(var(--offset, 0px) * -1 + 10px)); opacity: 0; transition-duration: var(--d-2), var(--d-1); }
       /* Tucked: those behind the front one are drawn as tall as it (--fit, a scale: a new height would move them on the
          page) with their words out of sight, so only their edges show. */
       .toast > * { transition: opacity var(--d-2) var(--ease-out); }
@@ -1109,6 +1124,10 @@
       .toast .toast-action { flex: none; margin: -4px 0; border-radius: var(--r-full); padding-inline: 12px; }
       .toast .toast-close { flex: none; margin: -4px 0; color: var(--text-3); }
       .toast .toast-close:hover { color: var(--text); }
+      /* Each control of an alert takes a finger: 44 px to touch however small it is drawn (an action's reach grows up and
+         down only, so it never takes its neighbour's). */
+      :is(.toast, .banner-pill, .sheet-head) .btn.sm::after { content: ""; position: absolute; inset: calc((var(--control-h-sm) - 44px) / 2); }
+      .toast .toast-action::after { inset: calc((var(--control-h-sm) - 44px) / 2) 0; }
 
       /* ---------- markdown ---------- */
       .md { line-height: 1.65; overflow-wrap: anywhere; }

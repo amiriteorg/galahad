@@ -11,6 +11,10 @@ import { icon, type IconName } from "./icons.ts";
  * edge and in a faint light behind its mark, never a coloured slab; one about a knight or Galahad may lead with their
  * orb, small and still. One comes into focus as it rises (a few pixels, out of a slight blur, with a whisper of
  * scale) and leaves with a short fade and drop. Where motion is reduced it only appears, and goes.
+ *
+ * By keyboard: Alt+T (⌥T) goes to the newest toast's first control, Tab moves among them, Esc puts away the one you are
+ * on; focus then goes to the next, or back where it was before. On a page with a message box docked at its foot, the
+ * stack rises above it rather than covering it.
  */
 
 export type ToastTone = "info" | "ok" | "warn" | "error";
@@ -40,24 +44,62 @@ const TONE_ICON: Record<ToastTone, IconName> = { info: "info", ok: "check-circle
 const TONE_DATA: Record<ToastTone, string> = { info: "info", ok: "ok", warn: "warn", error: "danger" };
 /** How long one takes to go, at most (its fade is --d-2; it is taken out of the page by then, transition or not). */
 const LEAVING_MS = 400;
+/** A message box docked at the screen's foot (Home's, a chat's, a task's, a room's): the toasts rise clear of it. */
+const DOCKED = ".composer, .home-composer";
 
 let toaster: HTMLElement | null = null;
 let politeRegion: HTMLElement | null = null;
 let assertiveRegion: HTMLElement | null = null;
 const live: Live[] = [];
 let paused = false;
+/** Where focus was before it came into the toasts, to go back to once they are put away. */
+let cameFrom: HTMLElement | null = null;
 
 function ensureToaster(): HTMLElement {
   if (toaster?.isConnected) return toaster;
-  toaster = h("section", { class: "toaster", "aria-label": "Notifications" });
+  toaster = h("section", { class: "toaster", "aria-label": "Notifications", "aria-keyshortcuts": "Alt+T" });
   politeRegion = h("div", { class: "sr-only", role: "status", "aria-live": "polite" });
   assertiveRegion = h("div", { class: "sr-only", role: "alert", "aria-live": "assertive" });
   toaster.addEventListener("pointerenter", pause);
   toaster.addEventListener("pointerleave", resume);
-  toaster.addEventListener("focusin", pause);
+  toaster.addEventListener("focusin", (event) => {
+    pause();
+    const from = event.relatedTarget;
+    if (from instanceof HTMLElement && !toaster?.contains(from)) cameFrom = from;
+  });
   toaster.addEventListener("focusout", resume);
+  // Esc puts away the toast you are on (and nothing else hears it: it doesn't also stop him).
+  toaster.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const item = live.find((each) => each.el.contains(event.target as Node));
+    if (!item) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dismiss(item);
+  });
   document.body.append(toaster, politeRegion, assertiveRegion);
   return toaster;
+}
+
+// Alt+T (⌥T): to the newest toast's first control, wherever focus is.
+if (typeof document !== "undefined") {
+  document.addEventListener("keydown", (event) => {
+    if (!event.altKey || event.metaKey || event.ctrlKey || event.code !== "KeyT" || !live.length) return;
+    const control = live.at(-1)!.el.querySelector<HTMLElement>("button");
+    if (!control) return;
+    event.preventDefault();
+    control.focus();
+  });
+}
+
+/** Rises clear of a message box docked at the screen's foot, where the page has one (`--dock-h`: from its top down). */
+function clearOfDock(host: HTMLElement): void {
+  let lift = 0;
+  for (const box of document.querySelectorAll<HTMLElement>(DOCKED)) {
+    const at = box.getBoundingClientRect();
+    if (at.height > 0 && at.top > innerHeight / 2 && at.top < innerHeight) lift = Math.max(lift, innerHeight - at.top);
+  }
+  host.style.setProperty("--dock-h", `${Math.round(lift)}px`);
 }
 
 /** Each toast in its place (lib/alerts.ts stackPlaces): `--i` its step back while tucked, `--fit` its height then
@@ -100,6 +142,7 @@ function resume(): void {
 function dismiss(item: Live): void {
   const index = live.indexOf(item);
   if (index < 0) return;
+  const hadFocus = item.el.contains(document.activeElement);
   live.splice(index, 1);
   if (item.timer) clearTimeout(item.timer);
   item.el.classList.add("leaving");
@@ -108,6 +151,11 @@ function dismiss(item: Live): void {
   item.el.addEventListener("transitionend", (event) => event.target === item.el && remove());
   setTimeout(remove, LEAVING_MS);
   layout();
+  // Focus on it goes on to the next one, or back where it came from: never lost with the toast.
+  if (hadFocus) {
+    const next = live.at(-1)?.el.querySelector<HTMLElement>("button") ?? (cameFrom?.isConnected ? cameFrom : null);
+    next?.focus({ preventScroll: true });
+  }
 }
 
 /** A toast as it is drawn: `done` puts it away (its close button, and its action once run). toast() raises one; the
@@ -157,6 +205,7 @@ export function toast(title: string, options: ToastOptions = {}): () => void {
   const host = ensureToaster();
   const tone = options.tone ?? "info";
   const duration = options.duration ?? (tone === "error" ? 8000 : options.action ? 6000 : 4000);
+  clearOfDock(host);
   const el = toastCard(title, options, () => dismiss(item));
   // It comes in at the front, drawn whole: its height is its own (the tucked ones are drawn as tall, by a scale).
   el.classList.add("entering");

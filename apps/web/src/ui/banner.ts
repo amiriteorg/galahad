@@ -7,9 +7,10 @@ import { icon } from "./icons.ts";
  * The banner under the top bar that says Galahad can't be reached, or that this device is offline, and then for a
  * moment that he is reached again (lib/alerts.ts connectionCourse says when). It is a thin capsule floating over the
  * page, its place on the page taking no room, so nothing under it moves when it comes or goes. Offline is no error,
- * so it is grey; can't reach him is amber, and while the app tries again one slow line of light runs along its foot;
- * reached again it turns green where it is, then goes. It comes into focus as it drops in and leaves with a short fade;
- * where motion is reduced it only appears, goes, and has no line. Nothing in it blinks.
+ * so it is grey; can't reach him is amber, and as the app tries again one slow line of light passes along its foot,
+ * once as it comes and once more at each Retry (nothing moves while it only waits); reached again it turns green where
+ * it is, then goes. It drops in on a short spring, out of a slight blur, and leaves with a short fade; where motion is
+ * reduced it only appears, goes, and has no line. Nothing in it blinks.
  */
 
 /** How long one takes to go, at most (its fade is --d-2; it is taken out of the page by then, transition or not). */
@@ -31,8 +32,24 @@ function fill(pill: HTMLElement, said: Connection, retry: () => void): void {
     pill,
     icon(said === "reconnected" ? "check-circle" : "offline", { size: 16 }),
     h("span", { class: "banner-text" }, how.text),
-    how.retry ? button("Retry", { size: "sm", variant: "ghost", onClick: retry }) : null,
+    how.retry
+      ? button("Retry", {
+          size: "sm",
+          variant: "ghost",
+          onClick: () => {
+            retry();
+            sweepAgain(pill);
+          },
+        })
+      : null,
   );
+}
+
+/** Its line of light passes once more (at Retry): drawn anew, its one pass starts again. */
+function sweepAgain(pill: HTMLElement): void {
+  if (!pill.hasAttribute("data-trying")) return;
+  pill.removeAttribute("data-trying");
+  requestAnimationFrame(() => pill.setAttribute("data-trying", ""));
 }
 
 /**

@@ -181,4 +181,12 @@ describe("the stylesheet", () => {
     expect(moving.length).toBeGreaterThan(2);
     expect(unstilled).toEqual([]);
   });
+
+  test("nothing animates at rest: what repeats for ever says only that something is loading or being written", () => {
+    // (Your word, 26 November 2026: a hyper-modern interface with nothing animating at rest. A state's dot is lit, still;
+    // the banner's line of light passes once as it tries again. Loading and writing are not rest.)
+    const ALLOWED = [".spinner", ".skeleton::after", ".caret", ".boot img"];
+    const forever = all.filter((r) => /(?:^|;)\s*animation(?:-iteration-count)?\s*:[^;]*\binfinite\b/.test(r.body)).flatMap((r) => r.selectors);
+    expect(forever.filter((selector) => !ALLOWED.includes(selector))).toEqual([]);
+  });
 });
