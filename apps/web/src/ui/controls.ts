@@ -1,4 +1,5 @@
-import { type Child, cx, h, nextId } from "./dom.ts";
+import { countRoll, countText } from "../lib/alerts.ts";
+import { type Child, cx, h, nextId, prefersReducedMotion, replace } from "./dom.ts";
 import { icon, type IconName } from "./icons.ts";
 import { toast } from "./toast.ts";
 
@@ -37,8 +38,52 @@ export function dot(tone: Tone | null, options: { live?: boolean; label?: string
   });
 }
 
-export function count(n: number, quiet = false): HTMLElement {
-  return h("span", { class: cx("count", quiet && "quiet"), "aria-label": `${n} waiting` }, n > 99 ? "99+" : String(n));
+/** A count of what waits: ink, `quiet` grey, or in a tone (`needs`: amber, what waits on you). setCount() changes it. */
+export function count(n: number, quiet = false, tone?: Tone): HTMLElement {
+  return h("span", { class: cx("count", quiet && "quiet"), "data-tone": tone ?? null, "data-count": n, "aria-label": `${n} waiting` }, h("span", { class: "count-is" }, countText(n)));
+}
+
+/**
+ * Sets a count (count()'s, or any .count) to `n`. Its figure rolls to the new one rather than jumping: up as it grows,
+ * down as it shrinks (lib/alerts.ts countRoll), over --d-3; where motion is reduced it only changes. Its name says it.
+ */
+export function setCount(el: HTMLElement, n: number): void {
+  const from = el.dataset.count === undefined ? null : Number(el.dataset.count);
+  const roll = countRoll(Number.isFinite(from) ? from : null, n);
+  const was = el.querySelector(".count-is")?.textContent ?? el.textContent ?? "";
+  el.dataset.count = String(n);
+  el.setAttribute("aria-label", `${n} waiting`);
+  const is = h("span", { class: "count-is" }, countText(n));
+  if (!roll || prefersReducedMotion()) {
+    el.removeAttribute("data-roll");
+    return replace(el, is);
+  }
+  // (The figure going is only seen: the count's name says the new one.)
+  const going = h("span", { class: "count-was", "aria-hidden": "true" }, was);
+  going.addEventListener("animationend", () => going.remove(), { once: true });
+  el.dataset.roll = roll;
+  replace(el, going, is);
+}
+
+/** How long a breath takes (--d-breath), with a moment over: it is called off by then if its end was never seen. */
+const BREATH_MS = 2600;
+
+/**
+ * Something new that needs you, said by one slow breath of its light (a dot's, a count's): once, never a loop, and not
+ * at all where motion is reduced. Called again while it breathes, the one breath goes on.
+ */
+export function arrive(el: HTMLElement): void {
+  if (prefersReducedMotion() || el.hasAttribute("data-arrived")) return;
+  el.setAttribute("data-arrived", "");
+  // (Its own breath's end: a count's figure rolling inside it ends too.)
+  const ended = (event: AnimationEvent) => event.animationName.startsWith("arrive-") && done();
+  const done = () => {
+    clearTimeout(timer);
+    el.removeAttribute("data-arrived");
+    el.removeEventListener("animationend", ended);
+  };
+  el.addEventListener("animationend", ended);
+  const timer = setTimeout(done, BREATH_MS);
 }
 
 export function kbd(...keys: string[]): HTMLElement[] {

@@ -714,6 +714,27 @@
         background: var(--accent-fill); color: var(--on-accent); font-size: 11px; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums;
       }
       .count.quiet { background: var(--surface-3); color: var(--text-2); }
+      /* What waits on you, amber (count(n, false, "needs")): dark figures on it on a dark page, white on a light one. */
+      .count[data-tone="needs"] { background: var(--needs); color: light-dark(#ffffff, #1c1405); }
+      /* A count that changes rolls to its new figure (ui/controls.ts setCount): up as it grows, down as it shrinks. */
+      .count { position: relative; overflow: hidden; }
+      .count > .count-was { position: absolute; inset: 0; display: grid; place-items: center; }
+      .count[data-roll="up"] > .count-is { animation: count-in-up var(--d-3) var(--ease-out); }
+      .count[data-roll="up"] > .count-was { animation: count-out-up var(--d-3) var(--ease-out) forwards; }
+      .count[data-roll="down"] > .count-is { animation: count-in-down var(--d-3) var(--ease-out); }
+      .count[data-roll="down"] > .count-was { animation: count-out-down var(--d-3) var(--ease-out) forwards; }
+      @keyframes count-in-up { from { transform: translateY(80%); opacity: 0; } }
+      @keyframes count-out-up { to { transform: translateY(-80%); opacity: 0; } }
+      @keyframes count-in-down { from { transform: translateY(-80%); opacity: 0; } }
+      @keyframes count-out-down { to { transform: translateY(80%); opacity: 0; } }
+      /* Something new that needs you: one slow breath of its light, once, never a loop (ui/controls.ts arrive()); taken
+         away where motion is reduced. A dot's light swells from it and fades; a count's glows round it and settles. */
+      .dot[data-arrived]::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--tone, var(--needs)); pointer-events: none; animation: arrive-halo var(--d-breath) var(--ease-in-out) 1 both; }
+      @keyframes arrive-halo { 0% { transform: scale(1); opacity: 0; } 35% { transform: scale(2.4); opacity: 0.34; } 100% { transform: scale(3); opacity: 0; } }
+      .count[data-arrived] { animation: arrive-glow var(--d-breath) var(--ease-in-out) 1; }
+      @keyframes arrive-glow { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--needs) 0%, transparent); } 35% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--needs) 30%, transparent); } }
+      :root[data-motion="reduce"] .dot[data-arrived]::after, :root[data-motion="reduce"] .count[data-arrived] { animation: none; }
+      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .dot[data-arrived]::after, :root:not([data-motion="full"]) .count[data-arrived] { animation: none; } }
       .chip {
         display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 var(--sp-2); border-radius: var(--r-sm);
         background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-12); font-weight: 500; white-space: nowrap;

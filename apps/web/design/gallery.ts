@@ -8,7 +8,7 @@
  * It is not part of the app: the node serves only what assets.ts names. The screenshot tool bundles it and serves it on
  * loopback with index.html's head (the tokens and all the CSS), its font and its pictures.
  */
-import { badge, button, callout, card, chipInput, copyField, count, disclosure, dot, empty, errorState, field, formActions, kbd, kv, linkButton, list, listRow, meta, meter, note, pageHead, rangeControl, rows, sasCode, secretInput, section, segmented, skeletonBlock, skeletonRows, skeletonStat, spinner, statTile, switchControl, type Tone } from "../src/ui/controls.ts";
+import { arrive, badge, button, callout, card, chipInput, copyField, count, disclosure, dot, empty, errorState, field, formActions, kbd, kv, linkButton, list, listRow, meta, meter, note, pageHead, rangeControl, rows, sasCode, secretInput, section, segmented, setCount, skeletonBlock, skeletonRows, skeletonStat, spinner, statTile, switchControl, type Tone } from "../src/ui/controls.ts";
 import { bannerPill, connectionBanner } from "../src/ui/banner.ts";
 import { type ConfirmOptions, confirmAction, openSheet } from "../src/ui/dialog.ts";
 import { leadMark, seat, stateChip } from "../src/ui/avatar.ts";
@@ -103,6 +103,16 @@ const notices = card(
     findingRow({} as Ctx, { severity: "info", title: "A push to main", body: "wckdboy pushed 3 commits.", icon: "bell" }, [h("span", {}, "Your rule pushes"), h("span", {}, "2 h ago")], button("Dismiss", { size: "sm", variant: "ghost", icon: "x" })),
   ),
 );
+// A count and a dot that change as the app's do: a figure rolling, and one breath for something new that needs you.
+const waiting = count(2, false, "needs");
+const needsDot = dot("needs");
+const liveNeeds = h("span", { class: "row tight small" }, needsDot, "Needs you", waiting);
+const more = () => {
+  setCount(waiting, Number(waiting.dataset.count) + 1);
+  arrive(waiting);
+  arrive(needsDot);
+};
+const fewer = () => setCount(waiting, Math.max(0, Number(waiting.dataset.count) - 1));
 // The real banner, hanging at the top of this page as it hangs under the app's top bar.
 const liveBanner = h("div", { class: "banner", role: "status", hidden: true, style: "--banner-top: 0px" });
 const reach = connectionBanner(liveBanner, () => {}, scope.signal);
@@ -317,8 +327,9 @@ const page = h(
     shown(
       "count() · dot(\"needs\")",
       "What waits on you: the count beside a place, the amber dot where something needs you.",
-      state("counts", h("div", { class: "row wrap" }, count(1), count(12), count(128), count(3, true))),
+      state("counts: ink, quiet, and amber for what waits on you", h("div", { class: "row wrap" }, count(1), count(12), count(128), count(3, true), count(2, false, "needs"))),
       state("needs you", h("div", { class: "row wrap" }, h("span", { class: "row tight small" }, dot("needs"), "Needs you"), h("span", { class: "row tight small" }, dot("work", { live: true }), "Working"))),
+      state("changing: the figure rolls, and something new breathes once", h("div", { class: "row wrap" }, liveNeeds, button("Something new", { size: "sm", onClick: more }), button("One answered", { size: "sm", variant: "ghost", onClick: fewer }))),
     ),
 
     shown(

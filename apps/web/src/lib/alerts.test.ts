@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type Connection, CONNECTION, connectionCourse, RECONNECTED_MS, stackPlaces, TOAST_GAP, TOAST_SHOWN } from "./alerts.ts";
+import { type Connection, CONNECTION, connectionCourse, countRoll, countText, RECONNECTED_MS, stackPlaces, TOAST_GAP, TOAST_SHOWN } from "./alerts.ts";
 
 /*
  * The toasts' stack: newest in front, the rest tucked behind it; fanned out (under the pointer, or a finger's focus),
@@ -126,5 +126,28 @@ describe("the banner that says whether Galahad can be reached", () => {
     expect(how("unreachable")).toEqual({ tone: "warn", trying: true, retry: true });
     expect(how("reconnected")).toEqual({ tone: "ok", trying: false, retry: false });
     expect(CONNECTION.reconnected.text).toBe("Reconnected");
+  });
+});
+
+/*
+ * A count that changes rolls to its new figure rather than jumping: up as it grows, down as it shrinks; drawn the
+ * first time, or showing the same figure, it doesn't move.
+ */
+
+describe("a count's figure, and which way it rolls", () => {
+  test("a count shows its number, up to 99; more is 99+", () => {
+    expect([0, 1, 42, 99, 100, 1234].map(countText)).toEqual(["0", "1", "42", "99", "99+", "99+"]);
+  });
+
+  test("it rolls up as it grows and down as it shrinks", () => {
+    expect(countRoll(2, 3)).toBe("up");
+    expect(countRoll(10, 9)).toBe("down");
+    expect(countRoll(99, 100)).toBe("up");
+  });
+
+  test("drawn the first time, or showing the same figure as before, it doesn't move", () => {
+    expect(countRoll(null, 4)).toBe(null);
+    expect(countRoll(4, 4)).toBe(null);
+    expect(countRoll(120, 130)).toBe(null);
   });
 });

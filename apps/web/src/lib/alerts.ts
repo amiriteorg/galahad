@@ -98,3 +98,15 @@ export function connectionCourse(o: CourseOptions): { reach(reached: boolean): v
     },
   };
 }
+
+/* ---------- a count ---------- */
+
+/** A count's figure: its number, up to 99; more is 99+. */
+export const countText = (n: number): string => (n > 99 ? "99+" : String(n));
+
+/** Which way a count's figure rolls from `from` (null: drawn the first time) to `to`: up as it grows, down as it
+ * shrinks; null when its figure stays the same (99+ to 99+ too) or there was none before. */
+export function countRoll(from: number | null, to: number): "up" | "down" | null {
+  if (from === null || countText(from) === countText(to)) return null;
+  return to > from ? "up" : "down";
+}
