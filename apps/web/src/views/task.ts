@@ -17,7 +17,7 @@ import { relativeTime } from "../lib/time.ts";
 import { emptyTrail, takeTrail, type Trail, trailNext, type TrailPage } from "../lib/trail.ts";
 import { byAttention, projectsOfKnights, seenOnOpen, shortSpan, taskState } from "../lib/work.ts";
 import { setTaskDetailsShown, taskDetailsShown } from "../prefs.ts";
-import { button, callout, dot, empty, skeletonBlock } from "../ui/controls.ts";
+import { button, callout, dot, empty, errorState, skeletonBlock } from "../ui/controls.ts";
 import { openSheet } from "../ui/dialog.ts";
 import { cx, h, keepPlace, replace, type Child } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
@@ -84,6 +84,8 @@ export const taskView: View = (root, ctx, { scope, opts }) => {
   let asking = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let room: TeamRoomView | null = null;
+  /** The conversation is asked for once here, then again as the team changes (follow, below): never at every redraw. */
+  let roomAsked = false;
   let prices: Record<string, Price> | null = null;
   let pricesAsked = false;
   /** What the task changed (null: not asked, or this device can't look into a VM), and the status it was asked at. */
@@ -227,6 +229,12 @@ export const taskView: View = (root, ctx, { scope, opts }) => {
     const n = now();
     if (!n) {
       if (!snapshot && !ctx.live.teamProblem.value) return;
+      // The team couldn't be read: said so, with a way to ask again (not "no such task", which it can't know yet).
+      if (!snapshot) {
+        replace(head, backHome(), h("div", { class: "thread-crumb grow" }, h("h1", { class: "thread-title" }, "The work can't be read just now")));
+        replace(thread, errorState("Couldn't reach the Roundtable", ctx.live.teamProblem.value, () => void ctx.live.refreshTeam()));
+        return;
+      }
       // No such task here (given on another node, or its knight removed), or none at all yet: said where the thread is.
       composerWrap.hidden = true;
       liveLine.hidden = true;
@@ -245,7 +253,10 @@ export const taskView: View = (root, ctx, { scope, opts }) => {
       return;
     }
     if (!trailRead) void readTrail();
-    if (!room) void readRoom(n.task);
+    if (!roomAsked) {
+      roomAsked = true;
+      void readRoom(n.task);
+    }
     if (n.task.record) readPrices();
     readChanges(n);
     drawHead(n);
