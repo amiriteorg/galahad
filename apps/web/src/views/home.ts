@@ -4,7 +4,7 @@ import { galahadState } from "../lib/knight-state.ts";
 import { orbMoodOfState } from "../lib/orb-motion.ts";
 import { atAGlance, type Attended, failedIn, inProject, type WorkRow } from "../lib/work.ts";
 import { setWorkOpen, workOpen } from "../prefs.ts";
-import { arrive, button, callout, count, dot, setCount, skeletonRows } from "../ui/controls.ts";
+import { arrive, button, callout, count, dot, onePrimary, setCount, skeletonRows } from "../ui/controls.ts";
 import { cx, h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { orb } from "../ui/orb.ts";
@@ -159,6 +159,8 @@ export const homeView: View = (root, ctx, { scope }) => {
     if (items.length) {
       setCount(needsShown, items.length);
       replace(needs, needsHead, ...items);
+      // One primary on the screen: the first decision in place (ui/controls.ts).
+      onePrimary(needs);
       // More waiting than when it was last drawn (not the page's first drawing): one slow breath of its edge.
       if (needsBefore !== null && items.length > needsBefore) arrive(needs);
     }

@@ -122,6 +122,26 @@ export function button(text: string, options: ButtonOptions = {}): HTMLButtonEle
 }
 
 /**
+ * One primary action on a screen (docs/DESIGN.md, Principles 1): of the primary buttons in `root` that are shown, the
+ * first in reading order keeps the ink and the rest are drawn as default buttons, their words and what they do the same.
+ * Each remembers it was made primary (`data-primary`), so when the first is answered and goes, the next takes the ink.
+ * Called after a part of a page that holds decisions is drawn again (Home's Needs you, the Inbox).
+ */
+export function onePrimary(root: ParentNode): void {
+  const shown = (el: Element): boolean => {
+    for (let at = el.parentElement; at && at !== root; at = at.parentElement) if (at.hidden && !at.classList.contains("page-body-parts")) return false;
+    return true;
+  };
+  let first = true;
+  for (const el of root.querySelectorAll<HTMLElement>(".btn.primary, .btn[data-primary]")) {
+    el.dataset.primary = "";
+    const keep = first && shown(el);
+    if (keep) first = false;
+    el.classList.toggle("primary", keep);
+  }
+}
+
+/**
  * A link that looks like a button (.btn on an anchor): for going somewhere rather than doing something, as a section's
  * "View all" or a way back does. The same variants and sizes as button(); `next` puts a chevron after the words.
  */

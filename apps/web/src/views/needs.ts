@@ -24,7 +24,9 @@ import { secretRequestCard } from "./vault.ts";
  * you" with every card's buttons inline, never a trip to another page to answer): an approval's Allow once and Deny, a
  * proposal's Approve and Decline, work cut short's Resume, a knight you paused that work waits behind. What takes more
  * than a tap (comparing a device's code, typing a key, a service's question with fields) opens the Inbox's own card for
- * it in a sheet, over the page. Home draws these; the Inbox page is still where all of it is, with its history.
+ * it in a sheet, over the page. Home draws these; the Inbox page is still where all of it is, with its history. Only a
+ * decision made in place is a primary button (Allow once, Approve, Resume), and of those only the first on the page
+ * (ui/controls.ts onePrimary); what opens a sheet is a default one.
  */
 
 /** Who asked, as an item's first line says it: a knight by its orb and name, or him, a loop, a service. */
@@ -112,16 +114,16 @@ export function needsItems(ctx: Ctx, work: Attended): HTMLElement[] {
   for (const action of waiting.filter((one) => !shownActions.has(one.id))) items.push(askItem(ctx, action, null));
   const admin = ctx.can("fleet:admin");
   for (const p of ctx.live.pairings.value) {
-    items.push(item("pairing", who(leadIcon(p.kind === "node" ? "server" : "phone"), p.kind === "node" ? "A machine asks to join" : "A device asks to join"), h("span", {}, p.name), admin ? [button("Compare codes…", { size: "sm", variant: "primary", onClick: inSheet(`${p.name} asks to join`, () => pairingCard(ctx, p)) })] : []));
+    items.push(item("pairing", who(leadIcon(p.kind === "node" ? "server" : "phone"), p.kind === "node" ? "A machine asks to join" : "A device asks to join"), h("span", {}, p.name), admin ? [button("Compare codes…", { size: "sm", onClick: inSheet(`${p.name} asks to join`, () => pairingCard(ctx, p)) })] : []));
   }
   for (const r of ctx.live.secretRequests.value) {
-    items.push(item("key", who(leadIcon("key"), "Galahad asks for a key"), [h("span", { class: "mono" }, r.name), ` · ${r.purpose}`], ctx.can("vault:write") ? [button("Add it…", { size: "sm", variant: "primary", onClick: inSheet(`A key for ${r.name}`, () => secretRequestCard(ctx, r)) })] : []));
+    items.push(item("key", who(leadIcon("key"), "Galahad asks for a key"), [h("span", { class: "mono" }, r.name), ` · ${r.purpose}`], ctx.can("vault:write") ? [button("Add it…", { size: "sm", onClick: inSheet(`A key for ${r.name}`, () => secretRequestCard(ctx, r)) })] : []));
   }
   for (const q of ctx.live.questions.value.filter((one) => one.expires > now)) {
-    items.push(item("question", who(leadIcon("plug"), `${q.label} asks`), h("span", {}, q.message), [button("Answer…", { size: "sm", variant: "primary", onClick: inSheet(`${q.label} asks`, () => questionCard(ctx, q)) })]));
+    items.push(item("question", who(leadIcon("plug"), `${q.label} asks`), h("span", {}, q.message), [button("Answer…", { size: "sm", onClick: inSheet(`${q.label} asks`, () => questionCard(ctx, q)) })]));
   }
   for (const s of ctx.live.screenSessions.value.filter((one) => one.state === "waiting" || one.state === "allowed")) {
-    items.push(item("screen", who(leadIcon("monitor"), s.state === "allowed" ? `Galahad is using ${s.nodeName}` : `Galahad asks to use ${s.nodeName}`), h("span", {}, s.why), [button(s.state === "allowed" ? "See it…" : "Answer…", { size: "sm", variant: "primary", onClick: inSheet(`${s.nodeName}`, () => screenSessionCard(ctx, s)) })]));
+    items.push(item("screen", who(leadIcon("monitor"), s.state === "allowed" ? `Galahad is using ${s.nodeName}` : `Galahad asks to use ${s.nodeName}`), h("span", {}, s.why), [button(s.state === "allowed" ? "See it…" : "Answer…", { size: "sm", onClick: inSheet(`${s.nodeName}`, () => screenSessionCard(ctx, s)) })]));
   }
   for (const n of ctx.live.notices.value.filter((one) => !one.dismissed)) {
     const dismiss = admin
@@ -136,9 +138,9 @@ export function needsItems(ctx: Ctx, work: Attended): HTMLElement[] {
       : null;
     items.push(item("notice", who(leadIcon(n.severity === "info" ? "bell" : "alert"), "Noticed"), h("span", {}, n.title), [dismiss, h("a", { class: "btn ghost sm", href: "#/inbox" }, "Read")]));
   }
-  for (const d of ctx.live.loopDrafts.value) items.push(item("draft", who(leadIcon("repeat"), "Galahad drafted a loop"), h("span", {}, d.label ?? d.name), [button("Review…", { size: "sm", variant: "primary", onClick: inSheet(`A loop: ${d.label ?? d.name}`, () => loopDraftCard(ctx, d)) })]));
-  for (const c of ctx.live.connectorRequests.value) items.push(item("connector", who(leadIcon("plug"), `${c.by} asks for a connector`), h("span", {}, c.label ?? c.connector), [button("Review…", { size: "sm", variant: "primary", onClick: inSheet(`A connector: ${c.label ?? c.connector}`, () => connectorRequestCard(ctx, c)) })]));
-  for (const m of ctx.live.aboutYou.value) items.push(item("fact", who(leadIcon("user"), "He noticed about you"), h("span", {}, m.text.split("\n")[0] ?? ""), [button("Keep or drop…", { size: "sm", variant: "primary", onClick: inSheet("A fact about you", () => h("div", { class: "card rows" }, factRow(ctx, m, true))) })]));
+  for (const d of ctx.live.loopDrafts.value) items.push(item("draft", who(leadIcon("repeat"), "Galahad drafted a loop"), h("span", {}, d.label ?? d.name), [button("Review…", { size: "sm", onClick: inSheet(`A loop: ${d.label ?? d.name}`, () => loopDraftCard(ctx, d)) })]));
+  for (const c of ctx.live.connectorRequests.value) items.push(item("connector", who(leadIcon("plug"), `${c.by} asks for a connector`), h("span", {}, c.label ?? c.connector), [button("Review…", { size: "sm", onClick: inSheet(`A connector: ${c.label ?? c.connector}`, () => connectorRequestCard(ctx, c)) })]));
+  for (const m of ctx.live.aboutYou.value) items.push(item("fact", who(leadIcon("user"), "He noticed about you"), h("span", {}, m.text.split("\n")[0] ?? ""), [button("Keep or drop…", { size: "sm", onClick: inSheet("A fact about you", () => h("div", { class: "card rows" }, factRow(ctx, m, true))) })]));
   return items;
 }
 
