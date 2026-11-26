@@ -496,7 +496,7 @@ const orb = {
 
 // ---- the orbs as fields (the PWA's own lib/field.ts and lib/field-orb.ts, 26 November 2026): Galahad's field in gold with
 // his lance through it (the heads-up ring went the same day), each knight's in its own colours. (The orb section above is
-// what the apps draw until they port it.)
+// the glyph orb the apps drew before they ported the fields.)
 const field = fieldVectors();
 
 /** Galahad's field as every orb (the PWA's own lib/field.ts and lib/field-orb.ts): the lights, whose field each is, a

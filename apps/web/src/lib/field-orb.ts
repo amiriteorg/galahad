@@ -11,7 +11,7 @@ import { ORB_LONGEST_STEP, orbRand, orbSeed, type OrbMood } from "./orb-motion.t
  * lattice on a sphere reads as a disco ball), and no ring round it, his or a knight's; it is still where it is one of
  * many, and moves slowly where it is the one you are looking at. Pure: whose field an orb is, how it is drawn at a size,
  * his lance, how it moves in each mood, its embers and its ink on a light page. The PWA draws it (ui/orb.ts); the Apple
- * and Android apps will draw the same, held to these numbers by the vectors (apps/apple/scripts/vectors.ts).
+ * and Android apps draw the same, held to these numbers by the vectors (apps/apple/scripts/vectors.ts).
  */
 
 /** Whose field an orb is: its seed (its lines' longitudes and widths), its lean (lib/field.ts' tilt), how many lines,
