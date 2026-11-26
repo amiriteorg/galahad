@@ -69,12 +69,14 @@ struct WorkRowView: View {
     let row: WorkRow
     var face: CGFloat = 16
     var current = false
+    /// In a sidebar: closer together, as T3's are.
+    var dense = false
     @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         let quiet = row.attention == .working && !current
         let selected = prominence == .increased
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: dense ? 2 : 3) {
             HStack(spacing: 6) {
                 ProjectBadge(project: row.project)
                 Text(row.project.name).lineLimit(1)
@@ -104,7 +106,7 @@ struct WorkRowView: View {
             }
             .font(.footnote)
         }
-        .padding(.vertical, Space.s2)
+        .padding(.vertical, dense ? 0 : Space.s2)
         .contentShape(.rect)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.label(row))

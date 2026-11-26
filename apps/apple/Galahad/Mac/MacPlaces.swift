@@ -7,6 +7,7 @@ import SwiftUI
 struct MacPlaces: View {
     @Bindable var mac: MacApp
     let session: Session
+    @State private var givingNext = false
 
     var body: some View {
         NavigationSplitView {
@@ -21,7 +22,14 @@ struct MacPlaces: View {
                 .workspaceColumn(session: session, seat: mac.place.workspaceSeat(session))
         }
         .sheet(isPresented: $mac.giving) { GiveSheet(session: session) }
+        .sheet(isPresented: $mac.searching, onDismiss: {
+            // A task chosen in the palette is given once the palette has gone.
+            if givingNext { givingNext = false; mac.giving = true }
+        }) {
+            CommandPalette(session: session, go: { mac.place = $0 }, give: mayGive ? { givingNext = true } : nil)
+        }
         .environment(\.showInbox) { mac.place = .inbox }
+        .environment(\.openSearch) { mac.searching = true }
         .task { await session.refresh() }
     }
 

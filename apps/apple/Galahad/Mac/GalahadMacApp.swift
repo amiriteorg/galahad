@@ -67,8 +67,10 @@ struct GalahadMacApp: App {
     var place: Place = MacApp.keptPlace() {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(place), forKey: Self.placeKey) }
     }
-    /// The Roundtable is being given a task (⌘K).
+    /// The Roundtable is being given a task (⇧⌘N).
     var giving = false
+    /// Search, or ask (⌘K): the palette over the main window.
+    var searching = false
     /// A new chat was asked for (⌘N): Galahad's message box takes the keys.
     var composerWanted = false
     /// An invite a `galahad:` link handed over, for the join screen.
@@ -187,7 +189,7 @@ struct MacWindowRoot: View {
     }
 }
 
-/// The menus: a new chat and a task for the Roundtable in File, and the four places in View.
+/// The menus: a new chat, a task for the Roundtable and Search or Ask (⌘K) in File, and Home and the four places in View.
 struct MacCommands: Commands {
     let mac: MacApp
     @Environment(\.openWindow) private var openWindow
@@ -208,7 +210,13 @@ struct MacCommands: Commands {
                 mac.giving = true
                 front()
             }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+            Button("Search or Ask…") {
+                mac.searching = true
+                front()
+            }
             .keyboardShortcut("k")
+            .disabled(mac.session == nil)
             .disabled(mac.session?.can("fleet:admin") != true || mac.session?.rows.isEmpty != false)
             Divider()
             Button("Build with Galahad") {

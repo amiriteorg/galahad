@@ -96,10 +96,11 @@ struct TaskView: View {
         Group {
             if let task = session.task(id), let thread {
                 TaskThreadView(session: session, task: task, thread: thread, composing: $composing)
-                    .toolbar { toolbar(task) }
                     .modifier(DetailsPlace(wide: wide, shown: $detailsShown, sheet: $detailsSheet) {
                         TaskDetails(session: session, task: task, thread: thread)
                     })
+                    // (Outside the details column, so its buttons are the thread's bar's, not the column's.)
+                    .toolbar { toolbar(task) }
                     .task(id: task.status) { await follow(task, thread) }
             } else if session.task(id) != nil {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -826,12 +827,14 @@ struct TaskDetails: View {
                     } else {
                         Text("\(name) has no VM yet").foregroundStyle(.secondary)
                     }
-                } end: {
-                    if vm != nil, let knight, session.can("sandbox") {
-                        HStack(spacing: Space.s1) {
-                            NeedButton(title: "Peek") { peeking = true }.help("Its desktop, to watch and take over")
-                            if vm?.node == session.whoami?.node { NeedButton(title: "Terminal") { inTerminal = true } }
+                }
+                if vm != nil, let knight, session.can("sandbox") {
+                        // Its desktop to watch and take over, and its terminal: under it, so neither is squeezed.
+                        HStack(spacing: Space.s2) {
+                            NeedButton(title: "Peek") { peeking = true }.help("Its desktop, to watch and take over").fixedSize()
+                            if vm?.node == session.whoami?.node { NeedButton(title: "Terminal") { inTerminal = true }.fixedSize() }
                         }
+                        .padding(.leading, 28)
                         // (Over the thread, its own: the details may be a column with nothing to push onto.)
                         .cover(isPresented: $peeking) {
                             NavigationStack {
@@ -840,7 +843,6 @@ struct TaskDetails: View {
                             }
                         }
                         .cover(isPresented: $inTerminal) { KnightTerminalView(session: session, knight: VMSeat(knight)) }
-                    }
                 }
                 row("chevron.left.forwardslash.chevron.right") {
                     if let fix = task.fix {

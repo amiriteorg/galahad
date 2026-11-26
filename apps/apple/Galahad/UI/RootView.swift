@@ -143,6 +143,9 @@ struct SplitPlaces: View {
     @SceneStorage("place") private var kept = ""
     @State private var giving = false
     @State private var composerWanted = false
+    /// Search, or ask (⌘K), and a task chosen there, given once the palette has gone.
+    @State private var searching = false
+    @State private var givingNext = false
 
     private var place: Place {
         get { (try? JSONDecoder().decode(Place.self, from: Data(kept.utf8))) ?? .home }
@@ -162,8 +165,14 @@ struct SplitPlaces: View {
                 .workspaceColumn(session: session, seat: place.workspaceSeat(session))
         }
         .sheet(isPresented: $giving) { GiveSheet(session: session) }
+        .sheet(isPresented: $searching, onDismiss: {
+            if givingNext { givingNext = false; giving = true }
+        }) {
+            CommandPalette(session: session, go: { place = $0 }, give: mayGive ? { givingNext = true } : nil)
+        }
         .environment(\.showInbox) { place = .inbox }
-        .focusedSceneValue(\.placeActions, PlaceActions(go: { place = $0 }, newChat: newChat, give: mayGive ? { giving = true } : nil))
+        .environment(\.openSearch) { searching = true }
+        .focusedSceneValue(\.placeActions, PlaceActions(go: { place = $0 }, newChat: newChat, give: mayGive ? { giving = true } : nil, search: { searching = true }))
         .task(id: PushCenter.shared.opened) { await follow() }
     }
 
@@ -223,6 +232,8 @@ struct PlaceActions {
     let newChat: (() -> Void)?
     /// A task for the Roundtable: none from a device that may not give one, or with no knight to take it.
     let give: (() -> Void)?
+    /// Search, or ask (⌘K).
+    var search: (() -> Void)? = nil
 }
 
 extension FocusedValues {
@@ -243,8 +254,11 @@ struct PadCommands: Commands {
             Button("New Window") { openWindow(id: GalahadApp.main) }
                 .keyboardShortcut("n", modifiers: [.command, .option])
             Button("Give the Roundtable a Task…") { actions?.give?() }
-                .keyboardShortcut("k")
+                .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(actions?.give == nil)
+            Button("Search or Ask…") { actions?.search?() }
+                .keyboardShortcut("k")
+                .disabled(actions?.search == nil)
         }
         CommandGroup(before: .sidebar) {
             place("Home", .home, "0")

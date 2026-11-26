@@ -52,6 +52,7 @@ struct PlacesSidebar<Foot: View>: View {
     @AppStorage("sidebar.working") private var workingShown = false
     @AppStorage("sidebar.done") private var doneShown = false
     @State private var giving = false
+    @Environment(\.openSearch) private var openSearch
 
     init(place: Binding<Place>, session: Session, @ViewBuilder foot: () -> Foot) {
         _place = place
@@ -65,6 +66,28 @@ struct PlacesSidebar<Foot: View>: View {
         let work = session.attended
         let beyond = work.map { Work.inboxBeyond(session.inboxCount, asks: session.asks, needs: $0.needs) } ?? session.inboxCount
         List(selection: Binding<Place?>(get: { place }, set: { if let chosen = $0 { place = chosen } })) {
+            if let openSearch {
+                Section {
+                    Button(action: openSearch) {
+                        HStack(spacing: Space.s2) {
+                            Image(systemName: "magnifyingglass")
+                            Text("Search, or ask")
+                            Spacer(minLength: Space.s2)
+                            Text("⌘K").font(.footnote.monospaced()).foregroundStyle(.tertiary)
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, Space.s3)
+                        .frame(minHeight: 36)
+                        .background(.fill.quaternary, in: .rect(cornerRadius: 10, style: .continuous))
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets(top: Space.s1, leading: Space.s2, bottom: Space.s1, trailing: Space.s2))
+                    .listRowBackground(Color.clear)
+                    .accessibilityLabel("Search, or ask Galahad")
+                    .accessibilityHint("Command K")
+                }
+            }
             Section {
                 Label("Home", systemImage: "house").tag(Place.home)
                 GalahadPin(session: session, still: [Place.home, .galahad, .roundtable].contains(place) || { if case .task = place { true } else { false } }())
@@ -74,7 +97,8 @@ struct PlacesSidebar<Foot: View>: View {
                 #endif
             }
             if let work {
-                let needs = work.needs.count + (beyond > 0 ? 1 : 0)
+                // (The rows that need you, and each thing that waits in the Inbox beyond them, as the web counts them.)
+                let needs = work.needs.count + beyond
                 if needs > 0 {
                     Section {
                         if beyond > 0 {
@@ -197,7 +221,9 @@ struct PlacesSidebar<Foot: View>: View {
     /// Rows of the work, each its task's thread.
     private func rows(_ rows: [WorkRow]) -> some View {
         ForEach(rows) { row in
-            WorkRowView(row: row, face: 16, current: place == .task(row.id)).tag(Place.task(row.id))
+            WorkRowView(row: row, face: 16, current: place == .task(row.id), dense: true)
+                .tag(Place.task(row.id))
+                .listRowInsets(EdgeInsets(top: Space.s2, leading: Space.s3, bottom: Space.s2, trailing: Space.s3))
         }
     }
 
