@@ -4,14 +4,12 @@ import type { Ctx, NavigateOptions, Route, View } from "./context.ts";
 import type { BrowserIdentity } from "./identity.ts";
 import { startLive } from "./live.ts";
 import type { LiveLink } from "./lib/live-link.ts";
-import { shortId } from "./lib/text.ts";
 import { setMotion, setSidebarCollapsed, setTheme, sidebarCollapsed } from "./prefs.ts";
 import type { AnyScope, WhoAmI } from "./types.ts";
 import { button, dot, kbd, retryFailed } from "./ui/controls.ts";
 import { openSheet } from "./ui/dialog.ts";
 import { h, isMac, isTyping, replace, Scope } from "./ui/dom.ts";
 import { icon } from "./ui/icons.ts";
-import { orb } from "./ui/orb.ts";
 import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
 import { activityView } from "./views/activity.ts";
@@ -19,10 +17,9 @@ import { artifactsView } from "./views/artifacts.ts";
 import { archiveView, openNewIdea } from "./views/archive.ts";
 import { bankView } from "./views/bank.ts";
 import { projectsView } from "./views/projects.ts";
-import { rosterNav } from "./views/roster.ts";
 import { chatActivityPill, chatsForPalette, chatView, lookAtWork, startNewChat } from "./views/chat.ts";
 import { filterConversations } from "./lib/chats.ts";
-import { countedOn, homeOf, type Place, placesFor, railOf, routeOf, tabOf, tabsOf } from "./lib/nav.ts";
+import { goToOf, hashOf, homeOf, keyedOf, landingOf, placesFor, routeOf, taskOf } from "./lib/nav.ts";
 import { closesKeyboard, keyboardOpen } from "./lib/viewport.ts";
 import { conversationFromHash } from "@galahad/core/notify-payload";
 import { readOpenMessage } from "./lib/push.ts";
@@ -44,16 +41,20 @@ import { openCreateSandbox, sandboxesView } from "./views/sandboxes.ts";
 import { forgetThisBrowser, settingsView } from "./views/settings.ts";
 import { trialsView } from "./views/trials.ts";
 import { teamView } from "./views/team.ts";
-import { workView } from "./views/work.ts";
+import { homeView } from "./views/home.ts";
+import { openPlaces } from "./views/places.ts";
+import { sidebarNav } from "./views/sidebar.ts";
+import { taskView } from "./views/task.ts";
 import { giveToRoundtable } from "./views/team-forms.ts";
-import { landingHash, teamHash, teamLocation } from "./lib/team.ts";
+import { teamLocation } from "./lib/team.ts";
 import { openAddKey, vaultView } from "./views/vault.ts";
 
 /** Each place's page (the places themselves, and where each is reached from, are lib/nav.ts). */
 const VIEWS: Record<Route, View> = {
+  home: homeView,
   chat: chatView,
-  work: workView,
   team: teamView,
+  task: taskView,
   inbox: inboxView,
   more: moreView,
   overview: overviewView,
@@ -88,11 +89,8 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const scopes = new Set<AnyScope>(base.whoami.scopes);
   const can = (scope: AnyScope) => scopes.has(scope);
   const visible = placesFor(can);
-  // The roster and More: the roster is the sidebar on a wide screen and the first screen on a phone, whose
-  // bar is the roster and More. The app opens on the roster (lib/nav.ts).
-  const tabs = tabsOf(visible);
-  // (Whether this device seats the Roundtable at all: on a phone's bar Work stands where it did, since 25 November 2026.)
-  const hasRoster = visible.some((spec) => spec.id === "team");
+  // (Whether this device sees the work at all: a device that may not chat has no sidebar of it, and opens on its Inbox.)
+  const hasWork = visible.some((spec) => spec.id === "home");
   const narrow = matchMedia("(max-width: 959px)");
   const home = (): Route => homeOf(visible, { narrow: narrow.matches });
 
@@ -140,7 +138,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     navigate(route, opts = {}) {
       const target = visible.find((r) => r.id === route) ? route : home();
       pending = { route: target, opts };
-      const hash = target === "team" ? teamHash(opts) : `#/${target}`;
+      const hash = hashOf(target, opts);
       if (location.hash === hash) render();
       else location.hash = hash;
     },
@@ -155,191 +153,56 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const main = h("main", { class: "view", id: "main", tabindex: -1 });
   const banner = h("div", { class: "banner", role: "status", hidden: true });
   const topTitle = h("span", { class: "title" });
-  const navLinks = new Map<Route, HTMLAnchorElement[]>();
-
-  const link = (spec: Place, className: string, content: (HTMLElement | SVGElement | string | null)[]): HTMLAnchorElement => {
-    const a = h("a", { class: className, href: `#/${spec.id}`, title: className === "nav-item" ? `${spec.label}  (G then ${spec.key.toUpperCase()})` : null }, ...content);
-    navLinks.set(spec.id, [...(navLinks.get(spec.id) ?? []), a]);
-    return a;
-  };
   // (Where the app opens depends on the screen: these follow it.)
   const homeLinks: HTMLAnchorElement[] = [];
-  const homeLink = (className: string, ...content: (HTMLElement | SVGElement)[]): HTMLAnchorElement => {
-    const a = h("a", { class: className, href: `#/${home()}`, "aria-label": "Galahad" }, ...content);
+  const homeLink = (className: string, label: string, ...content: (HTMLElement | SVGElement)[]): HTMLAnchorElement => {
+    const a = h("a", { class: className, href: `#/${home()}`, "aria-label": label, title: label }, ...content);
     homeLinks.push(a);
     return a;
   };
 
-  const inboxBadges: HTMLElement[] = [];
-  const inboxBadge = () => {
-    const el = h("span", { class: "count", hidden: true });
-    inboxBadges.push(el);
+  // The sidebar, on a wide screen (views/sidebar.ts): Galahad pinned, the work by attention, the machine and the knights
+  // at its foot, everything else under "…". A phone has none: its first screen is Home, and "…" is in each header.
+  const sidebar = hasWork ? sidebarNav(ctx, { toggle: () => toggleSidebar() }) : null;
+  // A sidebar folded away comes back from the top of the page, as T3 Code's does.
+  const expand = button("Show the sidebar", { variant: "ghost", size: "sm", iconOnly: true, icon: "sidebar", title: "Show the sidebar  ( [ )", onClick: () => toggleSidebar() });
+  expand.classList.add("side-expand");
+  // Search on a phone: a button at the top bar's end, which the palette grows out of; everything else beside it ("…").
+  const searchButton = (): HTMLButtonElement =>
+    button("Search", { variant: "ghost", iconOnly: true, icon: "search", onClick: (event) => ctx.palette(undefined, event.currentTarget as Element), label: `Search and commands (${isMac() ? "⌘" : "Ctrl"}+K)` });
+  const placesButton = (): HTMLButtonElement => {
+    const el = button("Everything else", { variant: "ghost", iconOnly: true, icon: "more", onClick: (event) => openPlaces(ctx, event.currentTarget as Element) });
+    el.classList.add("places-button");
     return el;
   };
 
-  // Sidebar: the roster, and under it More (a device with no roster has its Inbox there).
-  const roster = hasRoster ? rosterNav(ctx) : null;
-  const navChildren = tabs.filter((spec) => spec.id !== "team" && spec.id !== "work").map((spec) => link(spec, "nav-item", [icon(spec.icon), h("span", { class: "label" }, spec.label), spec.id === "inbox" ? inboxBadge() : null]));
-  // Work, at the head of the sidebar on a wide screen (a phone has it in its bar): the work by project, each task a thread.
-  const workPlace = visible.find((spec) => spec.id === "work");
-  const workLink = workPlace ? link(workPlace, "nav-item sidebar-work", [icon(workPlace.icon), h("span", { class: "label" }, workPlace.label)]) : null;
-  const collapse = button(sidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar", {
-    variant: "ghost",
-    size: "sm",
-    iconOnly: true,
-    icon: "sidebar",
-    onClick: () => toggleSidebar(),
-  });
-  const deviceChip = h(
-    "a",
-    { class: "device-chip", href: "#/settings", title: "This device" },
-    h("span", { class: "avatar" }, icon(base.identity.name.includes("iPhone") || base.identity.name.includes("Android") ? "phone" : "laptop", { size: 16 })),
-    h("span", { class: "device-meta" }, h("div", { class: "name ellipsis" }, base.identity.name), h("div", { class: "id mono subtle" }, shortId(base.identity.device))),
-  );
-  // Search on a phone: a button at the top bar's end, which the palette grows out of. The Roundtable's head has the same
-  // one in the same place.
-  const searchButton = (): HTMLButtonElement =>
-    button("Search", { variant: "ghost", iconOnly: true, icon: "search", onClick: (event) => ctx.palette(undefined, event.currentTarget as Element), label: `Search and commands (${isMac() ? "⌘" : "Ctrl"}+K)` });
-  const headSearch = searchButton();
-  headSearch.classList.add("head-search");
-  const sidebar = h(
-    "aside",
-    { class: "sidebar", "aria-label": "Sidebar" },
-    // (Search is in the head: on a wide screen a row under the mark, on a phone the top bar's button at its end.)
-    h(
-      "div",
-      { class: "sidebar-head" },
-      // The Roundtable's mark opens the Roundtable: its board, on a wide screen (a phone's home is the Roundtable already).
-      hasRoster ? h("a", { class: "wordmark grow", href: "#/team", "aria-label": "The Roundtable", title: "The Roundtable" }, icon("roundtable", { size: 28 })) : homeLink("wordmark grow", icon("roundtable", { size: 28 })),
-      h(
-        "button",
-        { class: "search-trigger", type: "button", onclick: () => ctx.palette(), "aria-label": "Search and commands" },
-        icon("search", { size: 15 }),
-        h("span", { class: "label" }, "Search…"),
-        h("span", { class: "kbds" }, ...kbd(isMac() ? "⌘" : "Ctrl", "K")),
-      ),
-      headSearch,
-      collapse,
-    ),
-    workLink,
-    roster?.el ?? null,
-    h("nav", { class: "nav", "aria-label": "Sections" }, ...navChildren),
-    h("div", { class: "sidebar-foot" }, deviceChip),
-  );
-
-  // Top bar
+  const topSearch = searchButton();
+  topSearch.classList.add("topbar-search");
+  // Top bar (a place's page; Home and a thread have their own header): the way home, the title once the page's own has
+  // scrolled away, and at its end what is going on, search and everything else.
   const fleetPill = h("a", { class: "fleet-pill", href: "#/fleet", hidden: !can("mind:read") });
   const topbar = h(
     "header",
     { class: "topbar" },
-    homeLink("brand-mini", icon("roundtable", { size: 28 })),
+    homeLink("brand-mini", "Home", icon("chevron-left", { size: 18 }), h("img", { src: "/icon-64.png", alt: "", width: 22, height: 22, decoding: "async" })),
     topTitle,
     h(
       "div",
       { class: "actions" },
       chatActivityPill(),
       fleetPill,
-      searchButton(),
+      topSearch,
+      placesButton(),
     ),
   );
 
-  // Rail (wide screens): every other place one click away, under More's headings, this device's settings at its foot.
-  // (On a phone they are behind More.) What waits in the Inbox is counted on it.
-  const railLinks = new Map<Route, HTMLAnchorElement>();
-  const railLink = (spec: Place): HTMLAnchorElement => {
-    const a = h("a", { class: "rail-item", href: `#/${spec.id}`, "aria-label": spec.label, "data-tip": spec.label, "data-keys": `G ${spec.key.toUpperCase()}` }, icon(spec.icon, { size: 18 }), spec.id === "inbox" ? inboxBadge() : null);
-    railLinks.set(spec.id, a);
-    return a;
-  };
-  const places = railOf(visible);
-  // At its head, Add: the palette, on everything this device may add (a key, an MCP server, a connector, a loop…).
-  const railAdd = h("button", { class: "rail-item rail-add", type: "button", "aria-label": "Add…", "data-tip": "Add…", "data-keys": isMac() ? "⌘K" : "Ctrl K", onclick: () => ctx.palette("Add ") }, icon("plus", { size: 18 }));
-  const rail = h(
-    "nav",
-    { class: "rail", "aria-label": "Places" },
-    h("div", { class: "rail-group" }, railAdd),
-    ...places.groups.map((group) => h("div", { class: "rail-group" }, ...group.map(railLink))),
-    h("div", { class: "rail-group rail-foot" }, ...places.foot.map(railLink)),
-  );
-  // Each place's name beside the rail as you point at it or tab to it (its link is named for a screen reader already).
-  const railTip = h("div", { class: "rail-tip", "aria-hidden": "true", hidden: true });
-  const tipFor = (target: EventTarget | null) => {
-    const item = target instanceof Element ? target.closest<HTMLElement>(".rail-item") : null;
-    if (!item) return void (railTip.hidden = true);
-    const box = item.getBoundingClientRect();
-    replace(railTip, item.dataset.tip ?? "", h("span", { class: "rail-keys" }, item.dataset.keys ?? ""));
-    railTip.style.left = `${box.right + 8}px`;
-    railTip.style.top = `${box.top + box.height / 2}px`;
-    railTip.hidden = false;
-  };
-  for (const type of ["pointerover", "focusin"]) rail.addEventListener(type, (event) => tipFor(event.target), { signal: lifetime.signal });
-  for (const type of ["pointerleave", "focusout", "scroll", "click"]) rail.addEventListener(type, () => (railTip.hidden = true), { signal: lifetime.signal });
-
-  // Tab bar (phones): the Roundtable, More, and Galahad at its right end, his tab his orb (as the iPhone's and Android's
-  // are). What waits in the Inbox is counted on his tab (lib/nav.ts countedOn).
-  const counted = countedOn(tabs);
-  const tabbar = h(
-    "nav",
-    { class: "tabbar", "aria-label": "Sections" },
-    ...tabs.map((spec) => link(spec, "tab", [spec.id === "chat" ? orb({ size: 22 }) : icon(spec.icon), h("span", {}, spec.label), spec.id === counted ? inboxBadge() : null])),
-  );
-
-  // Quick (a phone's): asking Galahad and giving a task, floating at the bottom right over every place but a timeline
-  // (which has its own composer). One action this device may take is taken at once; two are offered from it.
-  const quickActions = [
-    can("chat") ? { label: "Ask Galahad", icon: "chat" as const, run: () => (startNewChat(), ctx.navigate("chat")) } : null,
-    can("fleet:admin") && can("chat") ? { label: "Give a task", icon: "layers" as const, run: () => giveToRoundtable(ctx) } : null,
-  ].filter((action) => action !== null);
-  const quickMenu = h("div", { class: "quick-menu", role: "menu", hidden: true });
-  // While it's open, what's behind it dims a little (as a phone's own menus do); a tap there closes it, and goes no further.
-  const quickScrim = h("div", { class: "quick-scrim", hidden: true, "aria-hidden": "true", onclick: () => closeQuick() });
-  const fab = h("button", { class: "fab", type: "button", "aria-label": quickActions.length > 1 ? "Ask Galahad or give a task" : (quickActions[0]?.label ?? ""), "aria-haspopup": quickActions.length > 1 ? "menu" : null, "aria-expanded": "false" }, icon("plus", { size: 24 }));
-  const quick = h("div", { class: "quick", hidden: quickActions.length === 0 }, quickScrim, quickMenu, fab);
-  const closeQuick = () => {
-    quickMenu.hidden = quickScrim.hidden = true;
-    fab.setAttribute("aria-expanded", "false");
-  };
-  fab.addEventListener("click", (event) => {
-    if (quickActions.length === 1) return quickActions[0]!.run();
-    if (!quickMenu.hidden) return closeQuick();
-    replace(quickMenu, ...quickActions.map((action) => h("button", { class: "quick-item", type: "button", role: "menuitem", onclick: () => (closeQuick(), action.run()) }, icon(action.icon, { size: 18 }), h("span", {}, action.label))));
-    quickMenu.hidden = quickScrim.hidden = false;
-    fab.setAttribute("aria-expanded", "true");
-    // Opened from a keyboard (a click with no pointer behind it), its first choice takes the focus; a finger's tap leaves it.
-    if (event.detail === 0) (quickMenu.firstElementChild as HTMLElement | null)?.focus({ preventScroll: true });
-  });
-  document.addEventListener("pointerdown", (event) => !quickMenu.hidden && !(event.target instanceof Node && quick.contains(event.target)) && closeQuick(), { capture: true, signal: lifetime.signal });
-  document.addEventListener("keydown", (event) => event.key === "Escape" && !quickMenu.hidden && (closeQuick(), fab.focus()), { signal: lifetime.signal });
-  window.addEventListener("hashchange", closeQuick, { signal: lifetime.signal });
-  // Out of the way while you read down a list (it would cover the row under it): back when you scroll up, or reach the
-  // end, where the list leaves room for it. Any scroller: the page, or the Roundtable's own list.
-  const tops = new WeakMap<Element, number>();
-  const atEnd = (scroller: Element) => scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 48;
-  let settled: ReturnType<typeof setTimeout> | undefined;
-  document.addEventListener(
-    "scroll",
-    (event) => {
-      const scroller = event.target === document ? document.scrollingElement : event.target;
-      if (!(scroller instanceof Element) || !quickMenu.hidden) return;
-      const y = scroller.scrollTop;
-      const before = tops.get(scroller) ?? y;
-      tops.set(scroller, y);
-      if (y > before + 4 && y > 80 && !atEnd(scroller)) quick.dataset.away = "";
-      else if (y < before - 4 || y <= 80 || atEnd(scroller)) delete quick.dataset.away;
-      // A fling's last event can come short of the end (iOS sends none while it bounces): looked at again once it rests.
-      clearTimeout(settled);
-      settled = setTimeout(() => atEnd(scroller) && delete quick.dataset.away, 150);
-    },
-    { capture: true, passive: true, signal: lifetime.signal },
-  );
-  window.addEventListener("hashchange", () => delete quick.dataset.away, { signal: lifetime.signal });
-
-  const shell = h("div", { class: "shell" }, rail, sidebar, h("div", { class: "main-col" }, topbar, banner, main), tabbar, quick, railTip);
+  // (A device with no work to show has no sidebar: its top bar keeps the way home, search and "…" on any screen.)
+  const shell = h("div", { class: "shell", "data-sidebar-none": sidebar ? null : "" }, sidebar?.el ?? null, h("div", { class: "main-col" }, sidebar ? expand : null, topbar, banner, main));
   replace(root, shell);
 
   // ---------- the on-screen keyboard ----------
-  // iOS keeps the page full height under its keyboard: while you type, the tab bar steps aside so
-  // the chat composer (or whatever you're typing in) sits right above the keyboard, not behind it.
+  // iOS keeps the page full height under its keyboard: while you type, what is docked at the bottom (Home's message box)
+  // sits right above the keyboard, not behind the home indicator's strip.
   const viewport = window.visualViewport;
   if (viewport) {
     let fullHeight = window.innerHeight;
@@ -356,7 +219,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     lifetime.signal.addEventListener("abort", () => delete document.documentElement.dataset.keyboard);
   }
   // A finger's tap on the page that no field, button or link takes puts the keyboard away (lib/viewport.ts closesKeyboard):
-  // iOS leaves it up after such a tap, with the tab bar stepped aside while it's up.
+  // iOS leaves it up after such a tap.
   const TAKES_A_TAP = "input, textarea, select, button, a[href], label, summary, form, video, audio, iframe, [contenteditable]:not([contenteditable='false']), [role='button'], [role='link'], [role='menuitem'], [role='tab'], [role='option'], [role='switch'], [role='checkbox'], [role='slider'], [tabindex]:not([tabindex='-1'])";
   let down: { x: number; y: number; at: number; id: number } | null = null;
   document.addEventListener("pointerdown", (event) => (down = event.isPrimary ? { x: event.clientX, y: event.clientY, at: event.timeStamp, id: event.pointerId } : null), { capture: true, passive: true, signal: lifetime.signal });
@@ -380,19 +243,19 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   const ahead = (event: Event) => {
     const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href^="#/"]') : null;
     if (!link) return;
-    for (const read of readsFor(link.getAttribute("href") ?? "", visibleIds)) {
+    const href = link.getAttribute("href") ?? "";
+    // (A task's thread reads its trail first: asked as the view asks it, so the answer is the view's.)
+    const task = taskOf(href);
+    if (task && visibleIds.includes("task")) base.api.post("/api/team/trail", { task, after: 0 }).catch(() => {});
+    for (const read of readsFor(href, visibleIds)) {
       (typeof read === "string" ? base.api.get(read) : base.api.post(read.post, read.body)).catch(() => {});
     }
   };
   document.addEventListener("pointerdown", ahead, { capture: true, passive: true, signal: lifetime.signal });
 
   // ---------- live chrome ----------
+  // What waits in the Inbox is counted in the page's title (the sidebar, Home and "…" count it where they show it).
   live.inboxCount.watch((n) => {
-    for (const el of inboxBadges) {
-      el.hidden = n === 0;
-      el.textContent = n > 99 ? "99+" : String(n);
-      el.setAttribute("aria-label", `${n} waiting`);
-    }
     document.title = document.title.replace(/^\(\d+\+?\) /, "");
     if (n) document.title = `(${n}) ${document.title}`;
   });
@@ -438,18 +301,16 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   });
 
   function toggleSidebar(): void {
-    const next = !sidebarCollapsed();
-    setSidebarCollapsed(next);
-    collapse.setAttribute("aria-label", next ? "Expand sidebar" : "Collapse sidebar");
-    collapse.title = next ? "Expand sidebar" : "Collapse sidebar";
+    setSidebarCollapsed(!sidebarCollapsed());
   }
 
   // ---------- routing ----------
   // (The Roundtable is #/team, and #/roundtable as well.)
   const routeFromHash = (): Route | null => routeOf(location.hash, visible);
 
-  /** How often the team is asked for: every two seconds on its own pages, slowly while it is only the sidebar, never when nothing shows it. */
-  const watch = (): void => live.watchTeam(!hasRoster ? null : current === "team" || current === "work" ? 2000 : narrow.matches ? null : 6000);
+  /** How often the team is asked for (while the node's live stream is down): every two seconds where the work is the page
+   * (Home, a task, the Roundtable), slowly while it is only the sidebar, never when nothing shows it. */
+  const watch = (): void => live.watchTeam(!hasWork ? null : current === "home" || current === "task" || current === "team" ? 2000 : narrow.matches ? null : 6000);
   narrow.addEventListener("change", () => (watch(), syncHome()), { signal: lifetime.signal });
   const syncHome = (): void => {
     for (const a of homeLinks) a.href = `#/${home()}`;
@@ -458,21 +319,18 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   function render(): void {
     const route = routeFromHash() ?? home();
     const spec = visible.find((r) => r.id === route)!;
-    const opts = pending?.route === route ? pending.opts : route === "team" ? teamLocation(location.hash) : {};
+    const opts = pending?.route === route ? pending.opts : route === "team" ? teamLocation(location.hash) : route === "task" ? { task: taskOf(location.hash) ?? undefined } : {};
     pending = null;
     viewScope?.dispose();
     viewScope = new Scope();
     const changed = current !== route;
     current = route;
     shell.dataset.route = route;
-    // A timeline (his, a knight's, a room's) has no top bar: its header is whose it is. On a phone it is the whole
-    // screen, and the roster is the screen before it.
-    shell.dataset.pane = route === "chat" || (route === "team" && opts.room) ? "timeline" : route === "team" ? "roster" : "page";
-    roster?.at({ route, ...(route === "team" && opts.room ? { room: opts.room } : {}) });
+    // A thread (his, a knight's, a room's, a task's) has no top bar: its header is whose it is. On a phone it is the whole
+    // screen, with its way back. Home has its own header too.
+    shell.dataset.pane = route === "home" ? "home" : route === "chat" || route === "task" || (route === "team" && opts.room) ? "timeline" : "page";
+    sidebar?.at({ route, task: route === "task" ? (opts.task ?? null) : null });
     watch();
-    // A place reached from More keeps More marked.
-    for (const [id, els] of navLinks) for (const el of els) id === tabOf(route, tabs) ? el.setAttribute("aria-current", "page") : el.removeAttribute("aria-current");
-    for (const [id, el] of railLinks) id === route ? el.setAttribute("aria-current", "page") : el.removeAttribute("aria-current");
     topTitle.textContent = spec.label;
     const n = live.inboxCount.value;
     document.title = `${n ? `(${n}) ` : ""}${spec.label} · Galahad`;
@@ -488,7 +346,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     }
     if (changed) {
       window.scrollTo({ top: 0 });
-      if (document.activeElement === document.body || document.activeElement?.closest(".sidebar, .tabbar")) main.focus({ preventScroll: true });
+      if (document.activeElement === document.body || document.activeElement?.closest(".sidebar")) main.focus({ preventScroll: true });
     }
   }
 
@@ -516,13 +374,13 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   // ---------- command palette ----------
   const paletteSource = {
     commands(): Command[] {
-      const go: Command[] = visible.map((spec) => ({
+      const go: Command[] = goToOf(visible).map((spec) => ({
         id: `go:${spec.id}`,
         label: spec.label,
         group: "Go to",
         icon: spec.icon,
         keywords: [...spec.keywords],
-        hint: `G ${spec.key.toUpperCase()}`,
+        hint: spec.key ? `G ${spec.key.toUpperCase()}` : undefined,
         run: () => ctx.navigate(spec.id),
       }));
       const actions: Command[] = [];
@@ -547,9 +405,10 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
         { id: "theme-dark", label: "Theme: dark", group: "Appearance", icon: "moon", run: () => setTheme("dark") },
         { id: "motion-reduce", label: "Reduce motion", group: "Appearance", icon: "zap", keywords: ["animation", "accessibility"], run: () => setMotion("reduce") },
         { id: "motion-system", label: "Motion: match system", group: "Appearance", icon: "zap", keywords: ["animation"], run: () => setMotion("system") },
-        { id: "sidebar", label: "Toggle sidebar", group: "Appearance", icon: "sidebar", hint: "[", run: toggleSidebar },
+        { id: "sidebar", label: "Show or hide the sidebar", group: "Appearance", icon: "sidebar", hint: "[", run: toggleSidebar },
       ];
       const device: Command[] = [
+        { id: "places", label: "Everything else…", group: "Go to", icon: "more", keywords: ["places", "menu", "index", "more", "settings"], run: () => openPlaces(ctx) },
         { id: "shortcuts", label: "Keyboard shortcuts", group: "Help", icon: "command", hint: "?", run: openShortcuts },
         { id: "forget", label: "Forget this browser…", group: "Help", icon: "logout", keywords: ["sign out", "unpair", "remove key"], run: () => void forgetThisBrowser() },
       ];
@@ -583,8 +442,8 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
         { class: "help-list" },
         ...row("Search and commands", mod, "K"),
         ...row("Show shortcuts", "?"),
-        ...row("Toggle sidebar", "["),
-        ...visible.flatMap((spec) => row(`Go to ${spec.label}`, "G", spec.key.toUpperCase())),
+        ...row("Show or hide the sidebar", "["),
+        ...keyedOf(visible).flatMap((spec) => row(`Go to ${spec.label}`, "G", spec.key.toUpperCase())),
         ...row("Send message", "Enter"),
         ...row("New line in a message", "Shift", "Enter"),
         ...row("Stop Galahad answering", "Esc"),
@@ -613,7 +472,7 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     } else if (event.key.toLowerCase() === "g") {
       gPressed = Date.now();
     } else if (Date.now() - gPressed < 1200) {
-      const spec = visible.find((r) => r.key === event.key.toLowerCase());
+      const spec = keyedOf(visible).find((r) => r.key === event.key.toLowerCase());
       gPressed = 0;
       if (spec) {
         event.preventDefault();
@@ -623,23 +482,24 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
   }
 
   // ---------- go ----------
-  // His row says what he is doing wherever the roster shows: asked for here while no chat is on screen to ask it.
+  // His line says what he is doing wherever it shows (the sidebar's pinned row, Home's header): asked for here while no
+  // chat is on screen to ask it.
   const work = (): void => {
-    if (roster && (!narrow.matches || shell.dataset.pane === "roster")) void lookAtWork(base.api, { chat: can("chat"), read: can("mind:read") });
+    if (hasWork && (!narrow.matches || current === "home")) void lookAtWork(base.api, { chat: can("chat"), read: can("mind:read") });
   };
   // (Asked again when the turns or the quests change; every 15 s while the node's stream is down.)
   lifetime.signal.addEventListener("abort", live.follow(["turns", "quests"], work, 15_000));
   chatFromAddress();
   const initial = routeFromHash() ?? home();
-  // (Tidied to its page; Team's address keeps its room and tab, which is what a reload comes back to.)
-  const landing = landingHash(initial, location.hash);
+  // (Tidied to its page; Team's address keeps its room and tab, and a task's its id, which is what a reload comes back to.)
+  const landing = landingOf(initial, location.hash);
   if (location.hash !== landing) history.replaceState(null, "", landing);
   render();
   work();
   return {
     dispose() {
       lifetime.abort();
-      roster?.dispose();
+      sidebar?.dispose();
       viewScope?.dispose();
       titleObserver?.disconnect();
       live.stop();

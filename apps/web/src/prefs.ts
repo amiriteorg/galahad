@@ -2,8 +2,8 @@
  * UI preferences, the only thing this app keeps in localStorage: theme, motion,
  * sidebar state, the last chat role, what Enter does while Galahad is working,
  * which kept chat you had open (its id only), how the Roundtable is laid out on
- * this device (a board or a list, the sidebar's sections folded, a knight's side
- * panel shown), when it last showed you what happened while you were away (a
+ * this device (a board or a list, a knight's side panel shown), which of the
+ * work's sections are open, whether a task's details card is shown, when it last showed you what happened while you were away (a
  * time), and when you put away the card that says he can't reach this device (a
  * time). Never secrets, never a word of a chat, never anything else from the
  * server. boot.ts reads the same keys before paint.
@@ -20,7 +20,8 @@ const KEYS = {
   enter: "galahad:chat-enter",
   chat: "galahad:open-chat",
   roundtable: "galahad:roundtable-view",
-  folded: "galahad:roster-folded",
+  work: "galahad:work-open",
+  details: "galahad:task-details",
   panel: "galahad:knight-panel",
   away: "galahad:away-seen",
   reach: "galahad:reach-put-away",
@@ -47,9 +48,11 @@ function write(key: PrefKey, value: string | null): void {
 
 const root = () => document.documentElement;
 
-// The app opens on Chat, so the page you were last on is no longer kept: what an earlier version wrote goes.
+// The app opens on Chat, so the page you were last on is no longer kept; nor the roster's folded sections, which went with
+// the roster sidebar (26 November 2026): what an earlier version wrote goes.
 try {
   localStorage.removeItem("galahad:last-route");
+  localStorage.removeItem("galahad:roster-folded");
 } catch {
   /* storage unavailable: there is nothing to remove */
 }
@@ -136,16 +139,25 @@ export type RoundtableView = "board" | "list";
 export const roundtableView = (): RoundtableView => (read("roundtable") === "list" ? "list" : "board");
 export const setRoundtableView = (view: RoundtableView): void => write("roundtable", view === "board" ? null : view);
 
-/** The sidebar's sections folded on this device: the knights (but who leads and Galahad), the rooms. */
-export type RosterSection = "knights" | "rooms";
-export const rosterFolded = (): Set<RosterSection> => new Set((read("folded") ?? "").split(",").filter((part): part is RosterSection => part === "knights" || part === "rooms"));
-export function setRosterFolded(section: RosterSection, folded: boolean): void {
-  const now = rosterFolded();
-  if (folded) now.add(section);
+/** The work's sections opened on this device (the sidebar's, and Home's settled ones): what is at work and what is
+ * settled are folded until you open them. */
+export type WorkFold = "working" | "done";
+export const workOpen = (): Set<WorkFold> => new Set((read("work") ?? "").split(",").filter((part): part is WorkFold => part === "working" || part === "done"));
+export function setWorkOpen(section: WorkFold, opened: boolean): void {
+  const now = workOpen();
+  if (opened) now.add(section);
   else now.delete(section);
-  write("folded", now.size ? [...now].sort().join(",") : null);
+  write("work", now.size ? [...now].sort().join(",") : null);
 }
 
 /** Whether a knight's page shows its side panel beside the timeline on a wide screen (it does unless you hid it). */
 export const knightPanelShown = (): boolean => read("panel") !== "hidden";
 export const setKnightPanelShown = (shown: boolean): void => write("panel", shown ? null : "hidden");
+
+/** Whether a task's details card shows beside its thread on a wide screen: as you last left it, else where there is room
+ * for it (1200 px and wider). */
+export const taskDetailsShown = (wide: boolean): boolean => {
+  const said = read("details");
+  return said === "shown" ? true : said === "hidden" ? false : wide;
+};
+export const setTaskDetailsShown = (shown: boolean): void => write("details", shown ? "shown" : "hidden");

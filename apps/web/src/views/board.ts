@@ -1,7 +1,9 @@
+import { moneyPrices, type Prices, usdLabel } from "@galahad/core/spend";
 import type { Ctx } from "../context.ts";
 import { GALAHAD } from "../lib/arrange.ts";
 import { besideChip, withState } from "../lib/knight-state.ts";
 import { teamHash } from "../lib/team.ts";
+import { spentSince } from "../lib/work.ts";
 import { roundtableView, setRoundtableView, type RoundtableView } from "../prefs.ts";
 import { leadMark, stateChip } from "../ui/avatar.ts";
 import { button, list, listRow, pageHead, section, segmented } from "../ui/controls.ts";
@@ -13,11 +15,12 @@ import { dropped, openSeat, type Seat, seatFace, type Table, tableOf, tableSourc
 import { editKnight, editRoom, giveToRoundtable } from "./team-forms.ts";
 
 /*
- * The Roundtable's own page on a wide screen (#/team with no conversation open): everyone at the table, in your order
- * and who leads first, as a board of cards (each knight's portrait in its seat with its live eyes, its name and job, its
- * state in a word, what it is doing now) or as a list, this device's choice; then the rooms. A knight is dragged into
- * your order (ui/drag.ts); Arrange does the same with buttons, and chooses who leads. It reads what the roster reads
- * (views/roster.ts's tableOf), and asks the node nothing of its own. A phone's Roundtable is the roster itself.
+ * The Roundtable's own page (#/team with no conversation open): everyone at the table, in your order and who leads
+ * first, as a board of cards (each knight's portrait in its seat, its name and job, its state in a word, what it is doing
+ * now) or as a list, this device's choice (a phone's is the list: your words, 26 November 2026, "workers, quietly: who
+ * does what, and what it costs"); each with what its work cost this week at your prices; then the rooms. A knight is
+ * dragged into your order (ui/drag.ts); Arrange does the same with buttons, and chooses who leads. It reads what the
+ * seats read (views/roster.ts's tableOf), and asks the node for your prices alone.
  */
 
 /** A portrait on a card, and a face in a list's row. */
@@ -28,6 +31,24 @@ export function roundtableHome(ctx: Ctx, root: HTMLElement, scope: Scope): void 
   const canEdit = ctx.can("fleet:admin");
   const narrow = matchMedia("(max-width: 959px)");
   let view: RoundtableView = roundtableView();
+  /** Your prices, for what each knight's work cost this week (asked once; without them, nothing is said of money). */
+  let prices: Prices | null = null;
+  if (ctx.can("mind:read")) {
+    ctx.api.get<{ prices: Prices; plans?: string[] }>("/api/prices", scope.signal).then(
+      (answer) => {
+        prices = moneyPrices(answer.prices, answer.plans ?? []);
+        shown = "";
+        render();
+      },
+      () => {},
+    );
+  }
+  /** This week's spend of a knight's work, in words ("$1.02 this week"), or nothing. */
+  const weekWords = (seated: Seat, now: Table): string | null => {
+    if (!prices || seated.id === GALAHAD || !now.snapshot) return null;
+    const spent = spentSince(now.snapshot.tasks, seated.id, Date.now() - 7 * 24 * 3600_000, prices);
+    return spent ? `${spent.complete ? "" : "at least "}${usdLabel(spent.usd)} this week` : null;
+  };
   let arranging = false;
   let shown = "";
   let table: Table | null = null;
@@ -79,7 +100,7 @@ export function roundtableHome(ctx: Ctx, root: HTMLElement, scope: Scope): void 
     const content = [
       leads(seated, now),
       h("div", { class: "knight-card-portrait" }, seatFace(seated, PORTRAIT)),
-      h("div", { class: "knight-card-text" }, h("div", { class: "knight-card-head" }, h("h3", { class: "ellipsis" }, seated.name), stateChip(seated.state)), h("div", { class: "knight-card-role" }, roleOf(seated, now)), h("p", { class: "knight-card-line" }, besideChip(seated.line, seated.state))),
+      h("div", { class: "knight-card-text" }, h("div", { class: "knight-card-head" }, h("h3", { class: "ellipsis" }, seated.name), stateChip(seated.state)), h("div", { class: "knight-card-role" }, [roleOf(seated, now), weekWords(seated, now)].filter(Boolean).join(" · ")), h("p", { class: "knight-card-line" }, besideChip(seated.line, seated.state))),
     ];
     const attrs = { class: "card knight-card", "data-key": keyOf(seated), "data-state": seated.state, "data-needs": seated.needs ? "" : null, "data-moves": movable(seated, now) ? "" : null };
     if (arranging) return h("div", attrs, ...content, h("div", { class: "knight-card-arrange" }, ...arrangeControls(ctx, now.snapshot!, seated)));
@@ -93,7 +114,7 @@ export function roundtableHome(ctx: Ctx, root: HTMLElement, scope: Scope): void 
       lead: seatFace(seated, FACE),
       title: h("span", { class: "knight-row-title" }, h("span", { class: "ellipsis" }, seated.name), leads(seated, now), stateChip(seated.state)),
       sub: besideChip(seated.line, seated.state),
-      meta: [h("span", {}, roleOf(seated, now))],
+      meta: [h("span", {}, roleOf(seated, now)), weekWords(seated, now) ? h("span", { class: "tnum" }, weekWords(seated, now)) : null],
       key: keyOf(seated),
       ...(arranging ? { trail: arrangeControls(ctx, now.snapshot!, seated) } : { href: seated.href, chevron: true, ...(openSeat(ctx, seated) ? { onClick: openSeat(ctx, seated)! } : {}) }),
     });
@@ -104,15 +125,16 @@ export function roundtableHome(ctx: Ctx, root: HTMLElement, scope: Scope): void 
   }
 
   function render(): void {
-    // (A phone's Roundtable is the roster; this page is drawn once there is room for it.)
-    if (narrow.matches) return void ((shown = ""), replace(root));
     if (drag?.dragging()) return;
+    // A phone's is the list, with no choice of a board (its cards are a wide screen's).
+    view = narrow.matches ? "list" : roundtableView();
+    viewSwitch.el.hidden = narrow.matches;
     const now = tableOf(ctx);
     table = now;
     if (!now.snapshot) return;
     const knights = now.seats.length - 1;
     if (!knights) arranging = false;
-    const version = JSON.stringify([now.seats, now.rooms, now.primary, view, arranging]);
+    const version = JSON.stringify([now.seats, now.rooms, now.primary, view, arranging, Boolean(prices)]);
     if (version === shown && page.isConnected) return;
     shown = version;
     if (!page.isConnected) replace(root, page);

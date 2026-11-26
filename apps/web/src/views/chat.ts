@@ -738,8 +738,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   const nowLine = h("span", { class: "chat-now ellipsis" });
   const answers = h("span", { class: "chat-as ellipsis" });
   const who = h("button", { class: "chat-who", type: "button", onclick: () => openInHand(ctx) }, face, h("span", { class: "chat-who-text" }, h("span", { class: "chat-name" }, "Galahad", answers), nowLine));
-  // On a phone his timeline is the whole screen: the way back to the roster.
-  const back = h("a", { class: "btn ghost sm icon-only pane-back", href: "#/team", "aria-label": "The Roundtable", title: "The Roundtable" }, icon("chevron-left", { size: 16 }));
+  // On a phone his conversation is the whole screen: the way back Home.
+  const back = h("a", { class: "btn ghost sm icon-only pane-back", href: "#/home", "aria-label": "Home", title: "Home" }, icon("chevron-left", { size: 16 }));
   // The Inbox, one tap from him, counting what waits for you that is no other knight's (theirs is on their own rows).
   const inboxCount = h("span", { class: "count", hidden: true });
   const inbox = h("a", { class: "btn ghost sm icon-only chat-inbox", href: "#/inbox", "aria-label": "Inbox", title: "Inbox" }, icon("inbox", { size: 16 }), inboxCount);

@@ -130,9 +130,9 @@
         --control-h: 34px;
         --control-h-sm: 28px;
         --topbar-h: 52px;
-        --sidebar-w: 240px;
-        --rail-w: 56px;
-        --tabbar-h: 58px;
+        --sidebar-w: 268px;
+        /* The phone's tab bar went (26 November 2026: Home is Galahad, "…" holds the rest): nothing is kept clear for it. */
+        --tabbar-h: 0px;
         --page-max: 1120px;
         --safe-top: env(safe-area-inset-top, 0px);
         --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -173,7 +173,7 @@
       button { cursor: pointer; }
       /* Holding one of the app's own controls does nothing, as in an app: no link preview, no "Open in Safari", no label
          selected (Safari reads only the prefixed user-select). */
-      .tab, .btn, .sidebar a, .roster-row, .selector-trigger { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+      .btn, .sidebar a, .work-row, .home-filter, .selector-trigger { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
       a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
       h1, h2, h3, h4, p { margin: 0; }
       img, svg { display: block; }
@@ -249,244 +249,215 @@
         flex: 1; width: 100%; outline: none;
         padding: var(--sp-5) calc(var(--sp-4) + var(--safe-right)) calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-8)) calc(var(--sp-4) + var(--safe-left));
       }
-      /* Quick: asking Galahad and giving a task, floating at a phone's bottom right (shell.ts). */
-      .quick { display: none; }
-      @media (max-width: 959px) {
-        .shell:not([data-pane="timeline"]) > .quick:not([hidden]) { display: block; position: fixed; z-index: 30; right: calc(var(--sp-4) + var(--safe-right)); bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-4)); }
-        /* It is the way to give a task here: the Roundtable's own button steps aside. And a list's last row can scroll
-           clear of it. */
-        .shell[data-pane="roster"] .roster-label > [data-give] { display: none; }
-        .shell[data-pane="roster"] .sidebar { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-4) + 72px); }
-        .shell[data-pane="page"] main.view { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-8) + 56px); }
-      }
-      :root[data-keyboard="open"] .quick { display: none !important; }
-      .fab { display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border: 0; border-radius: var(--r-full); background: var(--text); color: var(--bg); box-shadow: var(--shadow-3); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: transform var(--d-1) var(--ease-out), opacity var(--d-1) var(--ease-out); }
-      .fab:active { transform: scale(0.94); }
-      /* Out of the way while you read down a list (shell.ts): below the screen's edge, not to be tapped. */
-      .quick[data-away] > .fab { transform: translateY(calc(100% + 24px)); opacity: 0; pointer-events: none; transition: transform var(--d-2) var(--ease-out), opacity var(--d-2) var(--ease-out); }
-      .fab svg { transition: transform var(--d-2) var(--ease-out); }
-      .fab[aria-expanded="true"] svg { transform: rotate(45deg); }
-      .quick-menu { position: absolute; right: 0; bottom: calc(100% + 12px); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
-      .quick-scrim { position: fixed; inset: 0; z-index: -1; background: color-mix(in srgb, var(--bg) 55%, transparent); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); animation: quick-dim var(--d-2) var(--ease-out) both; }
-      .quick-scrim[hidden] { display: none; }
-      @keyframes quick-dim { from { opacity: 0; } }
-      .quick-menu[hidden] { display: none; }
-      .quick-item {
-        display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px 0 14px; border: 1px solid var(--border); border-radius: var(--r-full);
-        background: var(--surface); color: var(--text); font-size: var(--fs-15); font-weight: 600; white-space: nowrap; box-shadow: var(--shadow-2);
-        -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; animation: quick-in var(--d-2) var(--ease-out) both;
-      }
-      .quick-item:nth-child(2) { animation-delay: 40ms; }
-      .quick-item:active { transform: scale(0.97); }
-      @keyframes quick-in { from { opacity: 0; transform: translateY(8px) scale(0.96); } }
-      .tabbar {
-        position: fixed; z-index: 30; left: 0; right: 0; bottom: 0;
-        display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
-        height: calc(var(--tabbar-h) + var(--safe-bottom)); padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
-        background: var(--surface-glass); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
-        border-top: 1px solid var(--border);
-      }
-      .tab {
-        position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-        min-height: 44px; border: 0; background: none; color: var(--text-3); font-size: 11px; font-weight: 500; text-decoration: none;
-        transition: color var(--d-1) var(--ease-out);
-      }
-      .tab svg { width: 22px; height: 22px; }
-      .tab[aria-current="page"] { color: var(--accent); }
-      .tab:active svg { transform: scale(0.92); }
-      .tab .count { position: absolute; top: 6px; left: calc(50% + 6px); }
+      /* The way back to Home on a page (a phone's top bar): a chevron and the app's mark. */
+      .topbar .brand-mini img { width: 22px; height: 22px; border-radius: 6px; }
+      .btn.side-expand { display: none; }
 
       @media (min-width: 960px) {
-        .shell { grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr; }
-        :root[data-sidebar="collapsed"] .shell { grid-template-columns: var(--rail-w) 64px 1fr; }
-        .tabbar { display: none; }
-        /* The rail has every place More would list. */
-        .sidebar > .nav { display: none; }
+        .shell { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+        /* Folded away (the head's button, or [): the work's pane takes the width, and a button at its top brings it back. */
+        :root[data-sidebar="collapsed"] .shell { grid-template-columns: minmax(0, 1fr); }
+        :root[data-sidebar="collapsed"] .sidebar { display: none; }
+        :root[data-sidebar="collapsed"] .btn.side-expand { display: inline-flex; position: fixed; z-index: 25; top: var(--sp-2); left: var(--sp-2); }
         main.view { padding: var(--sp-6) var(--sp-8) var(--sp-12); }
         .topbar { padding: 0 var(--sp-6) 0 var(--sp-8); }
-        .topbar .brand-mini { display: none; }
+        /* The sidebar has the way home, search and everything else. */
+        .topbar .brand-mini, .topbar .topbar-search, .topbar .places-button, .topbar .fleet-pill { display: none; }
+        .shell[data-sidebar-none] { grid-template-columns: minmax(0, 1fr); }
+        .shell[data-sidebar-none] .topbar :is(.brand-mini, .topbar-search, .places-button) { display: inline-flex; }
         .sidebar {
-          display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; height: 100dvh;
-          background: linear-gradient(180deg, var(--sidebar), var(--bg-sunken)); border-right: 1px solid var(--border); padding: var(--sp-3) var(--sp-3) var(--sp-3);
-          overflow: hidden;
+          display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; height: 100dvh; min-width: 0;
+          background: var(--sidebar); border-right: 1px solid var(--border); padding: var(--sp-3) var(--sp-2) var(--sp-2); overflow: hidden;
         }
       }
-      .sidebar-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); margin-bottom: var(--sp-2); }
-      .sidebar-head > .wordmark { height: 40px; }
-      /* On a wide screen, search is the head's second line, the sidebar's whole width; a phone has the top bar's search
-         button in the head instead. */
-      .sidebar-head > .search-trigger { order: 3; flex: 1 0 100%; width: auto; margin: var(--sp-2) calc(-1 * var(--sp-1)) var(--sp-1) calc(-1 * var(--sp-2)); }
-      .sidebar-head > .head-search { display: none; }
-      .wordmark { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; min-width: 0; }
-      .emblem { flex: none; display: inline-block; width: var(--em-size, 24px); height: var(--em-size, 24px); }
-      .emblem img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; -webkit-user-drag: none; }
+
+      /* ---------- the sidebar (a wide screen): the mark, search, Galahad pinned, the work by attention, its foot ---------- */
+      .side-head { display: flex; align-items: center; gap: 2px; min-height: 32px; padding: 0 2px 0 var(--sp-2); }
+      .side-mark { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; height: 32px; color: var(--text); text-decoration: none; }
+      .side-mark img { flex: none; width: 20px; height: 20px; border-radius: 5px; }
+      .wordmark-text { font-size: var(--fs-12); font-weight: 650; letter-spacing: 0.2em; text-transform: uppercase; }
       .search-trigger {
-        display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 32px; padding: 0 var(--sp-2) 0 10px; margin-bottom: var(--sp-3);
+        display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 32px; padding: 0 var(--sp-2) 0 10px;
         border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--text-3); font-size: var(--fs-13);
         box-shadow: var(--shadow-1); transition: border-color var(--d-1) var(--ease-out), color var(--d-1) var(--ease-out);
       }
       .search-trigger:hover { border-color: var(--border-strong); color: var(--text-2); }
       .search-trigger .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .search-trigger .kbds { margin-left: auto; display: flex; gap: 2px; }
-      .nav { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; flex: 1; margin: 0 calc(-1 * var(--sp-1)); padding: 0 var(--sp-1); scrollbar-width: none; }
-      .nav-item {
-        display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 var(--sp-2); border-radius: var(--r-md);
-        color: var(--text-2); text-decoration: none; font-weight: 500; font-size: var(--fs-14); white-space: nowrap;
+      .side-search { flex: none; margin: var(--sp-2) 0 var(--sp-3); }
+      /* Galahad, pinned: his orb, his name, his line; it opens his own conversation. */
+      .side-galahad {
+        flex: none; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 0 10px; margin-bottom: var(--sp-1);
+        padding: 9px 8px 9px 10px; border-radius: var(--r-lg); background: var(--surface); color: var(--text); text-decoration: none;
+        box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+        transition: box-shadow var(--d-1) var(--ease-out), background-color var(--d-1) var(--ease-out);
+      }
+      .side-galahad:hover { box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border-strong); }
+      .side-galahad:active { background: var(--surface-2); }
+      .side-galahad[aria-current="page"] { box-shadow: var(--shadow-1), inset 0 0 0 1px var(--accent-border); }
+      .side-galahad-orb { display: grid; place-items: center; width: 34px; height: 34px; }
+      .side-galahad-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+      .side-galahad-text > strong { font-size: var(--fs-14); font-weight: 600; letter-spacing: -0.005em; }
+      .side-galahad-line { font-size: var(--fs-12); color: var(--text-3); }
+      .side-galahad-line[data-tone="warn"] { color: var(--needs); }
+      .side-galahad-line[data-tone="accent"] { color: var(--work); }
+      .side-galahad-line[data-tone="ok"] { color: var(--ok); }
+      .side-galahad > .btn[hidden] { display: none; }
+      .side-work { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 calc(-1 * var(--sp-2)); padding: 0 var(--sp-2) var(--sp-3); scrollbar-width: thin; }
+      .side-section { display: flex; flex-direction: column; gap: 1px; }
+      .side-section + .side-section { margin-top: var(--sp-1); }
+      .side-label { display: flex; align-items: center; gap: 4px; min-height: 30px; margin: 0; padding: var(--sp-2) var(--sp-2) 2px; font-size: var(--fs-12); font-weight: 600; color: var(--text-3); }
+      .side-label[data-tone="needs"] { color: var(--needs); }
+      .side-fold {
+        display: flex; align-items: center; gap: 6px; width: 100%; min-height: 30px; margin-top: 2px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-md);
+        background: none; color: var(--text-3); font: inherit; font-size: var(--fs-12); font-weight: 600; text-align: left;
         transition: background-color var(--d-1) var(--ease-out), color var(--d-1) var(--ease-out);
       }
-      .nav-item:hover { background: var(--surface-3); color: var(--text); }
-      .nav-item[aria-current="page"] { background: linear-gradient(180deg, var(--surface-2), var(--surface)); color: var(--text); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
-      .nav-item[aria-current="page"] svg { color: var(--accent); }
-      .nav-item .count { margin-left: auto; }
-      .sidebar-foot { padding-top: var(--sp-2); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
-      .sidebar > .nav { flex: none; padding-top: var(--sp-2); }
-      /* Work, at the sidebar's head (shell.ts): a wide screen's way to the work by project. */
-      .sidebar > .sidebar-work { flex: none; margin: var(--sp-2) 0 var(--sp-1); }
-      .shell[data-pane="roster"] .sidebar > .sidebar-work { display: none; }
+      .side-fold:hover { background: var(--surface-3); color: var(--text-2); }
+      .side-fold-count { font-weight: 500; }
+      .side-fold .chev, .home-fold .chev { transition: transform var(--d-1) var(--ease-out); }
+      .side-fold[aria-expanded="true"] .chev, .home-fold[aria-expanded="true"] .chev { transform: rotate(90deg); }
+      .side-inbox { display: flex; align-items: center; gap: var(--sp-2); min-height: 34px; padding: 0 9px; border-radius: var(--r-md); color: var(--text); text-decoration: none; font-size: var(--fs-13); font-weight: 500; }
+      .side-inbox:hover, .side-inbox:active, .side-inbox.is-current { background: var(--surface-3); }
+      .side-inbox > svg { color: var(--text-3); }
+      .side-empty, .side-note { padding: var(--sp-2) var(--sp-2) var(--sp-3); color: var(--text-3); font-size: var(--fs-12); line-height: 1.5; }
+      .side-empty p { margin-bottom: var(--sp-2); }
+      .side-foot { flex: none; display: flex; align-items: center; gap: 6px; padding: var(--sp-2) 2px 0; border-top: 1px solid var(--border); }
+      .side-pill {
+        display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 128px; height: 26px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--r-full);
+        color: var(--text-2); font-size: var(--fs-12); font-weight: 500; text-decoration: none; transition: border-color var(--d-1) var(--ease-out), color var(--d-1) var(--ease-out);
+      }
+      .side-pill:hover { border-color: var(--border-strong); color: var(--text); }
+      .side-pill > svg { flex: none; color: var(--text-3); }
+
+      /* ---------- the work's rows (views/work-rows.ts): a task in three lines, as T3 Code's sidebar has it ---------- */
+      .work-row {
+        display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 7px 9px 8px; border-radius: var(--r-md); color: var(--text); text-decoration: none;
+        -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: background-color var(--d-1) var(--ease-out);
+      }
+      .work-row:hover, .work-row:active { background: var(--surface-3); }
+      .work-row[aria-current="page"] { background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
+      .work-l1, .work-l3 { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-12); line-height: 16px; color: var(--text-3); }
+      .work-l2 { font-size: var(--fs-13); font-weight: 550; line-height: 18px; letter-spacing: -0.005em; color: var(--text); }
+      .work-badge {
+        flex: none; display: grid; place-items: center; width: 14px; height: 14px; border-radius: 4px; background: var(--surface-3); color: var(--text-2);
+        font-size: 9px; font-weight: 700; line-height: 1; box-shadow: inset 0 0 0 1px var(--border);
+      }
+      .work-badge.is-none { background: none; box-shadow: none; outline: 1px dashed var(--border-strong); outline-offset: -1px; }
+      .work-project { flex: 0 1 auto; min-width: 0; }
+      /* How it stands, in a word in its state's colour (the word says it: colour is never the only telling). */
+      .work-word { flex: none; display: inline-flex; align-items: center; gap: 3px; margin-left: auto; font-weight: 600; color: var(--tone, var(--text-2)); }
+      .work-age { flex: none; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
+      /* A knight's orb where the work shows it (ui/orb.ts knightFace, still): sized here, as the face's own sheet is only
+         given to the page with a seat's. */
+      :is(.work-row, .need, .thread-page, .td, .thread-said-by) .knight-orb { display: block; flex: none; width: var(--orb-size, 16px); height: var(--orb-size, 16px); }
+      :is(.work-row, .need, .thread-page, .td, .thread-said-by) .knight-orb > :is(svg, canvas) { display: block; width: 100%; height: 100%; }
+      .work-knight { flex: none; color: var(--text-2); }
+      .work-detail { min-width: 0; }
+      .work-detail.mono { font-family: var(--font-mono); font-size: 11.5px; }
+      /* At work, quietly (it needs nothing from you): its title and its orb fade, its words keep their contrast. */
+      .work-row[data-attention="working"]:not([aria-current="page"]):not(:hover) .work-l2 { color: var(--text-2); font-weight: 500; }
+      .work-row[data-attention="working"]:not([aria-current="page"]):not(:hover) .knight-orb { opacity: 0.62; }
+
+      /* ---------- Home (views/home.ts): Galahad, what needs you, the work, his message box ---------- */
+      .shell[data-pane="home"] { --topbar-h: 0px; }
+      .shell[data-pane="home"] .topbar { display: none; }
+      .shell[data-pane="home"] main.view { padding: 0; }
+      .home { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; max-width: 760px; margin: 0 auto; }
+      .home-head {
+        position: sticky; top: 0; z-index: 20; flex-wrap: nowrap; align-items: center; gap: var(--sp-3); margin: 0;
+        padding: calc(var(--safe-top) + var(--sp-3)) calc(var(--sp-4) + var(--safe-right)) var(--sp-3) calc(var(--sp-4) + var(--safe-left));
+        background: var(--bg);
+      }
+      .home-who { display: flex; align-items: center; gap: var(--sp-3); flex: 1; min-width: 0; color: inherit; text-decoration: none; }
+      .home-orb { flex: none; display: grid; place-items: center; width: 48px; height: 48px; }
+      .home-name { min-width: 0; }
+      .home-head h1 { font-size: var(--fs-20); letter-spacing: -0.02em; line-height: 1.15; }
+      .home-line { margin-top: 2px; font-size: var(--fs-13); color: var(--text-3); }
+      .home-line[data-tone="needs"] { color: var(--needs); }
+      .home-line[data-tone="accent"] { color: var(--work); }
+      .home-line[data-tone="ok"] { color: var(--ok); }
+      .home-chip {
+        flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 112px; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-full);
+        background: var(--surface); color: var(--text-2); font-size: var(--fs-12); font-weight: 500; text-decoration: none;
+      }
+      .home-chip:hover { border-color: var(--border-strong); color: var(--text); }
+      .home-head > .btn { flex: none; }
+      /* What needs you: amber, only while something waits, each with its answer in place (views/needs.ts). */
+      .home-needs {
+        margin: 0 calc(var(--sp-3) + var(--safe-right)) var(--sp-5) calc(var(--sp-3) + var(--safe-left)); border-radius: var(--r-xl); background: var(--surface);
+        box-shadow: var(--shadow-1), inset 0 0 0 1px color-mix(in srgb, var(--needs) 30%, var(--border));
+      }
+      .home-needs[hidden] { display: none; }
+      .home-needs-head { display: flex; align-items: center; gap: var(--sp-2); padding: 12px 14px 2px; font-size: var(--fs-13); font-weight: 600; color: var(--needs); }
+      .need { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px 12px; }
+      .need + .need { border-top: 1px solid var(--border); }
+      .need-who { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-12); color: var(--text-3); }
+      .need-who > .knight-orb { flex: none; }
+      .need-icon { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); color: var(--text-2); }
+      .need-what { font-size: var(--fs-14); line-height: 1.4; overflow-wrap: anywhere; }
+      .need-what .mono { font-size: var(--fs-13); }
+      .need-target { color: var(--text-2); }
+      .need-note { font-size: var(--fs-12); color: var(--text-3); }
+      .need-note.is-warn { color: var(--warn); }
+      .need-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: 6px; }
+      .need-acts > .btn { border-radius: var(--r-full); padding-inline: 14px; }
+      .need-acts > .btn.icon-only { padding-inline: 0; }
+      .need-outcome:empty { display: none; }
+      .home-work { display: flex; flex-direction: column; flex: 1; }
+      .home-work-head { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 calc(var(--sp-4) + var(--safe-right)) var(--sp-2) calc(var(--sp-4) + var(--safe-left)); }
+      .home-work-head h2 { flex: none; font-size: var(--fs-14); font-weight: 650; }
+      .home-filters { display: flex; justify-content: flex-end; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+      .home-filters::-webkit-scrollbar { display: none; }
+      .home-filter {
+        flex: none; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px 0 8px; border: 1px solid var(--border); border-radius: var(--r-full);
+        background: var(--surface); color: var(--text-2); font: inherit; font-size: var(--fs-12); font-weight: 500; white-space: nowrap;
+      }
+      .home-filter:first-child { padding-left: 10px; }
+      .home-filter[aria-pressed="true"] { border-color: transparent; background: var(--accent-fill); color: var(--on-accent); }
+      .home-filter[aria-pressed="true"] .work-badge { background: color-mix(in srgb, var(--on-accent) 18%, transparent); color: var(--on-accent); box-shadow: none; }
+      .home-work-rows > .work-row, .home-work-rows > .home-fold {
+        border-radius: 0; border-top: 1px solid var(--border); padding: 10px calc(var(--sp-4) + var(--safe-right)) 11px calc(var(--sp-4) + var(--safe-left));
+      }
+      .home-fold { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; border: 0; background: none; color: var(--text-3); font: inherit; font-size: var(--fs-13); font-weight: 550; text-align: left; }
+      .home-fold:active { background: var(--surface-3); }
+      .home-empty, .home-note { padding: var(--sp-6) calc(var(--sp-4) + var(--safe-right)) var(--sp-6) calc(var(--sp-4) + var(--safe-left)); border-top: 1px solid var(--border); color: var(--text-3); font-size: var(--fs-14); line-height: 1.5; }
+      .home-empty p { max-width: 52ch; margin-bottom: var(--sp-3); }
+      /* His message box, docked at the foot; the list fades out under it. */
+      .home-dock {
+        position: sticky; bottom: 0; z-index: 15; margin-top: auto; pointer-events: none;
+        padding: var(--sp-8) calc(var(--sp-3) + var(--safe-right)) calc(var(--safe-bottom) + var(--sp-3)) calc(var(--sp-3) + var(--safe-left));
+        background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 0%, transparent), var(--bg) 58%);
+      }
+      .home-dock > * { pointer-events: auto; }
+      .home-dock-problem:empty { display: none; }
+      .home-dock-problem { margin-bottom: var(--sp-2); }
+      .home-composer {
+        display: flex; align-items: flex-end; gap: 4px; padding: 5px; border: 1px solid var(--border-strong); border-radius: 26px; background: var(--surface); box-shadow: var(--shadow-2);
+        transition: border-color var(--d-1) var(--ease-out);
+      }
+      .home-composer:focus-within { border-color: var(--focus); }
+      .home-composer textarea {
+        flex: 1; min-width: 0; min-height: 40px; max-height: 160px; padding: 9px 4px; border: 0; outline: none; background: none; resize: none;
+        color: var(--text); font: inherit; font-size: var(--fs-input); line-height: 22px; field-sizing: content;
+      }
+      .home-composer > .btn { flex: none; width: 40px; height: 40px; padding: 0; border-radius: 50%; }
+      :root[data-keyboard="open"] .home-dock { padding-bottom: var(--sp-2); }
       @media (min-width: 960px) {
-        :root[data-sidebar="collapsed"] .sidebar .label,
-        :root[data-sidebar="collapsed"] .sidebar .kbds,
-        :root[data-sidebar="collapsed"] .sidebar .roster-text,
-        :root[data-sidebar="collapsed"] .sidebar .roster-label,
-        :root[data-sidebar="collapsed"] .sidebar .roster-note,
-        :root[data-sidebar="collapsed"] .sidebar .roster-row > .btn,
-        :root[data-sidebar="collapsed"] .sidebar .device-meta { display: none; }
-        :root[data-sidebar="collapsed"] .sidebar .nav-item,
-        :root[data-sidebar="collapsed"] .sidebar .roster-row,
-        :root[data-sidebar="collapsed"] .sidebar .search-trigger { justify-content: center; padding: 0; }
-        :root[data-sidebar="collapsed"] .sidebar .nav-item .count { position: absolute; margin: -18px -22px 0 0; }
-        :root[data-sidebar="collapsed"] .sidebar-head { flex-direction: column; height: auto; gap: var(--sp-2); padding: var(--sp-1) 0; }
-        :root[data-sidebar="collapsed"] .sidebar .nav-item { position: relative; }
+        .home-head { padding-top: var(--sp-6); }
+        .home-needs { margin-left: var(--sp-4); margin-right: var(--sp-4); }
+        .home-dock { padding-left: var(--sp-4); padding-right: var(--sp-4); }
       }
 
-      /* ---------- the rail (a wide screen): every other place one click away, under More's headings ---------- */
-      .rail { display: none; }
-      @media (min-width: 960px) {
-        .rail {
-          display: flex; flex-direction: column; align-items: center; position: sticky; top: 0; height: 100vh; height: 100dvh;
-          padding: var(--sp-3) 0; background: var(--bg-sunken); border-right: 1px solid var(--border); overflow-y: auto; scrollbar-width: none;
-        }
-      }
-      .rail-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-      .rail-group + .rail-group { margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--border); }
-      .rail-group.rail-foot { margin-top: auto; }
-      .rail-item {
-        position: relative; display: grid; place-items: center; width: 36px; height: 34px; border-radius: var(--r-md); color: var(--text-3);
-        transition: background-color var(--d-1) var(--ease-out), color var(--d-1) var(--ease-out);
-      }
-      .rail-item:hover { background: var(--surface-3); color: var(--text); }
-      .rail-item[aria-current="page"] { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
-      .rail-item .count { position: absolute; top: -3px; right: -5px; }
-      .rail-add { border: 1px dashed var(--border-strong); background: none; color: var(--text-2); }
-      .rail-add:hover { border-style: solid; }
-      .rail-tip {
-        position: fixed; z-index: 60; transform: translateY(-50%); display: flex; align-items: center; gap: var(--sp-2); padding: 5px 8px;
-        border-radius: var(--r-sm); background: var(--text); color: var(--bg); font-size: var(--fs-12); font-weight: 550; white-space: nowrap; pointer-events: none;
-        box-shadow: var(--shadow-2);
-      }
-      .rail-tip .rail-keys { opacity: 0.6; font-weight: 500; letter-spacing: 0.04em; }
-
-      /* The roster: who leads, Galahad, each knight, then each room. A face in its seat (its ring says its state), a name,
-         one line of latest activity; a room's face a mark when it needs you. The sidebar on a wide screen; on a phone,
-         the first screen. */
-      .roster { position: relative; display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--sp-1)); padding: 0 var(--sp-1); scrollbar-width: none; }
-      .roster-row { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px var(--sp-2); border-radius: var(--r-md); color: var(--text); text-decoration: none; min-width: 0; }
-      .roster-row:hover { background: var(--surface-3); }
-      .roster-row[aria-current="page"] { background: linear-gradient(180deg, var(--surface-2), var(--surface)); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
-      .roster-face { position: relative; flex: none; display: grid; place-items: center; width: 40px; height: 40px; }
-      .roster-face .avatar { width: 32px; height: 32px; border-radius: 50%; }
-      .roster-mark { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; border-radius: 50%; background: var(--needs); box-shadow: 0 0 0 2px var(--sidebar); }
-      /* A room where something ended that is new to you: green, as a knight's ring is, until you open it. */
-      .roster-mark.is-new { background: var(--ok); }
-      .roster-text { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.3; }
-      .roster-name { flex: 0 1 auto; font-weight: 600; font-size: var(--fs-14); letter-spacing: -0.005em; }
-      .roster-line { color: var(--text-3); font-size: var(--fs-12); }
-      .roster-row[data-needs] .roster-line { color: var(--needs); }
-      .roster-row > .btn { flex: none; }
-      .roster-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
-      .roster-head > .state-chip { margin-left: auto; flex: none; }
-      .roster-knights { display: flex; flex-direction: column; gap: 1px; }
-      .roster-add { display: none; }
-      .roster-label { display: flex; align-items: center; min-height: 32px; margin-top: var(--sp-3); padding: 0 2px 0 var(--sp-2); color: var(--text-3); font-size: var(--fs-12); font-weight: 600; }
-      /* A section's head folds it, on a wide screen (remembered on this device): the knights but who leads and Galahad,
-         or the rooms. Not while the sidebar is only faces. */
-      .roster-fold { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
-      .roster-fold:hover { color: var(--text-2); }
-      .roster-fold .chev { transition: transform var(--d-1) var(--ease-out); }
-      .roster-fold[aria-expanded="false"] .chev { transform: rotate(-90deg); }
-      @media (min-width: 960px) {
-        :root:not([data-sidebar="collapsed"]) .roster[data-folded~="knights"] .roster-row[data-rest],
-        :root:not([data-sidebar="collapsed"]) .roster[data-folded~="rooms"] .roster-row[data-key^="room:"] { display: none; }
-      }
-      /* A knight dragged into your order (ui/drag.ts): lifted under the pointer, a line of ink where it would go. */
-      .roster-row.dragging, .knight-card.dragging { position: relative; z-index: 5; transition: none; background: var(--surface); box-shadow: var(--shadow-2), inset 0 0 0 1px var(--border); }
-      .drop-mark { position: absolute; top: 0; left: 0; z-index: 6; border-radius: 1px; background: var(--accent); pointer-events: none; }
-      [data-sorting], [data-sorting] * { cursor: grabbing; }
-      /* Arranging the knights with buttons (views/arrange.ts): each seat's row, who leads, and its two moves; the places
-         of the moves kept for who leads and Galahad, who don't move, so the buttons line up. */
-      .roster-arrange { display: flex; flex-direction: column; gap: 1px; }
-      .arrange-row { cursor: default; }
-      .arrange-row:hover { background: none; }
-      .arrange-controls { display: flex; align-items: center; gap: 2px; flex: none; }
-      .arrange-controls > .arrange-lead { margin-right: var(--sp-1); }
-      .arrange-still { flex: none; width: calc(2 * var(--control-h-sm) + 2px); }
-      .roster-note { padding: var(--sp-1) var(--sp-2) var(--sp-2); color: var(--text-3); font-size: var(--fs-12); line-height: 1.5; }
-      .roster .sk-row { padding: 8px var(--sp-2); }
       /* A way back to the roster, where a timeline is the whole screen. (Two classes: .btn would show it.) */
       .btn.pane-back { display: none; }
       /* A timeline (his, a knight's, a room's) has no top bar and no bar under it: its header is whose it is. */
       .shell[data-pane="timeline"] { --topbar-h: 0px; --tabbar-h: 0px; }
-      .shell[data-pane="timeline"] .topbar, .shell[data-pane="timeline"] .tabbar { display: none; }
+      .shell[data-pane="timeline"] .topbar { display: none; }
       @media (max-width: 959px) {
         .btn.pane-back { display: inline-flex; }
-        .shell[data-pane="roster"] .main-col { display: none; }
-        .shell[data-pane="roster"] .sidebar {
-          display: flex; flex-direction: column; min-width: 0; min-height: 100vh; min-height: 100dvh; background: var(--bg);
-          padding: 0 calc(var(--sp-3) + var(--safe-right)) calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-4)) calc(var(--sp-3) + var(--safe-left));
-        }
-        /* Its head is the top bar's twin (same height, the icon in the same place, the same ground, no hairline), so moving
-           between the Roundtable and any other place moves nothing at the top. */
-        .shell[data-pane="roster"] .sidebar-head {
-          position: sticky; top: 0; z-index: 20; height: calc(var(--topbar-h) + var(--safe-top));
-          margin: 0 calc(-1 * (var(--sp-3) + var(--safe-right))) var(--sp-3) calc(-1 * (var(--sp-3) + var(--safe-left)));
-          padding: var(--safe-top) calc(var(--sp-4) + var(--safe-right)) 0 calc(var(--sp-4) + var(--safe-left));
-          background: var(--bg);
-        }
-        .shell[data-pane="roster"] .sidebar > .nav, .shell[data-pane="roster"] .sidebar-foot, .shell[data-pane="roster"] .sidebar-head > .btn, .shell[data-pane="roster"] .sidebar-head > .search-trigger { display: none; }
-        /* On a phone, search is the top bar's button, at the head's end where the top bar has it (the palette grows out
-           of it). */
-        .shell[data-pane="roster"] .sidebar-head { flex-wrap: nowrap; gap: var(--sp-3); }
-        .shell[data-pane="roster"] .sidebar-head > .wordmark { flex: none; height: auto; }
-        .shell[data-pane="roster"] .sidebar-head > .btn.head-search { display: inline-flex; margin-left: auto; }
-        .roster { overflow: visible; }
-        .roster-row { min-height: 64px; gap: var(--sp-3); padding: 8px var(--sp-2); }
-        .roster-face .avatar { width: 40px; height: 40px; }
-        .roster-mark { box-shadow: 0 0 0 2px var(--bg); }
-        .roster-name { font-size: var(--fs-15); }
-        /* The Roundtable on a phone: who leads as a card across the top (Galahad, unless you made a knight primary), then
-           the others as cards, two to a row, each in its seat, its state in a word beside its name. */
-        .shell[data-pane="roster"] .roster-lead { min-height: 0; gap: 14px; margin: 2px 0 10px; padding: 10px 14px 10px 10px; border-radius: 22px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
-        .shell[data-pane="roster"] .roster-lead .roster-face { width: auto; height: auto; }
-        .shell[data-pane="roster"] .roster-lead .roster-name { font-size: var(--fs-20); letter-spacing: -0.02em; }
-        .shell[data-pane="roster"] .roster-lead[data-needs] .roster-line { color: var(--text-2); }
-        .shell[data-pane="roster"] :is(.roster-lead, .roster-knights) .roster-line { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
-        .shell[data-pane="roster"] .roster-knights { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-        .shell[data-pane="roster"] .roster-knights .roster-row { flex-direction: column; align-items: stretch; gap: 8px; min-height: 0; padding: 10px 6px 10px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); }
-        .shell[data-pane="roster"] .roster-knights .roster-face { width: auto; height: auto; }
-        .shell[data-pane="roster"] .roster-knights .roster-text { gap: 2px; padding: 0 4px; }
-        .shell[data-pane="roster"] .roster-knights .roster-row[data-needs] .roster-line { color: var(--text-3); }
-        .shell[data-pane="roster"] .roster-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 164px; border: 1px dashed var(--border-strong); border-radius: 20px; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-14); font-weight: 500; cursor: pointer; }
-        .shell[data-pane="roster"] .roster-add:active { background: var(--surface-2); }
-        .shell[data-pane="roster"] .roster-add-plus { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
-        .roster-line { font-size: var(--fs-13); }
-        .roster-label { min-height: 40px; }
       }
 
-      .device-chip {
-        display: flex; align-items: center; gap: 10px; padding: var(--sp-2); border-radius: var(--r-md); color: var(--text-2);
-        text-decoration: none; min-width: 0;
-      }
-      .device-chip:hover { background: var(--surface-3); color: var(--text); }
       .avatar {
         flex: none; width: 28px; height: 28px; border-radius: var(--r-md); display: grid; place-items: center;
         background: var(--surface-3); color: var(--text-2);
@@ -495,9 +466,6 @@
       .avatar.agent.orb-avatar { background: none; }
       /* A toned avatar: a notice's severity, a run's status, a tool's class. */
       .avatar[data-tone] { background: var(--tone-soft); color: var(--tone); }
-      .device-meta { min-width: 0; line-height: 1.25; }
-      .device-meta .name { color: var(--text); font-weight: 550; font-size: var(--fs-13); }
-      .device-meta .id { font-size: var(--fs-11); }
 
       .fleet-pill {
         display: inline-flex; align-items: center; gap: var(--sp-2); height: 28px; padding: 0 10px; border-radius: var(--r-full);
@@ -581,10 +549,9 @@
          needs to show :active at all). */
       .rows > a.item { color: inherit; text-decoration: none; transition: background-color var(--d-1) var(--ease-out); }
       .rows > a.item:active, .rows > .item-button:active { background: var(--surface-3); }
-      .roster-row:active, .nav-item:active, .rail-item:active { background: var(--surface-3); }
-      .roster-row, .suggestion { transition: background-color var(--d-1) var(--ease-out), transform var(--d-1) var(--ease-out); }
+      .suggestion { transition: background-color var(--d-1) var(--ease-out), transform var(--d-1) var(--ease-out); }
       .suggestion:active { transform: scale(0.97); }
-      @media (max-width: 959px) { .shell[data-pane="roster"] .roster-row:active { transform: scale(0.98); } }
+      @media (max-width: 959px) { .work-row:active { transform: scale(0.99); } }
       /* A whole row that goes to a place (More's index, a node on the Overview). */
       .rows > a.item { color: inherit; text-decoration: none; }
       .rows > a.item:hover { background: var(--surface-2); }
@@ -1149,6 +1116,138 @@
       .viz-picture img { max-width: 100%; max-height: 420px; border: 1px solid var(--border); border-radius: var(--r-md); background: #fff; }
       .viz-pending { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: var(--r-lg); color: var(--text-3); font-size: var(--fs-13); }
 
+      /* ---------- A task's thread (views/task.ts): its crumb, its brief, its work folded, its proof, its details ---------- */
+      .shell[data-route="task"] main.view { padding: 0; }
+      .thread-page { display: flex; flex-direction: column; height: 100vh; height: 100dvh; min-height: 320px; }
+      .thread-head {
+        flex: none; flex-wrap: nowrap; align-items: center; gap: var(--sp-2); margin: 0; min-height: 52px;
+        padding: calc(var(--safe-top) + var(--sp-2)) var(--sp-4) var(--sp-2); border-bottom: 1px solid var(--border); background: var(--bg);
+      }
+      .thread-head-name { width: 180px; height: 18px; }
+      .thread-head-line { width: 120px; max-width: 100%; margin-top: 6px; }
+      .thread-crumb { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+      .thread-crumb-project { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 30%; color: var(--text-2); font-size: var(--fs-13); }
+      .thread-crumb-sep { flex: none; color: var(--text-3); }
+      .thread-head .thread-title { min-width: 0; font-size: var(--fs-14); font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+      .thread-sub { display: none; }
+      .thread-head-face { flex: none; display: grid; place-items: center; width: 28px; height: 28px; }
+      .thread-head-acts { flex: none; display: flex; align-items: center; gap: 2px; }
+      .thread-head-acts .btn > svg { color: var(--text-2); }
+      .thread-details-toggle[aria-pressed="true"] { --btn-bg: var(--surface-3); color: var(--text); }
+      .thread-body { position: relative; display: flex; flex: 1; min-height: 0; }
+      .thread-column { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+      .thread-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; outline: none; }
+      .thread-items { display: flex; flex-direction: column; gap: var(--sp-3); width: 100%; max-width: 760px; margin: 0 auto; padding: var(--sp-5) var(--sp-5) var(--sp-6); }
+      .thread-dispatch { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-2); font-size: var(--fs-13); }
+      .thread-dispatch > svg { flex: none; color: var(--text-3); }
+      .thread-brief { padding: 10px 14px; border-radius: 14px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); font-size: var(--fs-14); line-height: 1.55; overflow-wrap: anywhere; }
+      .thread-facts { font-size: var(--fs-12); }
+      .thread-by { margin-top: var(--sp-2); color: var(--text-2); font-size: var(--fs-13); }
+      .thread-by > strong { color: var(--text); font-weight: 600; }
+      /* The work, folded: "Ada worked for 6m 12s ›", its steps grouped under it. */
+      .thread-worked { margin-top: var(--sp-2); }
+      .thread-worked > summary { display: flex; align-items: center; gap: 6px; width: fit-content; max-width: 100%; padding: 4px 0; color: var(--text-2); font-size: var(--fs-13); cursor: pointer; list-style: none; }
+      .thread-worked > summary::-webkit-details-marker { display: none; }
+      .thread-worked > summary:hover { color: var(--text); }
+      .thread-worked > summary .chev { flex: none; transition: transform var(--d-1) var(--ease-out); }
+      .thread-worked[open] > summary .chev { transform: rotate(90deg); }
+      .thread-steps { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 0; padding: 0 0 0 2px; list-style: none; }
+      .thread-step { min-width: 0; font-size: var(--fs-13); color: var(--text-2); }
+      .thread-step summary { list-style: none; cursor: pointer; }
+      .thread-step summary::-webkit-details-marker { display: none; }
+      .thread-step summary:hover .step-text { color: var(--text); }
+      .step-line { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 22px; }
+      .step-icon { flex: none; display: grid; place-items: center; width: 16px; height: 16px; color: var(--tone, var(--text-3)); }
+      .step-items { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 6px 24px; padding: 6px 10px; border-radius: var(--r-md); background: var(--bg-sunken); list-style: none; }
+      .step-item { font-size: var(--fs-12); color: var(--text-2); overflow-wrap: anywhere; }
+      .step-item.mono { font-family: var(--font-mono); font-size: 11.5px; }
+      .step-exit { color: var(--failed); }
+      .thread-ask .need { padding: 12px 14px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px color-mix(in srgb, var(--needs) 34%, var(--border)); }
+      .thread-said { display: flex; flex-direction: column; gap: 6px; margin-top: var(--sp-1); }
+      .thread-said-by { display: flex; align-items: center; gap: 6px; font-size: var(--fs-12); color: var(--text-2); }
+      .thread-said-by > strong { color: var(--text); font-weight: 600; }
+      .thread-said > .md { font-size: var(--fs-14); line-height: 1.6; }
+      /* What proves it, apart from the knight's words: its own ground and edge in its verdict's colour. */
+      .proof { --verdict: var(--ok); display: flex; flex-direction: column; margin-top: var(--sp-1); border-radius: 14px; background: var(--surface); overflow: hidden; box-shadow: var(--shadow-1), inset 0 0 0 1px color-mix(in srgb, var(--verdict) 42%, var(--border)); }
+      .proof[data-verdict="failed"] { --verdict: var(--failed); }
+      .proof > * + * { border-top: 1px solid color-mix(in srgb, var(--verdict) 16%, var(--border)); }
+      .proof-seal { display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: color-mix(in srgb, var(--verdict) 9%, var(--surface)); }
+      .proof-seal strong { color: var(--verdict); font-weight: 650; }
+      .proof-by { color: var(--text-2); font-size: var(--fs-13); }
+      .proof-mark { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--verdict); color: var(--surface); }
+      .proof-caveat { display: flex; align-items: flex-start; gap: var(--sp-2); padding: 8px 14px; color: var(--warn); font-size: var(--fs-12); line-height: 1.45; }
+      .proof-caveat > svg { flex: none; margin-top: 1px; }
+      .proof-gates { display: flex; flex-direction: column; margin: 0; padding: 4px 0; list-style: none; }
+      .proof-gate { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2); min-height: 28px; padding: 0 14px; font-size: var(--fs-12); }
+      .proof-gate code { font-family: var(--font-mono); font-size: 11.5px; color: var(--text); }
+      .proof-gate-mark { display: grid; place-items: center; color: var(--text-3); }
+      .proof-gate[data-state="passed"] .proof-gate-mark { color: var(--ok); }
+      .proof-gate[data-state="failed"] .proof-gate-mark, .proof-gate[data-state="failed"] .proof-gate-said { color: var(--failed); }
+      .proof-gate-said { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
+      .proof-review { display: flex; align-items: flex-start; gap: var(--sp-2); padding: 9px 14px; font-size: var(--fs-13); color: var(--text-2); line-height: 1.45; }
+      .proof-review > svg { flex: none; margin-top: 2px; color: var(--text-3); }
+      .proof-review strong { color: var(--text); font-weight: 600; }
+      .proof-facts { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; padding: 9px 14px; font-size: var(--fs-13); }
+      .proof-changes { display: inline-flex; align-items: center; gap: 4px; }
+      .proof-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: 10px 14px 12px; }
+      .link-button { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; cursor: pointer; }
+      .link-button:hover { text-decoration-color: currentColor; }
+      .thread-message { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-14); }
+      .thread-message.owner { align-self: flex-end; max-width: 85%; padding: 9px 13px; border-radius: 14px 14px 4px 14px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+      .thread-message-by { font-size: var(--fs-12); color: var(--text-2); }
+      .thread-message-by > strong { color: var(--text); font-weight: 600; }
+      /* The one live line while it works, above the message box. */
+      .thread-live { flex: none; display: flex; align-items: center; gap: var(--sp-2); width: 100%; max-width: 760px; margin: 0 auto; min-height: 36px; padding: 0 var(--sp-5); font-size: var(--fs-13); color: var(--text-2); }
+      .thread-live[hidden] { display: none; }
+      .thread-live-text { min-width: 0; flex: 0 1 auto; }
+      .thread-live code { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
+      .thread-live > .btn { margin-left: auto; }
+      .thread-composer-wrap { flex: none; width: 100%; max-width: 760px; margin: 0 auto; padding: var(--sp-2) var(--sp-5) var(--sp-4); }
+      .thread-composer-wrap[hidden] { display: none; }
+      .thread-composer textarea { min-height: 44px; max-height: 160px; field-sizing: content; }
+      /* Its details: a card floating beside the thread on a wide screen (a sheet on a phone). */
+      .thread-details { display: none; }
+      .td { display: flex; flex-direction: column; }
+      .td-sec { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; }
+      .td-sec + .td-sec { border-top: 1px solid var(--border); }
+      .td-row { display: flex; align-items: center; gap: var(--sp-2); min-height: 30px; font-size: var(--fs-13); }
+      .td-icon { flex: none; display: grid; place-items: center; width: 18px; color: var(--text-3); }
+      .td-value { flex: 1; min-width: 0; }
+      .td-value .mono { font-size: 12px; }
+      .td-end { flex: none; color: var(--text-2); font-size: var(--fs-12); }
+      .td-seg { flex: none; display: inline-flex; gap: 2px; }
+      .td-label { display: flex; justify-content: space-between; gap: var(--sp-2); margin-bottom: 2px; font-size: var(--fs-12); font-weight: 600; color: var(--text-3); }
+      .td-gate { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2); min-height: 26px; font-size: var(--fs-12); }
+      .td-gate code { font-family: var(--font-mono); font-size: 11.5px; }
+      .td-gate[data-state="passed"] .td-icon { color: var(--ok); }
+      .td-gate[data-state="failed"] .td-icon { color: var(--failed); }
+      .td-gate[data-state="running"] .td-icon { color: var(--work); }
+      .td-gate[data-state="waiting"] code { color: var(--text-3); }
+      .td-note { font-size: var(--fs-12); color: var(--text-3); line-height: 1.45; }
+      @media (min-width: 960px) {
+        .thread-head { padding: 0 var(--sp-3) 0 var(--sp-5); min-height: 48px; }
+        .thread-head-face { order: -1; }
+        .thread-details:not([hidden]) {
+          display: block; position: absolute; z-index: 4; top: var(--sp-3); right: var(--sp-3); width: 340px; max-height: calc(100% - var(--sp-6)); overflow-y: auto;
+          border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-3), inset 0 0 0 1px var(--border);
+        }
+        /* The thread keeps clear of the card beside it, where there is room for both. */
+        .thread-body:has(> .thread-details:not([hidden])) :is(.thread-items, .thread-live, .thread-composer-wrap) { margin-right: 368px; }
+      }
+      @media (max-width: 959px) {
+        .thread-head { gap: var(--sp-2); padding-left: var(--sp-2); }
+        .thread-crumb { flex-direction: column; align-items: flex-start; gap: 1px; }
+        .thread-crumb-project, .thread-crumb-sep { display: none; }
+        .thread-head .thread-title { max-width: 100%; font-size: var(--fs-15); }
+        .thread-sub { display: block; max-width: 100%; font-size: var(--fs-12); color: var(--text-3); }
+        .thread-head-acts .thread-workspace { display: none; }
+        .thread-items { padding: var(--sp-4) var(--sp-4) var(--sp-5); }
+        .thread-live { padding: 0 var(--sp-4); }
+        .thread-composer-wrap { padding: var(--sp-2) calc(var(--sp-3) + var(--safe-right)) calc(var(--sp-3) + var(--safe-bottom)) calc(var(--sp-3) + var(--safe-left)); }
+      }
+
+      .task-card-title { min-width: 0; color: inherit; text-decoration: none; }
+      .task-card-title:hover { text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
       /* ---------- The Roundtable: a knight's (or a room's) timeline, its task cards, a knight's Workspace ---------- */
       .shell[data-route="team"] main.view { padding: 0; }
       .team-layout { display: flex; flex-direction: column; height: calc(100dvh - var(--topbar-h) - var(--tabbar-h) - var(--safe-bottom)); min-height: 320px; }
@@ -1260,7 +1359,6 @@
       /* A task given to the Roundtable: who took it and why, then how each of the others stood. */
       .give-choice { display: flex; align-items: center; gap: var(--sp-3); }
       .give-choice h3 { font-size: var(--fs-18); font-weight: 650; letter-spacing: -0.015em; }
-      .roster-label > .btn:not(.icon-only):not(.primary) { color: var(--text-2); }
       .team-person-summary { display: flex; align-items: flex-start; gap: var(--sp-3); }
       .team-workspace-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5); border: 1px dashed var(--border-strong); border-radius: var(--r-lg); }
       @media (min-width: 960px) { .team-layout { height: calc(100dvh - var(--topbar-h)); } }
@@ -1405,11 +1503,11 @@
          and the composer sits on the keyboard instead of a tab bar's height above it, and nothing keeps
          clear the home indicator's strip, which the keyboard covers. */
       :root[data-keyboard="open"] { --safe-bottom: 0px; }
-      :root[data-keyboard="open"] .tabbar { display: none; }
       :root[data-keyboard="open"] .composer-wrap { bottom: 0; }
       :root[data-keyboard="open"] main.view, :root[data-keyboard="open"] .shell[data-route="chat"] main.view { padding-bottom: var(--sp-3); }
+      /* A phone's top bar keeps the way home, search and "…": the machine is on Home's header, and under "…". */
       @media (max-width: 639px) {
-        .topbar .activity-pill:not([hidden]) ~ .fleet-pill { display: none; }
+        .topbar .fleet-pill { display: none; }
       }
       .composer { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-2); transition: border-color var(--d-1) var(--ease-out), box-shadow var(--d-1) var(--ease-out); }
       .composer:focus-within { border-color: color-mix(in srgb, var(--focus) 60%, var(--border-strong)); box-shadow: var(--shadow-2), 0 0 0 3px color-mix(in srgb, var(--focus) 14%, transparent); }
@@ -1700,7 +1798,7 @@
         .flow { flex-direction: column; align-items: flex-start; gap: 2px; }
         .flow .arrow { transform: rotate(90deg); margin-left: 14px; line-height: 1; }
       }
-      @media print { .sidebar, .tabbar, .topbar, .toaster { display: none !important; } }
+      @media print { .sidebar, .topbar, .toaster { display: none !important; } }
 
       /* ---------- his skills: each a page of notes ---------- */
       .skills-budget { display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; color: var(--text-3); font-size: var(--fs-12); }

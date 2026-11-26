@@ -4,6 +4,7 @@ import type { Price } from "@galahad/core/spend";
 import { type Api, isAbort } from "../api.ts";
 import type { Ctx } from "../context.ts";
 import { givenLine, keptChanges, proposedLine, sensitiveLine, shippedLine, steppedLine, type TaskAction, taskActions, taskBadge, taskEnd } from "../lib/task-card.ts";
+import { hashOf } from "../lib/nav.ts";
 import { relativeTime } from "../lib/time.ts";
 import { emptyTrail, takeTrail, type Trail, trailNext, type TrailPage, trailTail } from "../lib/trail.ts";
 import { badge, button, callout, dot } from "../ui/controls.ts";
@@ -185,7 +186,8 @@ export function taskCard(ctx: Ctx, task: TeamTask, o: CardOptions): HTMLElement 
   return h(
     "article",
     { class: "team-task", "data-key": `task:${task.id}`, "data-status": task.status, "aria-label": `Task: ${task.title} · ${state.text}` },
-    h("div", { class: "task-head" }, dot(state.tone, { live: task.status === "running" }), h("strong", { class: "grow" }, task.title), badge(state.text, state.tone)),
+    // Its title opens it as a thread of its own (#/task/<id>): its work folded, what proves it, its details.
+    h("div", { class: "task-head" }, dot(state.tone, { live: task.status === "running" }), h("a", { class: "grow task-card-title", href: hashOf("task", { task: task.id }), title: "Open it as a thread of its own" }, h("strong", {}, task.title)), badge(state.text, state.tone)),
     meta ? h("p", { class: "task-meta" }, meta) : null,
     stepped ? h("p", { class: "task-meta" }, stepped) : null,
     waiting.length ? h("p", { class: "task-meta" }, icon("clock", { size: 12 }), ` Waiting for ${waiting.map((dependency) => `“${dependency.title}”`).join(", ")} to be done and verified`) : null,
