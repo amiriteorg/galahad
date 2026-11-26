@@ -695,6 +695,15 @@
       .btn.ghost { --btn-bg: transparent; --btn-border: transparent; box-shadow: none; color: var(--text-2); }
       .btn.ghost:hover { --btn-bg: var(--surface-3); color: var(--text); }
       .btn.sm { height: var(--control-h-sm); padding: 0 10px; font-size: var(--fs-12); border-radius: var(--r-sm); gap: 5px; }
+      /* Every target a finger takes is 44 px at least (Apple's and Material's floor): what is drawn smaller (a small
+         button, a filter, a chip) keeps its look and reaches past its edge, out of sight, to 44. */
+      @media (pointer: coarse) {
+        .btn.sm::after, .home-filter::after, .home-chip::after, .fold-failed::after { content: ""; position: absolute; inset: calc((100% - 44px) / 2) 0; min-height: 44px; }
+        .btn.sm.icon-only::after { inset: calc((100% - 44px) / 2); }
+        .home-filter, .home-chip, .fold-failed { position: relative; }
+        /* (The filters scroll sideways, which clips: their row keeps the room their targets reach into.) */
+        .home-filters { padding-block: 9px; margin-block: -9px; }
+      }
       .btn.lg { height: 42px; padding: 0 var(--sp-5); font-size: var(--fs-14); border-radius: 10px; }
       .btn.icon-only { width: var(--control-h); padding: 0; }
       .btn.sm.icon-only { width: var(--control-h-sm); }
