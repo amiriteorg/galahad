@@ -4,7 +4,7 @@ import { galahadState } from "../lib/knight-state.ts";
 import { galahadNow, type Now } from "../lib/now.ts";
 import { orbMoodOfState } from "../lib/orb-motion.ts";
 import { galahadNeeds } from "../lib/roster.ts";
-import { type Attended, inboxBeyond, type WorkRow } from "../lib/work.ts";
+import { type Attended, failedIn, inboxBeyond, type WorkRow } from "../lib/work.ts";
 import { type WorkFold, setWorkOpen, workOpen } from "../prefs.ts";
 import { button, dot, kbd, skeletonRows } from "../ui/controls.ts";
 import { cx, h, isMac, keepPlace, replace, type Child } from "../ui/dom.ts";
@@ -14,7 +14,7 @@ import type { Signal } from "../ui/signal.ts";
 import { answerStep, chatActivity, galahadWork, nodeTurns, questsInHand, stopChat, unreadChats } from "./chat.ts";
 import { openPlaces } from "./places.ts";
 import { giveToRoundtable } from "./team-forms.ts";
-import { askProjects, namesProjects, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
+import { askProjects, failedNote, namesProjects, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
 
 /*
  * A wide screen's sidebar, as T3 Code's (your words, 26 November 2026: "agent first (Galahad), and project/tasks/coding
@@ -102,7 +102,7 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
     return h(
       "section",
       { class: "side-section", "aria-label": label },
-      h("button", { type: "button", class: "side-fold", "aria-expanded": String(opened), onclick: () => toggle(which) }, h("span", { class: "grow" }, label), h("span", { class: "tnum side-fold-count" }, String(rows.length)), icon("chevron-right", { size: 14, class: "chev" })),
+      h("button", { type: "button", class: "side-fold", "aria-expanded": String(opened), onclick: () => toggle(which) }, h("span", { class: "grow" }, label), h("span", { class: "tnum side-fold-count" }, String(rows.length)), which === "done" ? failedNote(failedIn(rows)) : null, icon("chevron-right", { size: 14, class: "chev" })),
       ...shownRows.map(rowEl),
     );
   };

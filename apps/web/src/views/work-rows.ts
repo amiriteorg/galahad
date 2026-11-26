@@ -89,6 +89,10 @@ export function workRow(row: WorkRow, opts: { face?: number; current?: boolean; 
   );
 }
 
+/** On a folded Done, after its count, how many of it failed, in red and in words ("Done 4 · 1 failed"; lib/work.ts
+ * failedIn): none, nothing. */
+export const failedNote = (failed: number): HTMLElement | null => (failed ? h("span", { class: "fold-failed tnum", "data-tone": "failed" }, `${failed} failed`) : null);
+
 /** What a list of rows is drawn as, to be compared before drawing it again (a row that says the same is not redrawn). */
 export const rowsVersion = (rows: readonly WorkRow[]): string =>
   JSON.stringify(rows.map((row) => [row.id, row.title, row.word, row.tone, row.age, row.detail, row.state, row.project.name, row.knight.name, row.knight.avatar]));

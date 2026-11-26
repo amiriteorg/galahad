@@ -299,6 +299,10 @@ export function attended(input: AttentionInput): Attended {
  * dashed badge on every row said nothing; a row's first line is then how it stands, and its age). */
 export const namesProjects = (work: Pick<Attended, "projects">): boolean => work.projects.length > 1;
 
+/** How many of these rows (a folded Done) failed: a failure you have seen is settled, folded with verified work, but the
+ * fold still says it ("Done 4 · 1 failed"), so it never hides. */
+export const failedIn = (rows: readonly Pick<WorkRow, "state">[]): number => rows.filter((row) => row.state === "failed").length;
+
 /** The rows of one project alone (a filter), its sections as they were; every project's with none. */
 export function inProject(work: Attended, key: string | null): Attended {
   if (key === null) return work;

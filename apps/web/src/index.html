@@ -340,6 +340,9 @@
       }
       .side-fold:hover { background: var(--surface-3); color: var(--text-2); }
       .side-fold-count { font-weight: 500; }
+      /* A failure folded into Done is still said on the fold, in red: "Done  4 · 1 failed" (views/work-rows.ts failedNote). */
+      .fold-failed { color: var(--tone); font-weight: 600; }
+      .fold-failed::before { content: "· "; color: var(--text-3); font-weight: 500; }
       .side-fold .chev, .home-fold .chev { transition: transform var(--d-1) var(--ease-out); }
       .side-fold[aria-expanded="true"] .chev, .home-fold[aria-expanded="true"] .chev { transform: rotate(90deg); }
       .side-inbox { display: flex; align-items: center; gap: var(--sp-2); min-height: 34px; padding: 0 9px; border-radius: var(--r-md); color: var(--text); text-decoration: none; font-size: var(--fs-13); font-weight: 500; }

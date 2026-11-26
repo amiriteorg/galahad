@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
-import { atAGlance, attended, byAttention, doingNow, failedGate, inboxBeyond, inProject, namesProjects, NEW_FOR_MS, projectBadge, projectKey, seenOnOpen, shortSpan, spentSince, taskState, workOf } from "./work.ts";
+import { atAGlance, attended, byAttention, doingNow, failedGate, failedIn, inboxBeyond, inProject, namesProjects, NEW_FOR_MS, projectBadge, projectKey, seenOnOpen, shortSpan, spentSince, taskState, workOf } from "./work.ts";
 
 const NOW = 1_764_000_000_000;
 const ago = (minutes: number) => NOW - minutes * 60_000;
@@ -125,6 +125,15 @@ describe("the work by attention", () => {
     const old = task("ada", "done", NEW_FOR_MS / 60_000 + 1, { verified: true });
     const fresh = attended({ snapshot: snapshot([ada], [old, verified]), projects: [], now: NOW });
     expect([fresh.active.map((row) => row.id), fresh.done.map((row) => row.id)]).toEqual([[verified.id], [old.id]]);
+  });
+
+  test("a failure you have seen is settled, folded with what was verified, but counted on its own so it never hides", () => {
+    const failed = task("ada", "failed", 30, { error: "gave-up" });
+    const verified = task("ada", "done", 10, { verified: true });
+    const work = attended({ snapshot: snapshot([ada], [failed, verified], { "knight:ada": ago(1) }), projects: [], now: NOW });
+    expect(work.done.map((row) => row.id)).toEqual([verified.id, failed.id]);
+    expect(failedIn(work.done)).toBe(1);
+    expect(failedIn(work.done.filter((row) => row.id !== failed.id))).toBe(0);
   });
 
   test("rows name their project only where the work is in more than one: in one, or none, \"Other work\" says nothing", () => {

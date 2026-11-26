@@ -2,7 +2,7 @@ import { findSecrets } from "@galahad/core/secret-scan";
 import type { View } from "../context.ts";
 import { galahadState } from "../lib/knight-state.ts";
 import { orbMoodOfState } from "../lib/orb-motion.ts";
-import { atAGlance, type Attended, inProject, type WorkRow } from "../lib/work.ts";
+import { atAGlance, type Attended, failedIn, inProject, type WorkRow } from "../lib/work.ts";
 import { setWorkOpen, workOpen } from "../prefs.ts";
 import { arrive, button, callout, count, dot, setCount, skeletonRows } from "../ui/controls.ts";
 import { cx, h, keepPlace, replace } from "../ui/dom.ts";
@@ -14,7 +14,7 @@ import { needsCount, needsItems, needsVersion, tickExpiries } from "./needs.ts";
 import { openPlaces } from "./places.ts";
 import { galahadLine } from "./sidebar.ts";
 import { giveToRoundtable } from "./team-forms.ts";
-import { askProjects, namesProjects, projectTile, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
+import { askProjects, failedNote, namesProjects, projectTile, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
 
 /*
  * Home: Galahad, first (your words, 26 November 2026: "agent first (Galahad)"; on a phone no tab bar, "a '…' sheet for
@@ -184,7 +184,7 @@ export const homeView: View = (root, ctx, { scope }) => {
         list,
         ...rows.map(rowEl),
         shownWork.done.length
-          ? h("button", { type: "button", class: "home-fold", "aria-expanded": String(doneOpen), onclick: () => (setWorkOpen("done", !doneOpen), (open = workOpen()), draw()) }, h("span", { class: "grow" }, "Done"), h("span", { class: "tnum" }, String(shownWork.done.length)), icon("chevron-right", { size: 14, class: "chev" }))
+          ? h("button", { type: "button", class: "home-fold", "aria-expanded": String(doneOpen), onclick: () => (setWorkOpen("done", !doneOpen), (open = workOpen()), draw()) }, h("span", { class: "grow" }, "Done"), h("span", { class: "tnum" }, String(shownWork.done.length)), failedNote(failedIn(shownWork.done)), icon("chevron-right", { size: 14, class: "chev" }))
           : null,
         ...(doneOpen ? shownWork.done.map(rowEl) : []),
         !rows.length && !shownWork.done.length && !shownWork.needs.length
