@@ -183,7 +183,8 @@ async function showPush(event: PushEventLike): Promise<void> {
     silent: quiet,
     renotify: !quiet,
     icon: "/icon-192.png",
-    // Android's status bar draws a badge from its alpha alone: the helm's silhouette, not the tile (a white square).
+    // Android's status bar draws a badge from its alpha alone: the field in white on nothing, not the tile (a white
+    // square). No picture (`image`): its words are the message, and a picture would only decorate it.
     badge: "/icon-mono-96.png",
     data: { open: shown.open, ...(shown.conversation ? { conversation: shown.conversation } : {}) },
   });

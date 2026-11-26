@@ -122,8 +122,10 @@ describe("he comes to you: a push becomes a notification", () => {
     expect(shown[0]!.title).toBe("Galahad has finished");
     // News is told quietly: no sound, and told again it replaces itself without a word (PLAN #59).
     expect(shown[0]!.options).toMatchObject({ body: "A chat you left him working in has his answer.", tag: "t-AbCdEfGhIjKlMnOpQrStUv", silent: true, renotify: false, icon: "/icon-192.png", data: { open: "chat", conversation: CHAT } });
-    // In Android's status bar, the helm's silhouette: the system draws a badge from its alpha alone, so the tile would be a white square.
+    // In Android's status bar, the field in white: the system draws a badge from its alpha alone, so the tile would be a white square.
     expect(shown[0]!.options.badge).toBe("/icon-mono-96.png");
+    // No picture: its words are the message, and a picture would only decorate it.
+    expect(shown[0]!.options.image).toBeUndefined();
     // What needs you lets you know, every time, even replacing its own.
     await push({ v: 1, kind: "needs-you", title: "Galahad: this needs you", body: "Something in your Inbox needs you.", open: "inbox", tag: "t-0123456789abcdefghijkl" });
     expect(shown[1]!.options).toMatchObject({ silent: false, renotify: true, data: { open: "inbox" } });
