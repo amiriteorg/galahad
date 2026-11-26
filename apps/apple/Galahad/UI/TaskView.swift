@@ -214,6 +214,8 @@ private struct TaskThreadView: View {
     var composing: FocusState<Bool>.Binding
     @State private var workedOpen = false
     @State private var shipping: TeamTask?
+    /// The task Give again is about to give once more, once you say so.
+    @State private var againing: TeamTask?
     @State private var trouble: String?
     @State private var busy = false
 
@@ -237,6 +239,7 @@ private struct TaskThreadView: View {
         .scrollDismissesKeyboard(.interactively)
         .safeAreaBar(edge: .bottom) { foot(entries, running: running) }
         .modifier(ShipPrompt(task: $shipping, room: thread.room, client: session.client))
+        .modifier(AgainPrompt(task: $againing, room: thread.room, client: session.client))
         .alert("That didn't go through", isPresented: .init(get: { trouble != nil }, set: { if !$0 { trouble = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -285,7 +288,7 @@ private struct TaskThreadView: View {
                     .padding(.top, Space.s1)
                 }
                 if thread.read, task.status == "done" || task.status == "failed" {
-                    ProofCard(session: session, task: task, thread: thread, knight: knight, name: name, canAct: canAct, shipping: $shipping)
+                    ProofCard(session: session, task: task, thread: thread, knight: knight, name: name, canAct: canAct, shipping: $shipping, againing: $againing)
                 }
                 ForEach(thread.conversation(of: task)) { message in
                     ThreadMessage(message: message, speaker: Timeline.speaker(message, teammates: session.team?.teammates ?? []))
@@ -413,7 +416,7 @@ private struct TaskThreadView: View {
             case "stopped":
                 Callout(tone: .secondary, text: "Stopped before it was done.") {
                     NeedButton(title: "Resume", busy: busy) { control("resume") }
-                    NeedButton(title: "Give again…", busy: busy) { Task { await thread.room.giveAgain(task, with: session.client) } }
+                    NeedButton(title: "Give again…", busy: busy) { againing = task }
                 }
             case "queued":
                 NeedButton(title: "Stop it", busy: busy) { control("stop") }
@@ -615,6 +618,7 @@ private struct ProofCard: View {
     let name: String
     let canAct: Bool
     @Binding var shipping: TeamTask?
+    @Binding var againing: TeamTask?
     @State private var reviewing = false
 
     var body: some View {
@@ -730,20 +734,39 @@ private struct ProofCard: View {
         ForEach(actions, id: \.self) { action in
             switch action {
             case .ship: NeedButton(title: "Ship it…", prominent: true) { shipping = task }
-            case .again: NeedButton(title: "Give again…", prominent: !verified) { Task { await thread.room.giveAgain(task, with: session.client) } }
+            case .again: NeedButton(title: "Give again…", prominent: !verified) { againing = task }
             case .resume: NeedButton(title: "Resume") { Task { try? await session.control(task: task.id, "resume") } }
             default: EmptyView()
             }
         }
         // Verified work with nothing to ship can still be given again, revised.
         if verified, canAct, !actions.contains(.again) {
-            NeedButton(title: "Give again…") { Task { await thread.room.giveAgain(task, with: session.client) } }
+            NeedButton(title: "Give again…") { againing = task }
         }
         if let shipped = TaskCard.shipped(task), let url = URL(string: shipped.url) {
             Link(destination: url) { Label(shipped.text, systemImage: "arrow.up.right.square") }
                 .font(.subheadline)
                 .frame(minHeight: Metrics.touch)
         }
+    }
+}
+
+/// Give again, once you say so (as Android's thread asks, and as the PWA's opens the task to give in its sheet): it starts
+/// the same task once more, to the same knight with the same gates, and that is a run of its own, so a single tap never
+/// starts it.
+private struct AgainPrompt: ViewModifier {
+    @Binding var task: TeamTask?
+    let room: KnightRoom
+    let client: NodeClient
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Give it again?", isPresented: .init(get: { task != nil }, set: { if !$0 { task = nil } }), presenting: task) { task in
+                Button("Give it again") { Task { await room.giveAgain(task, with: client) } }
+                Button("Cancel", role: .cancel) {}
+            } message: { task in
+                Text("“\(task.title)”, to the same knight, with the same gates.")
+            }
     }
 }
 
