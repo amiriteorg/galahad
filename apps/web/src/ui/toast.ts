@@ -78,18 +78,22 @@ function ensureToaster(): HTMLElement {
     dismiss(item);
   });
   document.body.append(toaster, politeRegion, assertiveRegion);
+  // Alt+T (⌥T): to the newest toast's first control, wherever focus is. (Listened for from the first toast on, not on
+  // import: a bundle that never raises one, the pairing page's, leaves this module out.)
+  if (!reaching) {
+    reaching = true;
+    document.addEventListener("keydown", reach);
+  }
   return toaster;
 }
 
-// Alt+T (⌥T): to the newest toast's first control, wherever focus is.
-if (typeof document !== "undefined") {
-  document.addEventListener("keydown", (event) => {
-    if (!event.altKey || event.metaKey || event.ctrlKey || event.code !== "KeyT" || !live.length) return;
-    const control = live.at(-1)!.el.querySelector<HTMLElement>("button");
-    if (!control) return;
-    event.preventDefault();
-    control.focus();
-  });
+let reaching = false;
+function reach(event: KeyboardEvent): void {
+  if (!event.altKey || event.metaKey || event.ctrlKey || event.code !== "KeyT" || !live.length) return;
+  const control = live.at(-1)!.el.querySelector<HTMLElement>("button");
+  if (!control) return;
+  event.preventDefault();
+  control.focus();
 }
 
 /** Rises clear of a message box docked at the screen's foot, where the page has one (`--dock-h`: from its top down). */
