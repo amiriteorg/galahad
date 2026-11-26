@@ -233,11 +233,13 @@ export interface FieldFrame {
 }
 
 /**
- * His embers: how many; each lives 2.8 to 4.4 seconds (then another sets out); where they set out (a share of the way
- * from the middle to the edge of the orb's square) and how far each drifts; how much they rise as they go; how far
- * round from the rim's burning side they may set out (degrees either way); and their radius. Always inside his square.
+ * His embers, refined (26 November 2026: few, small and slow, so they say he works without pulling the eye): how many;
+ * each lives 3.6 to 5.6 seconds (then another sets out); where they set out (a share of the way from the middle to the
+ * edge of the orb's square) and how far each drifts; how much they rise as they go; how far round from the rim's burning
+ * side they may set out (degrees either way); their radius; and how long each takes to come into sight (a share of its
+ * life). Always inside his square. Drawn soft (a light that falls away from its middle), never a hard dot.
  */
-export const FIELD_EMBERS = { count: 7, life: [2.8, 4.4], from: [0.56, 0.64], drift: [0.1, 0.2], rise: 0.06, spread: 70, size: [0.016, 0.028] } as const;
+export const FIELD_EMBERS = { count: 5, life: [3.6, 5.6], from: [0.58, 0.64], drift: [0.08, 0.15], rise: 0.05, spread: 60, size: [0.012, 0.022], fadeIn: 0.25 } as const;
 /** Where the rim burns, in degrees clockwise from the top (lib/field.ts' rim light, seen from the front: lower right). */
 export const RIM_ANGLE = (Math.atan2(FIELD_RIM[0], FIELD_RIM[1]) * 180) / Math.PI;
 
@@ -267,7 +269,7 @@ function embersAt(seed: number, t: number, share: number): FieldEmber[] {
     const lot = (seed + Math.imul(round, 0x9e3779b1)) >>> 0;
     const angle = ((RIM_ANGLE + E.spread * (2 * orbRand(lot, i, 72) - 1)) * Math.PI) / 180;
     const reach = E.from[0] + (E.from[1] - E.from[0]) * orbRand(lot, i, 73) + (E.drift[0] + (E.drift[1] - E.drift[0]) * orbRand(lot, i, 74)) * u;
-    const fadeIn = Math.min(1, u / 0.15);
+    const fadeIn = Math.min(1, u / E.fadeIn);
     embers.push({
       x: reach * Math.sin(angle),
       y: -reach * Math.cos(angle) - E.rise * u,

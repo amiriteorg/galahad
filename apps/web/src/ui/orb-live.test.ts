@@ -8,8 +8,8 @@ import { appMark, knightFace, orb } from "./orb.ts";
  * motion is reduced, and once a knight has come to rest; moving slowly where they are looked at.
  */
 
-/** A 2D context that keeps the name of every call made on it, and every blend it is set to. (A gradient it makes takes
- * its stops and keeps nothing.) */
+/** A 2D context that keeps the name of every call made on it, and every blend it is set to. (A gradient it makes, linear
+ * or radial, takes its stops and keeps nothing.) */
 function context(calls: string[], blends: string[]): CanvasRenderingContext2D {
   return new Proxy({} as Record<string, unknown>, {
     get(target, key) {
@@ -17,7 +17,7 @@ function context(calls: string[], blends: string[]): CanvasRenderingContext2D {
       if (key in target) return target[key];
       return () => {
         calls.push(key);
-        return key === "createLinearGradient" ? { addColorStop() {} } : undefined;
+        return key === "createLinearGradient" || key === "createRadialGradient" ? { addColorStop() {} } : undefined;
       };
     },
     set(target, key, value) {

@@ -200,6 +200,22 @@ describe("how it moves", () => {
     expect(fieldStill(FIELD_MOTION.failed)).toEqual({ turn: 0, glow: FIELD_MOTION.failed.glow, rim: 1, embers: [] });
   });
 
+  test("his embers are few, small and slow (26 November 2026: refined, never busy), and none pops into sight", () => {
+    expect(FIELD_EMBERS.count).toBeLessThanOrEqual(5);
+    expect(FIELD_EMBERS.life[0]).toBeGreaterThanOrEqual(3.5);
+    expect(FIELD_EMBERS.size[1]).toBeLessThanOrEqual(0.022);
+    // Slow: at most a fifth of the orb's half-width a life, so at 168 px under 5 px a second (they went at 8).
+    expect(FIELD_EMBERS.drift[1] + FIELD_EMBERS.rise).toBeLessThanOrEqual(0.2);
+    expect(((FIELD_EMBERS.drift[1] + FIELD_EMBERS.rise) * 84) / FIELD_EMBERS.life[0]).toBeLessThan(5);
+    // Each comes into sight over a quarter of its life, and is never brighter than three fifths of its light.
+    expect(FIELD_EMBERS.fadeIn).toBeGreaterThanOrEqual(0.2);
+    const working = fieldClock(FIELD_MOTION.working);
+    let brightest = 0;
+    for (let t = 0; t < 60; t += 0.05) for (const e of fieldFrame(working, t, { seed: 3, embers: true }).embers) brightest = Math.max(brightest, e.alpha);
+    expect(brightest).toBeGreaterThan(0.4);
+    expect(brightest).toBeLessThan(0.6);
+  });
+
   test("his embers drift off the burning rim, inside his square, fading in and out; the same for the same moment", () => {
     const working = fieldClock(FIELD_MOTION.working);
     expect(fieldFrame(working, 3).embers).toEqual([]);

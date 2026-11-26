@@ -306,19 +306,19 @@ function drawField(g: CanvasRenderingContext2D, px: number, dpr: number, size: n
     }
   }
   if (frame.embers.length) {
-    const [er, eg, eb] = onPaper ? fieldInks(colours).rim : emberLight(colours);
+    const [er, eg, eb] = (onPaper ? fieldInks(colours).rim : emberLight(colours)).map(Math.round) as [number, number, number];
+    const rgba = (alpha: number) => `rgba(${er},${eg},${eb},${Math.round(Math.max(0, Math.min(1, alpha)) * 1000) / 1000})`;
     for (const e of frame.embers) {
       if (e.alpha < 0.01) continue;
-      const r = Math.max(0.6 * dpr, e.r * half);
-      if (!onPaper) {
-        g.fillStyle = `rgba(${Math.round(er)},${Math.round(eg)},${Math.round(eb)},${Math.round(e.alpha * FIELD_STROKE.glow.alpha * 2 * 1000) / 1000})`;
-        g.beginPath();
-        g.arc(half + e.x * half, half + e.y * half, r * 2.4, 0, 2 * Math.PI);
-        g.fill();
-      }
-      g.fillStyle = `rgba(${Math.round(er)},${Math.round(eg)},${Math.round(eb)},${Math.round(Math.min(1, e.alpha) * 1000) / 1000})`;
+      // Soft: its light (or its ink) falls away from its middle to nothing at three times its radius, never a hard dot.
+      const r = Math.max(0.6 * dpr, e.r * half), x = half + e.x * half, y = half + e.y * half;
+      const soft = g.createRadialGradient(x, y, 0, x, y, r * 3);
+      soft.addColorStop(0, rgba(e.alpha));
+      soft.addColorStop(0.33, rgba(e.alpha * 0.55));
+      soft.addColorStop(1, rgba(0));
+      g.fillStyle = soft;
       g.beginPath();
-      g.arc(half + e.x * half, half + e.y * half, r, 0, 2 * Math.PI);
+      g.arc(x, y, r * 3, 0, 2 * Math.PI);
       g.fill();
     }
   }
