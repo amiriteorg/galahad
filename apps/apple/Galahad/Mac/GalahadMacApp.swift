@@ -67,8 +67,10 @@ struct GalahadMacApp: App {
     var place: Place = MacApp.keptPlace() {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(place), forKey: Self.placeKey) }
     }
-    /// The Roundtable is being given a task (⌘K).
+    /// The Roundtable is being given a task (⇧⌘N).
     var giving = false
+    /// Search, or ask (⌘K): the palette over the main window.
+    var searching = false
     /// A new chat was asked for (⌘N): Galahad's message box takes the keys.
     var composerWanted = false
     /// An invite a `galahad:` link handed over, for the join screen.
@@ -82,7 +84,7 @@ struct GalahadMacApp: App {
     }
 
     private static func keptPlace() -> Place {
-        UserDefaults.standard.data(forKey: placeKey).flatMap { try? JSONDecoder().decode(Place.self, from: $0) } ?? .galahad
+        UserDefaults.standard.data(forKey: placeKey).flatMap { try? JSONDecoder().decode(Place.self, from: $0) } ?? .home
     }
 
     /// Reads this Mac's key, then asks the node again every few seconds while the app runs, windows or not (the menu bar
@@ -187,7 +189,7 @@ struct MacWindowRoot: View {
     }
 }
 
-/// The menus: a new chat and a task for the Roundtable in File, and the four places in View.
+/// The menus: a new chat, a task for the Roundtable and Search or Ask (⌘K) in File, and Home and the four places in View.
 struct MacCommands: Commands {
     let mac: MacApp
     @Environment(\.openWindow) private var openWindow
@@ -208,7 +210,13 @@ struct MacCommands: Commands {
                 mac.giving = true
                 front()
             }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+            Button("Search or Ask…") {
+                mac.searching = true
+                front()
+            }
             .keyboardShortcut("k")
+            .disabled(mac.session == nil)
             .disabled(mac.session?.can("fleet:admin") != true || mac.session?.rows.isEmpty != false)
             Divider()
             Button("Build with Galahad") {
@@ -219,6 +227,7 @@ struct MacCommands: Commands {
             .disabled(mac.session == nil)
         }
         CommandGroup(before: .sidebar) {
+            place("Home", .home, "0")
             place("Galahad", .galahad, "1")
             place("Roundtable", .roundtable, "2")
             place("Inbox", .inbox, "3")

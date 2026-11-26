@@ -433,10 +433,9 @@ private struct CardGrid<Content: View>: View {
     }
 }
 
-/// A face at the Roundtable in the ring of where it stands, the one who leads with its mark on the ring's foot (the PWA's
-/// seat): a knight's orb (KnightFace), the ring, its lights and the mark round it, never over it. Round the ring, where
-/// it stands moves (SeatLights; your word, 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting,
-/// done"), and its orb turns and breathes on the same course (`seat:<handle>`), so face and ring move as one.
+/// A face at the Roundtable (the PWA's seat; 26 November 2026): its orb, still, as every orb in a row is ("i dont want them
+/// to be too visually distractin"), in the room its ring took, so a row keeps its height; the one who leads with its mark at
+/// the foot. Where it stands is said beside it, in a chip's words and colour, never by a ring round its face.
 struct SeatFace: View {
     /// A knight's handle, or `galahad`.
     let id: String
@@ -451,49 +450,15 @@ struct SeatFace: View {
         let ring = size >= Metrics.cardFace ? Metrics.cardRing : Metrics.rowRing
         Group {
             if id == "galahad" {
-                // Galahad himself is his orb (your word, 23 November 2026), in the room a face and its ring take: its
-                // colour and its mood are where he stands, as the ring's would be. (His seat's orb is its own: the
-                // Roundtable's word on where he stands can be a moment behind his chat's.)
-                GalahadOrb(size: size + 2 * ring, tone: Orb.Tone(standing), mood: Orb.Mood(standing), key: "galahad:seat")
+                // Galahad himself is his orb, his heads-up ring round it.
+                GalahadOrb(size: size + 2 * ring, tone: Orb.Tone(standing))
             } else {
-                KnightFace(id: id, profile: profile, size: size, mood: Orb.Mood(standing), key: "seat:\(id)")
+                KnightFace(id: id, profile: profile, size: size)
                     .padding(ring)
-                    .overlay { StandingRing(kind: standing, width: ring * 0.6, selected: selected) }
-                    .overlay { SeatLights(box: size + 2 * ring, ring: standing == .resting ? 1 : ring * 0.6, standing: standing, key: id) }
             }
         }
-        // Its middle on the ring's foot, whatever its size.
+        // Its middle on the foot of where its ring was, whatever its size.
         .overlay { if leads { LeadsMark().offset(y: size / 2 + ring) } }
-    }
-}
-
-/// The ring round a face, in the colour of where it stands (the PWA's seat): blue at work, amber when it needs you, red
-/// when its work failed, green for what ended and is new to you (verified work among it) until you look, grey while
-/// queued, dashed grey while paused, a hairline at rest. On a row an iPad shows selected, white, as the row's words are.
-/// The ring itself stands still and says it in colour; what moves round it is SeatLights', and none where motion is
-/// reduced.
-struct StandingRing: View {
-    let kind: Standing
-    let width: CGFloat
-    var selected = false
-
-    var body: some View {
-        switch kind {
-        case .working:
-            Circle().strokeBorder(selected ? Color.white : .working, lineWidth: width)
-        case .needs:
-            Circle().strokeBorder(selected ? Color.white : .needs, lineWidth: width)
-        case .failed:
-            Circle().strokeBorder(selected ? Color.white : .failed, lineWidth: width)
-        case .verified, .unread:
-            Circle().strokeBorder(selected ? Color.white : .done, lineWidth: width)
-        case .queued:
-            Circle().strokeBorder(selected ? Color.white : .secondary, lineWidth: width)
-        case .paused:
-            Circle().strokeBorder(selected ? Color.white : .secondary, style: StrokeStyle(lineWidth: width, dash: [width * 1.5, width * 1.5]))
-        case .resting:
-            Circle().strokeBorder(selected ? Color.white.opacity(0.5) : Color.hairline, lineWidth: 1)
-        }
     }
 }
 

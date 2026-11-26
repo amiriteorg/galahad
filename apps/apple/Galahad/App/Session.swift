@@ -131,6 +131,55 @@ import Observation
     /// Who sits where, top to bottom: the one who leads, Galahad next when a knight leads, then the rest in your order.
     var seats: [String] { Roster.seats(knights: order, primary: primary) }
 
+    /// Your projects (GET /api/projects), for the names the work's projects go by: asked once, where this device may read.
+    private(set) var projects: [ProjectView] = []
+    private var projectsAsked = false
+    /// Your prices as money goes (GET /api/prices, a coding plan's calls costing nothing more): asked once a task's cost
+    /// is shown; nil until then, or where they can't be read.
+    private(set) var prices: Spend.Prices?
+    private var pricesAsked = false
+
+    /// The work by attention (Work.attended): every task a row of three lines in its section, from the Roundtable as it is
+    /// drawn, your projects' names and the approvals waiting. Nil until the Roundtable is known.
+    var attended: Attended? {
+        guard let snapshot = drawnTeam else { return nil }
+        return Work.attended(teammates: snapshot.teammates, tasks: snapshot.tasks, seen: snapshot.seen, projects: projects.map(Work.Named.init), asks: team == nil ? kept?.asks ?? [] : asks, now: Date.now.timeIntervalSince1970 * 1000)
+    }
+
+    /// How many things need you, as Home's "Needs you" counts its items: every waiting approval once, each task that only
+    /// you can move on (a knight asking your leave is its approval's), and everything else that waits in the Inbox.
+    func needsCount(_ work: Attended?) -> Int {
+        let now = Date.now.timeIntervalSince1970 * 1000
+        let tasks = work?.needs.filter { $0.word != "Allow?" }.count ?? 0
+        return waiting.count + tasks + pairings.count + requests.count + questions.filter { $0.expires > now }.count + screenSessions.count + notices.count + facts.count
+    }
+
+    /// A task, as the Roundtable is drawn.
+    func task(_ id: String) -> TeamTask? { drawnTeam?.tasks.first { $0.id == id } }
+
+    /// Your projects, asked for once.
+    func askProjects() async {
+        guard !projectsAsked, can("mind:read") else { return }
+        projectsAsked = true
+        struct Listed: Decodable { let projects: [ProjectView] }
+        if let listed = try? await client.get("/api/projects", as: Listed.self) { projects = listed.projects } else { projectsAsked = false }
+    }
+
+    /// Your prices, asked for once.
+    func askPrices() async {
+        guard !pricesAsked else { return }
+        pricesAsked = true
+        struct Listed: Decodable { let prices: [String: Price]; let plans: [String]? }
+        if let listed = try? await client.get("/api/prices", as: Listed.self) { prices = Spend.money(listed.prices, plans: listed.plans ?? []) } else { prices = [:] }
+    }
+
+    /// A task opened: when it is the latest of its knight's results still new to you, it is read, on every device (Work's
+    /// seenOnOpen; its knight's page marked as POST /api/team/seen keeps marks).
+    func opened(task id: String) async {
+        guard let snapshot = team, let knight = Work.seenOnOpen(id, tasks: snapshot.tasks, seen: snapshot.seen) else { return }
+        await read(knight: knight)
+    }
+
     func teammate(_ id: String) -> Teammate? { team?.teammates.first { $0.id == id } }
     func room(_ id: String) -> TeamRoom? { team?.rooms.first { $0.id == id } }
     var roomRows: [RoomRow] { drawnTeam.map { Roster.roomRows(snapshot: $0) } ?? [] }
@@ -315,6 +364,13 @@ import Observation
         let saved = try await client.post("/api/team/rooms", room, as: Saved.self).room
         await refresh()
         return saved
+    }
+
+    /// Approve a task proposed to you, or stop, resume a task (`approve` · `stop` · `resume`).
+    func control(task: String, _ action: String) async throws {
+        struct Control: Encodable { let task: String; let action: String }
+        _ = try await client.post("/api/team/control", Control(task: task, action: action), as: JSONValue.self)
+        await refresh()
     }
 
     /// Pause, resume or stop a room's work, or a knight's (one of the two).

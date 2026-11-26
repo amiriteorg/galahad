@@ -501,6 +501,12 @@ struct Vectors: Decodable {
     let desktop: DesktopCases
     let faces: Faces
     let orb: OrbCases
+    /// The orbs as fields (the PWA's lib/field.ts and lib/field-orb.ts): FieldTests.swift.
+    let field: FieldCases
+    /// The work by attention (the PWA's lib/work.ts): WorkTests.swift.
+    let work: WorkCases
+    /// A task's work folded, its gates, review, live line, proof and cost (the PWA's lib/steps.ts): StepsTests.swift.
+    let steps: StepCases
     let connectorStates: [ConnectorState]
     let threads: [Thread]
     let chats: ChatList

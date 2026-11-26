@@ -10,7 +10,10 @@ import Synchronization
 /// waves reaching out past its square over what is round it, which they never move or take a touch from. Still, as an
 /// answer in a conversation's history shows him, and wherever the device asks for reduced motion: one still frame of the
 /// same parts. Decorative beside his name; named (`label`) where it stands alone.
-struct GalahadOrb: View {
+///
+/// (Since 26 November 2026 his orb is his field, FieldOrbView.swift's GalahadOrb: this glyph orb is drawn nowhere and is
+/// kept, with its vectors, until the Android app's port lands too, when it goes.)
+struct GlyphOrb: View {
     var size: CGFloat = 36
     var tone: Orb.Tone = .neutral
     var label: String? = nil
@@ -88,7 +91,10 @@ private struct MovingOrb: View {
 /// one); still, and wherever the device asks for reduced motion, it is one still frame. On a light page its glyphs are ink
 /// on paper and its heart is its deep tint. It draws inside its square. Decorative beside its name; named (`label`) where
 /// it stands alone.
-struct KnightFace: View {
+///
+/// (Since 26 November 2026 a knight's orb is its field, FieldOrbView.swift's KnightFace: this glyph face is drawn nowhere
+/// and is kept, with its vectors, until the Android app's port lands too, when it goes.)
+struct GlyphFace: View {
     /// Its handle.
     let id: String
     /// Its saved avatar: a colour you chose for it (core's OrbProfile); anything else is its handle's colour.
