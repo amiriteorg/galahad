@@ -104,14 +104,20 @@ struct ReachCard: View {
                 if let problem { Text(problem).font(.footnote).foregroundStyle(Color.siege) }
                 HStack(spacing: Space.s3) {
                     if center.reach == .settings {
-                        Button("Open Settings") {
+                        Button {
                             if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+                        } label: {
+                            Text("Open Settings").foregroundStyle(Prominent.label())
                         }
                         .buttonStyle(.glassProminent)
                     } else {
-                        Button("Turn on notifications") { Task { await turnOn() } }
-                            .buttonStyle(.glassProminent)
-                            .disabled(busy)
+                        // A prominent button's words are the ink's own colour, as every other one's: left to the
+                        // style, they were cream on its cream ground in dark mode (26 November 2026).
+                        Button { Task { await turnOn() } } label: {
+                            Text("Turn on notifications").foregroundStyle(Prominent.label(dimmed: busy))
+                        }
+                        .buttonStyle(.glassProminent)
+                        .disabled(busy)
                     }
                     Button("Not now") { putAway = Date.now.timeIntervalSince1970 }
                         .buttonStyle(.glass)
