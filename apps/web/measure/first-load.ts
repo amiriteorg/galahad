@@ -467,6 +467,8 @@ try {
   // the Roundtable here. Gareth's gate can't run in its VM. Gawain's VM has a desktop, whose picture is drawn below.
   const docker = fakeDocker();
   let adaAtWork = false;
+  /** Kay's work is written: her gate fails until it is, as a new test does before the work it tests. */
+  let keepWritten = false;
   let desktopShot = "";
   const hold = new Promise<void>((release) => held.push(release));
   docker.onExec = async (_container: string, command: string[]) => {
@@ -476,8 +478,12 @@ try {
       await hold;
     }
     if (text.includes("write-give")) await hold;
+    if (text.includes("write-keep")) keepWritten = true;
     if (text.includes("desktop shot")) return { code: 0, stdout: desktopShot };
     if (text.includes("gate-fail")) return { code: 1, stdout: "", stderr: "error: connect ECONNREFUSED 127.0.0.1:5432" };
+    // Before Kay's work her gate fails, and after it passes: so it shows the work was done, and her task is verified by its
+    // gate and a reviewer (a gate that passed before any work would leave the reviewer to decide alone).
+    if (text.includes("gate-keep") && !keepWritten) return { code: 1, stdout: "", stderr: "FAIL importer.test.ts > reads ISO 8601 dates: expected 2026-11-26, got Invalid Date" };
     return { code: 0, stdout: text.includes("gate-") ? "required gate passed" : "command completed" };
   };
   // The browser comes in as a phone does behind `tailscale serve`: through the proxied port.
@@ -560,7 +566,8 @@ try {
   const knights = [
     { id: "ada", name: "Ada", role: "engineer", instructions: "Builds the sync engine and keeps its tests green." },
     { id: "lin", name: "Lin", role: "engineer", instructions: "Owns the PWA: fast, plain and legible." },
-    { id: "kay", name: "Kay", role: "planner", instructions: "Breaks large work into tasks that can be checked." },
+    // (An engineer, so her task is worked: a planner's plans and stops, and wasn't verified.)
+    { id: "kay", name: "Kay", role: "engineer", instructions: "Breaks large work into tasks that can be checked, and does them." },
     { id: "bors", name: "Bors", role: "reviewer", instructions: "Reviews what the others ship, independently.", enabled: false },
     { id: "percival", name: "Percival", role: "planner", instructions: "Researches the questions the others park." },
     { id: "gareth", name: "Gareth", role: "engineer", instructions: "Keeps the database layer and its migrations honest." },
