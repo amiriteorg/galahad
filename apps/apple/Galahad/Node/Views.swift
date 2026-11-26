@@ -106,7 +106,19 @@ struct TeamRoom: Decodable, Sendable {
 }
 
 struct TeamTask: Decodable, Sendable {
-    struct Changes: Decodable, Sendable { let files: Int; let artifact: String? }
+    /// What it changed in its repository, kept on the node: the artifact, how many files, and the commit it began from.
+    struct Changes: Decodable, Sendable { let files: Int; let artifact: String?; var base: String? = nil }
+    /// What its run came to, as the runner counted it (never the knight's own account): when the knight began and ended,
+    /// how its quest ended (done · unverified · gave-up · stopped), and its model calls by role and model (core's
+    /// TeamTaskRecord). Absent until it has ended in the knight's hands.
+    struct Record: Decodable, Sendable {
+        let startedAt: Double
+        let endedAt: Double
+        let ended: String
+        var commands: Int? = nil
+        var revisions: Int? = nil
+        let spent: [UsageLine]
+    }
     let id: String
     let room: String
     let assignee: String
@@ -115,6 +127,10 @@ struct TeamTask: Decodable, Sendable {
     let dependsOn: [String]
     /// The commands that prove it done.
     var gates: [String]? = nil
+    /// Its budget in US dollars at your prices (nil: none).
+    var budgetUsd: Double? = nil
+    /// What its run came to (nil: not run yet, or from before records were kept).
+    var record: Record? = nil
     /// queued · running · done · failed · stopped · interrupted
     let status: String
     let verified: Bool
