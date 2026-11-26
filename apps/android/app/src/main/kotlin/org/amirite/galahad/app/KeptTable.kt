@@ -22,13 +22,15 @@ object KeptTable {
     private val TEAM = listOf("teammates", "rooms", "tasks", "deliveries", "removed", "seen", "primary")
 
     /**
-     * Of each list, the fields the roster reads (Teammate.of, Room.of, Job.task, Job.delivery) and no others: a knight's
-     * standing instructions, its working notes, the keys it may use, a task's whole brief are not the Roundtable's.
+     * Of each list, the fields the roster and the work's rows read (Teammate.of, Room.of, Job.task, Job.delivery, TeamTask.of
+     * for a row) and no others: a knight's standing instructions, its working notes, the keys it may use, a task's whole
+     * brief are not the Roundtable's. (A knight's repository names its tasks' project; a task's start says how long it has
+     * been at work; a shipped task keeps its pull request's number.)
      */
     private val FIELDS = mapOf(
-        "teammates" to setOf("id", "name", "role", "enabled", "dailyTurns", "turnsToday", "createdBy", "avatar", "workspace"),
+        "teammates" to setOf("id", "name", "role", "enabled", "dailyTurns", "turnsToday", "createdBy", "avatar", "workspace", "repository"),
         "rooms" to setOf("id", "name", "direct", "members", "updatedAt", "paused"),
-        "tasks" to setOf("id", "title", "assignee", "status", "verified", "updatedAt", "progress", "error", "changes", "proposedBy", "room", "dependsOn"),
+        "tasks" to setOf("id", "title", "assignee", "status", "verified", "createdAt", "updatedAt", "progress", "error", "changes", "proposedBy", "room", "dependsOn", "shipped"),
         "deliveries" to setOf("id", "teammate", "status", "updatedAt", "error", "room"),
         "removed" to setOf("id", "name"),
     )
@@ -78,10 +80,15 @@ object KeptTable {
         return Json.Obj(kept)
     }
 
-    /** An item with the fields it may keep (a task's changes: how many files, nothing of what they were). */
+    /** An item with the fields it may keep (a task's changes: how many files, nothing of what they were; its pull request:
+     * its number, not where it is). */
     private fun only(item: Json.Obj, allowed: Set<String>): Json.Obj = Json.Obj(
         item.fields.filterKeys { it in allowed }.mapValues { (key, value) ->
-            if (key == "changes" && value is Json.Obj) Json.Obj(value.fields.filterKeys { it == "files" }) else value
+            when {
+                key == "changes" && value is Json.Obj -> Json.Obj(value.fields.filterKeys { it == "files" })
+                key == "shipped" && value is Json.Obj -> Json.Obj(value.fields.filterKeys { it == "pr" })
+                else -> value
+            }
         },
     )
 }
