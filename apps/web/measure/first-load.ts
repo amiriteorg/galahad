@@ -15,7 +15,8 @@
  *                   knights being arranged, and led by a knight), Galahad's timeline (and a message of yours that
  *                   carried files, and the message box with two waiting to go), a knight's
  *                   with a task running, one whose task kept its changes, one whose task failed, a room's work, a
- *                   knight's Workspace with its desktop, a task given to the Roundtable (where the app can), every
+ *                   knight's Workspace with its desktop, a task's own thread (at work, verified, failed), a task
+ *                   given to the Roundtable (where the app can), every
  *                   place the app has (its lib/nav.ts), each as far down as it goes too ("-full"), the sheets and
  *                   forms its places open, and the gallery of its components (apps/web/design/gallery.ts, where the
  *                   checkout has one). The same addresses on any checkout, so an older app is shown at the same places
@@ -290,8 +291,9 @@ function watchPage(): void {
     // (A knight's Workspace: the panel, or on an older app its tab.)
     if (location.hash.includes("tab=workspace")) return Boolean(main.querySelector(".team-panel"));
     if (location.hash.includes("room=")) return Boolean(main.querySelector(".team-message, .team-task"));
-    // (The knights' rows: in the page's own list, or in the roster that is the sidebar and a phone's first screen.)
-    return Boolean(document.querySelector(".team-nav-row[data-key], .roster-row[data-key^='person:']"));
+    // (The knights' rows: in the page's own list, in the roster that was the sidebar and a phone's first screen, or, since
+    // 26 November 2026, on the Roundtable's own page, its cards or its list.)
+    return Boolean(document.querySelector(".team-nav-row[data-key], .roster-row[data-key^='person:'], main [data-key^='person:']"));
   };
   // (For timing a move in the app already open: whether the page now on screen is there.)
   (window as unknown as { __there: () => boolean }).__there = there;
@@ -1001,6 +1003,10 @@ try {
       { name: "gareth-failed-task", hash: `#/team?room=${own.gareth}&tab=work`, wait: ".team-task" },
       { name: "forge-work", hash: "#/team?room=forge&tab=work", wait: ".team-task" },
       { name: "gawain-workspace-desktop", hash: `#/team?room=${own.gawain}&tab=workspace`, wait: ".team-panel .card, .desktop-shot img[data-shown]" },
+      // A task as a thread of its own (since 26 November 2026): at work, verified with its changes kept, and given up.
+      { name: "task-running", hash: `#/task/${first.id}`, wait: ".thread-page .thread-steps" },
+      { name: "task-verified", hash: `#/task/${kept.id}`, wait: ".thread-page .proof" },
+      { name: "task-failed", hash: `#/task/${failing.id}`, wait: ".thread-page .proof" },
       { name: "inbox", hash: "#/inbox" },
       { name: "memory", hash: "#/memory", wait: "#memory-results .item" },
       { name: "more", hash: "#/more" },
@@ -1009,6 +1015,8 @@ try {
     ];
     const sheets: { name: string; hash: string; open: string[]; wait?: string }[] = [
       { name: "sheet-palette", hash: "#/overview", open: [key("k", true)], wait: "dialog.palette[open]" },
+      // Everything else, under "…" (since 26 November 2026, where the rail and the phone's tab bar were).
+      { name: "sheet-places", hash: "#/home", open: [press("Everything else")] },
       { name: "sheet-shortcuts", hash: "#/overview", open: [key("?")] },
       { name: "sheet-chat-menu", hash: "#/chat", open: [press("Chat options")], wait: "dialog.selector-pop[open], dialog.selector-sheet[open]" },
       { name: "sheet-all-chats", hash: "#/chat", open: [press("Chat options"), press("All chats…", "All chats")] },
