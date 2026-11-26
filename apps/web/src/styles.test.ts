@@ -163,4 +163,22 @@ describe("the stylesheet", () => {
     const keeps = rules.some((r) => r.selectors.includes(".palette-input") && /(?:^|;)\s*(?:flex\s*:\s*none|flex-shrink\s*:\s*0)\s*(?:;|$)/.test(r.body));
     expect(keeps).toBe(true);
   });
+
+  test("where motion is reduced, nothing goes on moving: every animation that repeats, or takes a breath, is taken away", () => {
+    // (Durations become near nothing where motion is reduced, which ends what runs once; what repeats is taken away
+    // instead, as a loop made near instant would flicker. A spinner turns on: it is what says work is under way.)
+    const lasting = /infinite|var\(--d-(breath|sweep)\)/;
+    const moving = all.filter((r) => r.media.length === 0 && /(?:^|;)\s*animation(?:-name)?\s*:/.test(r.body) && lasting.test(r.body)).flatMap((r) => r.selectors);
+    const stilled = (selector: string, by: string, media: (m: string[]) => boolean) =>
+      all.some((r) => media(r.media) && r.selectors.includes(`${by} ${selector}`) && /(?:^|;)\s*animation\s*:\s*none\s*(?:;|$)/.test(r.body));
+    const unstilled = moving
+      .filter((selector) => selector !== ".spinner")
+      .filter(
+        (selector) =>
+          !stilled(selector, ':root[data-motion="reduce"]', (m) => m.length === 0) ||
+          !stilled(selector, ':root:not([data-motion="full"])', (m) => m.length === 1 && /prefers-reduced-motion:\s*reduce/.test(m[0]!)),
+      );
+    expect(moving.length).toBeGreaterThan(2);
+    expect(unstilled).toEqual([]);
+  });
 });

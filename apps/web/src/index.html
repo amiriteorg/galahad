@@ -139,17 +139,27 @@
         --safe-left: env(safe-area-inset-left, 0px);
         --safe-right: env(safe-area-inset-right, 0px);
 
-        /* Motion: fast ease-out, transform/opacity only */
+        /* Motion (docs/DESIGN.md, Motion): fast ease-out on transform and opacity; the apps take the same numbers. */
         --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
         --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
         --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+        /* Leaving: it gathers speed as it goes (a toast dropping away, a dialog closing), so nothing waits on it. */
+        --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+        /* A short spring for what opens over the page: response 0.4 s, damping 0.72 (SwiftUI's .spring(response: 0.4,
+           dampingFraction: 0.72); Compose's spring(dampingRatio = 0.72f, stiffness = 246.7f)), sampled over --d-spring:
+           3.8 % past its mark at most, settled by its end. */
+        --ease-spring: linear(0, 0.027, 0.095, 0.188, 0.295, 0.405, 0.513, 0.613, 0.703, 0.781, 0.847, 0.901, 0.944, 0.977, 1.001, 1.018, 1.029, 1.036, 1.038, 1.038, 1.036, 1.033, 1.029, 1.025, 1.021, 1.017, 1.013, 1.01, 1.007, 1.005, 1.003, 1.001, 1);
         --d-1: 120ms; --d-2: 180ms; --d-3: 240ms; --d-sheet: 380ms;
+        /* An alert coming into focus (a toast, the banner) · the spring's length · one slow breath of something new
+           that needs you, once · one pass of the banner's line of light while it tries again. (Where motion is
+           reduced the breath and the line are taken away, not quickened: a loop made near instant would flicker.) */
+        --d-enter: 420ms; --d-spring: 500ms; --d-breath: 2400ms; --d-sweep: 4200ms;
       }
       :root[data-theme="light"] { color-scheme: light; }
       :root[data-theme="dark"] { color-scheme: dark; }
-      :root[data-motion="reduce"] { --d-1: 0.01ms; --d-2: 0.01ms; --d-3: 0.01ms; --d-sheet: 0.01ms; }
+      :root[data-motion="reduce"] { --d-1: 0.01ms; --d-2: 0.01ms; --d-3: 0.01ms; --d-sheet: 0.01ms; --d-enter: 0.01ms; --d-spring: 0.01ms; }
       @media (prefers-reduced-motion: reduce) {
-        :root:not([data-motion="full"]) { --d-1: 0.01ms; --d-2: 0.01ms; --d-3: 0.01ms; --d-sheet: 0.01ms; }
+        :root:not([data-motion="full"]) { --d-1: 0.01ms; --d-2: 0.01ms; --d-3: 0.01ms; --d-sheet: 0.01ms; --d-enter: 0.01ms; --d-spring: 0.01ms; }
       }
       @media (pointer: coarse) { :root { --control-h: 44px; --control-h-sm: 36px; } }
       @media (max-width: 959px) { :root { --fs-body: 15px; } }
@@ -230,6 +240,8 @@
       .boot { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; }
       .boot img { width: 56px; height: 56px; opacity: 0.92; animation: boot-breathe 1.6s var(--ease-in-out) infinite alternate; }
       @keyframes boot-breathe { from { transform: scale(0.96); opacity: 0.55; } to { transform: scale(1); opacity: 0.95; } }
+      :root[data-motion="reduce"] .boot img { animation: none; }
+      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .boot img { animation: none; } }
 
       /* ---------- shell ---------- */
       .shell { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: 1fr; }
@@ -1472,6 +1484,8 @@
       .attached-large { display: block; max-width: 100%; max-height: 72vh; margin: 0 auto; border-radius: 8px; }
       .caret { display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; border-radius: 2px; background: var(--accent); animation: blink 1s steps(2, start) infinite; }
       @keyframes blink { to { visibility: hidden; } }
+      :root[data-motion="reduce"] .caret { animation: none; }
+      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .caret { animation: none; } }
       .process { display: flex; flex-direction: column; gap: 0; font-size: var(--fs-12); color: var(--text-2); min-width: 0; }
       .process summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; color: var(--text-3); width: fit-content; max-width: 100%; min-width: 0; border-radius: var(--r-sm); padding: 2px 6px 2px 2px; }
       .process summary > .ellipsis { min-width: 0; }

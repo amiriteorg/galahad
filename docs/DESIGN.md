@@ -121,14 +121,23 @@ Components never pick colours; they take a tone through `data-tone="ok|warn|dang
 
 ## Motion
 
+The tokens are at the top of `apps/web/src/index.html`; the iPhone, iPad, Mac and Android apps take the same numbers (a spring by its response and damping, which SwiftUI and Compose both take).
+
 | Token | Value | Use |
 |---|---|---|
 | `--ease-out` | `cubic-bezier(.23, 1, .32, 1)` | Almost everything: things arrive fast and settle |
+| `--ease-exit` | `cubic-bezier(.4, 0, 1, 1)` | Leaving: a toast dropping away, a dialog closing. It gathers speed as it goes, and is always shorter than the arrival |
+| `--ease-spring` | `linear(…)`: a spring of response 0.4 s, damping 0.72, sampled over `--d-spring` | What opens over the page: a dialog. 3.8 % past its mark at most, settled by its end. SwiftUI `.spring(response: 0.4, dampingFraction: 0.72)`; Compose `spring(dampingRatio = 0.72f, stiffness = 246.7f)` |
+| `--ease-in-out` | `cubic-bezier(.77, 0, .175, 1)` | The banner's line of light, the one breath |
 | `--ease-drawer` | `cubic-bezier(.32, .72, 0, 1)` | Bottom sheets (Vaul's curve) |
 | `--d-1` | 120 ms | Hover, press, colour changes, the palette |
-| `--d-2` | 180 ms | Dialogs, switches |
-| `--d-3` | 240 ms | Page enter, toasts, the segmented thumb |
+| `--d-2` | 180 ms | Switches; an alert leaving (a toast, the banner, a dialog closing) |
+| `--d-3` | 240 ms | Page enter, the stack of toasts moving back, a count rolling, the segmented thumb |
+| `--d-enter` | 420 ms | An alert coming into focus: a toast, the banner |
+| `--d-spring` | 500 ms | The spring's length (a dialog opening; its fade takes `--d-2`) |
 | `--d-sheet` | 380 ms | Bottom sheets on phones |
+| `--d-breath` | 2400 ms | One slow breath of something new that needs you, once |
+| `--d-sweep` | 4200 ms | One pass of the banner's line of light, while it tries again |
 
 Rules:
 
@@ -146,7 +155,7 @@ Rules:
   - A knight in any mood but work comes to rest, in that mood's light (dimmer while queued or paused, its rim red-brown when its work failed).
 - **How it is drawn:** the field, its look at each size, its motion and its embers are data and pure functions of time (`lib/field.ts`, `lib/field-orb.ts`), held for the Apple and Android apps by the parity vectors (their `field` section; until the apps port it they draw the glyph orbs, the vectors' `orb` section). A field is made once (each line's longitude and width from its seed: `fieldModel`) and turned each frame (`fieldAt`). Its middle stays dark (no line comes into the core, and the picture's middle holds a tenth of its brightest light or less), and its lines are of uneven widths at uneven longitudes, never a lattice (a lattice of dots on a sphere read as a disco ball when the icon was chosen). Galahad's has 26 to 46 lines by its size; a knight's 12 to 20, and its lean and longitudes are its handle's, always seen from the side. The PWA draws one on a canvas its own size (`ui/orb.ts`): each line one continuous stroke from point to point, coloured by its light as the icon shows light (ACES at the icon's exposure, `fieldTone`), the strokes of one colour and brightness gathered into one path, so a frame is a few dozen draws; on a dark page they are added as light ("lighter") over a close glow three times as wide and an eighth as strong (no fog), and on a light page they are ink (each colour's deep tone, 3:1 or more on the page where lit). A still orb is drawn once, and the same one again (a knight in twenty rows) is stamped from that picture; a change of theme draws every orb on the page again. A moving one is drawn on the page's one clock (`ui/motion.ts`): only on screen, nothing while the page is hidden, and only as often as its motion needs (`fieldFps`: 30 frames a second while a mood arrives or embers drift, 20 while it breathes, 15 while it only turns, none once a knight has come to rest). In headless Chrome on the owner's MacBook, making and drawing one takes the page's thread 0.12 ms for a knight's 34 px face, 0.22 ms for his 50 px orb and 0.6 ms for his 160 px welcome (with the processor slowed 4× at three pixels to one: 0.44, 0.88 and 2.7 ms); a frame of one already made, about as much. Measured against the app just before it (512d6b7e), one after the other in Chrome 156 on that MacBook (`apps/web/measure/first-load.ts --runs 5 --shifts`): at rest, the Roundtable's main thread works 0.7 ms a second where it worked 80.1 (the whole browser 137.5 ms of processor a second, where 336.9), and Chat's 8.6 where 37.5 (63.2, where 175.5); on the phone profile every page is usable sooner, each range apart from before (the Roundtable 785 to 704 ms on a first visit, Chat 765 to 722, a room 835 to 742), with fewer elements (Chat 450 to 364); `/app.js` is 1.5 KB smaller as brotli (205.4 to 203.9 KB); and nothing on any place moves once it is on screen, before or after. (Drawing orbs in a worker of their own, off the page's thread, was tried: the page's thread was then nearly idle, but the browser as a whole worked a third more in Chrome and nearly twice as much in WebKit.) An answer in a conversation's history, and a speaker beside something it said earlier, stay still; the answer he is writing moves.
 - **A dot** for a state is a small orb in its colour, lit from above; one for something going on sends out a wave of its light.
-- **Reduced motion:** when the system asks, or Settings says *Reduced*, every duration becomes ~0 and shimmer and caret blinking stop. So do the orbs (Galahad's and every knight's) and the dots' waves, each drawn still where it stood (an orb first drawn so is at its rest, in its mood's light). Settings can also force *Full*. JS-driven motion checks `prefersReducedMotion()`; the orbs' clock (`ui/motion.ts`) checks it every frame, so a change in Settings or on the device stills them, or sets them going, at once.
+- **Reduced motion:** when the system asks, or Settings says *Reduced*, every duration becomes ~0 and shimmer, caret blinking and the boot screen's breath stop: what repeats is taken away rather than quickened, as a loop made near instant would flicker (a test holds every repeating animation in the stylesheet to this; a spinner alone turns on, as it is what says work is under way). So do the orbs (Galahad's and every knight's) and the dots' waves, each drawn still where it stood (an orb first drawn so is at its rest, in its mood's light). Settings can also force *Full*. JS-driven motion checks `prefersReducedMotion()`; the orbs' clock (`ui/motion.ts`) checks it every frame, so a change in Settings or on the device stills them, or sets them going, at once.
 
 ## Layout and shell
 
