@@ -469,6 +469,30 @@ object TaskWords {
         else -> listOf("resume", "again")
     }
 
+    /** How you stepped in on it, the north star's count (null: you never did): core's interventionWords, in its order
+     * ("an approval and two messages"; "its desktop taken over, a stop, 12 resumes, given again two times and
+     * rewritten"). */
+    fun stepped(task: TeamTask): String? {
+        val number = listOf("", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+        fun count(n: Int) = number.getOrNull(n) ?: n.toString()
+        val parts = listOf("approval", "message", "takeover", "stop", "resume", "again", "rewritten").mapNotNull { kind ->
+            val n = task.interventions[kind] ?: 0
+            if (n <= 0) return@mapNotNull null
+            when (kind) {
+                "approval" -> if (n == 1) "an approval" else "${count(n)} approvals"
+                "message" -> if (n == 1) "a message" else "${count(n)} messages"
+                "takeover" -> "its desktop taken over"
+                "stop" -> if (n == 1) "a stop" else "${count(n)} stops"
+                "resume" -> if (n == 1) "a resume" else "${count(n)} resumes"
+                "again" -> if (n == 1) "given again" else "given again ${count(n)} times"
+                else -> if (n == 1) "rewritten" else "rewritten ${count(n)} times"
+            }
+        }
+        if (parts.isEmpty()) return null
+        val words = if (parts.size == 1) parts[0] else "${parts.dropLast(1).joinToString(", ")} and ${parts.last()}"
+        return "You stepped in: $words"
+    }
+
     /** Where a try's lesson begins in a goal: replaced by the next try's, never piled up. */
     private const val LAST_TIME = "\n\nLast time ("
 

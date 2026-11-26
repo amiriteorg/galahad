@@ -351,11 +351,10 @@ private fun Brief(goal: String) {
 /** What else is so of it, in a line: sensitive mode, your stepping in, an outcome's step, a fix, where it began, and what
  * waits on it. */
 private fun facts(task: TeamTask, all: List<TeamTask>): String {
-    val stepped = task.interventions.filterValues { it > 0 }.entries.joinToString(", ") { (how, n) -> if (n == 1) how else "$how ×$n" }
     val dependents = all.filter { task.id in it.dependsOn }
     return listOfNotNull(
         task.models.takeIf { it.isNotEmpty() }?.let { "Sensitive mode: on ${it.joinToString(", ")} alone" },
-        stepped.takeIf { it.isNotEmpty() }?.let { "You stepped in: $it" },
+        TaskWords.stepped(task),
         task.outcome?.let { "A step of an outcome Galahad owns" },
         task.fix?.let { "It fixes pull request ${it.pr?.let { pr -> "#$pr" } ?: it.branch}" },
         task.from?.let { "Started where step ${it.step} of another task left its files" },
