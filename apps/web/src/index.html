@@ -464,16 +464,6 @@
       .home-dock > * { pointer-events: auto; }
       .home-dock-problem:empty { display: none; }
       .home-dock-problem { margin-bottom: var(--sp-2); }
-      .home-composer {
-        display: flex; align-items: flex-end; gap: 4px; padding: 5px; border: 1px solid var(--border-strong); border-radius: 26px; background: var(--surface); box-shadow: var(--shadow-2);
-        transition: border-color var(--d-1) var(--ease-out);
-      }
-      .home-composer:focus-within { border-color: var(--focus); }
-      .home-composer textarea {
-        flex: 1; min-width: 0; min-height: 40px; max-height: 160px; padding: 9px 4px; border: 0; outline: none; background: none; resize: none;
-        color: var(--text); font: inherit; font-size: var(--fs-input); line-height: 22px; field-sizing: content;
-      }
-      .home-composer > .btn { flex: none; width: 40px; height: 40px; padding: 0; border-radius: 50%; }
       :root[data-keyboard="open"] .home-dock { padding-bottom: var(--sp-2); }
       @media (min-width: 960px) {
         .home-head { padding-top: var(--sp-6); }
@@ -1336,9 +1326,13 @@
       .thread-live-text { min-width: 0; flex: 0 1 auto; }
       .thread-live code { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
       .thread-live > .btn { margin-left: auto; }
-      .thread-composer-wrap { flex: none; width: 100%; max-width: 760px; margin: 0 auto; padding: var(--sp-2) var(--sp-5) var(--sp-4); }
+      .thread-composer-wrap { position: relative; flex: none; width: 100%; max-width: 760px; margin: 0 auto; padding: var(--sp-2) var(--sp-5) var(--sp-4); }
+      /* What scrolls above a thread's message box fades out into it, as under Home's dock. */
+      :is(.thread-composer-wrap, .team-composer)::before {
+        content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--sp-6); pointer-events: none;
+        background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 0%, transparent), var(--bg));
+      }
       .thread-composer-wrap[hidden] { display: none; }
-      .thread-composer textarea { min-height: 44px; max-height: 160px; field-sizing: content; }
       /* Its details: a card floating beside the thread on a wide screen (a sheet on a phone). */
       .thread-details { display: none; }
       .td { display: flex; flex-direction: column; }
@@ -1432,9 +1426,7 @@
       .team-owner-text { padding: 10px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px 14px 4px 14px; white-space: pre-wrap; }
       .team-system { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; padding-left: 44px; color: var(--text-3); font-size: var(--fs-12); overflow-wrap: anywhere; }
       .team-system > svg { align-self: center; }
-      .team-composer { padding: var(--sp-2) var(--sp-6) var(--sp-5); width: 100%; max-width: 880px; margin: 0 auto; flex: none; }
-      .team-composer .composer { box-shadow: var(--shadow-1); }
-      .team-composer textarea { max-height: 160px; }
+      .team-composer { position: relative; padding: var(--sp-2) var(--sp-6) var(--sp-5); width: 100%; max-width: 880px; margin: 0 auto; flex: none; }
       .team-live { display: flex; flex-wrap: wrap; gap: var(--sp-3); min-height: 0; margin-bottom: var(--sp-2); color: var(--text-3); font-size: var(--fs-12); }
       .team-live:empty, .team-send-error:empty { display: none; }
       .team-send-error { margin-bottom: var(--sp-2); }
@@ -1506,7 +1498,6 @@
         .team-head > .avatar { display: none; }
         .team-thread, .team-panel { padding: var(--sp-4); }
         .team-composer { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
-        .team-composer .hint { font-size: var(--fs-11); }
         .team-message.owner { margin-left: 30px; }
         .team-head .workspace-toggle { width: var(--control-h-sm); padding: 0; }
         .team-head .workspace-toggle > span { display: none; }
@@ -1635,7 +1626,12 @@
       .step .step-detail { color: var(--text-3); overflow-wrap: anywhere; }
       /* The composer sticks to the bottom; on the chat page main drops its extra bottom space so the
          composer's resting place and its sticky place coincide (nothing hides behind it). */
-      .composer-wrap { position: sticky; bottom: calc(var(--tabbar-h) + var(--safe-bottom)); padding: var(--sp-2) 0 var(--sp-3); background: linear-gradient(to top, var(--bg) 70%, transparent); z-index: 5; }
+      /* (What scrolls under it fades out, as under Home's dock: what you read last never ends on the box's edge.) */
+      .composer-wrap {
+        position: sticky; bottom: calc(var(--tabbar-h) + var(--safe-bottom)); z-index: 5; padding: var(--sp-8) 0 var(--sp-3); pointer-events: none;
+        background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 0%, transparent), var(--bg) 58%);
+      }
+      .composer-wrap > * { pointer-events: auto; }
       .shell[data-route="chat"] main.view { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom)); }
       @media (min-width: 960px) {
         .composer-wrap { bottom: 0; padding-bottom: var(--sp-5); }
@@ -1651,12 +1647,30 @@
       @media (max-width: 639px) {
         .topbar .fleet-pill { display: none; }
       }
-      .composer { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-2); transition: border-color var(--d-1) var(--ease-out), box-shadow var(--d-1) var(--ease-out); }
-      .composer:focus-within { border-color: color-mix(in srgb, var(--focus) 60%, var(--border-strong)); box-shadow: var(--shadow-2), 0 0 0 3px color-mix(in srgb, var(--focus) 14%, transparent); }
-      .composer textarea { display: block; width: 100%; border: 0; outline: none; background: none; resize: none; padding: 12px 14px 4px; max-height: 40vh; min-height: 48px; line-height: 1.5; font-size: var(--fs-input); }
-      .composer .composer-bar { display: flex; align-items: center; gap: var(--sp-2); padding: 6px 8px 8px 12px; }
-      .composer .hint { font-size: var(--fs-12); color: var(--text-3); }
-      .composer .send { width: 34px; height: 34px; padding: 0; border-radius: 10px; flex: none; }
+      /* The one message box (ui/composer.ts; Home's, his conversation's, a task's and a knight's alike, as Grok Bot's,
+         OpenMausBot's and T3 Code's are one shape): a capsule with what leads it, the field, what trails it and the send
+         circle; the files going with it above the field; its hint under the capsule, only while you type or he works. */
+      .composer {
+        --composer-h: 36px; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--border-strong); border-radius: 24px;
+        background: var(--surface); box-shadow: var(--shadow-2); transition: border-color var(--d-1) var(--ease-out), box-shadow var(--d-1) var(--ease-out);
+      }
+      @media (pointer: coarse) { .composer { --composer-h: 40px; } }
+      .composer:focus-within { border-color: color-mix(in srgb, var(--focus) 55%, var(--border-strong)); box-shadow: var(--shadow-2), 0 0 0 3px color-mix(in srgb, var(--focus) 12%, transparent); }
+      .composer-row { display: flex; align-items: flex-end; gap: 2px; min-width: 0; padding: 5px; }
+      .composer-lead, .composer-trail { display: flex; align-items: center; gap: 4px; flex: none; }
+      .composer textarea {
+        display: block; flex: 1; min-width: 0; min-height: var(--composer-h); max-height: 40vh; margin: 0; padding: calc((var(--composer-h) - 22px) / 2) 8px;
+        border: 0; outline: none; background: none; resize: none; color: var(--text); font: inherit; font-size: var(--fs-input); line-height: 22px; field-sizing: content;
+      }
+      .composer-row > textarea:first-child { padding-left: 14px; }
+      .composer-row .btn { flex: none; height: var(--composer-h); border-radius: var(--r-full); }
+      .composer-row .btn.icon-only { width: var(--composer-h); padding: 0; }
+      .composer-row .btn.sm:not(.icon-only) { padding: 0 14px; font-size: var(--fs-13); }
+      /* The send circle: ink when there is something to send; until then quiet, never a grey slab. */
+      .composer .send:disabled { background: var(--surface-3); color: var(--text-3); box-shadow: none; opacity: 1; }
+      .composer-hint { display: none; align-items: center; gap: 6px; min-width: 0; padding: 0 16px 9px; font-size: var(--fs-12); line-height: 1.35; color: var(--text-3); }
+      .composer-hint > .hint { min-width: 0; }
+      .composer:focus-within:has(textarea:not(:placeholder-shown)) .composer-hint, .composer[data-busy] .composer-hint { display: flex; }
       /* Files with your next message, above its words; a box they're dropped on is outlined. */
       .composer.dropping { border-color: var(--focus); box-shadow: var(--shadow-2), 0 0 0 3px color-mix(in srgb, var(--focus) 24%, transparent); }
       .composer-files { display: flex; gap: 6px; padding: 10px 10px 0; overflow-x: auto; scrollbar-width: none; }
@@ -1672,7 +1686,6 @@
       .composer-file .file-name { font-size: var(--fs-13); }
       .composer-file .file-said { font-size: var(--fs-12); color: var(--text-3); }
       .composer-file.failed .file-said { color: var(--danger); }
-      @media (pointer: coarse) { .composer .send { width: 40px; height: 40px; } }
       .composer-wrap .callout { margin-bottom: var(--sp-2); box-shadow: var(--shadow-2); }
       /* "Latest", over the composer, when the thread is scrolled up (views/chat.ts). */
       .jump-anchor { position: relative; }
@@ -1697,8 +1710,6 @@
       .key-asks:not(:empty) { margin-bottom: var(--sp-2); }
       .key-asks .card { box-shadow: var(--shadow-2); }
       /* While he works: steer or queue (the one Enter does is in ink), and Stop. */
-      .composer .composer-bar .btn.sm { flex: none; }
-      @media (pointer: coarse) { .composer .composer-bar .btn.sm:not(.icon-only) { height: 40px; padding: 0 14px; font-size: var(--fs-13); } }
       /* What's waiting while he works: steers on their way, the queue (held or not), and what unattended work may do. */
       .chat-queue { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-2); font-size: var(--fs-13); min-width: 0; }
       .chat-queue-head { display: flex; align-items: center; gap: 8px; color: var(--text-2); min-width: 0; }

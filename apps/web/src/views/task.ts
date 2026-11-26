@@ -19,6 +19,7 @@ import { byAttention, projectsOfKnights, seenOnOpen, shortSpan, taskState } from
 import { setTaskDetailsShown, taskDetailsShown } from "../prefs.ts";
 import { button, callout, dot, empty, errorState, skeletonBlock } from "../ui/controls.ts";
 import { openSheet } from "../ui/dialog.ts";
+import { composerBox } from "../ui/composer.ts";
 import { cx, h, keepPlace, replace, type Child } from "../ui/dom.ts";
 import { icon, type IconName } from "../ui/icons.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
@@ -111,18 +112,17 @@ export const taskView: View = (root, ctx, { scope, opts }) => {
   const hint = h("span", { class: "hint grow ellipsis" });
   const problem = h("div", { class: "team-send-error", role: "status" });
   const send = button("Send", { variant: "primary", iconOnly: true, icon: "arrow-up", type: "submit", label: "Send" });
-  const composer = h(
-    "form",
-    {
-      class: "composer thread-composer",
-      onsubmit: (event: Event) => {
-        event.preventDefault();
-        void deliver();
-      },
+  send.classList.add("send");
+  const composer = composerBox({
+    className: "thread-composer",
+    onSubmit: (event: Event) => {
+      event.preventDefault();
+      void deliver();
     },
-    input,
-    h("div", { class: "composer-bar" }, hint, send),
-  );
+    field: input,
+    send: [send],
+    hint: [hint],
+  });
   const composerWrap = h("div", { class: "thread-composer-wrap", hidden: true }, problem, composer);
 
   replace(root, h("div", { class: "thread-page" }, head, h("div", { class: "thread-body" }, h("div", { class: "thread-column" }, scroller, liveLine, composerWrap), details)));

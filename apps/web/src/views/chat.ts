@@ -21,6 +21,7 @@ import { orb } from "../ui/orb.ts";
 import { galahadState } from "../lib/knight-state.ts";
 import { orbMoodOfState } from "../lib/orb-motion.ts";
 import { icon, type IconName } from "../ui/icons.ts";
+import { composerBox } from "../ui/composer.ts";
 import { renderMarkdown } from "../ui/markdown.ts";
 import { selector, type SelectorGroup } from "../ui/selector.ts";
 import { signal } from "../ui/signal.ts";
@@ -1085,6 +1086,8 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   function syncComposer(): void {
     syncUnderway();
     const busy = live !== null;
+    // (While he works, the box says what its keys do now, under it.)
+    input.form?.toggleAttribute("data-busy", busy);
     const files = tray.carried().length > 0;
     const has = (Boolean(input.value.trim()) || files) && !blocked && !tray.going();
     const canQueue = current !== null;
@@ -1475,20 +1478,19 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   keptChanged.add(onKept);
   scope.add(() => keptChanged.delete(onKept));
 
-  const form = h(
-    "form",
-    {
-      class: "composer",
-      onsubmit: (event: Event) => {
-        event.preventDefault();
-        void deliver();
-      },
+  const form = composerBox({
+    onSubmit: (event: Event) => {
+      event.preventDefault();
+      void deliver();
     },
-    tray.row,
-    input,
-    tray.chooser,
-    h("div", { class: "composer-bar" }, tray.button, icon("shield-check", { size: 14, class: "subtle", label: "Checked for secrets before sending" }), meta, queueButton, steerButton, stopButton, sendButton),
-  );
+    files: tray.row,
+    lead: [tray.button],
+    field: input,
+    chooser: tray.chooser,
+    trail: [queueButton, steerButton],
+    send: [stopButton, sendButton],
+    hint: [icon("shield-check", { size: 14, class: "subtle", label: "Checked for secrets before sending" }), meta],
+  });
   // Pictures pasted alone, and files dropped on the message box, go with the message.
   tray.take(input, form);
   tray.render();

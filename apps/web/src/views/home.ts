@@ -5,6 +5,7 @@ import { orbMoodOfState } from "../lib/orb-motion.ts";
 import { atAGlance, type Attended, failedIn, inProject, type WorkRow } from "../lib/work.ts";
 import { setWorkOpen, workOpen } from "../prefs.ts";
 import { arrive, button, callout, count, dot, onePrimary, setCount, skeletonRows } from "../ui/controls.ts";
+import { composerBox } from "../ui/composer.ts";
 import { cx, h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { orb } from "../ui/orb.ts";
@@ -61,6 +62,7 @@ export const homeView: View = (root, ctx, { scope }) => {
   // ---- his message box, docked ----
   const input = h("textarea", { rows: 1, placeholder: "Ask Galahad…", "aria-label": "Ask Galahad", autocomplete: "off", enterkeyhint: "send" });
   const send = button("Send", { variant: "primary", iconOnly: true, icon: "arrow-up", type: "submit", label: "Send to Galahad" });
+  send.classList.add("send");
   const problem = h("div", { class: "home-dock-problem", role: "status" });
   let sending = false;
   const sync = (): void => {
@@ -98,13 +100,13 @@ export const homeView: View = (root, ctx, { scope }) => {
         "div",
         { class: "home-dock" },
         problem,
-        h(
-          "form",
-          { class: "home-composer", onsubmit: (event: Event) => (event.preventDefault(), void deliver()) },
-          canGive ? button("Give a task", { variant: "ghost", iconOnly: true, icon: "plus", title: "Give a task to the knight best suited to it, or to one by name", onClick: () => giveToRoundtable(ctx) }) : null,
-          input,
-          send,
-        ),
+        composerBox({
+          className: "home-composer",
+          onSubmit: (event: Event) => (event.preventDefault(), void deliver()),
+          lead: canGive ? [button("Give a task", { variant: "ghost", iconOnly: true, icon: "plus", title: "Give a task to the knight best suited to it, or to one by name", onClick: () => giveToRoundtable(ctx) })] : [],
+          field: input,
+          send: [send],
+        }),
       )
     : null;
 
