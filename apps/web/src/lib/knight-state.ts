@@ -1,9 +1,10 @@
 import type { Now } from "./now.ts";
 
 /*
- * What a knight is doing, in a word and a colour: the ring round its face and the chip beside its name (ui/avatar.ts's
- * seat, ui/controls.ts's badge). Pure (no DOM). Which one a knight is in, its row says (lib/roster.ts); Galahad's, his
- * line (lib/now.ts). The colour is never the only telling: every state the ring colours is said in words too.
+ * What a knight is doing, in a word and a colour: the chip beside its name (ui/avatar.ts' stateChip, ui/controls.ts's
+ * badge) and its row's state (its seat keeps it as data-state; since 26 November 2026 no ring round its face says it).
+ * Pure (no DOM). Which one a knight is in, its row says (lib/roster.ts); Galahad's, his line (lib/now.ts). The colour is
+ * never the only telling: every state it colours is said in words too.
  *
  * One colour to each thing going on, the same on every device (the Apple app's Brand.swift): blue at work, amber when
  * it waits on you, red for a failure, green for what has ended and is new to you (verified work among it) until you
@@ -14,9 +15,9 @@ import type { Now } from "./now.ts";
 export type KnightState = "working" | "needs" | "failed" | "paused" | "queued" | "verified" | "unread" | "resting";
 
 export interface StateLook {
-  /** The chip's words. None for a knight at rest: its line says what it is for, and its ring says nothing. */
+  /** The chip's words. None for a knight at rest: its line says what it is for. */
   words: string | null;
-  /** The chip's tone, which is the ring's colour too. */
+  /** The chip's tone: the state's colour. */
   tone: "work" | "needs" | "failed" | "ok" | "neutral";
 }
 

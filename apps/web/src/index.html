@@ -1278,31 +1278,14 @@
       .team-head .workspace-toggle[aria-pressed="true"] { --btn-bg: var(--surface-3); }
       :root[data-keyboard="open"] .team-layout { height: calc(100dvh - var(--topbar-h)); }
       @media (pointer: coarse) { .team-member-choice, .team-task-details > summary { min-height: 44px; } }
-      /* A knight in its seat (ui/avatar.ts seat()): its face in a ring of its state's colour (lib/knight-state.ts), the
-         ring just outside the drawing's reach. A hairline at rest; blue while it works; amber while it waits on you; red
-         for a failure; green for what ended and is new to you (verified work among it) until you look; grey while
-         queued; dashed while paused. */
-      .seat {
-        --ring: var(--border-strong); --ring-w: 1px; --seat-pad: 4px;
-        position: relative; display: inline-grid; place-items: center; flex: none; padding: var(--seat-pad); border-radius: 50%; background: var(--surface-2);
-      }
+      /* A knight in its seat (ui/avatar.ts seat()): its face, still, in the room its ring once took (so a row keeps its
+         height). No ring and no disc round it since 26 November 2026 (a ring round a lit middle read as a nipple): its
+         state is said beside it, in words and its colour. */
+      .seat { --seat-pad: 4px; position: relative; display: inline-grid; place-items: center; flex: none; padding: var(--seat-pad); }
       .seat.seat-m { --seat-pad: 7px; }
       .seat.seat-l { --seat-pad: 9px; }
-      .seat::before { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 var(--ring-w) var(--ring); pointer-events: none; }
-      .seat:not([data-state="resting"]) { --ring-w: 2px; }
-      .seat.seat-m:not([data-state="resting"]) { --ring-w: 2.5px; }
-      .seat.seat-l:not([data-state="resting"]) { --ring-w: 3px; }
-      /* Each state's ring, in its colour; round it, its state's lights move (ui/orb.ts seatLights; your word, 24 November
-         2026), and stand still where motion is reduced. */
-      .seat[data-state="working"] { --ring: var(--work); }
-      .seat[data-state="needs"] { --ring: var(--needs); }
-      .seat[data-state="failed"] { --ring: var(--failed); }
-      .seat[data-state="verified"], .seat[data-state="unread"] { --ring: var(--ok); }
-      .seat[data-state="queued"] { --ring: var(--text-3); }
-      .seat[data-state="paused"]::before { box-shadow: none; border: var(--ring-w) dashed var(--text-3); }
-      /* Galahad's seat is his orb (ui/avatar.ts seat()): the orb's own rings take the ring's room, in his state's colour. */
-      .seat.seat-orb { padding: 0; background: none; }
-      .seat.seat-orb::before { content: none; }
+      /* Galahad's seat is his orb (ui/avatar.ts seat()): his own ring takes the seat's room. */
+      .seat.seat-orb { padding: 0; }
       /* A state in words in a badge (ui/avatar.ts stateChip(), a chat's, a quest's, a loop's): working's carries a live dot. */
       .badge .dot { width: 6px; height: 6px; }
       /* The one who leads the Roundtable (ui/avatar.ts leadMark()): beside its name, small, in ink, in words. */
@@ -1571,14 +1554,10 @@
       .chat-hero h2 { font-size: var(--fs-20); font-weight: 650; letter-spacing: -0.02em; }
       .hero-galahad { display: grid; place-items: center; margin-bottom: var(--sp-1); }
       .hero-galahad .worker-avatar { animation: emblem-in var(--d-sheet) var(--ease-out); }
-      /* Galahad's orb (ui/orb.ts): a sphere of light in the colour of his state, inside the rings of a display, moving as
-         his mood does (lib/orb-motion.ts). Its colours are its own (lib/orb.ts), the same in either theme and every app. */
+      /* The orbs (ui/orb.ts): Galahad's field in gold in his heads-up ring, a knight's in its own colours, each drawn on a
+         canvas its own size: still where it is one of many, moving slowly where it is the one you look at (lib/field-orb.ts). */
       .orb { display: inline-grid; place-items: center; flex: none; width: var(--orb-size); height: var(--orb-size); }
-      .orb > svg { display: block; width: 100%; height: 100%; overflow: visible; }
-      /* An orb that moves (ui/orb.ts), and a knight's seat's lights: a canvas centred on it, its motes and waves reaching
-         past it over what is round it, which they never move or take a tap from. */
-      .orb-live { position: relative; }
-      .orb-canvas, .seat-lights { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+      .orb > svg, .orb > canvas { display: block; width: 100%; height: 100%; }
       /* What he asks you, under his orb (views/galahad-asks.ts): the Inbox's own cards, read left to right. */
       .galahad-asks { width: 100%; max-width: 640px; text-align: left; margin-top: var(--sp-2); }
       .chat-hero p { color: var(--text-2); max-width: 46ch; }

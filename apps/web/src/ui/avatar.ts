@@ -1,18 +1,19 @@
 import { AVATAR_EXPRESSIONS, isOrbProfile, KNIGHT_TINT_NAMES, KNIGHT_TINTS, knightColors, type AvatarExpression, type OrbProfile } from "@galahad/core/avatar";
 import { type KnightState, STATES } from "../lib/knight-state.ts";
 import { orbToneOfState } from "../lib/orb.ts";
-import { orbMoodOfExpression, orbMoodOfState } from "../lib/orb-motion.ts";
+import { orbMoodOfExpression } from "../lib/orb-motion.ts";
 import { button, dot } from "./controls.ts";
 import { h, replace } from "./dom.ts";
-import { knightFace, orb, seatLights } from "./orb.ts";
+import { knightFace, orb } from "./orb.ts";
 
 /*
  * A knight as an orb (your word, 25 November 2026: "drop the knight avatars, and just use custom/procedurally generated
- * colored particle orbs"): a sphere of points of light in a colour of its own, the one you chose for it or its
- * handle's, turning as its work goes (ui/orb.ts' knightFace, lib/orb-sphere.ts). Where it sits at a list or a board,
- * its seat is a ring of its state's colour round it, with its state's lights moving round the ring (seat()). Galahad
- * himself is his orb. A speaker in a conversation's history is drawn still, and nothing moves when the device asks for
- * reduced motion. Nothing from a profile reaches a URL, a style or a paint but a colour checked to be six hex digits.
+ * colored particle orbs"): since 26 November 2026, Galahad's field in a colour of its own, the one you chose for it or
+ * its handle's (ui/orb.ts' knightFace, lib/field-orb.ts). It moves only where it is the one you are looking at and it
+ * is at work; in a row (seat()) it is still, with no ring round it (a ring round a lit middle read as a nipple): what it
+ * is doing is said beside it, in words and its state's colour (stateChip(), the row's line). Galahad himself is his orb.
+ * A speaker in a conversation's history is drawn still, and nothing moves when the device asks for reduced motion.
+ * Nothing from a profile reaches a URL, a style or a paint but a colour checked to be six hex digits.
  */
 
 /** How a face is put on the page, and the colour picker's swatches: given to the page once, by the first drawn. */
@@ -51,7 +52,8 @@ export interface WorkerAvatarOptions {
 
 const sized = (size: number | undefined, fallback = 40): number => (Number.isFinite(size) ? Math.round(Math.max(16, Math.min(256, size!))) : fallback);
 
-/** A knight's face, alone (beside its words, in a header, in a pick list): its orb, moving as its work does. */
+/** A knight's face, alone (beside its words, in a header, in a pick list): its orb, turning while it works (still
+ * otherwise, in its mood's light). */
 export function workerAvatar(options: WorkerAvatarOptions): HTMLElement {
   ensureStyles();
   const id = typeof options.id === "string" ? options.id : "knight";
@@ -64,37 +66,30 @@ export function workerAvatar(options: WorkerAvatarOptions): HTMLElement {
   return h("span", { class: "worker-avatar", "data-expression": expression }, knightFace({ id, profile: options.profile, size, mood, label, key: `face:${id}` }));
 }
 
-/** What a seat leaves round its face for its ring, by its size (the stylesheet's --seat-pad), and how wide its ring is
- * when it says a state (the stylesheet's --ring-w; a hairline at rest). */
+/** What a seat leaves round its face, by its size (the stylesheet's --seat-pad): the room its ring took, kept so a row
+ * keeps its height. */
 const SEAT_PAD = { s: 4, m: 7, l: 9 } as const;
-const RING_W = { s: 2, m: 2.5, l: 3 } as const;
 
 /**
- * A knight in its seat: its orb in a ring of its state's colour (lib/knight-state.ts). Round the ring its state's lights
- * move (ui/orb.ts' seatLights; your word, 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting,
- * done"): a light runs round it at work, it beats and sends out waves while it needs you, it bursts when work is done,
- * and its motes run down when work failed. Its orb turns on the same course, so face and ring move as one. Its size
- * follows the face's: `seat-s` for a row's, `seat-m` for a card's, `seat-l` for a portrait. Galahad himself is his orb
- * (your word, 23 November 2026) in the room a face and its ring take, its colour and its motion where he stands, as the
- * ring's would be. A seat drawn `still` (a conversation's history) moves nothing.
+ * A knight in its seat (a row, a card, a portrait): its face, still (your word, 26 November 2026: the knights still in
+ * rows, only the one you are looking at moving). Its state is said beside it, in words and colour (stateChip(), the
+ * row's line), and kept on the seat as `data-state`; its accessible name says it too. Its size follows the face's:
+ * `seat-s` for a row's, `seat-m` for a card's, `seat-l` for a portrait. Galahad himself is his orb (your word, 23
+ * November 2026) in the room a face and its seat take, still too.
  */
 export function seat(options: WorkerAvatarOptions & { state?: KnightState }): HTMLElement {
   ensureStyles();
   const size = sized(options.size);
   const scale = size <= 48 ? "s" : size <= 96 ? "m" : "l";
   const state = options.state ?? "resting";
-  const box = size + 2 * SEAT_PAD[scale];
-  const mood = options.still ? undefined : orbMoodOfState(state);
   const name = String(options.name || "Knight").slice(0, 160);
   if (options.id === "galahad") {
-    // (His seat's orb is its own: the Roundtable's word on where he stands can be a moment behind his chat's.)
-    return h("span", { class: `seat seat-${scale} seat-orb`, "data-state": state }, orb({ size: box, tone: orbToneOfState(state), label: "Galahad", mood, key: "galahad:seat" }));
+    return h("span", { class: `seat seat-${scale} seat-orb`, "data-state": state }, orb({ size: size + 2 * SEAT_PAD[scale], tone: orbToneOfState(state), label: "Galahad" }));
   }
   const id = String(options.id);
-  const lights = mood ? seatLights({ box, ring: state === "resting" ? 1 : RING_W[scale], state, key: id }) : null;
   const words = STATES[state]?.words;
   const label = options.still ? `${name}'s orb` : words ? `${name} · ${words}` : name;
-  return h("span", { class: `seat seat-${scale}`, "data-state": state }, h("span", { class: "worker-avatar" }, knightFace({ id, profile: options.profile, size, mood, label, key: `seat:${id}` })), lights);
+  return h("span", { class: `seat seat-${scale}`, "data-state": state }, h("span", { class: "worker-avatar" }, knightFace({ id, profile: options.profile, size, label, key: `seat:${id}` })));
 }
 
 /** A knight's state in words, beside its name (a badge in the state's tone; working has a live dot, so it isn't read as

@@ -5,11 +5,13 @@
  * is (your words: "custom/procedurally generated colored particle orbs", "also update Galahad's orb", "use glyph and
  * randomness on the orbs, like Jarvis/Ultron in the movies, and my other project Phren"); the glyphs are
  * lib/orb-sphere.ts's. Pure: the parts
- * it is drawn from, in a square 200 wide centred on its middle (y down), and each state's colours. The PWA draws them
- * (ui/orb.ts); the Apple and Android apps draw the same parts (held to these by the vectors,
- * apps/apple/scripts/vectors.ts), so he is the same orb wherever you meet him. These are the orb at rest. How it moves
- * in each mood (your word of 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done") is
+ * it is drawn from, in a square 200 wide centred on its middle (y down), and each state's colours. How it moves in each
+ * mood (your word of 24 November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done") is
  * lib/orb-motion.ts. Nothing in it comes from a name, a profile or a model but his own handle's sphere.
+ *
+ * Since 26 November 2026 the PWA draws his field instead (lib/field-orb.ts, ui/orb.ts: the glyphs and their bright
+ * nucleus read "almost like nipples"), and uses only the tones here. The Apple and Android apps still draw these parts,
+ * held to them by the vectors (apps/apple/scripts/vectors.ts), until they port the field (PLAN #60); then they go.
  */
 
 export type OrbTone = "neutral" | "accent" | "warn" | "ok" | "danger";

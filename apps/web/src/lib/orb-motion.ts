@@ -2,9 +2,10 @@ import type { OrbLevel } from "./orb.ts";
 
 /*
  * How Galahad's orb and a knight's seat move (your word, 24 November 2026: "cool orbs/particles, pulsing/moving when
- * doing a task, sitting idle, waiting, done"), as data and one pure function of time. The PWA, the Apple app and the
- * Android app all draw a frame from it, held to it by the vectors (apps/apple/scripts/vectors.ts), so a mood moves the
- * same way on every device.
+ * doing a task, sitting idle, waiting, done"), as data and one pure function of time. The Apple app and the Android app
+ * draw a frame from it, held to it by the vectors (apps/apple/scripts/vectors.ts). Since 26 November 2026 the PWA draws
+ * fields (lib/field-orb.ts, whose moods are these moods) and takes from here only the moods of a state and of an
+ * expression, the seeds and the longest step; the rest goes when the apps port the field (PLAN #60).
  *
  * Each state has a mood:
  * - idle: a slow breath, with a few motes drifting round.

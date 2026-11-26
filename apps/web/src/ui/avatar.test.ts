@@ -3,7 +3,7 @@ import { AVATAR_EXPRESSIONS, defaultAvatar, KNIGHT_TINTS, knightColors, lookProf
 import { avatarEditor, KNIGHT_CSS, leadMark, seat, stateChip, workerAvatar, type WorkerAvatarOptions } from "./avatar.ts";
 
 /** Captures the renderer's real createElement and createElementNS calls, without an HTML parser or a browser (and with
- * no canvas, so every orb is drawn as it is still: SVG). */
+ * no canvas, so a knight's orb is its box alone and Galahad's his ring and seat in SVG). */
 class Node_ {
   readonly attrs: Record<string, string> = {};
   readonly children: Node_[] = [];
@@ -54,14 +54,13 @@ describe("knights at the page's boundary", () => {
     }
     for (const drawn of render(...AVATAR_EXPRESSIONS.flatMap((expression) => [{ id: "ada", name, profile: profiles[0], expression, size: 96 }, { id: "ada", name, profile: { v: 2, color: "#3ABEFF" }, expression, size: 200 }]))) {
       for (const child of walk(drawn)) {
-        expect(child.ns === "html" ? ["span", "#text"] : ["svg", "defs", "radialGradient", "stop", "circle", "path", "text"]).toContain(child.tag);
+        expect(child.ns === "html" ? ["span", "#text"] : ["svg", "path"]).toContain(child.tag);
         for (const [key, value] of Object.entries(child.attrs)) {
           expect(key).not.toMatch(/^(on|href|xlink|src)/i);
           if (key !== "aria-label") expect(value).not.toContain("invalid.example");
           if (key === "style") expect(value).toMatch(/^--orb-size:\d+px$/);
-          if (key === "fill") expect(HEX.test(value) || value === "none" || /^url\(#orb-\d+\)$/.test(value)).toBe(true);
-          if (key === "stop-color" || key === "data-tint" || key === "stroke") expect(value).toMatch(HEX);
-          if (child.tag === "#text") expect(child.text).toMatch(/^[.·':\-+=ox*0#@0-9A-F]$/);
+          if (key === "fill") expect(value).toBe("none");
+          if (key === "data-tint" || key === "stroke") expect(value).toMatch(HEX);
         }
       }
     }
@@ -77,18 +76,17 @@ describe("knights at the page's boundary", () => {
     expect(orbOf(handle!).attrs["aria-label"]).toBe("Ada's orb");
   });
 
-  test("the larger the face, the more and finer its glyphs; arcs of its own from a card's size", () => {
-    const [small, large] = render({ id: "ada", name: "Ada", still: true, size: 28 }, { id: "ada", name: "Ada", still: true, size: 160 });
-    const glyphs = (node: Node_) => walk(node).filter((child) => child.tag === "text").length;
-    expect(glyphs(small!)).toBeLessThan(glyphs(large!));
-    const arcs = (node: Node_) => walk(node).filter((child) => child.tag === "path").length;
-    expect(arcs(small!)).toBe(0);
-    expect(arcs(large!)).toBeGreaterThan(0);
+  test("a face says nothing a row doesn't: still where it is given no mood, named for what it is doing where it is", () => {
+    const [still, working, resting] = render({ id: "ada", name: "Ada", still: true, size: 28 }, { id: "ada", name: "Ada", expression: "working", size: 34 }, { id: "ada", name: "Ada", size: 160 });
+    expect([orbOf(still!).attrs["aria-label"], orbOf(working!).attrs["aria-label"], orbOf(resting!).attrs["aria-label"]]).toEqual(["Ada's orb", "Ada · working", "Ada · idle"]);
+    expect([orbOf(still!).attrs.style, orbOf(working!).attrs.style, orbOf(resting!).attrs.style]).toEqual(["--orb-size:28px", "--orb-size:34px", "--orb-size:160px"]);
+    // (No canvas here: nothing is drawn, and nothing else is put in its place.)
+    for (const node of [still!, working!, resting!]) expect(orbOf(node).children).toEqual([]);
   });
 });
 
 describe("a knight in its seat", () => {
-  test("its ring says its state; the orb in it is the knight's own, at the size asked, and the seat's size follows it", () => {
+  test("no ring: the face alone, still, at the size asked, its state kept on the seat and said in its name; the seat's size follows it", () => {
     const [working, resting, portrait, card] = withDocument(() => [
       seat({ id: "ada", name: "Ada", state: "working", expression: "working", size: 32 }),
       seat({ id: "ada", name: "Ada", size: 32 }),
@@ -98,7 +96,7 @@ describe("a knight in its seat", () => {
     expect([working!.attrs.class, working!.attrs["data-state"]]).toEqual(["seat seat-s", "working"]);
     expect(resting!.attrs["data-state"]).toBe("resting");
     expect([portrait!.attrs.class, card!.attrs.class]).toEqual(["seat seat-l", "seat seat-m"]);
-    // Nothing but the face inside (no canvas here, so no lights), named for its state, and no style of the seat's own.
+    // Nothing but the face inside, named for its state, and no style of the seat's own.
     expect(working!.children).toHaveLength(1);
     expect(orbOf(working!).attrs["aria-label"]).toBe("Ada · Working");
     expect(orbOf(working!).attrs.style).toBe("--orb-size:32px");
@@ -106,7 +104,7 @@ describe("a knight in its seat", () => {
     expect(working!.attrs.style).toBeUndefined();
   });
 
-  test("Galahad's seat is his orb, in the room a face and its ring take, in the colour of where he stands", () => {
+  test("Galahad's seat is his orb, in the room a face and its seat take; where he stands is kept on it", () => {
     const [needs, resting, card] = withDocument(() => [
       seat({ id: "galahad", name: "Galahad", state: "needs", expression: "asking", size: 32 }),
       seat({ id: "galahad", name: "Galahad", size: 32 }),
@@ -117,8 +115,9 @@ describe("a knight in its seat", () => {
     expect([shown(needs!).class, shown(needs!)["data-tone"], shown(needs!).style]).toEqual(["orb", "warn", "--orb-size:40px"]);
     expect([shown(resting!)["data-tone"], shown(card!)["data-tone"], shown(card!).style]).toEqual(["neutral", "accent", "--orb-size:102px"]);
     expect(shown(needs!)["aria-label"]).toBe("Galahad");
-    // His sphere of points is among his parts.
-    expect(walk(card!).some((child) => child.attrs.class === "orb-sphere")).toBe(true);
+    // Still in a seat: no mood. (No canvas here: his ring and seat, in SVG.)
+    expect(shown(card!)["data-mood"]).toBeUndefined();
+    expect(walk(card!).map((child) => child.attrs.class).filter(Boolean)).toContain("orb-seat");
   });
 
   test("its state is said in words beside its name, in its tone; working with a live dot, so it isn't read as a quiet one", () => {

@@ -1,9 +1,9 @@
 /*
- * One clock for everything on the page that moves while a state lasts (ui/orb.ts' orbs and seats; your word, 24
- * November 2026: "pulsing/moving when doing a task, sitting idle, waiting, done"). It draws one animation frame at a
- * time for all of them, only what is on screen, and nothing while the page is hidden. When motion is reduced (the
- * device asks for it, or Settings → Motion says so), each is drawn once, still, and the clock stops until that
- * changes.
+ * One clock for everything on the page that moves while a state lasts (ui/orb.ts' orbs; your word, 24 November 2026:
+ * "pulsing/moving when doing a task, sitting idle, waiting, done"). It draws one animation frame at a time for all of
+ * them, only what is on screen, only as often as each asks (none, once it has come to rest), and nothing while the
+ * page is hidden. When motion is reduced (the device asks for it, or Settings → Motion says so), each is drawn once,
+ * still, and the clock stops until that changes.
  */
 
 import { prefersReducedMotion } from "./dom.ts";
@@ -110,9 +110,12 @@ function tick(now: number): void {
     }
     mover.still = false;
     if (!mover.onScreen) continue;
+    // One with nothing to move now (an orb come to rest) asks for no frame; it is looked at again when the clock wakes.
+    const fps = mover.fps();
+    if (!(fps > 0)) continue;
     again = true;
     // (A frame early by less than a refresh of the screen is drawn now, not a whole refresh late.)
-    const every = 1000 / mover.fps();
+    const every = 1000 / fps;
     if (now - mover.last >= every - 6) {
       mover.last = now;
       mover.draw(t, true);

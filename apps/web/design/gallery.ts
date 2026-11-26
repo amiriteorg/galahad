@@ -163,7 +163,7 @@ const page = h(
 
     shown(
       "seat() · stateChip() · leadMark()",
-      "A knight in its seat: its face in a ring of its state's colour, the chip that says it in words, and the mark of the one who leads.",
+      "A knight in its seat: its face, still, its state said beside it by the chip, in words and its colour; and the mark of the one who leads.",
       state("each state, on a row's face", h("div", { class: "gallery-seats" }, ...SEATED.map(([each, expression]) => h("div", { class: "stack snug gallery-seat" }, seat({ id: "percival", name: "Percival", state: each, expression, size: 32 }), chip(each))))),
       state("on a card, and as a portrait", h("div", { class: "row wrap" }, seat({ id: "percival", name: "Percival", state: "working", expression: "working", size: 84 }), seat({ id: "gareth", name: "Gareth", state: "needs", expression: "asking", size: 104 }))),
       state("who leads", h("div", { class: "row wrap" }, h("strong", {}, "Lin"), leadMark("Lin"), stateChip("working")), h("div", { class: "row wrap" }, h("strong", {}, "Galahad"), leadMark())),

@@ -11,8 +11,11 @@ import type { OrbLevel } from "./orb.ts";
  * own, fading a little as it does; and once in a while a few become data (a hex digit), more often while it works. Its
  * handle makes it its own: how far it leans, which way it turns, where it starts, which points are its second colour,
  * and which glyphs it shows when. Its colours are core's knightColors for a knight, and his state's for Galahad
- * (lib/orb.ts). Pure: everything in the orb's square, 200 wide and centred on its middle (y down); the PWA, the Apple
- * app and the Android app draw the same glyphs, held to these by the vectors (apps/apple/scripts/vectors.ts).
+ * (lib/orb.ts). Pure: everything in the orb's square, 200 wide and centred on its middle (y down).
+ *
+ * The PWA no longer draws it (26 November 2026: every orb is Galahad's field, lib/field-orb.ts; the owner's word on the
+ * glyph spheres was "almost like nipples"). The Apple and Android apps still do, held to these by the vectors
+ * (apps/apple/scripts/vectors.ts), until they port the field (PLAN #60); then it goes.
  */
 
 /** An orb's own way of being a sphere, from its handle:
