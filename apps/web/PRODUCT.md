@@ -31,11 +31,13 @@ The phone in one hand, often in short glances; work runs for minutes to hours un
 
 ## Capabilities and Constraints
 
-- The Roundtable: Galahad first, then the knights, then rooms, each with one line of what it is doing and a mark when it needs the owner.
+- Galahad first, then the work (the owner's words, 26 November 2026: "agent first (Galahad), and project/tasks/coding t3code style for the knights"). On a phone, Home: his orb and a line of how things stand, what needs the owner with each answer in place (Allow once and Deny, Approve and Decline, Resume), the work in one list by attention, and his message box docked at the foot; no tab bar, everything else under "…". On a wide screen, T3 Code's three panes: a sidebar with his row pinned and every task as a row of three lines in sections by attention (needs you, new to you, at work, settled), the open thread, and a task's details beside it.
+- A task as a thread of its own (`#/task/<id>`): who gave it and its brief, its knight's work folded into steps with one live line while it works, an outward step asking in place, what the knight said, and apart from it, in its own colour, the Verified card: each gate's command and how it ended, the independent reviewer's verdict, its changes, its cost against its budget, Ship it; or, in red, why it isn't verified. Its details: the knight's VM to peek at and take over, its base, its changes, its gates as they run, what waits on it.
+- The Roundtable: the knights (the workers behind the tasks), in the owner's order and who leads first, each with what it is doing, its state in a word and what its work cost this week; then the rooms.
 - Galahad's chat: turns that run on the node to their end whether or not anyone is watching; any device attaches to a running turn; messages steer now or queue.
-- A knight's timeline: its messages and its task cards (plan, the command it is running, what printed, its gates, review, verified or failed, the changes it kept, shipping them as a pull request).
+- A knight's timeline: its messages and its task cards (plan, the command it is running, what printed, its gates, review, verified or failed, the changes it kept, shipping them as a pull request); a card's title opens the task's own thread.
 - Giving a task to a knight or to the Roundtable (the best-suited knight takes it).
-- The Inbox: approvals and secret requests.
+- The Inbox: approvals and secret requests, and everything else that waits; what needs the owner shows on Home with its answers in place too.
 - A knight's Workspace: its desktop (watch, take over) and a terminal into its VM.
 - Beast mode: Galahad engages it when a task demands it, raising his compute and model access and acting more without asking. Not built yet; its autonomy limits are an open decision for the owner.
 - Knights are orbs of glyphs (`lib/orb-sphere.ts`, `ui/orb.ts` `knightFace`): a colour you chose (`{ v: 2, color }`) or one of core's 24 `KNIGHT_TINTS` its handle picks, its sphere, glyphs and arcs its handle's. What a knight is doing comes from the node (`avatarExpression`, its state) and shows in how its orb moves and its seat's ring.
