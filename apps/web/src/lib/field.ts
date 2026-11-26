@@ -2,7 +2,13 @@
  * Galahad's field: lines of force looping from pole to pole round a dark core, lit from the upper left and burning at
  * the rim on the far side (your choice for the app icon, 26 November 2026: "field aurum"). Pure: points in space with
  * a colour and a size, and their place on a square picture. The icon's renderer (scripts/field-icon.ts) draws them as
- * light; the same points will make Galahad's orb in the apps.
+ * light; the orbs draw the same points (lib/field-orb.ts says whose field, at what size and in what mood; ui/orb.ts
+ * draws it), Galahad's in gold and each knight's in its own colours.
+ *
+ * A field is made in two steps, so an orb that turns does the costly part once: its model (fieldModel: each line's
+ * longitude and width from its seed, each step's angle, its lean, its colours in linear light), then its points at a
+ * turn (fieldAt, into buffers it keeps). fieldPoints is the two at once, as the icon takes them: the same numbers to the
+ * last bit.
  */
 
 /** A colour in linear light (not sRGB): 0 to 1 and beyond, before tone mapping. */
@@ -56,33 +62,41 @@ const norm = (a: V3): V3 => {
   const l = Math.hypot(a[0], a[1], a[2]) || 1;
   return [a[0] / l, a[1] / l, a[2] / l];
 };
-/** Rotate by an XYZ Euler (three.js' default order: the matrix Rx·Ry·Rz applied to the point). */
-function euler(v: V3, [ax, ay, az]: [number, number, number]): V3 {
-  const [cx, sx, cy, sy, cz, sz] = [Math.cos(ax), Math.sin(ax), Math.cos(ay), Math.sin(ay), Math.cos(az), Math.sin(az)];
-  // Rz
-  let [x, y, z] = [v[0] * cz - v[1] * sz, v[0] * sz + v[1] * cz, v[2]];
-  // Ry
-  [x, z] = [x * cy + z * sy, -x * sy + z * cy];
-  // Rx
-  [y, z] = [y * cx - z * sx, y * sx + z * cx];
-  return [x, y, z];
-}
 
 const KEY = norm([-0.55, 0.58, 0.6]);
 const RIM = norm([0.8, -0.45, -0.35]);
+/** Where the key light comes from and where the rim light burns: unit vectors in the field's space (x right, y up, z
+ * towards you). */
+export const FIELD_KEY: readonly [number, number, number] = KEY;
+export const FIELD_RIM: readonly [number, number, number] = RIM;
+
+/** A field's colours in linear light, read once (shade reads them on every point). */
+export interface FieldLight {
+  deep: Rgb;
+  bright: Rgb;
+  rim: Rgb;
+}
+export const fieldLight = (colours: FieldColours): FieldLight => ({ deep: linear(colours.key[1]), bright: linear(colours.key[0]), rim: linear(colours.rim) });
 
 /** A point's colour by the key light on it and the rim light behind it, and how strongly it is lit (0 to 1). */
 export function shade(n: V3, colours: FieldColours): { rgb: Rgb; k: number } {
+  const { rgb, k } = shadeLit(n, fieldLight(colours));
+  return { rgb, k };
+}
+
+/** shade, with the colours read already; and the two lights apart: the key's (`lit`) and the rim's (`rim`), 0 to 1 each
+ * (`k` is the greater). */
+export function shadeLit(n: V3, light: FieldLight): { rgb: Rgb; k: number; lit: number; rim: number } {
   const lit = Math.pow(Math.max(0, dot(n, KEY)), 1.2);
   const facing = Math.max(0, n[2]);
   const rimK = Math.pow(1 - facing, 2.4) * Math.max(0, dot(n, RIM) + 0.25);
-  const deep = linear(colours.key[1]), bright = linear(colours.key[0]), rim = linear(colours.rim);
+  const { deep, bright, rim } = light;
   const mix = (a: Rgb, b: Rgb, t: number): Rgb => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
   let c: Rgb = [deep[0] * 0.12, deep[1] * 0.12, deep[2] * 0.12];
   c = mix(c, deep, Math.min(1, lit * 1.5));
   c = mix(c, bright, Math.max(0, lit - 0.4) * 1.7);
   const k = Math.max(lit, rimK), gain = 0.12 + 1.9 * k;
-  return { rgb: [(c[0] + rim[0] * rimK * 2.2) * gain, (c[1] + rim[1] * rimK * 2.2) * gain, (c[2] + rim[2] * rimK * 2.2) * gain], k };
+  return { rgb: [(c[0] + rim[0] * rimK * 2.2) * gain, (c[1] + rim[1] * rimK * 2.2) * gain, (c[2] + rim[2] * rimK * 2.2) * gain], k, lit, rim: rimK };
 }
 
 /** The same random numbers every time (Park and Miller's), so a field is the same picture on every machine. */
@@ -91,24 +105,112 @@ function random(seed: number): () => number {
   return () => (s = (s * 16807) % 2147483647) / 2147483647;
 }
 
-/** The field's points: each line a loop from pole to pole (a dipole's, r = L·sin²θ) at its own longitude and width. */
-export function fieldPoints(options: FieldOptions = {}): FieldPoint[] {
-  const { lines = 46, steps = 260, tilt = [0.42, 0.3, -0.18], turn = 0, weight = 1, colours = AURUM, seed = 11 } = options;
+/** A field's fixed part: its lines' longitudes before any turn and their widths (its seed's), each step's angle along
+ * a line (its sine, cosine and sine squared), its lean's cosines and sines, its weight and its colours. */
+export interface FieldModel {
+  lines: number;
+  steps: number;
+  weight: number;
+  phi: Float64Array;
+  width: Float64Array;
+  sin: Float64Array;
+  cos: Float64Array;
+  sin2: Float64Array;
+  /** The lean: cos and sin about x, y and z. */
+  lean: [cx: number, sx: number, cy: number, sy: number, cz: number, sz: number];
+  light: FieldLight;
+}
+
+export function fieldModel(options: FieldOptions = {}): FieldModel {
+  const { lines = 46, steps = 260, tilt = [0.42, 0.3, -0.18], weight = 1, colours = AURUM, seed = 11 } = options;
   const rnd = random(seed);
-  const points: FieldPoint[] = [];
+  const phi = new Float64Array(lines), width = new Float64Array(lines);
   for (let line = 0; line < lines; line++) {
-    const phi = (line / lines) * Math.PI * 2 + rnd() * 0.12 + turn;
-    const width = 1.05 + 0.75 * Math.pow(rnd(), 0.7);
+    phi[line] = (line / lines) * Math.PI * 2 + rnd() * 0.12;
+    width[line] = 1.05 + 0.75 * Math.pow(rnd(), 0.7);
+  }
+  const sin = new Float64Array(steps), cos = new Float64Array(steps), sin2 = new Float64Array(steps);
+  for (let j = 1; j < steps; j++) {
+    const th = (j / steps) * Math.PI;
+    sin[j] = Math.sin(th);
+    cos[j] = Math.cos(th);
+    sin2[j] = Math.sin(th) ** 2;
+  }
+  const [ax, ay, az] = tilt;
+  return { lines, steps, weight, phi, width, sin, cos, sin2, lean: [Math.cos(ax), Math.sin(ax), Math.cos(ay), Math.sin(ay), Math.cos(az), Math.sin(az)], light: fieldLight(colours) };
+}
+
+/** Where a field's points go: x, y, z, their colour (r, g, b, linear), size, the key's and the rim's light on each
+ * (shadeLit's `lit` and `rim`), and where each is on its line (`at`: its line times the model's steps, plus its step,
+ * so two points follow each other on a line where one's is the other's plus one), as many as a model can have. */
+export interface FieldBuffer {
+  at: Int32Array;
+  x: Float64Array;
+  y: Float64Array;
+  z: Float64Array;
+  r: Float64Array;
+  g: Float64Array;
+  b: Float64Array;
+  size: Float64Array;
+  lit: Float64Array;
+  rim: Float64Array;
+}
+export function fieldBuffer(model: FieldModel): FieldBuffer {
+  const n = model.lines * model.steps;
+  const make = () => new Float64Array(n);
+  return { at: new Int32Array(n), x: make(), y: make(), z: make(), r: make(), g: make(), b: make(), size: make(), lit: make(), rim: make() };
+}
+
+/**
+ * The field's points turned `turn` radians about its axis, into `out`, and how many there are: each line a loop from
+ * pole to pole (a dipole's, r = L·sin²θ) at its own longitude and width, none inside the core (r < 0.32) and none the
+ * lights leave dark. `light` colours it otherwise than its model (a mood's tint, lib/field-orb.ts).
+ */
+export function fieldAt(model: FieldModel, turn: number, out: FieldBuffer, light: FieldLight = model.light): number {
+  const { lines, steps, weight, phi, width, sin, cos, sin2 } = model;
+  const [cx, sx, cy, sy, cz, sz] = model.lean;
+  let n = 0;
+  for (let line = 0; line < lines; line++) {
+    const p = phi[line]! + turn, cp = Math.cos(p), sp = Math.sin(p), w = width[line]!;
     for (let j = 1; j < steps; j++) {
-      const th = (j / steps) * Math.PI, r = width * Math.sin(th) ** 2;
+      const r = w * sin2[j]!;
       if (r < 0.32) continue;
-      const v = euler([r * Math.sin(th) * Math.cos(phi), r * Math.cos(th), r * Math.sin(th) * Math.sin(phi)], tilt);
-      const { rgb, k } = shade(norm(v), colours);
-      if (k < 0.02) continue;
+      const rs = r * sin[j]!;
+      const a0 = rs * cp, a1 = r * cos[j]!, a2 = rs * sp;
+      // The lean, as an XYZ Euler turns (three.js' default order: the matrix Rx·Ry·Rz applied to the point).
+      let x = a0 * cz - a1 * sz, y = a0 * sz + a1 * cz, z = a2;
+      const x2 = x * cy + z * sy, z2 = -x * sy + z * cy;
+      x = x2;
+      z = z2;
+      const y3 = y * cx - z * sx, z3 = y * sx + z * cx;
+      y = y3;
+      z = z3;
+      const s = shadeLit(norm([x, y, z]), light);
+      if (s.k < 0.02) continue;
       const near = Math.min(1, 1.9 / (0.6 + r)), g = 0.35 + 0.65 * near;
-      points.push({ x: v[0] * 1.05, y: v[1] * 1.05, z: v[2] * 1.05, rgb: [rgb[0] * g, rgb[1] * g, rgb[2] * g], size: (0.009 + 0.02 * k) * weight });
+      out.at[n] = line * steps + j;
+      out.x[n] = x * 1.05;
+      out.y[n] = y * 1.05;
+      out.z[n] = z * 1.05;
+      out.r[n] = s.rgb[0] * g;
+      out.g[n] = s.rgb[1] * g;
+      out.b[n] = s.rgb[2] * g;
+      out.size[n] = (0.009 + 0.02 * s.k) * weight;
+      out.lit[n] = s.lit;
+      out.rim[n] = s.rim;
+      n++;
     }
   }
+  return n;
+}
+
+/** The field's points: each line a loop from pole to pole (a dipole's, r = L·sin²θ) at its own longitude and width. */
+export function fieldPoints(options: FieldOptions = {}): FieldPoint[] {
+  const model = fieldModel(options);
+  const out = fieldBuffer(model);
+  const count = fieldAt(model, options.turn ?? 0, out);
+  const points: FieldPoint[] = [];
+  for (let i = 0; i < count; i++) points.push({ x: out.x[i]!, y: out.y[i]!, z: out.z[i]!, rgb: [out.r[i]!, out.g[i]!, out.b[i]!], size: out.size[i]! });
   return points;
 }
 
