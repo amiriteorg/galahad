@@ -65,8 +65,9 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
     h("span", { class: "kbds" }, ...kbd(isMac() ? "⌘" : "Ctrl", "K")),
   );
 
-  // ---- Galahad, pinned: his orb in his state's colour and mood (still while his conversation is open beside it, whose
-  // own orb moves then: only the orb in focus moves), his name, and his line ----
+  // ---- Galahad, pinned: his orb in his state's colour, his name, and his line. Only the orb in focus moves (your word, 26
+  // November 2026: calm): his is still beside a pane with orbs of its own (his conversation's, Home's, the Roundtable's,
+  // a task's knight), and moves as he does beside any other page ----
   const face = h("span", { class: "side-galahad-orb" });
   const line = h("span", { class: "side-galahad-line ellipsis" });
   const stop = button("Stop", { variant: "ghost", size: "sm", iconOnly: true, icon: "stop", label: "Stop Galahad answering", onClick: (event) => (event.preventDefault(), stopChat()) });
@@ -75,11 +76,11 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
   const drawGalahad = (): void => {
     const now = galahadLine(ctx);
     const state = galahadState(now);
-    const focused = where.route === "chat";
-    const look = `${now.tone}/${state}/${focused}`;
+    const elsewhere = where.route === "chat" || where.route === "home" || where.route === "team" || where.route === "task";
+    const look = `${now.tone}/${state}/${elsewhere}`;
     if (look !== shownFace) {
       shownFace = look;
-      replace(face, orb({ size: 34, tone: now.tone, mood: focused ? undefined : orbMoodOfState(state), key: "galahad:side" }));
+      replace(face, orb({ size: 34, tone: now.tone, mood: elsewhere ? undefined : orbMoodOfState(state), key: "galahad:side" }));
     }
     if (line.textContent !== now.text) line.textContent = now.text;
     line.dataset.tone = now.tone;
