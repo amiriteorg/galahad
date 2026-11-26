@@ -15,6 +15,7 @@ import type { KnightState } from "../src/lib/knight-state.ts";
 import { h, Scope } from "../src/ui/dom.ts";
 import { icon } from "../src/ui/icons.ts";
 import { selector } from "../src/ui/selector.ts";
+import { knightFace, orb } from "../src/ui/orb.ts";
 import { toast, toastCard, type ToastOptions } from "../src/ui/toast.ts";
 import type { Ctx } from "../src/context.ts";
 import { questionCard } from "../src/views/inbox.ts";
@@ -109,7 +110,7 @@ const tryThem = h(
   button("Three at once", {
     onClick: () => {
       toast("Copied");
-      setTimeout(() => toast("No disk limit here", { tone: "warn", description: "A sandbox can fill this host's disk." }), 160);
+      setTimeout(() => toast("Galahad asks your leave", { lead: orb({ size: 28 }), description: "github.pr.create: wckdboy/galahad", action: { label: "Review", run: () => {} } }), 160);
       setTimeout(() => toast("Couldn't dismiss it", { tone: "error", description: "The node didn't answer." }), 320);
     },
   }),
@@ -289,7 +290,14 @@ const page = h(
       "toast()",
       "What just happened, for a moment at the bottom of the screen: newest in front, the rest tucked behind; errors stay longer and are read out at once.",
       state("each tone", toasts(["Copied", {}], ["Sealed", { tone: "ok", description: "Every full node can use it. No model ever sees it." }], ["No disk limit here", { tone: "warn", description: "A sandbox can fill this host's disk." }], ["Couldn't dismiss it", { tone: "error", description: "The node didn't answer." }])),
-      state("with an action", toasts(["Owner's iPad asks to join", { description: "Compare the six-digit code before you approve.", action: { label: "Review", run: () => {} } }], ["Galahad asks your leave", { description: "github.pr.create: wckdboy/galahad", action: { label: "Review", run: () => {} } }])),
+      state("with an action", toasts(["Owner's iPad asks to join", { description: "Compare the six-digit code before you approve.", action: { label: "Review", run: () => {} } }])),
+      state(
+        "about a knight, or him: their orb, still",
+        toasts(
+          ["Ada's work is verified", { tone: "ok", lead: knightFace({ id: "ada", size: 28 }), description: "Its gates passed, and a reviewer that didn't write it agreed.", action: { label: "Review", run: () => {} } }],
+          ["Galahad asks your leave", { lead: orb({ size: 28 }), description: "github.pr.create: wckdboy/galahad", action: { label: "Review", run: () => {} } }],
+        ),
+      ),
     ),
 
     shown(
