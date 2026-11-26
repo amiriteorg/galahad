@@ -104,7 +104,11 @@ export const homeView: View = (root, ctx, { scope }) => {
       )
     : null;
 
-  replace(root, h("div", { class: cx("home", dock && "has-dock") }, head, needs, work, dock));
+  // What needs you and the work appear whole, in one frame, behind one placeholder until then (as a page body does): the
+  // one never pushes the other down as it comes.
+  const wait = h("div", { class: "skeleton home-wait", "aria-hidden": "true" });
+  const body = h("div", { class: "home-body", hidden: true }, needs, work);
+  replace(root, h("div", { class: cx("home", dock && "has-dock") }, head, wait, body, dock));
   sync();
 
   // ---- drawn from what the app has: his line, the Inbox, the team ----
@@ -149,7 +153,10 @@ export const homeView: View = (root, ctx, { scope }) => {
     needs.hidden = !items.length;
     if (items.length) replace(needs, h("h2", { class: "home-needs-head" }, dot("needs"), `Needs you · ${items.length}`), ...items);
     if (!all) {
-      if (ctx.live.teamProblem.value) replace(list, h("p", { class: "home-note" }, "The work can't be read just now. ", button("Try again", { variant: "ghost", size: "sm", onClick: () => void ctx.live.refreshTeam() })));
+      if (ctx.live.teamProblem.value) {
+        replace(list, h("p", { class: "home-note" }, "The work can't be read just now. ", button("Try again", { variant: "ghost", size: "sm", onClick: () => void ctx.live.refreshTeam() })));
+        show();
+      }
       return;
     }
     // A filter for each project with work, when there is more than one.
@@ -178,6 +185,12 @@ export const homeView: View = (root, ctx, { scope }) => {
           : null,
       ),
     );
+    show();
+  }
+  function show(): void {
+    if (!body.hidden) return;
+    wait.remove();
+    body.hidden = false;
   }
 
   for (const source of [...workSources(ctx), ctx.live.inboxCount, ctx.live.inboxLoaded, ctx.live.pairings, ctx.live.secretRequests, ctx.live.questions, ctx.live.notices, ctx.live.loopDrafts, ctx.live.connectorRequests, ctx.live.aboutYou, ctx.live.screenSessions, ctx.live.fleet, ctx.live.teamProblem, nodeTurns, questsInHand, unreadChats, answerStep, chatActivity] as { subscribe(listener: () => void): () => void }[]) scope.add(source.subscribe(() => draw()));

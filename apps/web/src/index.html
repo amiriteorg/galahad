@@ -369,6 +369,9 @@
         padding: calc(var(--safe-top) + var(--sp-3)) calc(var(--sp-4) + var(--safe-right)) var(--sp-3) calc(var(--sp-4) + var(--safe-left));
         background: var(--bg);
       }
+      .home-wait { height: 240px; margin: var(--sp-2) calc(var(--sp-3) + var(--safe-right)) 0 calc(var(--sp-3) + var(--safe-left)); border-radius: var(--r-xl); }
+      .home-body[hidden] { display: none; }
+      .home-body { display: flex; flex-direction: column; flex: 1; }
       .home-who { display: flex; align-items: center; gap: var(--sp-3); flex: 1; min-width: 0; color: inherit; text-decoration: none; }
       .home-orb { flex: none; display: grid; place-items: center; width: 48px; height: 48px; }
       .home-name { min-width: 0; }
