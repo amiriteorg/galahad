@@ -8,15 +8,17 @@
  * It is not part of the app: the node serves only what assets.ts names. The screenshot tool bundles it and serves it on
  * loopback with index.html's head (the tokens and all the CSS), its font and its pictures.
  */
-import { badge, button, callout, card, chipInput, copyField, count, disclosure, dot, empty, errorState, field, formActions, kbd, kv, linkButton, list, listRow, meta, meter, note, pageHead, rangeControl, sasCode, secretInput, section, segmented, skeletonBlock, skeletonRows, skeletonStat, spinner, statTile, switchControl, type Tone } from "../src/ui/controls.ts";
-import { openSheet } from "../src/ui/dialog.ts";
+import { badge, button, callout, card, chipInput, copyField, count, disclosure, dot, empty, errorState, field, formActions, kbd, kv, linkButton, list, listRow, meta, meter, note, pageHead, rangeControl, rows, sasCode, secretInput, section, segmented, skeletonBlock, skeletonRows, skeletonStat, spinner, statTile, switchControl, type Tone } from "../src/ui/controls.ts";
+import { type ConfirmOptions, confirmAction, openSheet } from "../src/ui/dialog.ts";
 import { leadMark, seat, stateChip } from "../src/ui/avatar.ts";
 import type { KnightState } from "../src/lib/knight-state.ts";
 import { h, Scope } from "../src/ui/dom.ts";
 import { icon } from "../src/ui/icons.ts";
 import { selector } from "../src/ui/selector.ts";
+import { toast, toastCard, type ToastOptions } from "../src/ui/toast.ts";
 import type { Ctx } from "../src/context.ts";
 import { questionCard } from "../src/views/inbox.ts";
+import { findingRow } from "../src/views/loops.ts";
 
 const TONES: Tone[] = ["ok", "warn", "danger", "info", "accent", "agent", "neutral", "needs"];
 /** Each state a knight can be in, with the face it shows in it. */
@@ -58,6 +60,61 @@ function sheetInPlace(): HTMLElement {
   sheet.el.show();
   return h("div", { class: "gallery-sheet-frame" }, sheet.el);
 }
+
+// A confirmation as it opens, drawn in the page's flow as the sheet above is.
+function confirmInPlace(options: ConfirmOptions): HTMLElement {
+  void confirmAction(options);
+  const sheet = [...document.querySelectorAll<HTMLDialogElement>("dialog.sheet")].at(-1)!;
+  sheet.close();
+  sheet.classList.add("gallery-sheet", "shown");
+  sheet.show();
+  return h("div", { class: "gallery-sheet-frame" }, sheet);
+}
+
+// ---- the alerts: what tells you something happened, or needs you ----
+const toasts = (...each: [string, ToastOptions][]) => h("div", { class: "gallery-toasts" }, ...each.map(([title, options]) => toastCard(title, options)));
+// The banner as the shell raises it while Galahad can't be reached.
+const bannerToday = (text: string) => h("div", { class: "banner", role: "status" }, icon("offline", { size: 16 }), h("span", { class: "grow" }, text), button("Retry", { size: "sm" }));
+// The Roundtable's strip while its updates are paused (views/team.ts).
+const teamNotice = h("div", { class: "team-notice", role: "status" }, icon("offline", { size: 14 }), h("span", { class: "grow" }, "Updates paused. What you see may be out of date."), button("Retry", { size: "sm" }));
+// The card at the top of the Inbox while he can't reach this device (views/notifications.ts reachNote), each way it reads.
+const reachOff = h(
+  "div",
+  { class: "reach-note" },
+  callout("warn", h("div", { class: "stack tight" }, h("div", {}, "They were on until 18 Nov: Apple's push service stopped taking them.")), {
+    title: "He can't reach this device when Galahad is closed.",
+    icon: "bell",
+    actions: [button("Turn on notifications", { size: "sm", variant: "primary", icon: "bell" }), button("Not now", { size: "sm", variant: "ghost" })],
+  }),
+);
+const reachOn = h(
+  "div",
+  { class: "reach-note" },
+  callout("ok", h("div", { class: "stack tight" }, h("div", {}, "He can reach this device when Galahad is closed. Send a test to see one arrive.")), { title: "Notifications are on", actions: button("Send a test", { size: "sm", icon: "bell" }) }),
+);
+// The Inbox's notices, as its "Noticed" section lists them (views/inbox.ts, views/loops.ts findingRow).
+const notices = card(
+  { flush: true },
+  rows(
+    findingRow({} as Ctx, { severity: "alert", title: "The vault's disk is nearly full", body: "keep has 3% of its disk left; sealing a key may fail." }, [h("span", {}, "The heartbeat"), h("span", {}, "4 min ago")], button("Dismiss", { size: "sm", variant: "ghost", icon: "x" })),
+    findingRow({} as Ctx, { severity: "warn", title: "CI failed on main", body: "Two runs in a row: the link tests." }, [h("span", {}, "CI"), h("span", {}, "1 h ago")], button("Dismiss", { size: "sm", variant: "ghost", icon: "x" })),
+    findingRow({} as Ctx, { severity: "info", title: "A push to main", body: "wckdboy pushed 3 commits.", icon: "bell" }, [h("span", {}, "Your rule pushes"), h("span", {}, "2 h ago")], button("Dismiss", { size: "sm", variant: "ghost", icon: "x" })),
+  ),
+);
+// To see them move (the screenshots are taken with motion reduced, so each is still where it ends).
+const tryThem = h(
+  "div",
+  { class: "row wrap" },
+  button("A toast", { onClick: () => toast("Sealed", { tone: "ok", description: "Every full node can use it. No model ever sees it." }) }),
+  button("Three at once", {
+    onClick: () => {
+      toast("Copied");
+      setTimeout(() => toast("No disk limit here", { tone: "warn", description: "A sandbox can fill this host's disk." }), 160);
+      setTimeout(() => toast("Couldn't dismiss it", { tone: "error", description: "The node didn't answer." }), 320);
+    },
+  }),
+  button("A confirmation", { onClick: () => void confirmAction({ title: "Revoke Owner's iPhone?", body: "It is cut off at once and must be paired again.", confirmLabel: "Revoke", typeToConfirm: "Owner's iPhone" }) }),
+);
 
 const picker = selector({
   label: "Filter",
@@ -227,6 +284,45 @@ const page = h(
     ),
 
     section("openSheet()", { note: "A centred dialog on a wide screen, a tray from the bottom on a phone; its actions in its foot." }, sheetInPlace()),
+
+    shown(
+      "toast()",
+      "What just happened, for a moment at the bottom of the screen: newest in front, the rest tucked behind; errors stay longer and are read out at once.",
+      state("each tone", toasts(["Copied", {}], ["Sealed", { tone: "ok", description: "Every full node can use it. No model ever sees it." }], ["No disk limit here", { tone: "warn", description: "A sandbox can fill this host's disk." }], ["Couldn't dismiss it", { tone: "error", description: "The node didn't answer." }])),
+      state("with an action", toasts(["Owner's iPad asks to join", { description: "Compare the six-digit code before you approve.", action: { label: "Review", run: () => {} } }], ["Galahad asks your leave", { description: "github.pr.create: wckdboy/galahad", action: { label: "Review", run: () => {} } }])),
+    ),
+
+    shown(
+      "The banner",
+      "Under the top bar while Galahad can't be reached, and gone once he can.",
+      state("can't reach him", bannerToday("Can't reach Galahad right now. What you see may be out of date.")),
+      state("offline", bannerToday("You're offline. The app is cached; live data returns when you reconnect.")),
+    ),
+
+    shown(
+      "count() · dot(\"needs\")",
+      "What waits on you: the count beside a place, the amber dot where something needs you.",
+      state("counts", h("div", { class: "row wrap" }, count(1), count(12), count(128), count(3, true))),
+      state("needs you", h("div", { class: "row wrap" }, h("span", { class: "row tight small" }, dot("needs"), "Needs you"), h("span", { class: "row tight small" }, dot("work", { live: true }), "Working"))),
+    ),
+
+    shown(
+      "confirmAction()",
+      "Asks before doing something that can't be taken back; what is gone for good makes you type its name.",
+      state("plain", confirmInPlace({ title: "Rotate the vault key?", body: "Every node re-seals what it holds. Keys stay where they are.", confirmLabel: "Rotate", tone: "primary" })),
+      state("typed, destructive", confirmInPlace({ title: "Revoke Owner's iPhone?", body: "It is cut off at once and must be paired again.", confirmLabel: "Revoke", typeToConfirm: "Owner's iPhone" })),
+    ),
+
+    shown(
+      "Notices",
+      "What the node noticed, the Roundtable's strip while its updates are paused, and the card that says he can't reach this device.",
+      state("the Inbox's notices", notices),
+      state("the Roundtable's strip", teamNotice),
+      state("he can't reach this device", reachOff),
+      state("and once he can", reachOn),
+    ),
+
+    section("See them move", { note: "The screenshots are taken with motion reduced; these raise the real thing." }, tryThem),
     h("div", { "data-ready": "" }),
   ),
 );
@@ -243,6 +339,9 @@ const css = h(
    .gallery-seat { align-items: center; }
    .gallery-bar { display: inline-block; height: 12px; background: var(--accent-fill); border-radius: 2px; }
    .gallery-sheet-frame { position: relative; padding: var(--sp-4) 0; }
-   dialog.sheet.gallery-sheet { position: relative; inset: auto; margin: 0 auto; opacity: 1; transform: none; max-height: none; }`,
+   dialog.sheet.gallery-sheet { position: relative; inset: auto; margin: 0 auto; opacity: 1; transform: none; max-height: none; }
+   .gallery-state dialog.sheet.gallery-sheet { max-width: 100%; }
+   .gallery-toasts { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 380px; }
+   .gallery-toasts .toast { position: relative; inset: auto; transform: none; opacity: 1; }`,
 );
 document.getElementById("gallery")!.append(css, page);

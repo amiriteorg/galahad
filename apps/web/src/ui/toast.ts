@@ -96,6 +96,34 @@ function dismiss(item: Live): void {
   layout();
 }
 
+/** A toast as it is drawn: `done` puts it away (its close button, and its action once run). toast() raises one; the
+ * gallery (apps/web/design/gallery.ts) draws them in place. */
+export function toastCard(title: string, options: ToastOptions = {}, done: () => void = () => {}): HTMLElement {
+  const tone = options.tone ?? "info";
+  const close = h("button", { class: "btn ghost sm icon-only", type: "button", "aria-label": "Dismiss", onclick: done }, icon("x", { size: 14 }));
+  return h(
+    "div",
+    { class: "toast", style: `--tone:${TONE_VAR[tone]}` },
+    icon(TONE_ICON[tone], { size: 16 }),
+    h("div", { class: "toast-body" }, h("div", { class: "toast-title" }, title), options.description ? h("div", { class: "toast-desc" }, options.description) : null),
+    options.action
+      ? h(
+          "button",
+          {
+            class: "btn sm",
+            type: "button",
+            onclick: () => {
+              options.action?.run();
+              done();
+            },
+          },
+          options.action.label,
+        )
+      : null,
+    close,
+  );
+}
+
 export function toast(title: string, options: ToastOptions = {}): () => void {
   // A modal dialog makes the rest of the page inert and covers it, so a toast raised
   // now would be hidden and unannounced. Show it once the dialog has closed instead;
@@ -115,30 +143,9 @@ export function toast(title: string, options: ToastOptions = {}): () => void {
   const host = ensureToaster();
   const tone = options.tone ?? "info";
   const duration = options.duration ?? (tone === "error" ? 8000 : options.action ? 6000 : 4000);
-  const close = h("button", { class: "btn ghost sm icon-only", type: "button", "aria-label": "Dismiss" }, icon("x", { size: 14 }));
-  const el = h(
-    "div",
-    { class: "toast entering", style: `--tone:${TONE_VAR[tone]}` },
-    icon(TONE_ICON[tone], { size: 16 }),
-    h("div", { class: "toast-body" }, h("div", { class: "toast-title" }, title), options.description ? h("div", { class: "toast-desc" }, options.description) : null),
-    options.action
-      ? h(
-          "button",
-          {
-            class: "btn sm",
-            type: "button",
-            onclick: () => {
-              options.action?.run();
-              dismiss(item);
-            },
-          },
-          options.action.label,
-        )
-      : null,
-    close,
-  );
+  const el = toastCard(title, options, () => dismiss(item));
+  el.classList.add("entering");
   const item: Live = { el, remaining: duration, started: Date.now(), timer: null };
-  close.addEventListener("click", () => dismiss(item));
   host.appendChild(el);
   live.push(item);
   layout();
