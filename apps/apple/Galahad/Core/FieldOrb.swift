@@ -69,9 +69,11 @@ enum FieldOrb {
     /// nothing at its tip, its light fading as it goes (`lanceAt`). On a dark page its light is added as the field's is,
     /// with a close glow `glowWidth` times as wide and `glowAlpha` as strong (no fog); on a light page it is ink,
     /// `inkWidth` times as wide and `inkAlpha` times as strong as its light (ink on white reads thinner than light on
-    /// black). Its outline is taken at `steps` steps along it. The field turns about it; it shines as the field does, never
-    /// past its light at rest (breathing while something waits, dimmer while queued or paused, its tip red-brown when its
-    /// work failed).
+    /// black), its root never under `inkLeast` points each side (so at 34 points it holds as a blade, not a needle), its
+    /// ink fading slower than its light does (`lanceAt`'s light to the power `inkFade`), over a close tint of its ink
+    /// (`inkGlowWidth` times as wide, `inkGlowAlpha` as strong). Its outline is taken at `steps` steps along it. The field
+    /// turns about it; it shines as the field does, never past its light at rest (breathing while something waits, dimmer
+    /// while queued or paused, its tip red-brown when its work failed).
     enum Lance {
         static let from = 0.36
         static let to = 1.72
@@ -79,8 +81,12 @@ enum FieldOrb {
         static let steps = 16
         static let glowWidth = 3.2
         static let glowAlpha = 0.2
-        static let inkWidth = 1.3
-        static let inkAlpha = 1.2
+        static let inkWidth = 1.6
+        static let inkAlpha = 1.5
+        static let inkLeast = 0.85
+        static let inkFade = 0.6
+        static let inkGlowWidth = 3.2
+        static let inkGlowAlpha = 0.24
     }
 
     /// A half of his lance in an orb's square (its middle 0, its edge 1; x right, y down, as an ember's): its root, out of
@@ -138,16 +144,18 @@ enum FieldOrb {
         let rim: Double
     }
 
-    /// Galahad's moods: at rest it turns slowly; at work a little quicker, embers drifting off its rim; waiting on you it
-    /// breathes; queued and paused it dims and slows (paused stops); done, it settles; failed, its rim dims to red-brown.
+    /// Galahad's moods: only while something is going on does it move (your word, 26 November 2026: "nothing animating at
+    /// rest"): at work it turns, embers drifting off its rim; waiting on you it breathes, turning slowly. At rest (idle),
+    /// done (it settles), queued, paused and failed it comes to rest, still, in its mood's light: dimmer while queued or
+    /// paused, its rim red-brown when its work failed. (Until 26 November 2026 it turned at rest too, a turn a minute.)
     static let motions: [Orb.Mood: Motion] = [
-        .idle: Motion(turn: 0.1, glow: 1, breath: nil, embers: false, rim: 0),
+        .idle: Motion(turn: 0, glow: 1, breath: nil, embers: false, rim: 0),
         .working: Motion(turn: 0.2, glow: 1.08, breath: nil, embers: true, rim: 0),
         .waiting: Motion(turn: 0.08, glow: 1, breath: .init(period: 5.2, depth: 0.2), embers: false, rim: 0),
-        .queued: Motion(turn: 0.06, glow: 0.85, breath: nil, embers: false, rim: 0),
+        .queued: Motion(turn: 0, glow: 0.85, breath: nil, embers: false, rim: 0),
         .paused: Motion(turn: 0, glow: 0.7, breath: nil, embers: false, rim: 0),
-        .done: Motion(turn: 0.035, glow: 1, breath: nil, embers: false, rim: 0),
-        .failed: Motion(turn: 0.03, glow: 0.88, breath: nil, embers: false, rim: 1),
+        .done: Motion(turn: 0, glow: 1, breath: nil, embers: false, rim: 0),
+        .failed: Motion(turn: 0, glow: 0.88, breath: nil, embers: false, rim: 1),
     ]
 
     /// A mood's motion, his or a knight's. A knight's moves only while it works (your word, 26 November 2026: still in
@@ -202,11 +210,12 @@ enum FieldOrb {
         return near(clock.speed, motion.turn, 0.0005) && near(clock.glow, motion.glow) && near(clock.rim, motion.rim) && near(clock.depth, motion.breath?.depth ?? 0) && near(clock.embers, motion.embers ? 1 : 0, 0.005)
     }
 
-    /// How many frames a second a field needs now: as few as look smooth. While it eases to a mood or its embers drift,
-    /// 30; breathing, 20; only turning, 15; and none once it has come to rest.
+    /// How many frames a second a field needs now: as few as look smooth (each frame costs a battery). While it eases to a
+    /// mood, 30; while its embers drift (slowly: a frame moves one a third of a point at 168 points) or it breathes, 20;
+    /// only turning, 15; and none once it has come to rest.
     static func fps(_ clock: Clock, _ motion: Motion) -> Double {
-        if !settled(clock, motion) || clock.embers > 0.01 { return 30 }
-        if clock.depth > 0.002 { return 20 }
+        if !settled(clock, motion) { return 30 }
+        if clock.embers > 0.01 || clock.depth > 0.002 { return 20 }
         return clock.speed > 0.0005 ? 15 : 0
     }
 
@@ -227,17 +236,21 @@ enum FieldOrb {
         let embers: [Ember]
     }
 
-    /// His embers: how many; each lives 2.8 to 4.4 seconds (then another sets out); where they set out (a share of the way
-    /// from the middle to the edge of the orb's square) and how far each drifts; how much they rise as they go; how far
-    /// round from the rim's burning side they may set out (degrees either way); and their radius. Always inside his square.
+    /// His embers, refined (26 November 2026: few, small and slow, so they say he works without pulling the eye): how
+    /// many; each lives 3.6 to 5.6 seconds (then another sets out); where they set out (a share of the way from the middle
+    /// to the edge of the orb's square) and how far each drifts; how much they rise as they go; how far round from the
+    /// rim's burning side they may set out (degrees either way); their radius; and how long each takes to come into sight
+    /// (a share of its life). Always inside his square. Drawn soft (a light that falls away from its middle), never a
+    /// hard dot.
     enum Embers {
-        static let count = 7
-        static let life = (2.8, 4.4)
-        static let from = (0.56, 0.64)
-        static let drift = (0.1, 0.2)
-        static let rise = 0.06
-        static let spread = 70.0
-        static let size = (0.016, 0.028)
+        static let count = 5
+        static let life = (3.6, 5.6)
+        static let from = (0.58, 0.64)
+        static let drift = (0.08, 0.15)
+        static let rise = 0.05
+        static let spread = 60.0
+        static let size = (0.012, 0.022)
+        static let fadeIn = 0.25
     }
 
     /// Where the rim burns, in degrees clockwise from the top (Field's rim light, seen from the front: lower right).
@@ -264,7 +277,7 @@ enum FieldOrb {
             let lot = seed &+ (UInt32(truncatingIfNeeded: Int64(round)) &* 0x9e37_79b1)
             let angle = ((rimAngle + Embers.spread * (2 * Orb.rand(lot, i, 72) - 1)) * Double.pi) / 180
             let reach = Embers.from.0 + (Embers.from.1 - Embers.from.0) * Orb.rand(lot, i, 73) + (Embers.drift.0 + (Embers.drift.1 - Embers.drift.0) * Orb.rand(lot, i, 74)) * u
-            let fadeIn = min(1, u / 0.15)
+            let fadeIn = min(1, u / Embers.fadeIn)
             return Ember(
                 x: reach * sin(angle),
                 y: -reach * cos(angle) - Embers.rise * u,
@@ -304,14 +317,18 @@ enum FieldOrb {
     /// How a field's lines are drawn, from point to point along each (points): a line's width, from `least` where it is
     /// faintest to `least + more` where brightest, times its look's weight; under each line on a dark page, its light again
     /// `glowWidth` times as wide and `glowAlpha` as strong (close, so no fog: "less fog, so it reads clearer"); a line's
-    /// width on a light page as a share of its width on a dark one; and how much of its points' light a line shows on a
-    /// dark page, less again where it is smaller than `full`.
+    /// width on a light page, `ink` of its width on a dark one at its largest, the same at every size (a look's weight, its
+    /// boldness where small, is for light, which spreads): wider, as ink on paper has no glow to carry it (until 26
+    /// November 2026, 0.85 of the dark page's at each size: the knights read as thin scribbles there), and never narrower
+    /// than `inkLeast` points, so a 14-point face keeps its lines (no glow under them there); and how much of its points'
+    /// light a line shows on a dark page, less again where it is smaller than `full`.
     enum Stroke {
         static let least = 0.42
         static let more = 0.5
         static let glowWidth = 3.2
         static let glowAlpha = 0.12
-        static let ink = 0.85
+        static let ink = 1.35
+        static let inkLeast = 0.55
         static let light = 0.22
         static let full = 96.0
     }
@@ -319,24 +336,135 @@ enum FieldOrb {
     /// How much of its points' light a field `size` wide shows on a dark page.
     static func strokeLight(_ size: Double) -> Double { Stroke.light * min(1, size / Stroke.full) }
 
-    /// A field's inks on a light page, as sRGB (0 to 255 each): where its key light falls, its key's deep colour darkened
-    /// (it would be white on white otherwise), and where its rim burns, its rim's, darkened less.
+    /// A field's ink on a light page (26 November 2026: it read as "flat line art" there, the knights' above all, which the
+    /// icon rounds had turned down): each colour as a saturated ink rather than darkened towards black (which made gold
+    /// brown and every tint muddy):
+    /// - `key`, `rim`: how far its key's ink and its rim's stand from the page (#fafafa) where fully lit, as a contrast
+    ///   ratio (3:1 is a graphic's floor; the key, nearer you, stronger);
+    /// - `chroma`: how much more saturated each ink is than its colour, as far as sRGB allows at its lightness;
+    /// - sheen: where the key light strikes hardest (past `sheenFrom` of its light), its ink goes up to `sheenMost` of the
+    ///   way to its lit colour as an ink `sheenContrast` to 1 from the page: the light page's white-hot, so it reads as
+    ///   lit, not drawn;
+    /// - `floor`, `curve`: how opaque a line is by its light, from `floor` where the lights leave it to whole where it is
+    ///   fully lit, along `curve` (under 1, it gains sooner): the far lines faint but there, so the field keeps its volume.
+    enum Ink {
+        static let key = 3.4
+        static let rim = 3.1
+        static let sheenContrast = 2.2
+        static let sheenFrom = 0.55
+        static let sheenMost = 0.7
+        static let chroma = 1.2
+        static let floor = 0.22
+        static let curve = 0.9
+    }
+
+    /// A field's inks on a light page, as sRGB (0 to 255 each): where its key light falls, its key's deep colour as ink, and
+    /// where its rim burns, its rim's (`Ink`).
     struct Inks: Equatable, Sendable {
         let key: [Double]
         let rim: [Double]
+        /// Where the key light strikes hardest, its lit colour as a lighter ink: the sheen that says it is lit.
+        let sheen: [Double]
     }
 
+    /// (A few hundred steps: FieldPainter works them out once for each field's colours, as a frame on a light page reads
+    /// them.)
     static func inks(_ colours: FieldColours) -> Inks {
-        func rgb(_ hex: String) -> [Double] { [1, 3, 5].map { Double(Int(hex.dropFirst($0).prefix(2), radix: 16) ?? 0) } }
-        return Inks(key: rgb(KnightOrb.blend(colours.key[1], "#000000", 0.38)), rim: rgb(KnightOrb.blend(colours.rim, "#000000", 0.22)))
+        Inks(key: inkOf(colours.key[1], Ink.key), rim: inkOf(colours.rim, Ink.rim), sheen: inkOf(colours.key[0], Ink.sheenContrast))
     }
 
     /// A point's ink on a light page, from the key's light on it and the rim's: between its two inks by their shares, and
-    /// as opaque as it is lit, faint where it is dark (so the field keeps its depth on paper).
+    /// as opaque as it is lit (`Ink`'s floor and curve), so the field keeps its depth on paper and its far lines don't
+    /// vanish.
     static func ink(_ inks: Inks, lit: Double, rim: Double) -> (rgb: [Double], alpha: Double) {
         let total = lit + rim
         let share = total > 0 ? rim / total : 0
-        return ((0..<3).map { inks.key[$0] + (inks.rim[$0] - inks.key[$0]) * share }, min(1, 0.1 + 0.95 * max(lit, rim)))
+        // Where the key strikes hardest (past `sheenFrom` of its light), its sheen: up to `sheenMost` of the way to it.
+        let sheen = Ink.sheenMost * max(0, min(1, (lit - Ink.sheenFrom) / (1 - Ink.sheenFrom))) * (1 - share)
+        let rgb = (0..<3).map { at in
+            let ink = inks.key[at] + (inks.rim[at] - inks.key[at]) * share
+            return ink + (inks.sheen[at] - ink) * sheen
+        }
+        let light = min(1, max(0, lit, rim))
+        return (rgb, Ink.floor + (1 - Ink.floor) * pow(light, Ink.curve))
+    }
+
+    /// `ink` for each point of each frame on a light page, making nothing: its colour (0 to 255 a channel) and its opacity,
+    /// read from `Ink`'s curve taken in 1024 steps (within a thousandth of `ink`'s; a stroke is drawn in sixteen steps of it
+    /// anyway).
+    static func inkInto(_ inks: Inks, lit: Double, rim: Double) -> (r: Double, g: Double, b: Double, alpha: Double) {
+        let total = lit + rim
+        let share = total > 0 ? rim / total : 0
+        let sheen = Ink.sheenMost * max(0, min(1, (lit - Ink.sheenFrom) / (1 - Ink.sheenFrom))) * (1 - share)
+        func channel(_ c: Int) -> Double {
+            let ink = inks.key[c] + (inks.rim[c] - inks.key[c]) * share
+            return ink + (inks.sheen[c] - ink) * sheen
+        }
+        return (channel(0), channel(1), channel(2), inkAlpha[Int(jsRound(min(1, max(0, lit, rim)) * 1023))])
+    }
+
+    private static let inkAlpha: [Double] = (0..<1024).map { Ink.floor + (1 - Ink.floor) * pow(Double($0) / 1023, Ink.curve) }
+
+    /// A colour as an ink on the light page: its hue kept, its chroma `Ink.chroma` times its own (as far as sRGB goes), and
+    /// as light as it can be while it stands `contrast` to 1 from the page (or as it is, where it is darker already).
+    static func inkOf(_ hex: String, _ contrast: Double) -> [Double] {
+        let (l0, a0, b0) = oklab(Field.linear(hex))
+        let c0 = hypot(a0, b0) * Ink.chroma, h = atan2(b0, a0)
+        let ch = cos(h), sh = sin(h)
+        // The most chroma up to c0 that sRGB holds at a lightness (bisected: 16 steps, under a ten-thousandth of the range,
+        // finer than a byte of sRGB can tell).
+        func held(_ l: Double) -> Field.Rgb {
+            var lo = 0.0, hi = c0
+            if inGamut(fromOklab(l, c0 * ch, c0 * sh)) {
+                lo = c0
+            } else {
+                for _ in 0..<16 {
+                    let mid = (lo + hi) / 2
+                    if inGamut(fromOklab(l, mid * ch, mid * sh)) { lo = mid } else { hi = mid }
+                }
+            }
+            return fromOklab(l, lo * ch, lo * sh)
+        }
+        let most = (pageLuminance + 0.05) / contrast - 0.05
+        var shown = held(l0)
+        if relativeLuminance(shown) > most {
+            // As light as it may be: the lightness that stands `contrast` from the page (bisected, 16 steps).
+            var lo = 0.0, hi = l0
+            for _ in 0..<16 {
+                let mid = (lo + hi) / 2
+                if relativeLuminance(held(mid)) > most { hi = mid } else { lo = mid }
+            }
+            shown = held(lo)
+        }
+        return [srgb8(shown.r), srgb8(shown.g), srgb8(shown.b)]
+    }
+
+    // (Colour in OKLab, Björn Ottosson's: a lightness and two axes of hue, so an ink keeps its hue as it darkens.)
+    /// The light page's own luminance (#fafafa).
+    private static let pageLuminance = pow((250.0 / 255 + 0.055) / 1.055, 2.4)
+
+    private static func oklab(_ c: Field.Rgb) -> (Double, Double, Double) {
+        let l = cbrt(0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b)
+        let m = cbrt(0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b)
+        let s = cbrt(0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b)
+        return (0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s)
+    }
+
+    private static func fromOklab(_ lightness: Double, _ a: Double, _ b: Double) -> Field.Rgb {
+        let l = pow(lightness + 0.3963377774 * a + 0.2158037573 * b, 3)
+        let m = pow(lightness - 0.1055613458 * a - 0.0638541728 * b, 3)
+        let s = pow(lightness - 0.0894841775 * a - 1.291485548 * b, 3)
+        return Field.Rgb(r: 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, g: -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, b: -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)
+    }
+
+    private static func inGamut(_ c: Field.Rgb) -> Bool { [c.r, c.g, c.b].allSatisfy { $0 >= -1e-9 && $0 <= 1 + 1e-9 } }
+
+    private static func relativeLuminance(_ c: Field.Rgb) -> Double { 0.2126 * max(0, c.r) + 0.7152 * max(0, c.g) + 0.0722 * max(0, c.b) }
+
+    /// Linear light to an sRGB byte.
+    private static func srgb8(_ v: Double) -> Double {
+        let c = max(0, min(1, v))
+        return jsRound(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055))
     }
 
     /// JavaScript's Math.round: the nearest whole number, a half towards +∞.

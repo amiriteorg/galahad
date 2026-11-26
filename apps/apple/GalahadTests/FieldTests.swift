@@ -40,6 +40,7 @@ extension Vectors {
         struct LookCase: Decodable { let who: String; let size: Double; let galahad: Bool; let look: FieldOrb.Look }
         struct Lance: Decodable {
             struct Spread: Decodable { let width: Double; let alpha: Double }
+            struct Ink: Decodable { let width: Double; let alpha: Double; let least: Double; let fade: Double; let glow: Spread }
             struct Half: Decodable { let root: [Double]; let tip: [Double] }
             struct Line: Decodable { let zoom: Double; let halves: [Half] }
             struct Along: Decodable { let u: Double; let width: Double; let light: Double; let hue: Double }
@@ -48,7 +49,7 @@ extension Vectors {
             let width: Double
             let steps: Int
             let glow: Spread
-            let ink: Spread
+            let ink: Ink
             let lines: [Line]
             let along: [Along]
         }
@@ -59,12 +60,13 @@ extension Vectors {
             let more: Double
             let glow: Glow
             let ink: Double
+            let inkLeast: Double
             let light: Double
             let full: Double
             let lights: [Light]
         }
         struct Motion: Decodable { let turn: Double; let glow: Double; let breath: FieldOrb.Motion.Breath?; let embers: Bool; let rim: Double }
-        struct Embers: Decodable { let count: Int; let life: [Double]; let from: [Double]; let drift: [Double]; let rise: Double; let spread: Double; let size: [Double]; let rimAngle: Double }
+        struct Embers: Decodable { let count: Int; let life: [Double]; let from: [Double]; let drift: [Double]; let rise: Double; let spread: Double; let size: [Double]; let fadeIn: Double; let rimAngle: Double }
         struct Frame: Decodable { let turn: Double; let glow: Double; let rim: Double; let embers: [FieldOrb.Ember] }
         struct ClockCase: Decodable { let mood: String; let clock: FieldOrb.Clock; let still: Frame }
         struct Step: Decodable { let knight: Bool; let mood: String; let dt: Double; let clock: FieldOrb.Clock; let fps: Double }
@@ -76,12 +78,24 @@ extension Vectors {
         }
         struct Tone: Decodable { let rgb: [Double]; let exposure: Double; let shown: [Double] }
         struct InkCase: Decodable {
-            struct Inks: Decodable { let key: [Double]; let rim: [Double] }
+            struct Inks: Decodable { let key: [Double]; let rim: [Double]; let sheen: [Double] }
             struct Shown: Decodable { struct Ink: Decodable { let rgb: [Double]; let alpha: Double }; let lit: Double; let rim: Double; let ink: Ink }
             let colours: FieldColours
             let inks: Inks
             let keyRgb: [Double]
             let shown: [Shown]
+        }
+        /// The light page's ink (lib/field-orb.ts' FIELD_INK), and colours as inks at contrasts.
+        struct InkModel: Decodable {
+            struct Sheen: Decodable { let contrast: Double; let from: Double; let most: Double }
+            struct Of: Decodable { let hex: String; let contrast: Double; let rgb: [Double] }
+            let key: Double
+            let rim: Double
+            let sheen: Sheen
+            let chroma: Double
+            let floor: Double
+            let curve: Double
+            let of: [Of]
         }
         let lights: Lights
         let galahad: FieldIdentity
@@ -104,6 +118,7 @@ extension Vectors {
         let tints: Tints
         let tones: [Tone]
         let inks: [InkCase]
+        let ink: InkModel
     }
 }
 
@@ -221,6 +236,8 @@ struct FieldTests {
         #expect(FieldOrb.Lance.from == lance.from && FieldOrb.Lance.to == lance.to && FieldOrb.Lance.width == lance.width && FieldOrb.Lance.steps == lance.steps)
         #expect(FieldOrb.Lance.glowWidth == lance.glow.width && FieldOrb.Lance.glowAlpha == lance.glow.alpha)
         #expect(FieldOrb.Lance.inkWidth == lance.ink.width && FieldOrb.Lance.inkAlpha == lance.ink.alpha)
+        #expect(FieldOrb.Lance.inkLeast == lance.ink.least && FieldOrb.Lance.inkFade == lance.ink.fade)
+        #expect(FieldOrb.Lance.inkGlowWidth == lance.ink.glow.width && FieldOrb.Lance.inkGlowAlpha == lance.ink.glow.alpha)
         #expect(lance.lines.count == 3)
         for line in lance.lines {
             let mine = FieldOrb.lanceLine(FieldOrb.galahad, zoom: line.zoom)
@@ -282,7 +299,8 @@ struct FieldTests {
         let stroke = field.stroke
         #expect(FieldOrb.Stroke.least == stroke.least && FieldOrb.Stroke.more == stroke.more)
         #expect(FieldOrb.Stroke.glowWidth == stroke.glow.width && FieldOrb.Stroke.glowAlpha == stroke.glow.alpha)
-        #expect(FieldOrb.Stroke.ink == stroke.ink && FieldOrb.Stroke.light == stroke.light && FieldOrb.Stroke.full == stroke.full)
+        #expect(FieldOrb.Stroke.ink == stroke.ink && FieldOrb.Stroke.inkLeast == stroke.inkLeast)
+        #expect(FieldOrb.Stroke.light == stroke.light && FieldOrb.Stroke.full == stroke.full)
         for item in stroke.lights { #expect(near(FieldOrb.strokeLight(item.size), item.light), "\(item.size)") }
     }
 
@@ -308,7 +326,7 @@ struct FieldTests {
         #expect([FieldOrb.Embers.from.0, FieldOrb.Embers.from.1] == embers.from)
         #expect([FieldOrb.Embers.drift.0, FieldOrb.Embers.drift.1] == embers.drift)
         #expect([FieldOrb.Embers.size.0, FieldOrb.Embers.size.1] == embers.size)
-        #expect(FieldOrb.Embers.rise == embers.rise && FieldOrb.Embers.spread == embers.spread)
+        #expect(FieldOrb.Embers.rise == embers.rise && FieldOrb.Embers.spread == embers.spread && FieldOrb.Embers.fadeIn == embers.fadeIn)
         #expect(near(FieldOrb.rimAngle, embers.rimAngle))
     }
 
@@ -336,7 +354,8 @@ struct FieldTests {
     }
 
     @Test func aFieldComesToRestAndThenDrawsNothing() {
-        // Nothing redraws at rest: a knight not at work settles to no frames at all, and Galahad to a slow turn.
+        // Nothing redraws at rest: a knight not at work settles to no frames at all, and Galahad too (your word, 26 November
+        // 2026: "nothing animating at rest"; until then he settled to a slow turn, 15 frames a second).
         var clock = FieldOrb.clock(FieldOrb.motion(.working, knight: true))
         let resting = FieldOrb.motion(.idle, knight: true)
         for _ in 0..<600 { clock = FieldOrb.step(clock, resting, 1.0 / 30) }
@@ -344,7 +363,40 @@ struct FieldTests {
         var his = FieldOrb.clock(FieldOrb.motion(.working, knight: false))
         let idle = FieldOrb.motion(.idle, knight: false)
         for _ in 0..<600 { his = FieldOrb.step(his, idle, 1.0 / 30) }
-        #expect(FieldOrb.fps(his, idle) == 15)
+        #expect(FieldOrb.fps(his, idle) == 0)
+    }
+
+    @Test func nothingMovesAtRestAndWorkIsDrawnTwentyTimesASecond() {
+        // Idle, done, queued, paused or failed: still, in its mood's light, asking for no frame.
+        for mood in [Orb.Mood.idle, .done, .queued, .paused, .failed] {
+            let motion = FieldOrb.motion(mood, knight: false)
+            #expect(motion.turn == 0 && motion.breath == nil && !motion.moves, "\(mood)")
+            #expect(FieldOrb.fps(FieldOrb.clock(motion), motion) == 0, "\(mood)")
+        }
+        #expect(FieldOrb.motion(.paused, knight: false).glow < FieldOrb.motion(.queued, knight: false).glow)
+        // At work, its embers drifting, 20 a second; breathing, 20; only while a mood arrives, 30.
+        let working = FieldOrb.motion(.working, knight: false), waiting = FieldOrb.motion(.waiting, knight: false), done = FieldOrb.motion(.done, knight: false)
+        #expect(FieldOrb.fps(FieldOrb.clock(working), working) == 20)
+        #expect(FieldOrb.fps(FieldOrb.clock(waiting), waiting) == 20)
+        var settling = FieldOrb.clock(working)
+        for _ in 0..<6 { settling = FieldOrb.step(settling, done, 1.0 / 30) }
+        #expect(FieldOrb.fps(settling, done) == 30)
+        for _ in 0..<600 { settling = FieldOrb.step(settling, done, 1.0 / 30) }
+        #expect(FieldOrb.fps(settling, done) == 0)
+    }
+
+    @Test func hisEmbersAreFewSmallAndSlowAndNonePopsIntoSight() {
+        #expect(FieldOrb.Embers.count <= 5 && FieldOrb.Embers.life.0 >= 3.5 && FieldOrb.Embers.size.1 <= 0.022)
+        // Slow: at most a fifth of the orb's half-width a life, so at 168 points under 5 points a second.
+        #expect(FieldOrb.Embers.drift.1 + FieldOrb.Embers.rise <= 0.2)
+        #expect((FieldOrb.Embers.drift.1 + FieldOrb.Embers.rise) * 84 / FieldOrb.Embers.life.0 < 5)
+        // Each comes into sight over a quarter of its life, and is never brighter than three fifths of its light.
+        let working = FieldOrb.clock(FieldOrb.motion(.working, knight: false))
+        var brightest = 0.0
+        for step in 0..<1200 {
+            for e in FieldOrb.frame(working, at: Double(step) * 0.05, seed: 3, embers: true).embers { brightest = max(brightest, e.alpha) }
+        }
+        #expect(brightest > 0.4 && brightest < 0.6)
     }
 
     @Test func aFramesEmbersAreThePWAs() {
@@ -378,11 +430,41 @@ struct FieldTests {
     @Test func onALightPageItIsInkAsThePWAs() {
         for item in field.inks {
             let inks = FieldOrb.inks(item.colours)
-            #expect(inks.key == item.inks.key && inks.rim == item.inks.rim, "\(item.colours)")
+            #expect(inks.key == item.inks.key && inks.rim == item.inks.rim && inks.sheen == item.inks.sheen, "\(item.colours)")
             for shown in item.shown {
                 let ink = FieldOrb.ink(inks, lit: shown.lit, rim: shown.rim)
                 #expect(near(ink.rgb, shown.ink.rgb) && near(ink.alpha, shown.ink.alpha), "\(shown.lit) \(shown.rim)")
             }
         }
+        // A colour as an ink on the light page (26 November 2026): its hue kept, more saturated, as light as its contrast
+        // allows; and the model's own numbers.
+        let model = field.ink
+        #expect(FieldOrb.Ink.key == model.key && FieldOrb.Ink.rim == model.rim && FieldOrb.Ink.chroma == model.chroma)
+        #expect(FieldOrb.Ink.sheenContrast == model.sheen.contrast && FieldOrb.Ink.sheenFrom == model.sheen.from && FieldOrb.Ink.sheenMost == model.sheen.most)
+        #expect(FieldOrb.Ink.floor == model.floor && FieldOrb.Ink.curve == model.curve)
+        #expect(model.of.count >= 24)
+        for item in model.of { #expect(FieldOrb.inkOf(item.hex, item.contrast) == item.rgb, "\(item.hex) at \(item.contrast)") }
+    }
+
+    @Test func aFramesInkIsTheInksWithinAThousandth() {
+        // As a frame draws a point's ink on a light page (making nothing): the same colour, its opacity within a thousandth.
+        for colours in [Field.aurum, FieldOrb.knight("ada").colours, FieldOrb.knight("gareth").colours] {
+            let inks = FieldOrb.inks(colours)
+            for (lit, rim) in [(0.0, 0.0), (0.2, 0.05), (0.5, 0.5), (0.8, 0), (1, 0), (0, 1), (0.37, 0.61)] {
+                let fast = FieldOrb.inkInto(inks, lit: lit, rim: rim), exact = FieldOrb.ink(inks, lit: lit, rim: rim)
+                #expect(near([fast.r, fast.g, fast.b], exact.rgb), "\(lit) \(rim)")
+                #expect(abs(fast.alpha - exact.alpha) < 0.001, "\(lit) \(rim)")
+            }
+            // The far lines faint but there, and whole where fully lit.
+            #expect(FieldOrb.ink(inks, lit: 0, rim: 0).alpha == FieldOrb.Ink.floor && FieldOrb.ink(inks, lit: 1, rim: 0).alpha == 1)
+        }
+    }
+
+    @Test func onALightPageItsLinesHoldAndHisLanceIsABlade() {
+        // No line narrower than its least, and wider than on a dark page (ink has no glow to carry it).
+        #expect(FieldOrb.Stroke.inkLeast >= 0.5 && FieldOrb.Stroke.ink >= 1)
+        // At 34 points his lance's root is at least 2.5 points across on paper; its tint as close as the dark page's glow.
+        #expect(2 * max(FieldOrb.Lance.inkLeast, (34 * FieldOrb.Lance.width) / 2) * FieldOrb.Lance.inkWidth > 2.5)
+        #expect(FieldOrb.Lance.inkGlowWidth <= FieldOrb.Lance.glowWidth)
     }
 }

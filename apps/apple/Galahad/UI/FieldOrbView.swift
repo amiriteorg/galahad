@@ -7,7 +7,8 @@ import Synchronization
  * heads-up ring he wore until then: "remove the old mark around galahad. make the primary agent distinct in some other
  * cool way"); a knight's is in its own colours, with no lance. The app's own mark is his field alone (AppMark). Each line
  * of a field is a stroke from point to point, added to the others on a dark page (.plusLighter) with a close, faint glow
- * under it and no fog; on a light page it is ink. Where it is one of many (a row, a conversation's history) an orb is
+ * under it and no fog; on a light page it is ink, each colour a saturated ink of its own hue, lit where the light strikes
+ * (FieldOrb.Ink), in one pass. Where it is one of many (a row, a conversation's history) an orb is
  * still, drawn once into a picture that every row showing the same orb shares; where it is the one you are looking at, it
  * moves as its mood does (slowly: "slow and calming movement", "i dont want them to be too visually distractin"), only
  * while the app is in front, never where the device asks for reduced motion, and not at all once it has come to rest.
@@ -135,9 +136,9 @@ private struct StillField: View, Equatable {
     }
 }
 
-/// The orb in focus, moving: a frame at a time, as often as its mood needs (FieldOrb.fps: 30 while a mood arrives or
-/// embers drift, 20 breathing, 15 turning), on its course; nothing at all once it has come to rest, while the app is not in
-/// front, or where the device asks for reduced motion (then one still frame in its mood's light).
+/// The orb in focus, moving: a frame at a time, as often as its mood needs (FieldOrb.fps: 30 while a mood arrives, 20
+/// while embers drift or it breathes, 15 turning), on its course; nothing at all once it has come to rest, while the app
+/// is not in front, or where the device asks for reduced motion (then one still frame in its mood's light).
 private struct MovingField: View {
     let identity: FieldIdentity
     let lance: Bool
@@ -268,6 +269,19 @@ enum FieldPainter {
 
     /// Each field's model and the buffer its points are written to, made once for each field and look.
     private static let models = Mutex<[String: (model: Field.Model, buffer: Field.Buffer)]>([:])
+    /// A field's inks on a light page, worked out once for each field's colours (a frame on a light page reads them, and
+    /// an ink takes a few hundred steps).
+    private static let inked = Mutex<[FieldColours: FieldOrb.Inks]>([:])
+
+    static func inks(_ colours: FieldColours) -> FieldOrb.Inks {
+        if let inks = inked.withLock({ $0[colours] }) { return inks }
+        let inks = FieldOrb.inks(colours)
+        inked.withLock { inked in
+            if inked.count >= 64 { inked.removeAll(keepingCapacity: true) }
+            inked[colours] = inks
+        }
+        return inks
+    }
 
     /// `galahad`: his look (fewer of his lines where he is small; FieldOrb.look); `lance`: his lance through it.
     static func paint(_ g: CGContext, size: CGFloat, identity: FieldIdentity, galahad: Bool, lance: Bool, frame: FieldOrb.Frame, paper: Bool) {
@@ -276,7 +290,7 @@ enum FieldPainter {
         let lightNow = colours == identity.colours ? nil : Field.light(colours)
         let modelKey = "\(identity.seed)/\(identity.tilt)/\(identity.colours.key)/\(identity.colours.rim)|\(look.lines)/\(look.steps)/\(look.weight)"
         let half = Double(size) / 2, f = half * focal * look.zoom
-        let inks = paper ? FieldOrb.inks(colours) : nil
+        let inks = paper ? Self.inks(colours) : nil
         let glow = max(0, frame.glow)
         let light = FieldOrb.strokeLight(Double(size))
         func q(_ v: Double, _ steps: Int) -> Int { max(0, min(steps - 1, Int(FieldOrb.jsRound(v * Double(steps - 1))))) }
@@ -297,8 +311,9 @@ enum FieldPainter {
                 let x = half + (b.x[i] * f) / depth, y = half - (b.y[i] * f) / depth
                 var level: Double, r: Double, gg: Double, bb: Double
                 if let inks {
-                    let ink = FieldOrb.ink(inks, lit: b.lit[i], rim: b.rim[i])
-                    (r, gg, bb) = (ink.rgb[0] / 255, ink.rgb[1] / 255, ink.rgb[2] / 255)
+                    // (A frame makes nothing for each of its thousands of points.)
+                    let ink = FieldOrb.inkInto(inks, lit: b.lit[i], rim: b.rim[i])
+                    (r, gg, bb) = (ink.r / 255, ink.g / 255, ink.b / 255)
                     level = min(1, ink.alpha * glow)
                 } else {
                     let toned = FieldOrb.tone(b.r[i] * glow * light, b.g[i] * glow * light, b.b[i] * glow * light)
@@ -331,6 +346,7 @@ enum FieldPainter {
         func color(_ r: Double, _ gg: Double, _ b: Double, _ a: Double) -> CGColor {
             CGColor(colorSpace: space ?? CGColorSpaceCreateDeviceRGB(), components: [r, gg, b, a]) ?? CGColor(gray: 0, alpha: a)
         }
+        // (On a light page the lines are ink, with no glow under them: one pass.)
         for glowing in paper ? [false] : [true, false] {
             // His lance, under his lines (on a light page they cross over it; on a dark one light adds alike either way).
             if !glowing && lance { self.lance(g, size: Double(size), zoom: look.zoom, identity: identity, colours: colours, glow: glow, inks: inks, color: color) }
@@ -338,7 +354,8 @@ enum FieldPainter {
                 let level = Double(kind & 0xf) / Double(levels - 1)
                 let hue = kind >> 4
                 let channel = { (shift: Int) in Double((hue >> shift) & 0xf) / Double(hues - 1) }
-                let width = (FieldOrb.Stroke.least + FieldOrb.Stroke.more * level) * weight * (paper ? FieldOrb.Stroke.ink : 1)
+                // (On a light page, one ink at every size: the small sizes' boldness is for light, which spreads.)
+                let width = paper ? max(FieldOrb.Stroke.inkLeast, (FieldOrb.Stroke.least + FieldOrb.Stroke.more * level) * FieldOrb.Stroke.ink) : (FieldOrb.Stroke.least + FieldOrb.Stroke.more * level) * weight
                 g.setLineWidth(glowing ? width * FieldOrb.Stroke.glowWidth : width)
                 g.setStrokeColor(color(channel(8), channel(4), channel(0), glowing ? level * FieldOrb.Stroke.glowAlpha : level))
                 g.addPath(path)
@@ -346,16 +363,15 @@ enum FieldPainter {
             }
         }
         if !frame.embers.isEmpty {
-            let ember = paper ? FieldOrb.inks(colours).rim : emberLight(colours)
+            let ember = (inks?.rim ?? emberLight(colours)).map(FieldOrb.jsRound)
+            func shade(_ alpha: Double) -> CGColor { color(ember[0] / 255, ember[1] / 255, ember[2] / 255, FieldOrb.jsRound(max(0, min(1, alpha)) * 1000) / 1000) }
             for e in frame.embers where e.alpha >= 0.01 {
+                // Soft: its light (or its ink) falls away from its middle to nothing at three times its radius, never a
+                // hard dot.
                 let radius = max(0.6, e.r * half)
                 let centre = CGPoint(x: half + e.x * half, y: half + e.y * half)
-                if !paper {
-                    g.setFillColor(color(ember[0] / 255, ember[1] / 255, ember[2] / 255, e.alpha * FieldOrb.Stroke.glowAlpha * 2))
-                    g.fillEllipse(in: CGRect(x: centre.x - radius * 2.4, y: centre.y - radius * 2.4, width: radius * 4.8, height: radius * 4.8))
-                }
-                g.setFillColor(color(ember[0] / 255, ember[1] / 255, ember[2] / 255, min(1, e.alpha)))
-                g.fillEllipse(in: CGRect(x: centre.x - radius, y: centre.y - radius, width: radius * 2, height: radius * 2))
+                guard let soft = CGGradient(colorsSpace: space, colors: [shade(e.alpha), shade(e.alpha * 0.55), shade(0)] as CFArray, locations: [0, 0.33, 1]) else { continue }
+                g.drawRadialGradient(soft, startCenter: centre, startRadius: 0, endCenter: centre, endRadius: radius * 3, options: [])
             }
         }
         g.restoreGState()
@@ -370,22 +386,22 @@ enum FieldPainter {
 
     /// His lance (FieldOrb.Lance, lanceLine, lanceAt; ui/orb.ts' lance): each half one blade, from its root out of his core
     /// to its tip, narrowing to a point and fading as it goes, filled along its length with his lit gold going to his gold
-    /// and then his rim's copper (its light added, over a close glow), or on a light page his inks; as bright as his field
-    /// is now (`glow`). One path and one fill a half and a pass, so no seam shows where light is added to light. Drawn in
-    /// the blend the lines are (light added on a dark page).
+    /// and then his rim's copper (its light added, over a close glow), or on a light page his inks (his sheen, his key, his
+    /// rim) over a close tint of them; as bright as his field is now (`glow`). One path and one fill a half and a pass, so
+    /// no seam shows where light is added to light. Drawn in the blend the lines are (light added on a dark page).
     private static func lance(_ g: CGContext, size: Double, zoom: Double, identity: FieldIdentity, colours: FieldColours, glow: Double, inks: FieldOrb.Inks?, color: (Double, Double, Double, Double) -> CGColor) {
         let L = FieldOrb.Lance.self
         let half = size / 2
-        // Half its width at its root, in points: never under half a point (a point across).
-        let root = max(0.5, (size * L.width) / 2)
+        // Half its width at its root, in points: never under half a point (a point across); on a light page, never under its
+        // ink's least, so it holds as a blade where he is small.
+        let root = max(inks != nil ? L.inkLeast : 0.5, (size * L.width) / 2)
         let strength = min(1, max(0, glow))
         func rgb(_ hex: String) -> [Double] { [1, 3, 5].map { Double(Int(hex.dropFirst($0).prefix(2), radix: 16) ?? 0) } }
         func mix(_ a: [Double], _ b: [Double], _ t: Double) -> [Double] { (0..<3).map { FieldOrb.jsRound(a[$0] + (b[$0] - a[$0]) * t) } }
-        let (lit, gold, rim) = (rgb(colours.key[0]), rgb(colours.key[1]), rgb(colours.rim))
-        func colourAt(_ hue: Double) -> [Double] {
-            if let inks { return mix(inks.key, inks.rim, hue) }
-            return hue <= 0.5 ? mix(lit, gold, hue * 2) : mix(gold, rim, (hue - 0.5) * 2)
-        }
+        // From his lit gold through his gold to his rim's copper; on a light page, his inks the same way: his sheen, his key,
+        // his rim.
+        let (first, middle, last) = inks.map { ($0.sheen, $0.key, $0.rim) } ?? (rgb(colours.key[0]), rgb(colours.key[1]), rgb(colours.rim))
+        func colourAt(_ hue: Double) -> [Double] { hue <= 0.5 ? mix(first, middle, hue * 2) : mix(middle, last, (hue - 0.5) * 2) }
         let stops = 8
         let space = CGColorSpace(name: CGColorSpace.sRGB)
         for blade in FieldOrb.lanceLine(identity, zoom: zoom) {
@@ -394,13 +410,15 @@ enum FieldPainter {
             let length = hypot(x1 - x0, y1 - y0)
             let along = length > 0 ? length : 1
             let (nx, ny) = (-(y1 - y0) / along, (x1 - x0) / along)
-            for glowing in inks == nil ? [true, false] : [false] {
-                let spread = glowing ? L.glowWidth : inks != nil ? L.inkWidth : 1
-                let strong = strength * (glowing ? L.glowAlpha : inks != nil ? L.inkAlpha : 1)
+            for glowing in [true, false] {
+                let (spread, alpha) = inks != nil ? (glowing ? (L.inkGlowWidth, L.inkGlowAlpha) : (L.inkWidth, L.inkAlpha)) : glowing ? (L.glowWidth, L.glowAlpha) : (1.0, 1.0)
+                let strong = strength * alpha
                 let colors = (0...stops).map { i -> CGColor in
                     let at = FieldOrb.lanceAt(Double(i) / Double(stops))
                     let c = colourAt(at.hue)
-                    return color(c[0] / 255, c[1] / 255, c[2] / 255, FieldOrb.jsRound(min(1, at.light * strong) * 1000) / 1000)
+                    // (Ink fades slower than light: on a light page the blade holds further out towards its tip.)
+                    let light = inks != nil ? pow(at.light, L.inkFade) : at.light
+                    return color(c[0] / 255, c[1] / 255, c[2] / 255, FieldOrb.jsRound(min(1, light * strong) * 1000) / 1000)
                 }
                 let locations = (0...stops).map { CGFloat($0) / CGFloat(stops) }
                 guard let gradient = CGGradient(colorsSpace: space, colors: colors as CFArray, locations: locations) else { continue }
