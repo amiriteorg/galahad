@@ -303,10 +303,11 @@ export const taskView: View = (root, ctx, { scope, opts }) => {
         h(
           "div",
           { class: "thread-crumb grow" },
-          h("span", { class: "thread-crumb-project" }, projectTile(n.project), h("span", { class: "ellipsis" }, n.project.name)),
-          h("span", { class: "thread-crumb-sep", "aria-hidden": "true" }, "/"),
+          // (Its project, where it is in one: work in none has no crumb, rather than "Other work" and a dashed badge.)
+          n.project.key !== "other" ? h("span", { class: "thread-crumb-project" }, projectTile(n.project), h("span", { class: "ellipsis" }, n.project.name)) : null,
+          n.project.key !== "other" ? h("span", { class: "thread-crumb-sep", "aria-hidden": "true" }, "/") : null,
           h("h1", { class: "thread-title ellipsis", title: n.task.title }, n.task.title),
-          h("p", { class: "thread-sub ellipsis" }, `${n.project.name} · ${n.name}`),
+          h("p", { class: "thread-sub ellipsis" }, n.project.key !== "other" ? `${n.project.name} · ${n.name}` : n.name),
         ),
         h(
           "div",

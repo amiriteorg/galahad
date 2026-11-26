@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamSnapshot, TeamTask, Teammate } from "@galahad/core/team";
-import { atAGlance, attended, byAttention, doingNow, failedGate, inboxBeyond, inProject, NEW_FOR_MS, projectBadge, projectKey, seenOnOpen, shortSpan, spentSince, taskState, workOf } from "./work.ts";
+import { atAGlance, attended, byAttention, doingNow, failedGate, inboxBeyond, inProject, namesProjects, NEW_FOR_MS, projectBadge, projectKey, seenOnOpen, shortSpan, spentSince, taskState, workOf } from "./work.ts";
 
 const NOW = 1_764_000_000_000;
 const ago = (minutes: number) => NOW - minutes * 60_000;
@@ -125,6 +125,15 @@ describe("the work by attention", () => {
     const old = task("ada", "done", NEW_FOR_MS / 60_000 + 1, { verified: true });
     const fresh = attended({ snapshot: snapshot([ada], [old, verified]), projects: [], now: NOW });
     expect([fresh.active.map((row) => row.id), fresh.done.map((row) => row.id)]).toEqual([[verified.id], [old.id]]);
+  });
+
+  test("rows name their project only where the work is in more than one: in one, or none, \"Other work\" says nothing", () => {
+    const none = attended({ snapshot: snapshot([knight("bors", null)], [task("bors", "running", 1)], {}), projects: [], now: NOW });
+    expect([none.projects.map((project) => project.name), namesProjects(none)]).toEqual([["Other work"], false]);
+    const one = attended({ snapshot: snapshot([ada], [task("ada", "running", 1), task("ada", "queued", 1)], {}), projects: [], now: NOW });
+    expect([one.projects.length, namesProjects(one)]).toEqual([1, false]);
+    const two = attended({ snapshot: snapshot([ada, knight("bors", null)], [task("ada", "running", 1), task("bors", "queued", 1)], {}), projects: [], now: NOW });
+    expect([two.projects.map((project) => project.name), namesProjects(two)]).toEqual([["galahad", "Other work"], true]);
   });
 
   test("at work and queued are under way, at work first; a stop of yours is settled at once", () => {

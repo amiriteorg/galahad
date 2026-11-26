@@ -295,6 +295,10 @@ export function attended(input: AttentionInput): Attended {
   return out;
 }
 
+/** Whether the rows name their project: only where the work is in more than one (with one, or none, "Other work" and its
+ * dashed badge on every row said nothing; a row's first line is then how it stands, and its age). */
+export const namesProjects = (work: Pick<Attended, "projects">): boolean => work.projects.length > 1;
+
 /** The rows of one project alone (a filter), its sections as they were; every project's with none. */
 export function inProject(work: Attended, key: string | null): Attended {
   if (key === null) return work;

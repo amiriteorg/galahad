@@ -14,7 +14,7 @@ import type { Signal } from "../ui/signal.ts";
 import { answerStep, chatActivity, galahadWork, nodeTurns, questsInHand, stopChat, unreadChats } from "./chat.ts";
 import { openPlaces } from "./places.ts";
 import { giveToRoundtable } from "./team-forms.ts";
-import { askProjects, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
+import { askProjects, namesProjects, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
 
 /*
  * A wide screen's sidebar, as T3 Code's (your words, 26 November 2026: "agent first (Galahad), and project/tasks/coding
@@ -111,7 +111,8 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
     open = workOpen();
     render();
   };
-  const rowEl = (row: WorkRow): HTMLElement => workRow(row, { face: 16, current: where.route === "task" && row.id === where.task });
+  let named = true;
+  const rowEl = (row: WorkRow): HTMLElement => workRow(row, { face: 16, current: where.route === "task" && row.id === where.task, project: named });
 
   /** The work is drawn once the team and the Inbox have both answered (or a moment has passed): what needs you then
    * comes in with the rest, rather than above it a moment later, pushing it down. */
@@ -131,6 +132,7 @@ export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {
 
   function sections(now: Attended, beyond: number): HTMLElement[] {
     const parts: HTMLElement[] = [];
+    named = namesProjects(now);
     const inbox = beyond
       ? h("a", { class: cx("side-inbox", where.route === "inbox" && "is-current"), href: "#/inbox", "aria-current": where.route === "inbox" ? "page" : null }, icon("inbox", { size: 14 }), h("span", { class: "grow" }, "Inbox"), h("span", { class: "work-word", "data-tone": "needs" }, `${beyond} waiting`))
       : null;

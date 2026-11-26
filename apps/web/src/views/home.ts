@@ -14,7 +14,7 @@ import { needsCount, needsItems, needsVersion, tickExpiries } from "./needs.ts";
 import { openPlaces } from "./places.ts";
 import { galahadLine } from "./sidebar.ts";
 import { giveToRoundtable } from "./team-forms.ts";
-import { askProjects, projectTile, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
+import { askProjects, namesProjects, projectTile, rowsVersion, workNow, workRow, workSources } from "./work-rows.ts";
 
 /*
  * Home: Galahad, first (your words, 26 November 2026: "agent first (Galahad)"; on a phone no tab bar, "a '…' sheet for
@@ -140,7 +140,8 @@ export const homeView: View = (root, ctx, { scope }) => {
     machine.setAttribute("aria-label", fleet ? `${self}: ${online} of ${nodes.length} machines online` : self);
   };
 
-  const rowEl = (row: WorkRow): HTMLElement => workRow(row, { face: 18 });
+  let named = true;
+  const rowEl = (row: WorkRow): HTMLElement => workRow(row, { face: 18, project: named });
   /** The page is drawn once the team and the Inbox have both answered (or a moment has passed): what needs you comes in
    * with the work, rather than above it a moment later, pushing it down. */
   const started = Date.now();
@@ -174,6 +175,7 @@ export const homeView: View = (root, ctx, { scope }) => {
     const chip = (key: string | null, label: string, badge: HTMLElement | null) =>
       h("button", { type: "button", class: "home-filter", "aria-pressed": String(filtered === key), onclick: () => ((filtered = key), (shown = ""), draw()) }, badge, label);
     replace(filters, ...(all.projects.length > 1 ? [chip(null, "All", null), ...all.projects.map((project) => chip(project.key, project.name, projectTile(project)))] : []));
+    named = namesProjects(all);
     const shownWork = inProject(all, filtered);
     const doneOpen = open.has("done");
     const rows = [...shownWork.active, ...shownWork.working];

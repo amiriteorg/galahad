@@ -3,6 +3,7 @@ import type { Ctx } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { hashOf } from "../lib/nav.ts";
 import { type Attended, attended, type WorkRow } from "../lib/work.ts";
+export { namesProjects } from "../lib/work.ts";
 import { cx, h } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { knightFace } from "../ui/orb.ts";
@@ -41,18 +42,21 @@ export function workNow(ctx: Ctx): Attended | null {
   return attended({ snapshot, projects: projectNames.value, asks, now });
 }
 
-/** A row's words, for a screen reader and a tooltip: what it is, where, how it stands and who is on it. */
-export const rowLabel = (row: WorkRow): string => [row.title, row.project.name, row.word, `${row.knight.name}${row.detail ? `: ${row.detail}` : ""}`, row.age ? `${row.age} ago` : null].filter(Boolean).join(", ");
+/** A row's words, for a screen reader and a tooltip: what it is, where (where there is more than one project), how it
+ * stands and who is on it. */
+export const rowLabel = (row: WorkRow, project = true): string => [row.title, project ? row.project.name : null, row.word, `${row.knight.name}${row.detail ? `: ${row.detail}` : ""}`, row.age ? `${row.age} ago` : null].filter(Boolean).join(", ");
+
 
 /** A project's badge: its letter on a small tile (other work's is an empty, dashed one). */
 export const projectTile = (project: WorkRow["project"]): HTMLElement => h("span", { class: cx("work-badge", !project.badge && "is-none"), "aria-hidden": "true" }, project.badge);
 
 /**
  * A task as a row of three lines. `face`: its knight's orb's size (14 to 18; still: only the orb in focus moves).
- * `current`: it is the task open now.
+ * `current`: it is the task open now. `project`: its project named on its first line (namesProjects); left out, it is.
  */
-export function workRow(row: WorkRow, opts: { face?: number; current?: boolean } = {}): HTMLAnchorElement {
+export function workRow(row: WorkRow, opts: { face?: number; current?: boolean; project?: boolean } = {}): HTMLAnchorElement {
   const verified = row.state === "verified";
+  const project = opts.project ?? true;
   return h(
     "a",
     {
@@ -63,14 +67,14 @@ export function workRow(row: WorkRow, opts: { face?: number; current?: boolean }
       "data-attention": row.attention,
       "data-state": row.state,
       "aria-current": opts.current ? "page" : null,
-      "aria-label": rowLabel(row),
-      title: rowLabel(row),
+      "aria-label": rowLabel(row, project),
+      title: rowLabel(row, project),
     },
     h(
       "span",
-      { class: "work-l1" },
-      projectTile(row.project),
-      h("span", { class: "work-project ellipsis" }, row.project.name),
+      { class: cx("work-l1", !project && "is-unnamed") },
+      project ? projectTile(row.project) : null,
+      project ? h("span", { class: "work-project ellipsis" }, row.project.name) : null,
       h("span", { class: "work-word", "data-tone": row.tone }, verified ? icon("check", { size: 12 }) : null, row.word),
       row.age ? h("span", { class: "work-age tnum" }, row.age) : null,
     ),

@@ -373,6 +373,9 @@
       /* How it stands, in a word in its state's colour (the word says it: colour is never the only telling). */
       .work-word { flex: none; display: inline-flex; align-items: center; gap: 3px; margin-left: auto; font-weight: 600; color: var(--tone, var(--text-2)); }
       .work-age { flex: none; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
+      /* Where the work is in one project or none, a row's first line is how it stands and its age alone, its word first. */
+      .work-l1.is-unnamed .work-word { margin-left: 0; }
+      .work-l1.is-unnamed .work-age { margin-left: auto; }
       /* A knight's orb where the work shows it (ui/orb.ts knightFace, still): sized here, as the face's own sheet is only
          given to the page with a seat's. */
       :is(.work-row, .need, .thread-page, .td, .thread-said-by) .knight-orb { display: block; flex: none; width: var(--orb-size, 16px); height: var(--orb-size, 16px); }
