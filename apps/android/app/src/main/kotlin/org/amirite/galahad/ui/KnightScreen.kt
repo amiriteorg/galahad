@@ -58,7 +58,7 @@ private data class Entry(val at: Long, val key: String, val speaker: String?, va
  * first), and a box to write to it or to give it a task. Opening it is looking, so what ended here is no longer new.
  */
 @Composable
-fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
+fun KnightScreen(app: AppModel, id: String, back: () -> Unit, openTask: (String) -> Unit = {}) {
     val table by app.table.collectAsState()
     val row = table.rows.firstOrNull { it.kind == "knight" && it.id == id }
     val person = table.snapshot?.teammates?.firstOrNull { it.id == id }
@@ -87,6 +87,7 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
         placeholder = "Write to ${person?.name ?: id}",
         title = person?.name ?: id,
         back = back,
+        openTask = openTask,
         // Any VM, as the iPhone offers it: one without a desktop says so (the node's refusal) and how to get one.
         actions = {
             if (sandbox != null) {
@@ -102,7 +103,8 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
     ) {
         val scope = rememberCoroutineScope()
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
-            Face(id, person?.avatar, row?.state, size = 120.dp, description = person?.name)
+            // Its orb, the one in focus on its own page: moving while it works, still otherwise.
+            KnightOrb(id, person?.avatar, 96.dp, mood = if (row?.state == KnightState.WORKING) org.amirite.galahad.core.OrbMotion.Mood.WORKING else null, description = person?.name, key = "knight:$id")
             Text(person?.name ?: id, style = MaterialTheme.typography.headlineSmallEmphasized)
             StateChip(row?.state)
             row?.let { Text(Roster.besideChip(it.line, it.state), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -123,7 +125,7 @@ fun KnightScreen(app: AppModel, id: String, back: () -> Unit) {
 
 /** A room's page: who sits in it, what was said there and its tasks, and a box to write to them all. */
 @Composable
-fun RoomScreen(app: AppModel, id: String, back: () -> Unit) {
+fun RoomScreen(app: AppModel, id: String, back: () -> Unit, openTask: (String) -> Unit = {}) {
     val table by app.table.collectAsState()
     val row = table.rows.firstOrNull { it.kind == "room" && it.id == id }
     val room = table.snapshot?.rooms?.firstOrNull { it.id == id }
@@ -138,10 +140,11 @@ fun RoomScreen(app: AppModel, id: String, back: () -> Unit) {
         placeholder = "Write to ${room?.name ?: "the room"}",
         title = room?.name ?: "A room",
         back = back,
+        openTask = openTask,
     ) {
         Column(Modifier.fillMaxWidth().padding(Space.margin), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.s2)) {
             Row(horizontalArrangement = Arrangement.spacedBy(-Space.s3)) {
-                for (m in members.take(5)) Face(m.id, m.avatar, table.rows.firstOrNull { it.kind == "knight" && it.id == m.id }?.state, size = 64.dp, description = m.name)
+                for (m in members.take(5)) KnightOrb(m.id, m.avatar, 56.dp, description = m.name)
             }
             Text(room?.name ?: "A room", style = MaterialTheme.typography.headlineSmallEmphasized)
             row?.let { Text(it.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -165,6 +168,7 @@ private fun Timeline(
     placeholder: String,
     title: String,
     back: () -> Unit,
+    openTask: (String) -> Unit,
     actions: @Composable RowScope.() -> Unit = {},
     header: @Composable () -> Unit,
 ) {
@@ -209,7 +213,7 @@ private fun Timeline(
         LazyColumn(Modifier.weight(1f), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = Space.s4)) {
             item { header() }
             problem?.let { item { Problem(it) } }
-            items(entries, key = { it.key }) { e -> if (e.task != null) TaskCard(app, e.task) else Said(e) }
+            items(entries, key = { it.key }) { e -> if (e.task != null) TaskCard(app, e.task, openTask) else Said(e) }
         }
         Composer(
             placeholder = placeholder,
@@ -258,7 +262,7 @@ private fun Said(e: Entry) {
 
 /** A task as it stands: its title, its state in a word, its latest line; a proposal waits for your yes or no. */
 @Composable
-private fun TaskCard(app: AppModel, t: Json) {
+private fun TaskCard(app: AppModel, t: Json, openTask: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val status = t["status"].string ?: ""
     val verified = t["verified"].bool == true
@@ -308,8 +312,9 @@ private fun TaskCard(app: AppModel, t: Json) {
                 problem = e.message
             }
         }
-        // What a task offers, as the iPhone's card does: by where it stands.
+        // What a task offers, as the iPhone's card does: by where it stands; and its own thread, where all of it is.
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+            t["id"].string?.let { tid -> TextButton(onClick = { openTask(tid) }) { Text("Open") } }
             when {
                 status == "proposed" -> Decision(no = "Decline", yes = "Start it", onNo = { control("stop") }, onYes = { control("approve") })
                 status == "queued" || status == "running" -> OutlinedButton(onClick = { control("stop") }) { Text("Stop", color = LocalBrand.current.failed) }
@@ -325,7 +330,7 @@ private fun TaskCard(app: AppModel, t: Json) {
 
 /** A knight's verified work as a pull request: its title first (the task's, to change), on a new branch, as it was verified. */
 @Composable
-private fun ShipDialog(app: AppModel, t: Json, done: () -> Unit) {
+internal fun ShipDialog(app: AppModel, t: Json, done: () -> Unit) {
     var title by remember { mutableStateOf((t["title"].string ?: "").take(120)) }
     var problem by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()

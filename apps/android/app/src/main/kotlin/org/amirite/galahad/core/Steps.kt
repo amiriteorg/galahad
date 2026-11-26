@@ -239,7 +239,6 @@ object Steps {
                 is Line.Gate -> one(Kind.GATE, "Gate ${line.index} of ${line.of} · ${if (line.exit == 0) "passed" else "failed, exit ${line.exit}"}", if (line.exit == 0) Tone.OK else Tone.FAILED, listOf(Item(line.command, line.exit)))
                 is Line.Reviewed -> one(Kind.REVIEW, if (line.verdict == "pass") "The reviewer passed it" else "The reviewer sent it back", if (line.verdict == "pass") Tone.OK else Tone.WARN, if (line.notes.isNotEmpty()) listOf(Item(firstLine(line.notes), null)) else emptyList())
                 is Line.Note -> one(Kind.NOTE, line.text, line.tone)
-                else -> {}
             }
         }
         close()

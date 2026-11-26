@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -56,11 +58,12 @@ import org.amirite.galahad.core.RosterRow
  * last looked, on any device, has a green dot, as an unread email does.
  */
 @Composable
-fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -> Unit, openRoom: (String) -> Unit) {
+fun RoundtableScreen(app: AppModel, back: () -> Unit, openChat: () -> Unit, openKnight: (String) -> Unit, openRoom: (String) -> Unit) {
     val table by app.table.collectAsState()
     val problem by app.problem.collectAsState()
     val paired by app.paired.collectAsState()
     val usage by app.usage.collectAsState()
+    val prices by app.prices.collectAsState()
     var giving by remember { mutableStateOf(false) }
     var usageOpen by remember { mutableStateOf(false) }
     // The last Roundtable this phone saw is drawn at once (app/KeptTable.kt). If the node hasn't answered in a moment,
@@ -83,14 +86,14 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
     val knights = table.rows.filter { it.kind == "knight" }
     val rooms = table.rows.filter { it.kind == "room" }
 
+    // What each knight's ended tasks cost this week, at your prices (Work.spentSince).
+    val week = System.currentTimeMillis() - 7 * 86_400_000L
+    Column(Modifier.fillMaxSize()) {
+    PageBar(paired?.fleetName?.let { "Roundtable · $it" } ?: "Roundtable", back) {
+        // (Given once the node has answered: never from the Roundtable this phone kept.)
+        if (table.snapshot != null) TextButton(onClick = { giving = true }, enabled = table.asOf == null) { Text("Give a task") }
+    }
     LazyColumn(Modifier.fillMaxSize()) {
-        item {
-            Row(Modifier.fillMaxWidth().padding(start = Space.margin, end = Space.s2, top = Space.s4, bottom = Space.s2), verticalAlignment = Alignment.CenterVertically) {
-                Text(paired?.fleetName ?: "Roundtable", style = MaterialTheme.typography.headlineLargeEmphasized, modifier = Modifier.weight(1f))
-                // (Given once the node has answered: never from the Roundtable this phone kept.)
-                if (table.snapshot != null) TextButton(onClick = { giving = true }, enabled = table.asOf == null) { Text("Give a task") }
-            }
-        }
         problem?.let { p -> item { Refused(app, p) } }
         table.asOf?.takeIf { waited }?.let { at ->
             item {
@@ -117,7 +120,9 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
             )
         }
         items(knights, key = { "k:${it.id}" }) { row ->
-            Seat(row.id, row.avatar, row.name, row.state, row.line, row.needs, row.unread) { openKnight(row.id) }
+            val person = table.snapshot?.teammates?.firstOrNull { it.id == row.id }
+            val spent = prices?.let { org.amirite.galahad.core.Work.spentSince(table.tasks, row.id, week, it) }
+            Seat(row.id, row.avatar, row.name, row.state, row.line, row.needs, row.unread, role = person?.role, cost = spent?.let { "${if (it.complete) "" else "at least "}${org.amirite.galahad.core.Usage.usd(it.usd)} this week" }) { openKnight(row.id) }
         }
         if (table.snapshot != null && knights.isEmpty()) {
             item {
@@ -133,6 +138,7 @@ fun RoundtableScreen(app: AppModel, openChat: () -> Unit, openKnight: (String) -
             items(rooms, key = { "r:${it.id}" }) { row -> RoomSeat(row) { openRoom(row.id) } }
         }
         item { Spacer(Modifier.height(Space.s10)) }
+    }
     }
     if (giving) GiveDialog(app) { giving = false }
     if (usageOpen) usage?.let { UsageDialog(app, it) { usageOpen = false } }
@@ -157,37 +163,39 @@ internal fun Refused(app: AppModel, p: NodeError) {
     }
 }
 
-/** One seat at the table: its orb in its ring, the name and its state's word, and one line of what it's doing. */
+/**
+ * One seat at the table: its orb (still: only the orb in focus moves), its name and role, its state in a word (a tinted
+ * chip, never colour alone), one line of what it's doing, and what its work cost this week. What only you can answer is
+ * in amber; what's new to you since you last looked, on any device, has a green dot, as an unread email does.
+ */
 @Composable
-private fun Seat(id: String, profile: Json?, name: String, state: KnightState?, line: String, needs: Boolean, unread: Boolean, onClick: () -> Unit) {
+private fun Seat(id: String, profile: Json?, name: String, state: KnightState?, line: String, needs: Boolean, unread: Boolean, role: String? = null, cost: String? = null, onClick: () -> Unit) {
     val brand = LocalBrand.current
     val beside = Roster.besideChip(line, state)
     Row(
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .semantics(mergeDescendants = true) { role = Role.Button }
-            .padding(horizontal = Space.margin, vertical = Space.s2),
+            .semantics(mergeDescendants = true) { this.role = Role.Button }
+            .heightIn(min = 64.dp)
+            .padding(horizontal = Space.margin, vertical = Space.s3),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
     ) {
-        Face(id, profile, state)
+        Face(id, profile, 40.dp, description = null)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                Text(name, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(name, style = Type.rowTitle.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                role?.takeIf { it.isNotEmpty() }?.let { Text(it, style = Type.meta, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
                 StateChip(state)
                 if (unread) Box(Modifier.clearAndSetSemantics { contentDescription = "new" }) { Dot(brand.done) }
             }
             if (beside.isNotEmpty()) {
-                Text(
-                    beside,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (needs) brand.needs else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Text(beside, style = Type.meta.copy(fontSize = Type.body.fontSize), color = if (needs) brand.needs else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
+            cost?.let { Text(it, style = Type.small, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
+        Icon(ChevronIcon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -200,7 +208,7 @@ private fun RoomSeat(row: RosterRow, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(Space.s3),
     ) {
         // (A room's mark, for the eye only: a screen reader says its name.)
-        Box(Modifier.size(Space.rowFace).clip(CircleShape).background(brand.raised).clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(brand.raised).clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
             Text("#", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Column(Modifier.weight(1f)) {
@@ -215,7 +223,7 @@ private fun RoomSeat(row: RosterRow, onClick: () -> Unit) {
 
 /** A task given to the Roundtable: the knight best suited to it takes it, in its conversation with you. */
 @Composable
-private fun GiveDialog(app: AppModel, done: () -> Unit) {
+internal fun GiveDialog(app: AppModel, done: () -> Unit) {
     var goal by remember { mutableStateOf("") }
     var said by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }

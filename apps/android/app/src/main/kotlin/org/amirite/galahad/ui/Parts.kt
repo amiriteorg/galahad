@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.amirite.galahad.core.KnightState
 
 /** A state in a word, in its colour: a still chip, never an animation. None for a knight at rest. */
@@ -198,3 +200,28 @@ fun roundtableMark(ink: Color, siege: Color): ImageVector = ImageVector.Builder(
         arcToRelative(1f, 1f, 0f, false, true, 1f, -1f); close()
     }
 }.build()
+
+/** A sheet that opens all the way (no half-open stop): every sheet of the app's. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun rememberFullSheet(): androidx.compose.material3.SheetState =
+    androidx.compose.material3.rememberBottomSheetState(androidx.compose.material3.SheetValue.Hidden, setOf(androidx.compose.material3.SheetValue.Hidden, androidx.compose.material3.SheetValue.Expanded))
+
+/**
+ * An answer on a card (Approve, Allow once, Give again…): one tap. A filled one for the answer it leads with, an outlined
+ * one in a hairline for the others. Drawn 36 dp tall and quiet, as the web's small buttons are; Material keeps its touch
+ * target 48 dp all the same.
+ */
+@Composable
+fun ActionButton(text: String, onClick: () -> Unit, primary: Boolean = true, enabled: Boolean = true, icon: ImageVector? = null) {
+    val padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 0.dp)
+    val content: @Composable RowScope.() -> Unit = {
+        if (icon != null) {
+            Icon(icon, null, Modifier.size(16.dp))
+            androidx.compose.foundation.layout.Spacer(Modifier.size(6.dp))
+        }
+        Text(text, style = Type.word.copy(fontSize = 14.sp))
+    }
+    if (primary) Button(onClick = onClick, enabled = enabled, contentPadding = padding, modifier = Modifier.heightIn(min = 36.dp), content = content)
+    else OutlinedButton(onClick = onClick, enabled = enabled, contentPadding = padding, modifier = Modifier.heightIn(min = 36.dp), border = androidx.compose.foundation.BorderStroke(1.dp, LocalBrand.current.line), content = content)
+}
