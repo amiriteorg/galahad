@@ -119,9 +119,10 @@ const fewer = () => setCount(waiting, Math.max(0, Number(waiting.dataset.count) 
 const liveBanner = h("div", { class: "banner", role: "status", hidden: true, style: "--banner-top: 0px" });
 const reach = connectionBanner(liveBanner, () => {}, scope.signal);
 // To see them move (the screenshots are taken with motion reduced, so each is still where it ends).
+// (Each marked data-demo, for a capture to press: toast, three, lose, reach, confirm.)
 const tryThem = h(
   "div",
-  { class: "row wrap" },
+  { class: "row wrap gallery-try" },
   button("A toast", { onClick: () => toast("Sealed", { tone: "ok", description: "Every full node can use it. No model ever sees it." }) }),
   button("Three at once", {
     onClick: () => {
@@ -385,4 +386,8 @@ const css = h(
    .gallery-toasts { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 380px; }
    .gallery-toasts .toast { position: relative; inset: auto; transform: none; opacity: 1; }`,
 );
+for (const [label, demo] of [["A toast", "toast"], ["Three at once", "three"], ["Lose Galahad", "lose"], ["Reach him again", "reach"], ["A confirmation", "confirm"]]) {
+  const button = [...tryThem.querySelectorAll("button")].find((each) => each.textContent === label);
+  if (button) button.dataset.demo = demo;
+}
 document.getElementById("gallery")!.append(css, liveBanner, page);
