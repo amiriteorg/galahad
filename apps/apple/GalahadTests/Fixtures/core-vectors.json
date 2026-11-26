@@ -27488,5 +27488,3393 @@
       "kind": "advert",
       "quiet": false
     }
-  ]
+  ],
+  "work": {
+    "now": 1763200000000,
+    "newForMs": 43200000,
+    "snapshot": {
+      "teammates": [
+        {
+          "id": "ada",
+          "name": "Ada",
+          "instructions": "Ada keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": "https://github.com/amiriteorg/galahad",
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "bea",
+          "name": "Bea",
+          "instructions": "Bea keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": "https://GitHub.com/amiriteorg/galahad.git/",
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "cy",
+          "name": "Cy",
+          "instructions": "Cy keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": "https://forge.example/team/sync-kit",
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "dee",
+          "name": "Dee",
+          "instructions": "Dee keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": null,
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "eli",
+          "name": "Eli",
+          "instructions": "Eli keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": "https://forge.example/team/9lives",
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "fin",
+          "name": "Fin",
+          "instructions": "Fin keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": true,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": "git@github.com:team/fin.git",
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        },
+        {
+          "id": "gus",
+          "name": "Gus",
+          "instructions": "Gus keeps the build green.\nA second line nobody shows.",
+          "role": "engineer",
+          "harness": "native",
+          "enabled": false,
+          "dailyTurns": 40,
+          "turnsToday": 3,
+          "repository": "https://forge.example/team/sync-kit",
+          "workspaceNode": null,
+          "workspace": null,
+          "memory": "",
+          "createdAt": 1763164000000,
+          "updatedAt": 1763164000000
+        }
+      ],
+      "tasks": [
+        {
+          "id": "task-self00000000",
+          "room": "dm-ada",
+          "assignee": "ada",
+          "title": "The self task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "proposed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-self",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199820000,
+          "proposedBy": "ada"
+        },
+        {
+          "id": "task-for000000000",
+          "room": "dm-bea",
+          "assignee": "bea",
+          "title": "The for task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "proposed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-for",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199760000,
+          "proposedBy": "galahad"
+        },
+        {
+          "id": "task-bare00000000",
+          "room": "dm-cy",
+          "assignee": "cy",
+          "title": "The bare task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "proposed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-bare",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199700000
+        },
+        {
+          "id": "task-cut000000000",
+          "room": "dm-dee",
+          "assignee": "dee",
+          "title": "The cut task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "interrupted",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-cut",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199640000
+        },
+        {
+          "id": "task-leave0000000",
+          "room": "dm-eli",
+          "assignee": "eli",
+          "title": "The leave task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "Running · gh pr create",
+          "output": "",
+          "error": null,
+          "chainId": "chain-leave",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199940000
+        },
+        {
+          "id": "task-leave2000000",
+          "room": "dm-fin",
+          "assignee": "fin",
+          "title": "The leave2 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "Thinking · which branch",
+          "output": "",
+          "error": null,
+          "chainId": "chain-leave2",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199880000
+        },
+        {
+          "id": "task-tests0000000",
+          "room": "dm-ada",
+          "assignee": "ada",
+          "title": "The tests task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "Running · bun test packages/link\nmore",
+          "output": "",
+          "error": null,
+          "chainId": "chain-tests",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199970000
+        },
+        {
+          "id": "task-fresh0000000",
+          "room": "dm-bea",
+          "assignee": "bea",
+          "title": "The fresh task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "Plan · read the code",
+          "output": "",
+          "error": null,
+          "chainId": "chain-fresh",
+          "createdAt": 1763199990000,
+          "updatedAt": 1763199995000
+        },
+        {
+          "id": "task-gating000000",
+          "room": "dm-cy",
+          "assignee": "cy",
+          "title": "The gating task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "Gate 1/2 · exit 0 · bun test\n12 pass",
+          "output": "",
+          "error": null,
+          "chainId": "chain-gating",
+          "createdAt": 1763199160000,
+          "updatedAt": 1763199940000
+        },
+        {
+          "id": "task-long00000000",
+          "room": "dm-dee",
+          "assignee": "dee",
+          "title": "The long task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "running",
+          "verified": false,
+          "progress": "Checking the very long line the very long line the very long line the very long line the very long line the very long line ",
+          "output": "",
+          "error": null,
+          "chainId": "chain-long",
+          "createdAt": 1763188000000,
+          "updatedAt": 1763199880000
+        },
+        {
+          "id": "task-after0000000",
+          "room": "dm-cy",
+          "assignee": "cy",
+          "title": "The after task",
+          "goal": "Do it well.",
+          "dependsOn": [
+            "task-gating000000"
+          ],
+          "gates": [],
+          "status": "queued",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-after",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199580000
+        },
+        {
+          "id": "task-held00000000",
+          "room": "dm-gus",
+          "assignee": "gus",
+          "title": "The held task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "queued",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-held",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199520000
+        },
+        {
+          "id": "task-plain0000000",
+          "room": "dm-eli",
+          "assignee": "eli",
+          "title": "The plain task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "queued",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-plain",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199460000
+        },
+        {
+          "id": "task-halt00000000",
+          "room": "dm-fin",
+          "assignee": "fin",
+          "title": "The halt task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "stopped",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-halt",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763199400000
+        },
+        {
+          "id": "task-pr0000000000",
+          "room": "dm-ada",
+          "assignee": "ada",
+          "title": "The pr task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "done",
+          "verified": true,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-pr",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198800000,
+          "shipped": {
+            "url": "https://github.com/amiriteorg/galahad/pull/12",
+            "pr": 12
+          }
+        },
+        {
+          "id": "task-sent00000000",
+          "room": "dm-bea",
+          "assignee": "bea",
+          "title": "The sent task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "done",
+          "verified": true,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-sent",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198500000,
+          "shipped": {
+            "url": "https://forge.example/x",
+            "pr": null
+          }
+        },
+        {
+          "id": "task-one000000000",
+          "room": "dm-cy",
+          "assignee": "cy",
+          "title": "The one task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "done",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-one",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763198200000,
+          "changes": {
+            "artifact": "art_bbbbbbbbbbbbbbbbbbbbbb",
+            "files": 1,
+            "base": "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2"
+          }
+        },
+        {
+          "id": "task-three0000000",
+          "room": "dm-eli",
+          "assignee": "eli",
+          "title": "The three task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "done",
+          "verified": true,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-three",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763152000000,
+          "changes": {
+            "artifact": "art_cccccccccccccccccccccc",
+            "files": 3,
+            "base": "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2"
+          }
+        },
+        {
+          "id": "task-gate20000000",
+          "room": "dm-ada",
+          "assignee": "ada",
+          "title": "The gate2 task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "failed",
+          "verified": false,
+          "progress": "Gate 2/3 · exit 1 · bun run typecheck\nerror TS2322",
+          "output": "",
+          "error": "gave-up",
+          "chainId": "chain-gate2",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763197900000
+        },
+        {
+          "id": "task-why000000000",
+          "room": "dm-dee",
+          "assignee": "dee",
+          "title": "The why task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "failed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": "The gate needs a Postgres this VM doesn't have, and the image has none either.\nDetails.",
+          "chainId": "chain-why",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763197600000
+        },
+        {
+          "id": "task-quiet0000000",
+          "room": "dm-fin",
+          "assignee": "fin",
+          "title": "The quiet task",
+          "goal": "Do it well.",
+          "dependsOn": [],
+          "gates": [],
+          "status": "failed",
+          "verified": false,
+          "progress": "",
+          "output": "",
+          "error": null,
+          "chainId": "chain-quiet",
+          "createdAt": 1763194600000,
+          "updatedAt": 1763080000000
+        }
+      ],
+      "seen": {
+        "knight:ada": 1763197960000,
+        "room:dm-cy": 1763198140000,
+        "knight:bea": 1763199940000
+      }
+    },
+    "projects": [
+      {
+        "name": "Galahad",
+        "repo": "https://github.com/amiriteorg/galahad"
+      },
+      {
+        "name": "Notes",
+        "repo": null
+      },
+      {
+        "name": "Elsewhere",
+        "repo": "https://forge.example/team/none"
+      }
+    ],
+    "asks": [
+      {
+        "by": "arm:team.0123456789.eli",
+        "connector": "forge",
+        "tool": "post"
+      },
+      {
+        "by": "arm:team.0123456789.fin"
+      },
+      {
+        "by": "loop:morning",
+        "connector": "github",
+        "tool": "comment"
+      }
+    ],
+    "attended": {
+      "needs": [
+        {
+          "id": "task-leave0000000",
+          "room": "dm-eli",
+          "title": "The leave task",
+          "project": {
+            "key": "forge.example/team/9lives",
+            "name": "9lives",
+            "badge": "9"
+          },
+          "knight": {
+            "id": "eli",
+            "name": "Eli"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Allow?",
+          "tone": "needs",
+          "age": "1m",
+          "detail": "forge.post",
+          "mono": true,
+          "at": 1763199940000
+        },
+        {
+          "id": "task-leave2000000",
+          "room": "dm-fin",
+          "title": "The leave2 task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "fin",
+            "name": "Fin"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Allow?",
+          "tone": "needs",
+          "age": "2m",
+          "detail": "asks your leave",
+          "mono": false,
+          "at": 1763199880000
+        },
+        {
+          "id": "task-self00000000",
+          "room": "dm-ada",
+          "title": "The self task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "ada",
+            "name": "Ada"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Approve?",
+          "tone": "needs",
+          "age": "3m",
+          "detail": "proposed by its knight",
+          "mono": false,
+          "at": 1763199820000
+        },
+        {
+          "id": "task-for000000000",
+          "room": "dm-bea",
+          "title": "The for task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "bea",
+            "name": "Bea"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Approve?",
+          "tone": "needs",
+          "age": "4m",
+          "detail": "proposed for Bea",
+          "mono": false,
+          "at": 1763199760000
+        },
+        {
+          "id": "task-bare00000000",
+          "room": "dm-cy",
+          "title": "The bare task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "cy",
+            "name": "Cy"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Approve?",
+          "tone": "needs",
+          "age": "5m",
+          "detail": "waits for your approval",
+          "mono": false,
+          "at": 1763199700000
+        },
+        {
+          "id": "task-cut000000000",
+          "room": "dm-dee",
+          "title": "The cut task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "dee",
+            "name": "Dee"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Interrupted",
+          "tone": "needs",
+          "age": "6m",
+          "detail": "look at it before it resumes",
+          "mono": false,
+          "at": 1763199640000
+        },
+        {
+          "id": "task-held00000000",
+          "room": "dm-gus",
+          "title": "The held task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "gus",
+            "name": "Gus"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Knight paused",
+          "tone": "needs",
+          "age": "8m",
+          "detail": "resume Gus to start it",
+          "mono": false,
+          "at": 1763199520000
+        }
+      ],
+      "active": [
+        {
+          "id": "task-pr0000000000",
+          "room": "dm-ada",
+          "title": "The pr task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "ada",
+            "name": "Ada"
+          },
+          "state": "verified",
+          "attention": "active",
+          "word": "Verified",
+          "tone": "ok",
+          "age": "20m",
+          "detail": "PR #12",
+          "mono": false,
+          "at": 1763198800000
+        },
+        {
+          "id": "task-one000000000",
+          "room": "dm-cy",
+          "title": "The one task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "cy",
+            "name": "Cy"
+          },
+          "state": "resting",
+          "attention": "active",
+          "word": "Not verified",
+          "tone": "neutral",
+          "age": "30m",
+          "detail": "1 file kept",
+          "mono": false,
+          "at": 1763198200000
+        },
+        {
+          "id": "task-why000000000",
+          "room": "dm-dee",
+          "title": "The why task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "dee",
+            "name": "Dee"
+          },
+          "state": "failed",
+          "attention": "active",
+          "word": "Failed",
+          "tone": "failed",
+          "age": "40m",
+          "detail": "The gate needs a Postgres this VM doesn't have, and the ima…",
+          "mono": false,
+          "at": 1763197600000
+        },
+        {
+          "id": "task-three0000000",
+          "room": "dm-eli",
+          "title": "The three task",
+          "project": {
+            "key": "forge.example/team/9lives",
+            "name": "9lives",
+            "badge": "9"
+          },
+          "knight": {
+            "id": "eli",
+            "name": "Eli"
+          },
+          "state": "verified",
+          "attention": "active",
+          "word": "Verified",
+          "tone": "ok",
+          "age": "13h",
+          "detail": "3 files kept",
+          "mono": false,
+          "at": 1763152000000
+        },
+        {
+          "id": "task-quiet0000000",
+          "room": "dm-fin",
+          "title": "The quiet task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "fin",
+            "name": "Fin"
+          },
+          "state": "failed",
+          "attention": "active",
+          "word": "Failed",
+          "tone": "failed",
+          "age": "1d",
+          "detail": "",
+          "mono": false,
+          "at": 1763080000000
+        }
+      ],
+      "working": [
+        {
+          "id": "task-fresh0000000",
+          "room": "dm-bea",
+          "title": "The fresh task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "bea",
+            "name": "Bea"
+          },
+          "state": "working",
+          "attention": "working",
+          "word": "Working",
+          "tone": "work",
+          "age": null,
+          "detail": "planning",
+          "mono": false,
+          "at": 1763199995000
+        },
+        {
+          "id": "task-tests0000000",
+          "room": "dm-ada",
+          "title": "The tests task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "ada",
+            "name": "Ada"
+          },
+          "state": "working",
+          "attention": "working",
+          "word": "Working · 1h",
+          "tone": "work",
+          "age": null,
+          "detail": "bun test packages/link",
+          "mono": true,
+          "at": 1763199970000
+        },
+        {
+          "id": "task-gating000000",
+          "room": "dm-cy",
+          "title": "The gating task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "cy",
+            "name": "Cy"
+          },
+          "state": "working",
+          "attention": "working",
+          "word": "Working · 14m",
+          "tone": "work",
+          "age": null,
+          "detail": "gate 1 of 2",
+          "mono": false,
+          "at": 1763199940000
+        },
+        {
+          "id": "task-long00000000",
+          "room": "dm-dee",
+          "title": "The long task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "dee",
+            "name": "Dee"
+          },
+          "state": "working",
+          "attention": "working",
+          "word": "Working · 3h",
+          "tone": "work",
+          "age": null,
+          "detail": "Checking the very long line the very long line the very long line the very long…",
+          "mono": false,
+          "at": 1763199880000
+        },
+        {
+          "id": "task-after0000000",
+          "room": "dm-cy",
+          "title": "The after task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "cy",
+            "name": "Cy"
+          },
+          "state": "queued",
+          "attention": "working",
+          "word": "Queued",
+          "tone": "neutral",
+          "age": "7m",
+          "detail": "after “The gating task”",
+          "mono": false,
+          "at": 1763199580000
+        },
+        {
+          "id": "task-plain0000000",
+          "room": "dm-eli",
+          "title": "The plain task",
+          "project": {
+            "key": "forge.example/team/9lives",
+            "name": "9lives",
+            "badge": "9"
+          },
+          "knight": {
+            "id": "eli",
+            "name": "Eli"
+          },
+          "state": "queued",
+          "attention": "working",
+          "word": "Queued",
+          "tone": "neutral",
+          "age": "9m",
+          "detail": "",
+          "mono": false,
+          "at": 1763199460000
+        }
+      ],
+      "done": [
+        {
+          "id": "task-halt00000000",
+          "room": "dm-fin",
+          "title": "The halt task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "fin",
+            "name": "Fin"
+          },
+          "state": "paused",
+          "attention": "done",
+          "word": "Stopped",
+          "tone": "neutral",
+          "age": "10m",
+          "detail": "",
+          "mono": false,
+          "at": 1763199400000
+        },
+        {
+          "id": "task-sent00000000",
+          "room": "dm-bea",
+          "title": "The sent task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "bea",
+            "name": "Bea"
+          },
+          "state": "verified",
+          "attention": "done",
+          "word": "Verified",
+          "tone": "ok",
+          "age": "25m",
+          "detail": "shipped",
+          "mono": false,
+          "at": 1763198500000
+        },
+        {
+          "id": "task-gate20000000",
+          "room": "dm-ada",
+          "title": "The gate2 task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "ada",
+            "name": "Ada"
+          },
+          "state": "failed",
+          "attention": "done",
+          "word": "Failed · gate 2",
+          "tone": "failed",
+          "age": "35m",
+          "detail": "gave up",
+          "mono": false,
+          "at": 1763197900000
+        }
+      ],
+      "projects": [
+        {
+          "key": "github.com/amiriteorg/galahad",
+          "name": "Galahad",
+          "badge": "G",
+          "count": 7
+        },
+        {
+          "key": "forge.example/team/9lives",
+          "name": "9lives",
+          "badge": "9",
+          "count": 3
+        },
+        {
+          "key": "forge.example/team/sync-kit",
+          "name": "sync-kit",
+          "badge": "S",
+          "count": 5
+        },
+        {
+          "key": "other",
+          "name": "Other work",
+          "badge": "",
+          "count": 6
+        }
+      ]
+    },
+    "unmarked": {
+      "needs": [
+        {
+          "id": "task-leave0000000",
+          "room": "dm-eli",
+          "title": "The leave task",
+          "project": {
+            "key": "forge.example/team/9lives",
+            "name": "9lives",
+            "badge": "9"
+          },
+          "knight": {
+            "id": "eli",
+            "name": "Eli"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Allow?",
+          "tone": "needs",
+          "age": "1m",
+          "detail": "forge.post",
+          "mono": true,
+          "at": 1763199940000
+        },
+        {
+          "id": "task-leave2000000",
+          "room": "dm-fin",
+          "title": "The leave2 task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "fin",
+            "name": "Fin"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Allow?",
+          "tone": "needs",
+          "age": "2m",
+          "detail": "asks your leave",
+          "mono": false,
+          "at": 1763199880000
+        },
+        {
+          "id": "task-self00000000",
+          "room": "dm-ada",
+          "title": "The self task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "ada",
+            "name": "Ada"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Approve?",
+          "tone": "needs",
+          "age": "3m",
+          "detail": "proposed by its knight",
+          "mono": false,
+          "at": 1763199820000
+        },
+        {
+          "id": "task-for000000000",
+          "room": "dm-bea",
+          "title": "The for task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "bea",
+            "name": "Bea"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Approve?",
+          "tone": "needs",
+          "age": "4m",
+          "detail": "proposed for Bea",
+          "mono": false,
+          "at": 1763199760000
+        },
+        {
+          "id": "task-bare00000000",
+          "room": "dm-cy",
+          "title": "The bare task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "cy",
+            "name": "Cy"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Approve?",
+          "tone": "needs",
+          "age": "5m",
+          "detail": "waits for your approval",
+          "mono": false,
+          "at": 1763199700000
+        },
+        {
+          "id": "task-cut000000000",
+          "room": "dm-dee",
+          "title": "The cut task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "dee",
+            "name": "Dee"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Interrupted",
+          "tone": "needs",
+          "age": "6m",
+          "detail": "look at it before it resumes",
+          "mono": false,
+          "at": 1763199640000
+        },
+        {
+          "id": "task-held00000000",
+          "room": "dm-gus",
+          "title": "The held task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "gus",
+            "name": "Gus"
+          },
+          "state": "needs",
+          "attention": "needs",
+          "word": "Knight paused",
+          "tone": "needs",
+          "age": "8m",
+          "detail": "resume Gus to start it",
+          "mono": false,
+          "at": 1763199520000
+        }
+      ],
+      "active": [
+        {
+          "id": "task-pr0000000000",
+          "room": "dm-ada",
+          "title": "The pr task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "ada",
+            "name": "Ada"
+          },
+          "state": "verified",
+          "attention": "active",
+          "word": "Verified",
+          "tone": "ok",
+          "age": "20m",
+          "detail": "PR #12",
+          "mono": false,
+          "at": 1763198800000
+        },
+        {
+          "id": "task-sent00000000",
+          "room": "dm-bea",
+          "title": "The sent task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "bea",
+            "name": "Bea"
+          },
+          "state": "verified",
+          "attention": "active",
+          "word": "Verified",
+          "tone": "ok",
+          "age": "25m",
+          "detail": "shipped",
+          "mono": false,
+          "at": 1763198500000
+        },
+        {
+          "id": "task-one000000000",
+          "room": "dm-cy",
+          "title": "The one task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "cy",
+            "name": "Cy"
+          },
+          "state": "resting",
+          "attention": "active",
+          "word": "Not verified",
+          "tone": "neutral",
+          "age": "30m",
+          "detail": "1 file kept",
+          "mono": false,
+          "at": 1763198200000
+        },
+        {
+          "id": "task-gate20000000",
+          "room": "dm-ada",
+          "title": "The gate2 task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "ada",
+            "name": "Ada"
+          },
+          "state": "failed",
+          "attention": "active",
+          "word": "Failed · gate 2",
+          "tone": "failed",
+          "age": "35m",
+          "detail": "gave up",
+          "mono": false,
+          "at": 1763197900000
+        },
+        {
+          "id": "task-why000000000",
+          "room": "dm-dee",
+          "title": "The why task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "dee",
+            "name": "Dee"
+          },
+          "state": "failed",
+          "attention": "active",
+          "word": "Failed",
+          "tone": "failed",
+          "age": "40m",
+          "detail": "The gate needs a Postgres this VM doesn't have, and the ima…",
+          "mono": false,
+          "at": 1763197600000
+        }
+      ],
+      "working": [
+        {
+          "id": "task-fresh0000000",
+          "room": "dm-bea",
+          "title": "The fresh task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "bea",
+            "name": "Bea"
+          },
+          "state": "working",
+          "attention": "working",
+          "word": "Working",
+          "tone": "work",
+          "age": null,
+          "detail": "planning",
+          "mono": false,
+          "at": 1763199995000
+        },
+        {
+          "id": "task-tests0000000",
+          "room": "dm-ada",
+          "title": "The tests task",
+          "project": {
+            "key": "github.com/amiriteorg/galahad",
+            "name": "Galahad",
+            "badge": "G"
+          },
+          "knight": {
+            "id": "ada",
+            "name": "Ada"
+          },
+          "state": "working",
+          "attention": "working",
+          "word": "Working · 1h",
+          "tone": "work",
+          "age": null,
+          "detail": "bun test packages/link",
+          "mono": true,
+          "at": 1763199970000
+        },
+        {
+          "id": "task-gating000000",
+          "room": "dm-cy",
+          "title": "The gating task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "cy",
+            "name": "Cy"
+          },
+          "state": "working",
+          "attention": "working",
+          "word": "Working · 14m",
+          "tone": "work",
+          "age": null,
+          "detail": "gate 1 of 2",
+          "mono": false,
+          "at": 1763199940000
+        },
+        {
+          "id": "task-long00000000",
+          "room": "dm-dee",
+          "title": "The long task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "dee",
+            "name": "Dee"
+          },
+          "state": "working",
+          "attention": "working",
+          "word": "Working · 3h",
+          "tone": "work",
+          "age": null,
+          "detail": "Checking the very long line the very long line the very long line the very long…",
+          "mono": false,
+          "at": 1763199880000
+        },
+        {
+          "id": "task-after0000000",
+          "room": "dm-cy",
+          "title": "The after task",
+          "project": {
+            "key": "forge.example/team/sync-kit",
+            "name": "sync-kit",
+            "badge": "S"
+          },
+          "knight": {
+            "id": "cy",
+            "name": "Cy"
+          },
+          "state": "queued",
+          "attention": "working",
+          "word": "Queued",
+          "tone": "neutral",
+          "age": "7m",
+          "detail": "after “The gating task”",
+          "mono": false,
+          "at": 1763199580000
+        },
+        {
+          "id": "task-plain0000000",
+          "room": "dm-eli",
+          "title": "The plain task",
+          "project": {
+            "key": "forge.example/team/9lives",
+            "name": "9lives",
+            "badge": "9"
+          },
+          "knight": {
+            "id": "eli",
+            "name": "Eli"
+          },
+          "state": "queued",
+          "attention": "working",
+          "word": "Queued",
+          "tone": "neutral",
+          "age": "9m",
+          "detail": "",
+          "mono": false,
+          "at": 1763199460000
+        }
+      ],
+      "done": [
+        {
+          "id": "task-halt00000000",
+          "room": "dm-fin",
+          "title": "The halt task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "fin",
+            "name": "Fin"
+          },
+          "state": "paused",
+          "attention": "done",
+          "word": "Stopped",
+          "tone": "neutral",
+          "age": "10m",
+          "detail": "",
+          "mono": false,
+          "at": 1763199400000
+        },
+        {
+          "id": "task-three0000000",
+          "room": "dm-eli",
+          "title": "The three task",
+          "project": {
+            "key": "forge.example/team/9lives",
+            "name": "9lives",
+            "badge": "9"
+          },
+          "knight": {
+            "id": "eli",
+            "name": "Eli"
+          },
+          "state": "verified",
+          "attention": "done",
+          "word": "Verified",
+          "tone": "ok",
+          "age": "13h",
+          "detail": "3 files kept",
+          "mono": false,
+          "at": 1763152000000
+        },
+        {
+          "id": "task-quiet0000000",
+          "room": "dm-fin",
+          "title": "The quiet task",
+          "project": {
+            "key": "other",
+            "name": "Other work",
+            "badge": ""
+          },
+          "knight": {
+            "id": "fin",
+            "name": "Fin"
+          },
+          "state": "failed",
+          "attention": "done",
+          "word": "Failed",
+          "tone": "failed",
+          "age": "1d",
+          "detail": "",
+          "mono": false,
+          "at": 1763080000000
+        }
+      ],
+      "projects": [
+        {
+          "key": "github.com/amiriteorg/galahad",
+          "name": "Galahad",
+          "badge": "G",
+          "count": 7
+        },
+        {
+          "key": "forge.example/team/9lives",
+          "name": "9lives",
+          "badge": "9",
+          "count": 3
+        },
+        {
+          "key": "forge.example/team/sync-kit",
+          "name": "sync-kit",
+          "badge": "S",
+          "count": 5
+        },
+        {
+          "key": "other",
+          "name": "Other work",
+          "badge": "",
+          "count": 6
+        }
+      ]
+    },
+    "order": [
+      "task-leave0000000",
+      "task-leave2000000",
+      "task-self00000000",
+      "task-for000000000",
+      "task-bare00000000",
+      "task-cut000000000",
+      "task-held00000000",
+      "task-pr0000000000",
+      "task-one000000000",
+      "task-why000000000",
+      "task-three0000000",
+      "task-quiet0000000",
+      "task-fresh0000000",
+      "task-tests0000000",
+      "task-gating000000",
+      "task-long00000000",
+      "task-after0000000",
+      "task-plain0000000",
+      "task-halt00000000",
+      "task-sent00000000",
+      "task-gate20000000"
+    ],
+    "only": [
+      {
+        "key": "github.com/amiriteorg/galahad",
+        "ids": [
+          "task-self00000000",
+          "task-for000000000",
+          "task-pr0000000000",
+          "task-fresh0000000",
+          "task-tests0000000",
+          "task-sent00000000",
+          "task-gate20000000"
+        ]
+      },
+      {
+        "key": "forge.example/team/sync-kit",
+        "ids": [
+          "task-bare00000000",
+          "task-held00000000",
+          "task-one000000000",
+          "task-gating000000",
+          "task-after0000000"
+        ]
+      },
+      {
+        "key": "other",
+        "ids": [
+          "task-leave2000000",
+          "task-cut000000000",
+          "task-why000000000",
+          "task-quiet0000000",
+          "task-long00000000",
+          "task-halt00000000"
+        ]
+      },
+      {
+        "key": "nowhere",
+        "ids": []
+      }
+    ],
+    "spans": [
+      {
+        "ms": 0,
+        "span": "now"
+      },
+      {
+        "ms": 59999,
+        "span": "now"
+      },
+      {
+        "ms": 60000,
+        "span": "1m"
+      },
+      {
+        "ms": 3599999,
+        "span": "59m"
+      },
+      {
+        "ms": 3600000,
+        "span": "1h"
+      },
+      {
+        "ms": 86399999,
+        "span": "23h"
+      },
+      {
+        "ms": 86400000,
+        "span": "1d"
+      },
+      {
+        "ms": 259200005,
+        "span": "3d"
+      },
+      {
+        "ms": -5,
+        "span": "now"
+      }
+    ],
+    "badges": [
+      {
+        "name": "Galahad",
+        "badge": "G"
+      },
+      {
+        "name": "9lives",
+        "badge": "9"
+      },
+      {
+        "name": "  sync",
+        "badge": "S"
+      },
+      {
+        "name": "élan",
+        "badge": "É"
+      },
+      {
+        "name": "über-kit",
+        "badge": "Ü"
+      },
+      {
+        "name": "— dash",
+        "badge": "D"
+      },
+      {
+        "name": "",
+        "badge": ""
+      },
+      {
+        "name": "日本",
+        "badge": "日"
+      }
+    ],
+    "keys": [
+      {
+        "repo": "https://github.com/amiriteorg/galahad",
+        "key": "github.com/amiriteorg/galahad"
+      },
+      {
+        "repo": "https://GitHub.com/amiriteorg/galahad.git/",
+        "key": "github.com/amiriteorg/galahad"
+      },
+      {
+        "repo": " https://forge.example/a/b/ ",
+        "key": "forge.example/a/b"
+      },
+      {
+        "repo": "http://forge.example/a/b",
+        "key": null
+      },
+      {
+        "repo": "git@github.com:a/b.git",
+        "key": null
+      },
+      {
+        "repo": "https://github.com",
+        "key": null
+      },
+      {
+        "repo": "https://github.com/",
+        "key": null
+      },
+      {
+        "repo": "not a url",
+        "key": null
+      },
+      {
+        "repo": "",
+        "key": null
+      }
+    ],
+    "doing": [
+      {
+        "progress": "Running · bun test packages/link\nmore",
+        "text": "bun test packages/link",
+        "mono": true
+      },
+      {
+        "progress": "Plan · read the code",
+        "text": "planning",
+        "mono": false
+      },
+      {
+        "progress": "Thinking · which test",
+        "text": "thinking",
+        "mono": false
+      },
+      {
+        "progress": "Submitted for review · sync resumes",
+        "text": "its gates run",
+        "mono": false
+      },
+      {
+        "progress": "Review · pass",
+        "text": "in review",
+        "mono": false
+      },
+      {
+        "progress": "Exit 0 · 12 passed",
+        "text": "Exit 0 · 12 passed",
+        "mono": false
+      },
+      {
+        "progress": "Gate 2/3 · exit 0 · bun test",
+        "text": "gate 2 of 3",
+        "mono": false
+      },
+      {
+        "progress": "Gates · all 2 passed",
+        "text": "Gates · all 2 passed",
+        "mono": false
+      },
+      {
+        "progress": "Something long long long long long long long long long long long long long long long long long long long long ",
+        "text": "Something long long long long long long long long long long long long long long…",
+        "mono": false
+      },
+      {
+        "progress": "",
+        "text": "",
+        "mono": false
+      },
+      {
+        "progress": "Running · ",
+        "text": "Running ·",
+        "mono": false
+      }
+    ],
+    "failedGates": [
+      {
+        "progress": "Gate 2/3 · exit 1 · bun run typecheck\nmore",
+        "gate": 2
+      },
+      {
+        "progress": "Gate 1/2 · exit 0 · bun test",
+        "gate": null
+      },
+      {
+        "progress": "Gate 3/3 · exit -1 · bun test",
+        "gate": 3
+      },
+      {
+        "progress": "Running · bun test",
+        "gate": null
+      },
+      {
+        "progress": "",
+        "gate": null
+      }
+    ],
+    "glances": [
+      {
+        "count": 0,
+        "his": "At rest.",
+        "working": true,
+        "text": "4 at work",
+        "needs": false
+      },
+      {
+        "count": 0,
+        "his": "At rest.",
+        "working": false,
+        "text": "At rest.",
+        "needs": false
+      },
+      {
+        "count": 1,
+        "his": "At rest.",
+        "working": true,
+        "text": "4 at work · 1 needs you",
+        "needs": true
+      },
+      {
+        "count": 1,
+        "his": "At rest.",
+        "working": false,
+        "text": "1 needs you",
+        "needs": true
+      },
+      {
+        "count": 3,
+        "his": "At rest.",
+        "working": true,
+        "text": "4 at work · 3 need you",
+        "needs": true
+      },
+      {
+        "count": 3,
+        "his": "At rest.",
+        "working": false,
+        "text": "3 need you",
+        "needs": true
+      }
+    ],
+    "beyond": [
+      {
+        "inbox": 0,
+        "beyond": 0
+      },
+      {
+        "inbox": 1,
+        "beyond": 0
+      },
+      {
+        "inbox": 4,
+        "beyond": 2
+      }
+    ],
+    "opened": [
+      {
+        "id": "task-self00000000",
+        "marks": null
+      },
+      {
+        "id": "task-for000000000",
+        "marks": null
+      },
+      {
+        "id": "task-bare00000000",
+        "marks": null
+      },
+      {
+        "id": "task-cut000000000",
+        "marks": null
+      },
+      {
+        "id": "task-leave0000000",
+        "marks": null
+      },
+      {
+        "id": "task-leave2000000",
+        "marks": null
+      },
+      {
+        "id": "task-tests0000000",
+        "marks": null
+      },
+      {
+        "id": "task-fresh0000000",
+        "marks": null
+      },
+      {
+        "id": "task-gating000000",
+        "marks": null
+      },
+      {
+        "id": "task-long00000000",
+        "marks": null
+      },
+      {
+        "id": "task-after0000000",
+        "marks": null
+      },
+      {
+        "id": "task-held00000000",
+        "marks": null
+      },
+      {
+        "id": "task-plain0000000",
+        "marks": null
+      },
+      {
+        "id": "task-halt00000000",
+        "marks": null
+      },
+      {
+        "id": "task-pr0000000000",
+        "marks": {
+          "knight": "ada"
+        }
+      },
+      {
+        "id": "task-sent00000000",
+        "marks": null
+      },
+      {
+        "id": "task-one000000000",
+        "marks": {
+          "knight": "cy"
+        }
+      },
+      {
+        "id": "task-three0000000",
+        "marks": {
+          "knight": "eli"
+        }
+      },
+      {
+        "id": "task-gate20000000",
+        "marks": null
+      },
+      {
+        "id": "task-why000000000",
+        "marks": {
+          "knight": "dee"
+        }
+      },
+      {
+        "id": "task-quiet0000000",
+        "marks": {
+          "knight": "fin"
+        }
+      },
+      {
+        "id": "task-nothing",
+        "marks": null
+      }
+    ],
+    "prices": {
+      "deepseek/deepseek-v4-pro": {
+        "input": 0.6,
+        "output": 2.4,
+        "cached": 0.06
+      },
+      "mistral/*": {
+        "input": 0.4,
+        "output": 2
+      }
+    },
+    "spent": [
+      {
+        "knight": "ada",
+        "since": 1763185000000,
+        "spent": {
+          "usd": 0.0856,
+          "complete": true
+        }
+      },
+      {
+        "knight": "ada",
+        "since": 1763194000000,
+        "spent": {
+          "usd": 0.016,
+          "complete": true
+        }
+      },
+      {
+        "knight": "bea",
+        "since": 1763185000000,
+        "spent": {
+          "usd": 0,
+          "complete": false
+        }
+      },
+      {
+        "knight": "bea",
+        "since": 1763194000000,
+        "spent": {
+          "usd": 0,
+          "complete": false
+        }
+      },
+      {
+        "knight": "cy",
+        "since": 1763185000000,
+        "spent": null
+      },
+      {
+        "knight": "cy",
+        "since": 1763194000000,
+        "spent": null
+      },
+      {
+        "knight": "dee",
+        "since": 1763185000000,
+        "spent": {
+          "usd": 0.00756,
+          "complete": false
+        }
+      },
+      {
+        "knight": "dee",
+        "since": 1763194000000,
+        "spent": {
+          "usd": 0.00756,
+          "complete": false
+        }
+      },
+      {
+        "knight": "eli",
+        "since": 1763185000000,
+        "spent": null
+      },
+      {
+        "knight": "eli",
+        "since": 1763194000000,
+        "spent": null
+      },
+      {
+        "knight": "ada",
+        "since": 0,
+        "spent": {
+          "usd": 0.0856,
+          "complete": true
+        }
+      }
+    ]
+  },
+  "steps": {
+    "commands": [
+      {
+        "command": "sed -n '1,80p' /work/tasks/task-sync00000000/packages/link/src/sync.ts",
+        "kind": "read",
+        "path": "/work/tasks/task-sync00000000/packages/link/src/sync.ts"
+      },
+      {
+        "command": "sed -n '1,80p' '/work/tasks/task-sync00000000/a b/c.ts'",
+        "kind": "read",
+        "path": "/work/tasks/task-sync00000000/a b/c.ts"
+      },
+      {
+        "command": "sed -n '1,80p' '/work/tasks/task-sync00000000/it'\\''s.ts'",
+        "kind": "read",
+        "path": "/work/tasks/task-sync00000000/it's.ts"
+      },
+      {
+        "command": "sed -n '1,80p' '/work/tasks/task-sync00000000/unclosed.ts",
+        "kind": "run",
+        "path": null
+      },
+      {
+        "command": "sed -n '1,80p' /work/tasks/task-sync00000000/a.ts /work/tasks/task-sync00000000/b.ts",
+        "kind": "run",
+        "path": null
+      },
+      {
+        "command": "edit '/work/tasks/task-sync00000000/a.ts' <<'EOF'\nx\nEOF",
+        "kind": "edit",
+        "path": "/work/tasks/task-sync00000000/a.ts"
+      },
+      {
+        "command": "edit /work/tasks/task-sync00000000/a.ts --all <<'EOF'\nx\nEOF",
+        "kind": "edit",
+        "path": "/work/tasks/task-sync00000000/a.ts"
+      },
+      {
+        "command": "edit /work/tasks/task-sync00000000/a.ts",
+        "kind": "run",
+        "path": null
+      },
+      {
+        "command": "cat > /work/tasks/task-sync00000000/new.ts <<'EOF'\nx\nEOF",
+        "kind": "edit",
+        "path": "/work/tasks/task-sync00000000/new.ts"
+      },
+      {
+        "command": "cat > /work/tasks/task-sync00000000/new.ts",
+        "kind": "run",
+        "path": null
+      },
+      {
+        "command": "bun test packages/link",
+        "kind": "run",
+        "path": null
+      },
+      {
+        "command": "",
+        "kind": "run",
+        "path": null
+      }
+    ],
+    "trails": {
+      "full": [
+        {
+          "n": 1,
+          "at": 1763198200000,
+          "text": "Plan · read the sync code\nwrite a failing test\nmake it pass"
+        },
+        {
+          "n": 2,
+          "at": 1763198206000,
+          "text": "Thinking · where resume belongs"
+        },
+        {
+          "n": 3,
+          "at": 1763198212000,
+          "text": "Gates · 1. bun test packages/link\n2. bun run typecheck"
+        },
+        {
+          "n": 4,
+          "at": 1763198218000,
+          "text": "Gates before the work · 1. exit 1 · bun test packages/link\n2. exit 0 · bun run typecheck · passes already, so it shows nothing about this work"
+        },
+        {
+          "n": 5,
+          "at": 1763198230000,
+          "text": "Running · sed -n '1,80p' /work/tasks/task-sync00000000/packages/link/src/sync.ts"
+        },
+        {
+          "n": 6,
+          "at": 1763198236000,
+          "text": "Exit 0 · export function sync() {"
+        },
+        {
+          "n": 7,
+          "at": 1763198242000,
+          "text": "Running · sed -n '1,40p' '/work/tasks/task-sync00000000/packages/link/src/resume.ts'"
+        },
+        {
+          "n": 8,
+          "at": 1763198248000,
+          "text": "Exit 0 · export function resume() {"
+        },
+        {
+          "n": 9,
+          "at": 1763198254000,
+          "text": "Running · sed -n '1,40p' '/work/tasks/task-sync00000000/packages/link/src/it'\\''s.ts'"
+        },
+        {
+          "n": 10,
+          "at": 1763198260000,
+          "text": "Exit 0 · ok"
+        },
+        {
+          "n": 11,
+          "at": 1763198320000,
+          "text": "Running · edit '/work/tasks/task-sync00000000/packages/link/src/sync.ts' <<'EOF'\n-old\n+new\nEOF"
+        },
+        {
+          "n": 12,
+          "at": 1763198326000,
+          "text": "Exit 0 · edited"
+        },
+        {
+          "n": 13,
+          "at": 1763198350000,
+          "text": "Running · cat > /work/tasks/task-sync00000000/packages/link/test/resume.test.ts <<'EOF'\ntest(\"resumes\", () => {})\nEOF"
+        },
+        {
+          "n": 14,
+          "at": 1763198356000,
+          "text": "Exit 0 · written"
+        },
+        {
+          "n": 15,
+          "at": 1763198380000,
+          "text": "Running · bun test packages/link\n--bail"
+        },
+        {
+          "n": 16,
+          "at": 1763198440000,
+          "text": "Exit 1 · 1 fail"
+        },
+        {
+          "n": 17,
+          "at": 1763198500000,
+          "text": "Running · bun test packages/link"
+        },
+        {
+          "n": 18,
+          "at": 1763198560000,
+          "text": "Exit 0 · 13 pass"
+        },
+        {
+          "n": 19,
+          "at": 1763198590000,
+          "text": "Running · git status --short"
+        },
+        {
+          "n": 20,
+          "at": 1763198596000,
+          "text": "Exit 0 · M sync.ts"
+        },
+        {
+          "n": 21,
+          "at": 1763198620000,
+          "text": "Tripwire · no-force-push refused a command: force-pushing rewrites history\n$ git push -f"
+        },
+        {
+          "n": 22,
+          "at": 1763198680000,
+          "text": "Submitted for review · sync resumes after a dropped connection"
+        },
+        {
+          "n": 23,
+          "at": 1763198800000,
+          "text": "Gate 1/2 · exit 0 · bun test packages/link\nstderr:\n13 pass\n0 fail"
+        },
+        {
+          "n": 24,
+          "at": 1763198860000,
+          "text": "Gate 2/2 · exit 0 · bun run typecheck\n(no output)"
+        },
+        {
+          "n": 25,
+          "at": 1763198920000,
+          "text": "Review · by the same model that did the work (deepseek/deepseek-v4-pro): no other reviewer model could answer"
+        },
+        {
+          "n": 26,
+          "at": 1763198980000,
+          "text": "Review · pass\nThe test covers the drop.\nShip it."
+        }
+      ],
+      "rounds": [
+        {
+          "n": 1,
+          "at": 1763196400000,
+          "text": "Gates · 1. bun test\n2. bun run typecheck\n3. bun run lint"
+        },
+        {
+          "n": 2,
+          "at": 1763196460000,
+          "text": "Running · bun test"
+        },
+        {
+          "n": 3,
+          "at": 1763196520000,
+          "text": "Exit 0 · ok"
+        },
+        {
+          "n": 4,
+          "at": 1763197000000,
+          "text": "Submitted for review · first try"
+        },
+        {
+          "n": 5,
+          "at": 1763197120000,
+          "text": "Gate 1/3 · exit 2 · bun test\n\nexit 2\nFAIL resume.test.ts"
+        },
+        {
+          "n": 6,
+          "at": 1763197180000,
+          "text": "Gates · 1 of 3 failed: back to the work"
+        },
+        {
+          "n": 7,
+          "at": 1763197240000,
+          "text": "Running · bun test"
+        },
+        {
+          "n": 8,
+          "at": 1763197300000,
+          "text": "Exit 0 · ok"
+        },
+        {
+          "n": 9,
+          "at": 1763197600000,
+          "text": "Submitted for review · second try"
+        },
+        {
+          "n": 10,
+          "at": 1763197780000,
+          "text": "Gate 1/3 · exit 0 · bun test\n13 pass"
+        }
+      ],
+      "edits": [
+        {
+          "n": 1,
+          "at": 1763199400000,
+          "text": "Running · edit '/work/tasks/task-sync00000000/a/one.ts' <<'EOF'\nx\nEOF"
+        },
+        {
+          "n": 2,
+          "at": 1763199460000,
+          "text": "Exit 0 · ok"
+        },
+        {
+          "n": 3,
+          "at": 1763199520000,
+          "text": "Running · edit '/work/tasks/task-sync00000000/a/two.ts' --all <<'EOF'\nx\nEOF"
+        },
+        {
+          "n": 4,
+          "at": 1763199580000,
+          "text": "Exit 0 · ok"
+        },
+        {
+          "n": 5,
+          "at": 1763199640000,
+          "text": "Running · edit '/work/tasks/task-sync00000000/a/b/three.ts' <<'EOF'\nx\nEOF"
+        },
+        {
+          "n": 6,
+          "at": 1763199700000,
+          "text": "Exit 0 · ok"
+        },
+        {
+          "n": 7,
+          "at": 1763199760000,
+          "text": "Running · edit '/work/tasks/task-sync00000000/a/b/four.ts' <<'EOF'\nx\nEOF"
+        },
+        {
+          "n": 8,
+          "at": 1763199820000,
+          "text": "Exit 0 · ok"
+        },
+        {
+          "n": 9,
+          "at": 1763199880000,
+          "text": "Review · revise\nThe test doesn't cover the drop."
+        }
+      ]
+    },
+    "groups": {
+      "full": [
+        {
+          "kind": "plan",
+          "text": "Planned the work",
+          "items": [
+            {
+              "text": "read the sync code",
+              "exit": null
+            },
+            {
+              "text": "write a failing test",
+              "exit": null
+            },
+            {
+              "text": "make it pass",
+              "exit": null
+            }
+          ],
+          "tone": "neutral",
+          "from": 1,
+          "to": 1,
+          "at": 1763198200000
+        },
+        {
+          "kind": "read",
+          "text": "Read sync.ts, resume.ts and it's.ts",
+          "items": [
+            {
+              "text": "/work/tasks/task-sync00000000/packages/link/src/sync.ts",
+              "exit": 0
+            },
+            {
+              "text": "/work/tasks/task-sync00000000/packages/link/src/resume.ts",
+              "exit": 0
+            },
+            {
+              "text": "/work/tasks/task-sync00000000/packages/link/src/it's.ts",
+              "exit": 0
+            }
+          ],
+          "tone": "neutral",
+          "from": 5,
+          "to": 10,
+          "at": 1763198230000
+        },
+        {
+          "kind": "edit",
+          "text": "Edited sync.ts and resume.test.ts",
+          "items": [
+            {
+              "text": "/work/tasks/task-sync00000000/packages/link/src/sync.ts",
+              "exit": 0
+            },
+            {
+              "text": "/work/tasks/task-sync00000000/packages/link/test/resume.test.ts",
+              "exit": 0
+            }
+          ],
+          "tone": "neutral",
+          "from": 11,
+          "to": 14,
+          "at": 1763198320000
+        },
+        {
+          "kind": "run",
+          "text": "Ran 3 commands · 1 failed",
+          "items": [
+            {
+              "text": "bun test packages/link",
+              "exit": 1
+            },
+            {
+              "text": "bun test packages/link",
+              "exit": 0
+            },
+            {
+              "text": "git status --short",
+              "exit": 0
+            }
+          ],
+          "tone": "warn",
+          "from": 15,
+          "to": 20,
+          "at": 1763198380000
+        },
+        {
+          "kind": "note",
+          "text": "Tripwire · no-force-push refused a command: force-pushing rewrites history",
+          "items": [],
+          "tone": "warn",
+          "from": 21,
+          "to": 21,
+          "at": 1763198620000
+        },
+        {
+          "kind": "submitted",
+          "text": "Submitted it for its gates and review",
+          "items": [],
+          "tone": "neutral",
+          "from": 22,
+          "to": 22,
+          "at": 1763198680000
+        },
+        {
+          "kind": "gate",
+          "text": "Gate 1 of 2 · passed",
+          "items": [
+            {
+              "text": "bun test packages/link",
+              "exit": 0
+            }
+          ],
+          "tone": "ok",
+          "from": 23,
+          "to": 23,
+          "at": 1763198800000
+        },
+        {
+          "kind": "gate",
+          "text": "Gate 2 of 2 · passed",
+          "items": [
+            {
+              "text": "bun run typecheck",
+              "exit": 0
+            }
+          ],
+          "tone": "ok",
+          "from": 24,
+          "to": 24,
+          "at": 1763198860000
+        },
+        {
+          "kind": "note",
+          "text": "Review · by the same model that did the work (deepseek/deepseek-v4-pro): no other reviewer model could answer",
+          "items": [],
+          "tone": "warn",
+          "from": 25,
+          "to": 25,
+          "at": 1763198920000
+        },
+        {
+          "kind": "review",
+          "text": "The reviewer passed it",
+          "items": [
+            {
+              "text": "The test covers the drop.",
+              "exit": null
+            }
+          ],
+          "tone": "ok",
+          "from": 26,
+          "to": 26,
+          "at": 1763198980000
+        }
+      ],
+      "rounds": [
+        {
+          "kind": "run",
+          "text": "Ran bun test",
+          "items": [
+            {
+              "text": "bun test",
+              "exit": 0
+            }
+          ],
+          "tone": "neutral",
+          "from": 2,
+          "to": 3,
+          "at": 1763196460000
+        },
+        {
+          "kind": "submitted",
+          "text": "Submitted it for its gates and review",
+          "items": [],
+          "tone": "neutral",
+          "from": 4,
+          "to": 4,
+          "at": 1763197000000
+        },
+        {
+          "kind": "gate",
+          "text": "Gate 1 of 3 · failed, exit 2",
+          "items": [
+            {
+              "text": "bun test",
+              "exit": 2
+            }
+          ],
+          "tone": "failed",
+          "from": 5,
+          "to": 5,
+          "at": 1763197120000
+        },
+        {
+          "kind": "run",
+          "text": "Ran bun test",
+          "items": [
+            {
+              "text": "bun test",
+              "exit": 0
+            }
+          ],
+          "tone": "neutral",
+          "from": 7,
+          "to": 8,
+          "at": 1763197240000
+        },
+        {
+          "kind": "submitted",
+          "text": "Submitted it for its gates and review",
+          "items": [],
+          "tone": "neutral",
+          "from": 9,
+          "to": 9,
+          "at": 1763197600000
+        },
+        {
+          "kind": "gate",
+          "text": "Gate 1 of 3 · passed",
+          "items": [
+            {
+              "text": "bun test",
+              "exit": 0
+            }
+          ],
+          "tone": "ok",
+          "from": 10,
+          "to": 10,
+          "at": 1763197780000
+        }
+      ],
+      "edits": [
+        {
+          "kind": "edit",
+          "text": "Edited 4 files in a",
+          "items": [
+            {
+              "text": "/work/tasks/task-sync00000000/a/one.ts",
+              "exit": 0
+            },
+            {
+              "text": "/work/tasks/task-sync00000000/a/two.ts",
+              "exit": 0
+            },
+            {
+              "text": "/work/tasks/task-sync00000000/a/b/three.ts",
+              "exit": 0
+            },
+            {
+              "text": "/work/tasks/task-sync00000000/a/b/four.ts",
+              "exit": 0
+            }
+          ],
+          "tone": "neutral",
+          "from": 1,
+          "to": 8,
+          "at": 1763199400000
+        },
+        {
+          "kind": "review",
+          "text": "The reviewer sent it back",
+          "items": [
+            {
+              "text": "The test doesn't cover the drop.",
+              "exit": null
+            }
+          ],
+          "tone": "warn",
+          "from": 9,
+          "to": 9,
+          "at": 1763199880000
+        }
+      ],
+      "none": []
+    },
+    "summaries": [
+      {
+        "trail": "full",
+        "record": null,
+        "summary": {
+          "ms": 780000,
+          "commands": 3,
+          "failed": 1,
+          "read": 3,
+          "edited": 2
+        }
+      },
+      {
+        "trail": "full",
+        "record": {
+          "startedAt": 1763198140000,
+          "endedAt": 1763199040000
+        },
+        "summary": {
+          "ms": 900000,
+          "commands": 3,
+          "failed": 1,
+          "read": 3,
+          "edited": 2
+        }
+      },
+      {
+        "trail": "rounds",
+        "record": null,
+        "summary": {
+          "ms": 1380000,
+          "commands": 2,
+          "failed": 0,
+          "read": 0,
+          "edited": 0
+        }
+      },
+      {
+        "trail": "edits",
+        "record": null,
+        "summary": {
+          "ms": 480000,
+          "commands": 0,
+          "failed": 0,
+          "read": 0,
+          "edited": 4
+        }
+      },
+      {
+        "trail": "none",
+        "record": null,
+        "summary": {
+          "ms": 0,
+          "commands": 0,
+          "failed": 0,
+          "read": 0,
+          "edited": 0
+        }
+      },
+      {
+        "trail": "one",
+        "record": null,
+        "summary": {
+          "ms": 0,
+          "commands": 0,
+          "failed": 0,
+          "read": 0,
+          "edited": 0
+        }
+      }
+    ],
+    "workedFor": [
+      {
+        "ms": 0,
+        "words": "0s"
+      },
+      {
+        "ms": 499,
+        "words": "0s"
+      },
+      {
+        "ms": 500,
+        "words": "1s"
+      },
+      {
+        "ms": 42000,
+        "words": "42s"
+      },
+      {
+        "ms": 59499,
+        "words": "59s"
+      },
+      {
+        "ms": 59500,
+        "words": "1m 00s"
+      },
+      {
+        "ms": 372000,
+        "words": "6m 12s"
+      },
+      {
+        "ms": 3599000,
+        "words": "59m 59s"
+      },
+      {
+        "ms": 3600000,
+        "words": "1h 00m"
+      },
+      {
+        "ms": 3840000,
+        "words": "1h 04m"
+      },
+      {
+        "ms": 90000000,
+        "words": "25h 00m"
+      },
+      {
+        "ms": -5,
+        "words": "0s"
+      }
+    ],
+    "summaryWords": [
+      {
+        "summary": {
+          "commands": 14,
+          "failed": 1,
+          "read": 2,
+          "edited": 5,
+          "ms": 0
+        },
+        "words": "ran 14 commands · edited 5 files"
+      },
+      {
+        "summary": {
+          "commands": 1,
+          "failed": 0,
+          "read": 1,
+          "edited": 0,
+          "ms": 0
+        },
+        "words": "ran 1 command · read 1 file"
+      },
+      {
+        "summary": {
+          "commands": 0,
+          "failed": 0,
+          "read": 3,
+          "edited": 1,
+          "ms": 0
+        },
+        "words": "edited 1 file"
+      },
+      {
+        "summary": {
+          "commands": 0,
+          "failed": 0,
+          "read": 0,
+          "edited": 0,
+          "ms": 0
+        },
+        "words": ""
+      }
+    ],
+    "gates": [
+      {
+        "trail": "full",
+        "gates": [
+          "bun test"
+        ],
+        "running": false,
+        "rows": [
+          {
+            "command": "bun test packages/link",
+            "state": "passed",
+            "exit": 0,
+            "ms": 120000,
+            "said": "13 pass",
+            "before": 1
+          },
+          {
+            "command": "bun run typecheck",
+            "state": "passed",
+            "exit": 0,
+            "ms": 60000,
+            "said": "",
+            "before": 0
+          }
+        ]
+      },
+      {
+        "trail": "rounds",
+        "gates": [],
+        "running": true,
+        "rows": [
+          {
+            "command": "bun test",
+            "state": "passed",
+            "exit": 0,
+            "ms": 180000,
+            "said": "13 pass",
+            "before": null
+          },
+          {
+            "command": "bun run typecheck",
+            "state": "running",
+            "exit": null,
+            "ms": null,
+            "said": "",
+            "before": null
+          },
+          {
+            "command": "bun run lint",
+            "state": "waiting",
+            "exit": null,
+            "ms": null,
+            "said": "",
+            "before": null
+          }
+        ]
+      },
+      {
+        "trail": "rounds",
+        "gates": [],
+        "running": false,
+        "rows": [
+          {
+            "command": "bun test",
+            "state": "passed",
+            "exit": 0,
+            "ms": 180000,
+            "said": "13 pass",
+            "before": null
+          },
+          {
+            "command": "bun run typecheck",
+            "state": "waiting",
+            "exit": null,
+            "ms": null,
+            "said": "",
+            "before": null
+          },
+          {
+            "command": "bun run lint",
+            "state": "waiting",
+            "exit": null,
+            "ms": null,
+            "said": "",
+            "before": null
+          }
+        ]
+      },
+      {
+        "trail": "edits",
+        "gates": [
+          "bun test",
+          "bun run lint"
+        ],
+        "running": true,
+        "rows": [
+          {
+            "command": "bun test",
+            "state": "waiting",
+            "exit": null,
+            "ms": null,
+            "said": "",
+            "before": null
+          },
+          {
+            "command": "bun run lint",
+            "state": "waiting",
+            "exit": null,
+            "ms": null,
+            "said": "",
+            "before": null
+          }
+        ]
+      },
+      {
+        "trail": "none",
+        "gates": [
+          "bun test"
+        ],
+        "running": true,
+        "rows": [
+          {
+            "command": "bun test",
+            "state": "waiting",
+            "exit": null,
+            "ms": null,
+            "said": "",
+            "before": null
+          }
+        ]
+      }
+    ],
+    "reviews": {
+      "full": {
+        "verdict": "pass",
+        "notes": "The test covers the drop.\nShip it.",
+        "at": 1763198980000
+      },
+      "rounds": null,
+      "edits": {
+        "verdict": "revise",
+        "notes": "The test doesn't cover the drop.",
+        "at": 1763199880000
+      },
+      "none": null
+    },
+    "sameModel": {
+      "full": true,
+      "edits": false
+    },
+    "live": [
+      {
+        "text": "Running · bun test packages/link\nmore",
+        "live": {
+          "text": "bun test packages/link",
+          "command": true,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Submitted for review · x",
+        "live": {
+          "text": "Running its gates",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Gate 1/2 · exit 0 · bun test",
+        "live": {
+          "text": "Running gate 2 of 2",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Gate 2/2 · exit 0 · bun run typecheck",
+        "live": {
+          "text": "The reviewer is reading it",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Plan · x",
+        "live": {
+          "text": "Starting on its plan",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Review · pass",
+        "live": {
+          "text": "Keeping its changes",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Review · revise\nmore",
+        "live": {
+          "text": "Back to the work",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Exit 0 · ok",
+        "live": {
+          "text": "Reading what it printed",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Thinking · x",
+        "live": {
+          "text": "Thinking",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Budget · $0.40 of $0.50 spent: wrapping up",
+        "live": {
+          "text": "Working",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": "Gates · all 2 passed",
+        "live": {
+          "text": "Working",
+          "command": false,
+          "since": 1763199820000
+        }
+      },
+      {
+        "text": null,
+        "live": null
+      }
+    ],
+    "proofs": [
+      {
+        "trail": "full",
+        "task": {
+          "status": "done",
+          "gates": [
+            "bun test"
+          ]
+        },
+        "proof": {
+          "gates": [
+            {
+              "command": "bun test packages/link",
+              "state": "passed",
+              "exit": 0,
+              "ms": 120000,
+              "said": "13 pass",
+              "before": 1
+            },
+            {
+              "command": "bun run typecheck",
+              "state": "passed",
+              "exit": 0,
+              "ms": 60000,
+              "said": "",
+              "before": 0
+            }
+          ],
+          "passed": 2,
+          "review": {
+            "verdict": "pass",
+            "notes": "The test covers the drop.\nShip it.",
+            "at": 1763198980000
+          },
+          "reviewer": "passed",
+          "sameModel": true,
+          "provesNothing": false
+        }
+      },
+      {
+        "trail": "rounds",
+        "task": {
+          "status": "running",
+          "gates": []
+        },
+        "proof": {
+          "gates": [
+            {
+              "command": "bun test",
+              "state": "passed",
+              "exit": 0,
+              "ms": 180000,
+              "said": "13 pass",
+              "before": null
+            },
+            {
+              "command": "bun run typecheck",
+              "state": "running",
+              "exit": null,
+              "ms": null,
+              "said": "",
+              "before": null
+            },
+            {
+              "command": "bun run lint",
+              "state": "waiting",
+              "exit": null,
+              "ms": null,
+              "said": "",
+              "before": null
+            }
+          ],
+          "passed": 1,
+          "review": null,
+          "reviewer": "waits",
+          "sameModel": false,
+          "provesNothing": false
+        }
+      },
+      {
+        "trail": "edits",
+        "task": {
+          "status": "running",
+          "gates": [
+            "bun test"
+          ]
+        },
+        "proof": {
+          "gates": [
+            {
+              "command": "bun test",
+              "state": "waiting",
+              "exit": null,
+              "ms": null,
+              "said": "",
+              "before": null
+            }
+          ],
+          "passed": 0,
+          "review": {
+            "verdict": "revise",
+            "notes": "The test doesn't cover the drop.",
+            "at": 1763199880000
+          },
+          "reviewer": "sent back",
+          "sameModel": false,
+          "provesNothing": false
+        }
+      },
+      {
+        "trail": "none",
+        "task": {
+          "status": "failed",
+          "gates": [
+            "bun test"
+          ]
+        },
+        "proof": {
+          "gates": [
+            {
+              "command": "bun test",
+              "state": "waiting",
+              "exit": null,
+              "ms": null,
+              "said": "",
+              "before": null
+            }
+          ],
+          "passed": 0,
+          "review": null,
+          "reviewer": "none",
+          "sameModel": false,
+          "provesNothing": false
+        }
+      },
+      {
+        "trail": "none",
+        "task": {
+          "status": "running",
+          "gates": []
+        },
+        "proof": {
+          "gates": [],
+          "passed": 0,
+          "review": null,
+          "reviewer": "waits",
+          "sameModel": false,
+          "provesNothing": false
+        }
+      },
+      {
+        "trail": "passing",
+        "task": {
+          "status": "running",
+          "gates": [
+            "bun test"
+          ]
+        },
+        "proof": {
+          "gates": [
+            {
+              "command": "bun test",
+              "state": "passed",
+              "exit": 0,
+              "ms": 60000,
+              "said": "ok",
+              "before": 0
+            }
+          ],
+          "passed": 1,
+          "review": null,
+          "reviewer": "reading",
+          "sameModel": false,
+          "provesNothing": true
+        },
+        "entries": [
+          {
+            "n": 1,
+            "at": 1763199460000,
+            "text": "Gates before the work · 1. exit 0 · bun test · passes already, so it shows nothing about this work"
+          },
+          {
+            "n": 2,
+            "at": 1763199520000,
+            "text": "Submitted for review · x"
+          },
+          {
+            "n": 3,
+            "at": 1763199580000,
+            "text": "Gate 1/1 · exit 0 · bun test\nok"
+          }
+        ]
+      }
+    ],
+    "prices": {
+      "deepseek/deepseek-v4-pro": {
+        "input": 0.6,
+        "output": 2.4,
+        "cached": 0.06
+      },
+      "mistral/*": {
+        "input": 0.4,
+        "output": 2
+      }
+    },
+    "costs": [
+      {
+        "budgetUsd": null,
+        "record": null,
+        "words": ""
+      },
+      {
+        "budgetUsd": 2,
+        "record": null,
+        "words": "budget $2.00"
+      },
+      {
+        "budgetUsd": 2,
+        "record": {
+          "startedAt": 1763197600000,
+          "endedAt": 1763197960000,
+          "ended": "done",
+          "commands": 12,
+          "revisions": 1,
+          "spent": [
+            {
+              "role": "engineer",
+              "model": "deepseek/deepseek-v4-pro",
+              "calls": 4,
+              "unknown": 0,
+              "input": 120000,
+              "output": 8000,
+              "cached": 40000,
+              "reasoning": 0
+            }
+          ]
+        },
+        "words": "$0.07 of $2.00 · 6m 00s"
+      },
+      {
+        "budgetUsd": null,
+        "record": {
+          "startedAt": 1763197600000,
+          "endedAt": 1763197960000,
+          "ended": "done",
+          "commands": 12,
+          "revisions": 1,
+          "spent": [
+            {
+              "role": "engineer",
+              "model": "deepseek/deepseek-v4-pro",
+              "calls": 4,
+              "unknown": 0,
+              "input": 120000,
+              "output": 8000,
+              "cached": 0,
+              "reasoning": 0
+            }
+          ]
+        },
+        "words": "$0.09 · 6m 00s"
+      },
+      {
+        "budgetUsd": 0.5,
+        "record": {
+          "startedAt": 1763197600000,
+          "endedAt": 1763197960000,
+          "ended": "done",
+          "commands": 12,
+          "revisions": 1,
+          "spent": [
+            {
+              "role": "engineer",
+              "model": "deepseek/deepseek-v4-pro",
+              "calls": 4,
+              "unknown": 1,
+              "input": 120000,
+              "output": 8000,
+              "cached": 0,
+              "reasoning": 0
+            }
+          ]
+        },
+        "words": "at least $0.09 of $0.50 · 6m 00s"
+      },
+      {
+        "budgetUsd": 1,
+        "record": {
+          "startedAt": 1763197600000,
+          "endedAt": 1763197960000,
+          "ended": "done",
+          "commands": 12,
+          "revisions": 1,
+          "spent": [
+            {
+              "role": "engineer",
+              "model": "unknown/model",
+              "calls": 2,
+              "unknown": 0,
+              "input": 1000,
+              "output": 100,
+              "cached": 0,
+              "reasoning": 0
+            }
+          ]
+        },
+        "words": "no price of $1.00 · 6m 00s"
+      },
+      {
+        "budgetUsd": 1,
+        "record": {
+          "startedAt": 1763197600000,
+          "endedAt": 1763197960000,
+          "ended": "done",
+          "commands": 12,
+          "revisions": 1,
+          "spent": [
+            {
+              "role": "engineer",
+              "model": "deepseek/deepseek-v4-pro",
+              "calls": 2,
+              "unknown": 2,
+              "input": 0,
+              "output": 0,
+              "cached": 0,
+              "reasoning": 0
+            }
+          ]
+        },
+        "words": "spend unknown of $1.00 · 6m 00s"
+      },
+      {
+        "budgetUsd": null,
+        "record": {
+          "startedAt": 1763197600000,
+          "endedAt": 1763197960000,
+          "ended": "done",
+          "commands": 12,
+          "revisions": 1,
+          "spent": [
+            {
+              "role": "engineer",
+              "model": "deepseek/deepseek-v4-pro",
+              "calls": 2,
+              "unknown": 2,
+              "input": 0,
+              "output": 0,
+              "cached": 0,
+              "reasoning": 0
+            }
+          ]
+        },
+        "words": "spend unknown · 6m 00s"
+      },
+      {
+        "budgetUsd": 3,
+        "record": {
+          "startedAt": 1763197600000,
+          "endedAt": 1763197960000,
+          "ended": "done",
+          "commands": 12,
+          "revisions": 1,
+          "spent": []
+        },
+        "words": "budget $3.00 · 6m 00s"
+      },
+      {
+        "budgetUsd": null,
+        "record": {
+          "startedAt": 1763192200000,
+          "endedAt": 1763199760000,
+          "ended": "done",
+          "commands": 12,
+          "revisions": 1,
+          "spent": []
+        },
+        "words": "no model calls · 2h 06m"
+      }
+    ]
+  }
 }

@@ -38,6 +38,8 @@ import { knightModelChoices, knightModelsLine, knightRoleLine, knightRoles, knig
 import { budgetFrom } from "../../web/src/lib/give.ts";
 import { applyEvent, beginTurn, endTurn, failTurn, keptDiffers, shownAgain, turnOf } from "../../web/src/lib/turns.ts";
 import { chatStateWords } from "../../../packages/core/src/turns.ts";
+import { atAGlance, attended, byAttention, doingNow, failedGate, inboxBeyond, inProject, NEW_FOR_MS, projectBadge, projectKey, seenOnOpen, shortSpan, spentSince, type Attended } from "../../web/src/lib/work.ts";
+import { commandKind, costWords, gateRows, liveStep, proofOf, reviewOf, sameModelReview, stepGroups, summaryWords, workedFor, workSummary } from "../../web/src/lib/steps.ts";
 
 // The chats list groups at midnight: UTC here, and in the Swift tests, whatever this machine's own zone is.
 process.env.TZ = "UTC";
@@ -1029,6 +1031,213 @@ const highlights = [
   ["py", "'''x"],
 ].map(([lang, code]) => ({ lang, code, pieces: highlight(code!, lang!) }));
 
+// ---- the work by attention (the PWA's lib/work.ts, 26 November 2026): every task a row of three lines, in four sections
+// by what it asks of you (needs you, new to you, at work, settled), under its knight's project ---------------------------
+const usage = (model: string, calls: number, input: number, output: number, extra: Partial<core.UsageLine> = {}): core.UsageLine => ({ role: "engineer", model, calls, unknown: 0, input, output, cached: 0, reasoning: 0, ...extra });
+const PRICES: core.Prices = { "deepseek/deepseek-v4-pro": { input: 0.6, output: 2.4, cached: 0.06 }, "mistral/*": { input: 0.4, output: 2 } };
+const record = (startedMinutesAgo: number, endedMinutesAgo: number, spent: core.UsageLine[], ended: core.TeamTaskRecord["ended"] = "done"): core.TeamTaskRecord => ({ startedAt: at(startedMinutesAgo), endedAt: at(endedMinutesAgo), ended, commands: 12, revisions: 1, spent });
+const workSnapshot: Pick<core.TeamSnapshot, "teammates" | "tasks" | "seen"> = {
+  teammates: [
+    knight("ada", "Ada", { repository: "https://github.com/amiriteorg/galahad" }),
+    // The same repository, written otherwise: one project.
+    knight("bea", "Bea", { repository: "https://GitHub.com/amiriteorg/galahad.git/" }),
+    knight("cy", "Cy", { repository: "https://forge.example/team/sync-kit" }),
+    knight("dee", "Dee"),
+    knight("eli", "Eli", { repository: "https://forge.example/team/9lives" }),
+    // Not an https address: other work.
+    knight("fin", "Fin", { repository: "git@github.com:team/fin.git" }),
+    knight("gus", "Gus", { enabled: false, repository: "https://forge.example/team/sync-kit" }),
+  ],
+  tasks: [
+    task("self", "ada", "proposed", { proposedBy: "ada", updatedAt: at(3) }),
+    task("for", "bea", "proposed", { proposedBy: "galahad", updatedAt: at(4) }),
+    task("bare", "cy", "proposed", { updatedAt: at(5) }),
+    task("cut", "dee", "interrupted", { updatedAt: at(6) }),
+    task("leave", "eli", "running", { progress: "Running · gh pr create", updatedAt: at(1) }),
+    task("leave2", "fin", "running", { progress: "Thinking · which branch", updatedAt: at(2) }),
+    task("tests", "ada", "running", { progress: "Running · bun test packages/link\nmore", createdAt: at(90), updatedAt: at(0.5) }),
+    task("fresh", "bea", "running", { progress: "Plan · read the code", createdAt: NOW - 10_000, updatedAt: NOW - 5_000 }),
+    task("gating", "cy", "running", { progress: "Gate 1/2 · exit 0 · bun test\n12 pass", createdAt: at(14), updatedAt: at(1) }),
+    task("long", "dee", "running", { progress: `Checking ${"the very long line ".repeat(6)}`, createdAt: at(200), updatedAt: at(2) }),
+    task("after", "cy", "queued", { dependsOn: [task("gating", "cy", "running").id], updatedAt: at(7) }),
+    task("held", "gus", "queued", { updatedAt: at(8) }),
+    task("plain", "eli", "queued", { updatedAt: at(9) }),
+    task("halt", "fin", "stopped", { updatedAt: at(10) }),
+    task("pr", "ada", "done", { verified: true, shipped: { url: "https://github.com/amiriteorg/galahad/pull/12", pr: 12 }, updatedAt: at(20) }),
+    task("sent", "bea", "done", { verified: true, shipped: { url: "https://forge.example/x", pr: null }, updatedAt: at(25) }),
+    task("one", "cy", "done", { verified: false, changes: { artifact: `art_${"b".repeat(22)}`, files: 1, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" }, updatedAt: at(30) }),
+    task("three", "eli", "done", { verified: true, changes: { artifact: `art_${"c".repeat(22)}`, files: 3, base: "4f7a1c2e9b8d0a1f2e3c4b5a69788796a5b4c3d2" }, updatedAt: at(800) }),
+    task("gate2", "ada", "failed", { progress: "Gate 2/3 · exit 1 · bun run typecheck\nerror TS2322", error: "gave-up", updatedAt: at(35) }),
+    task("why", "dee", "failed", { error: `The gate needs a Postgres this VM doesn't have, and the image has none either.\nDetails.`, updatedAt: at(40) }),
+    task("quiet", "fin", "failed", { error: null, updatedAt: at(2000) }),
+  ],
+  // Ada's page looked at after her failure, Cy's room before his result, Eli's never: what ended since is new to you.
+  seen: { "knight:ada": at(34), "room:dm-cy": at(31), "knight:bea": at(1) },
+};
+const workProjects = [{ name: "Galahad", repo: "https://github.com/amiriteorg/galahad" }, { name: "Notes", repo: null }, { name: "Elsewhere", repo: "https://forge.example/team/none" }];
+const workAsks = [{ by: "arm:team.0123456789.eli", connector: "forge", tool: "post" }, { by: "arm:team.0123456789.fin" }, { by: "loop:morning", connector: "github", tool: "comment" }];
+const shownWork = (work: Attended) => ({
+  ...Object.fromEntries(
+    (["needs", "active", "working", "done"] as const).map((section) => [
+      section,
+      work[section].map((row) => ({ id: row.id, room: row.room, title: row.title, project: row.project, knight: { id: row.knight.id, name: row.knight.name }, state: row.state, attention: row.attention, word: row.word, tone: row.tone, age: row.age, detail: row.detail, mono: row.mono, at: row.at })),
+    ]),
+  ),
+  projects: work.projects,
+});
+const workRead = attended({ snapshot: workSnapshot, projects: workProjects, asks: workAsks, now: NOW });
+// A node that keeps no read marks: a result is new to you for half a day after it ended.
+const workUnmarked = attended({ snapshot: { ...workSnapshot, seen: undefined }, projects: workProjects, asks: workAsks, now: NOW });
+const work = {
+  now: NOW,
+  newForMs: NEW_FOR_MS,
+  snapshot: workSnapshot,
+  projects: workProjects,
+  asks: workAsks,
+  attended: shownWork(workRead),
+  unmarked: shownWork(workUnmarked),
+  order: byAttention(workRead).map((row) => row.id),
+  only: [projectKey("https://github.com/amiriteorg/galahad"), "forge.example/team/sync-kit", "other", "nowhere"].map((key) => ({ key, ids: byAttention(inProject(workRead, key)).map((row) => row.id) })),
+  spans: [0, 59_999, 60_000, 3_599_999, 3_600_000, 86_399_999, 86_400_000, 3 * 86_400_000 + 5, -5].map((ms) => ({ ms, span: shortSpan(ms) })),
+  badges: ["Galahad", "9lives", "  sync", "élan", "über-kit", "— dash", "", "日本"].map((name) => ({ name, badge: projectBadge(name) })),
+  keys: ["https://github.com/amiriteorg/galahad", "https://GitHub.com/amiriteorg/galahad.git/", " https://forge.example/a/b/ ", "http://forge.example/a/b", "git@github.com:a/b.git", "https://github.com", "https://github.com/", "not a url", ""].map((repo) => ({ repo, key: projectKey(repo) })),
+  doing: ["Running · bun test packages/link\nmore", "Plan · read the code", "Thinking · which test", "Submitted for review · sync resumes", "Review · pass", "Exit 0 · 12 passed", "Gate 2/3 · exit 0 · bun test", "Gates · all 2 passed", `Something ${"long ".repeat(20)}`, "", "Running · "].map((progress) => ({ progress, ...doingNow(progress) })),
+  failedGates: ["Gate 2/3 · exit 1 · bun run typecheck\nmore", "Gate 1/2 · exit 0 · bun test", "Gate 3/3 · exit -1 · bun test", "Running · bun test", ""].map((progress) => ({ progress, gate: failedGate(progress) })),
+  // (`count`: how many need you, in; `needs`: whether the line says so, out.)
+  glances: [0, 1, 3].flatMap((count) => [workRead, attended({ snapshot: { ...workSnapshot, tasks: [] }, projects: workProjects, now: NOW })].map((w, i) => ({ count, his: "At rest.", working: i === 0, ...atAGlance(w, count, "At rest.") }))),
+  beyond: [0, 1, 4].map((inbox) => ({ inbox, beyond: inboxBeyond(inbox, workAsks, workRead.needs) })),
+  opened: workSnapshot.tasks.map((t) => ({ id: t.id, marks: seenOnOpen(t.id, workSnapshot) })).concat([{ id: "task-nothing", marks: seenOnOpen("task-nothing", workSnapshot) }]),
+  prices: PRICES,
+  spent: (() => {
+    const tasks: Pick<core.TeamTask, "assignee" | "record">[] = [
+      { assignee: "ada", record: record(300, 200, [usage("deepseek/deepseek-v4-pro", 4, 120_000, 8_000, { cached: 40_000 })]) },
+      { assignee: "ada", record: record(60, 30, [usage("mistral/mistral-large", 2, 30_000, 2_000)]) },
+      { assignee: "bea", record: record(60, 30, [usage("unknown/model", 3, 10_000, 1_000)]) },
+      { assignee: "cy", record: record(60, 30, [usage("deepseek/deepseek-v4-pro", 2, 0, 0, { unknown: 2 })]) },
+      { assignee: "dee", record: record(60, 30, [usage("deepseek/deepseek-v4-pro", 3, 9_000, 900, { unknown: 1 })]) },
+      { assignee: "eli" },
+    ];
+    return ["ada", "bea", "cy", "dee", "eli"].flatMap((id) => [at(250), at(100)].map((since) => ({ knight: id, since, spent: spentSince(tasks, id, since, PRICES) }))).concat([{ knight: "ada", since: 0, spent: spentSince(tasks, "ada", 0, PRICES) }]);
+  })(),
+};
+
+// ---- a task's work, folded, and what proves it (the PWA's lib/steps.ts, 26 November 2026): its steps grouped as T3 Code
+// folds them, each gate as its latest round left it, the reviewer's verdict, its live line and its cost -----------------
+const trailOf = (lines: [minutesAgo: number, text: string][]): core.TeamTrailEntry[] => lines.map(([minutesAgo, text], i) => ({ n: i + 1, at: at(minutesAgo), text }));
+const W = "/work/tasks/task-sync00000000";
+const fullTrail = trailOf([
+  [30, "Plan · read the sync code\nwrite a failing test\nmake it pass"],
+  [29.9, "Thinking · where resume belongs"],
+  [29.8, "Gates · 1. bun test packages/link\n2. bun run typecheck"],
+  [29.7, "Gates before the work · 1. exit 1 · bun test packages/link\n2. exit 0 · bun run typecheck · passes already, so it shows nothing about this work"],
+  [29.5, `Running · sed -n '1,80p' ${W}/packages/link/src/sync.ts`],
+  [29.4, "Exit 0 · export function sync() {"],
+  [29.3, `Running · sed -n '1,40p' '${W}/packages/link/src/resume.ts'`],
+  [29.2, "Exit 0 · export function resume() {"],
+  [29.1, `Running · sed -n '1,40p' '${W}/packages/link/src/it'\\''s.ts'`],
+  [29, "Exit 0 · ok"],
+  [28, `Running · edit '${W}/packages/link/src/sync.ts' <<'EOF'\n-old\n+new\nEOF`],
+  [27.9, "Exit 0 · edited"],
+  [27.5, `Running · cat > ${W}/packages/link/test/resume.test.ts <<'EOF'\ntest("resumes", () => {})\nEOF`],
+  [27.4, "Exit 0 · written"],
+  [27, "Running · bun test packages/link\n--bail"],
+  [26, "Exit 1 · 1 fail"],
+  [25, "Running · bun test packages/link"],
+  [24, "Exit 0 · 13 pass"],
+  [23.5, "Running · git status --short"],
+  [23.4, "Exit 0 · M sync.ts"],
+  [23, "Tripwire · no-force-push refused a command: force-pushing rewrites history\n$ git push -f"],
+  [22, "Submitted for review · sync resumes after a dropped connection"],
+  [20, "Gate 1/2 · exit 0 · bun test packages/link\nstderr:\n13 pass\n0 fail"],
+  [19, "Gate 2/2 · exit 0 · bun run typecheck\n(no output)"],
+  [18, "Review · by the same model that did the work (deepseek/deepseek-v4-pro): no other reviewer model could answer"],
+  [17, "Review · pass\nThe test covers the drop.\nShip it."],
+]);
+const roundsTrail = trailOf([
+  [60, "Gates · 1. bun test\n2. bun run typecheck\n3. bun run lint"],
+  [59, "Running · bun test"],
+  [58, "Exit 0 · ok"],
+  [50, "Submitted for review · first try"],
+  [48, "Gate 1/3 · exit 2 · bun test\n\nexit 2\nFAIL resume.test.ts"],
+  [47, "Gates · 1 of 3 failed: back to the work"],
+  [46, "Running · bun test"],
+  [45, "Exit 0 · ok"],
+  [40, "Submitted for review · second try"],
+  [37, "Gate 1/3 · exit 0 · bun test\n13 pass"],
+]);
+const editsOnly = trailOf([[10, `Running · edit '${W}/a/one.ts' <<'EOF'\nx\nEOF`], [9, "Exit 0 · ok"], [8, `Running · edit '${W}/a/two.ts' --all <<'EOF'\nx\nEOF`], [7, "Exit 0 · ok"], [6, `Running · edit '${W}/a/b/three.ts' <<'EOF'\nx\nEOF`], [5, "Exit 0 · ok"], [4, `Running · edit '${W}/a/b/four.ts' <<'EOF'\nx\nEOF`], [3, "Exit 0 · ok"], [2, "Review · revise\nThe test doesn't cover the drop."]]);
+const lastLines = ["Running · bun test packages/link\nmore", "Submitted for review · x", "Gate 1/2 · exit 0 · bun test", "Gate 2/2 · exit 0 · bun run typecheck", "Plan · x", "Review · pass", "Review · revise\nmore", "Exit 0 · ok", "Thinking · x", "Budget · $0.40 of $0.50 spent: wrapping up", "Gates · all 2 passed"];
+const stepTask = (status: core.TeamWorkStatus, gates: string[], extra: Partial<core.TeamTask> = {}) => ({ ...task("steps", "ada", status, { gates }), ...extra });
+const steps = {
+  commands: [
+    `sed -n '1,80p' ${W}/packages/link/src/sync.ts`,
+    `sed -n '1,80p' '${W}/a b/c.ts'`,
+    `sed -n '1,80p' '${W}/it'\\''s.ts'`,
+    `sed -n '1,80p' '${W}/unclosed.ts`,
+    `sed -n '1,80p' ${W}/a.ts ${W}/b.ts`,
+    `edit '${W}/a.ts' <<'EOF'\nx\nEOF`,
+    `edit ${W}/a.ts --all <<'EOF'\nx\nEOF`,
+    `edit ${W}/a.ts`,
+    `cat > ${W}/new.ts <<'EOF'\nx\nEOF`,
+    `cat > ${W}/new.ts`,
+    "bun test packages/link",
+    "",
+  ].map((command) => ({ command, ...commandKind(command) })),
+  trails: { full: fullTrail, rounds: roundsTrail, edits: editsOnly },
+  groups: { full: stepGroups(fullTrail), rounds: stepGroups(roundsTrail), edits: stepGroups(editsOnly), none: stepGroups([]) },
+  summaries: [
+    { trail: "full", record: null, summary: workSummary(fullTrail) },
+    { trail: "full", record: { startedAt: at(31), endedAt: at(16) }, summary: workSummary(fullTrail, { startedAt: at(31), endedAt: at(16) }) },
+    { trail: "rounds", record: null, summary: workSummary(roundsTrail) },
+    { trail: "edits", record: null, summary: workSummary(editsOnly) },
+    { trail: "none", record: null, summary: workSummary([]) },
+    { trail: "one", record: null, summary: workSummary(fullTrail.slice(0, 1)) },
+  ],
+  workedFor: [0, 499, 500, 42_000, 59_499, 59_500, 372_000, 3_599_000, 3_600_000, 3_840_000, 90_000_000, -5].map((ms) => ({ ms, words: workedFor(ms) })),
+  summaryWords: [
+    { commands: 14, failed: 1, read: 2, edited: 5, ms: 0 },
+    { commands: 1, failed: 0, read: 1, edited: 0, ms: 0 },
+    { commands: 0, failed: 0, read: 3, edited: 1, ms: 0 },
+    { commands: 0, failed: 0, read: 0, edited: 0, ms: 0 },
+  ].map((summary) => ({ summary, words: summaryWords(summary) })),
+  gates: [
+    { trail: "full", gates: ["bun test"], running: false, rows: gateRows(["bun test"], fullTrail, false) },
+    { trail: "rounds", gates: [], running: true, rows: gateRows([], roundsTrail, true) },
+    { trail: "rounds", gates: [], running: false, rows: gateRows([], roundsTrail, false) },
+    { trail: "edits", gates: ["bun test", "bun run lint"], running: true, rows: gateRows(["bun test", "bun run lint"], editsOnly, true) },
+    { trail: "none", gates: ["bun test"], running: true, rows: gateRows(["bun test"], [], true) },
+  ],
+  reviews: { full: reviewOf(fullTrail), rounds: reviewOf(roundsTrail), edits: reviewOf(editsOnly), none: reviewOf([]) },
+  sameModel: { full: sameModelReview(fullTrail), edits: sameModelReview(editsOnly) },
+  live: [...lastLines.map((text) => ({ text, live: liveStep(trailOf([[3, text]])) })), { text: null, live: liveStep([]) }],
+  proofs: [
+    { trail: "full", task: { status: "done", gates: ["bun test"] }, proof: proofOf(stepTask("done", ["bun test"]), fullTrail) },
+    { trail: "rounds", task: { status: "running", gates: [] }, proof: proofOf(stepTask("running", []), roundsTrail) },
+    { trail: "edits", task: { status: "running", gates: ["bun test"] }, proof: proofOf(stepTask("running", ["bun test"]), editsOnly) },
+    { trail: "none", task: { status: "failed", gates: ["bun test"] }, proof: proofOf(stepTask("failed", ["bun test"]), []) },
+    { trail: "none", task: { status: "running", gates: [] }, proof: proofOf(stepTask("running", []), []) },
+    {
+      trail: "passing",
+      task: { status: "running", gates: ["bun test"] },
+      proof: proofOf(stepTask("running", ["bun test"]), trailOf([[9, "Gates before the work · 1. exit 0 · bun test · passes already, so it shows nothing about this work"], [8, "Submitted for review · x"], [7, "Gate 1/1 · exit 0 · bun test\nok"]])),
+      entries: trailOf([[9, "Gates before the work · 1. exit 0 · bun test · passes already, so it shows nothing about this work"], [8, "Submitted for review · x"], [7, "Gate 1/1 · exit 0 · bun test\nok"]]),
+    },
+  ],
+  prices: PRICES,
+  costs: [
+    { budgetUsd: undefined, record: undefined },
+    { budgetUsd: 2, record: undefined },
+    { budgetUsd: 2, record: record(40, 34, [usage("deepseek/deepseek-v4-pro", 4, 120_000, 8_000, { cached: 40_000 })]) },
+    { budgetUsd: undefined, record: record(40, 34, [usage("deepseek/deepseek-v4-pro", 4, 120_000, 8_000)]) },
+    { budgetUsd: 0.5, record: record(40, 34, [usage("deepseek/deepseek-v4-pro", 4, 120_000, 8_000, { unknown: 1 })]) },
+    { budgetUsd: 1, record: record(40, 34, [usage("unknown/model", 2, 1_000, 100)]) },
+    { budgetUsd: 1, record: record(40, 34, [usage("deepseek/deepseek-v4-pro", 2, 0, 0, { unknown: 2 })]) },
+    { budgetUsd: undefined, record: record(40, 34, [usage("deepseek/deepseek-v4-pro", 2, 0, 0, { unknown: 2 })]) },
+    { budgetUsd: 3, record: record(40, 34, []) },
+    { budgetUsd: undefined, record: record(130, 4, []) },
+  ].map(({ budgetUsd, record: r }) => ({ budgetUsd: budgetUsd ?? null, record: r ?? null, words: costWords({ budgetUsd, record: r }, PRICES) })),
+};
+
 // ---- the file ----------------------------------------------------------------------------------------------------------
 const vectors = {
   about: "Made by apps/apple/scripts/vectors.ts from packages/core (and the PWA's roster). Every key here is a fake made for these tests.",
@@ -1058,6 +1267,8 @@ const vectors = {
   highlights,
   notifyReach,
   notifyQuiet,
+  work,
+  steps,
 };
 const text = `${JSON.stringify(vectors, null, 2)}\n`;
 if (Bun.argv.includes("--check")) {
