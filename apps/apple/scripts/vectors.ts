@@ -23,6 +23,11 @@ import { detectProvider, detectSignIn, planLine, providerSetup } from "../../web
 import { desktopAddress, screenPoint, shotSource } from "../../web/src/lib/desktop.ts";
 import { DATA_GLYPHS, dataGlyph, GLYPH_LADDER, KNIGHT_SPHERE, knightArcs, orbSphere, paperShades, SPHERE_FLASH, SPHERE_TURN, sphereFrame, sphereGlyph, spherePoints, sphereShades } from "../../web/src/lib/orb-sphere.ts";
 import { ORB_TONES, orbLevel, orbPalette, orbParts, orbToneOfState } from "../../web/src/lib/orb.ts";
+import { AURUM, FIELD_KEY, FIELD_RIM, fieldAt, fieldBuffer, fieldLight, fieldModel, linear, project, shadeLit, type FieldColours, type FieldOptions } from "../../web/src/lib/field.ts";
+import {
+  FIELD_EASE, FIELD_EMBERS, FIELD_EXPOSURE, FIELD_MOTION, FIELD_STROKE, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInk, fieldInks, fieldLook, fieldMotion, fieldStep, fieldStill, fieldTone,
+  GALAHAD_FIELD, GALAHAD_RING, knightField, RIM_ANGLE, RIM_DIM, ringWidth, strokeLight, type FieldClock, type FieldIdentity,
+} from "../../web/src/lib/field-orb.ts";
 import { ORB_ARRIVE, ORB_BURST, ORB_BURST_MOTES, ORB_EASE, ORB_LONGEST_STEP, ORB_MOODS, ORB_MOTION, ORB_MOVES, ORB_STAGES, orbBursts, orbClock, orbFrame, orbMoodOfExpression, orbMoodOfState, orbRand, orbSeed, orbStep, type OrbClock, type OrbMood } from "../../web/src/lib/orb-motion.ts";
 import { connectorState } from "../../web/src/lib/connector-state.ts";
 import { noticeFrom } from "../../web/src/lib/notices.ts";
@@ -487,6 +492,124 @@ const orb = {
   sphere: orbSpheres(),
 };
 
+// ---- the orbs as fields (the PWA's own lib/field.ts and lib/field-orb.ts, 26 November 2026): Galahad's field in gold in
+// his heads-up ring, each knight's in its own colours. (The orb section above is what the apps draw until they port it.)
+const field = fieldVectors();
+
+/** Galahad's field as every orb (the PWA's own lib/field.ts and lib/field-orb.ts): the lights, whose field each is, a
+ * field's lines and points at given turns (a few steps along each line: the same function at any count), where they fall
+ * on a picture, each size's look, his ring, how a field moves in each mood (its clock, its frames, its embers), its tints
+ * and its light and ink, for every app to draw the same orbs. A point on a cut (the core's, r < 0.32, or the dark's, a
+ * light under 0.02) or an ember at the turn of its life would part on another processor's last digit: none is within a
+ * millionth of one here, or the vectors aren't written. */
+function fieldVectors() {
+  const handles = ["ada", "gareth", "", "Will’s “iPad” \\ 🛡️"];
+  const chosen = { v: 2, color: "#3ABEFF" };
+  /** A field's points at a look and a turn (its model's lines at `steps` a line), with each one's place on its line and
+   * the key's and the rim's light on it; checked off the cuts. */
+  const pointsOf = (who: string, identity: FieldIdentity, ringed: boolean, size: number, turn: number, steps: number, rim = 0) => {
+    const look = fieldLook(identity, size, ringed);
+    const colours = fieldColours(identity.colours, rim);
+    const options: FieldOptions = { lines: look.lines, steps, tilt: identity.tilt, seed: identity.seed, colours: identity.colours, weight: look.weight, turn };
+    const model = fieldModel(options);
+    offTheCuts(who, options, turn, colours);
+    const out = fieldBuffer(model);
+    const count = fieldAt(model, turn, out, fieldLight(colours));
+    return {
+      who, size, ringed, turn, rim, options, colours,
+      points: Array.from({ length: count }, (_, i) => ({ at: out.at[i]!, x: out.x[i]!, y: out.y[i]!, z: out.z[i]!, rgb: [out.r[i]!, out.g[i]!, out.b[i]!], size: out.size[i]!, lit: out.lit[i]!, rim: out.rim[i]! })),
+    };
+  };
+  const points = [
+    pointsOf("galahad", GALAHAD_FIELD, true, 160, 0, 3),
+    pointsOf("galahad", GALAHAD_FIELD, true, 18, 1.3, 4),
+    pointsOf("ada", knightField("ada"), false, 34, 0.5, 5),
+    pointsOf("gareth", knightField("gareth"), false, 18, 4.2, 4),
+    pointsOf("ada, chosen", knightField("ada", chosen), false, 50, 2.75, 4, 0.6),
+  ];
+  // A clock taken through moods a step at a time (a step back in time and one a minute long among them), his and a
+  // knight's.
+  const steps: { knight: boolean; mood: OrbMood; dt: number; clock: FieldClock; fps: number }[] = [];
+  for (const knight of [false, true]) {
+    let clock = fieldClock(fieldMotion("idle", knight));
+    for (const [mood, dt] of [["idle", 1 / 60], ["working", 1 / 60], ["working", 0.1], ["working", 0.6], ["waiting", 1 / 30], ["waiting", 0.2], ["failed", 0.05], ["done", -1], ["done", 0.016], ["paused", 0.25], ["queued", 60], ["idle", 0.1]] as [OrbMood, number][]) {
+      clock = fieldStep(clock, fieldMotion(mood, knight), dt);
+      steps.push({ knight, mood, dt, clock, fps: fieldFps(clock, fieldMotion(mood, knight)) });
+    }
+  }
+  const working = fieldStep(fieldStep(fieldClock(FIELD_MOTION.idle), FIELD_MOTION.working, 0.25), FIELD_MOTION.working, 0.2);
+  const frames = ([[working, 0.37, 0, true], [working, 1000.5, 0, true], [working, 47.9, orbSeed("galahad"), true], [working, 12.25, orbSeed("galahad:seat"), false], [{ ...fieldClock(FIELD_MOTION.waiting), breath: 0.3 }, 5, 0, true], [fieldClock(FIELD_MOTION.idle), 3, 0, true]] as [FieldClock, number, number, boolean][])
+    .map(([clock, t, seed, embers]) => {
+      offTheTurn(clock, t, seed);
+      return { clock, t, seed, embers, frame: fieldFrame(clock, t, { seed, embers }) };
+    });
+  const rgbOf = (hex: string) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)) as [number, number, number];
+  return {
+    lights: { key: FIELD_KEY, rim: FIELD_RIM, exposure: FIELD_EXPOSURE },
+    galahad: GALAHAD_FIELD,
+    knights: [...handles.map((handle) => ({ handle, profile: null, field: knightField(handle) })), { handle: "ada", profile: chosen, field: knightField("ada", chosen) }],
+    linear: [AURUM.key[0], AURUM.key[1], AURUM.rim, "#3abeff", "#000000", "#ffffff", "#0a0b0c"].map((hex) => ({ hex, rgb: linear(hex) })),
+    shades: ([[0, 0, 1], [0.6, 0.64, 0.48], [-0.55, 0.58, 0.6], [0.8, -0.45, -0.35], [0, -1, 0]] as [number, number, number][]).flatMap((n) => {
+      const length = Math.hypot(...n);
+      const unit = n.map((v) => v / length) as [number, number, number];
+      return [AURUM, knightField("gareth").colours].map((colours) => ({ n: unit, colours, shade: shadeLit(unit, fieldLight(colours)) }));
+    }),
+    models: ([[46, 11], [12, 1], [20, 2147483646]] as [number, number][]).map(([lines, seed]) => {
+      const model = fieldModel({ lines, steps: 4, seed });
+      return { lines, seed, phi: [...model.phi], width: [...model.width] };
+    }),
+    points,
+    projections: points.slice(0, 3).flatMap((each) => [[1, 1], [36, 0.86], [100, 0.94]].map(([size, zoom]) => ({ who: each.who, size, zoom, shown: each.points.slice(0, 6).map((p) => project({ x: p.x, y: p.y, z: p.z, rgb: [0, 0, 0], size: p.size }, size!, { zoom })) }))),
+    looks: [8, 14, 16, 18, 24, 25, 29, 30, 34, 48, 49, 50, 55, 56, 96, 160, 175, 320].flatMap((size) => [{ who: "galahad", size, ringed: true, look: fieldLook(GALAHAD_FIELD, size, true) }, { who: "ada", size, ringed: false, look: fieldLook(knightField("ada"), size, false) }]),
+    ring: { ...GALAHAD_RING, widths: [16, 36, 64, 100, 160, 320].map((size) => ({ size, width: ringWidth(size) })) },
+    stroke: { ...FIELD_STROKE, lights: [14, 18, 34, 50, 96, 160].map((size) => ({ size, light: strokeLight(size) })) },
+    motion: FIELD_MOTION,
+    knightMotion: Object.fromEntries((Object.keys(FIELD_MOTION) as OrbMood[]).map((mood) => [mood, fieldMotion(mood, true)])),
+    ease: FIELD_EASE,
+    embers: { ...FIELD_EMBERS, rimAngle: RIM_ANGLE },
+    clocks: (Object.keys(FIELD_MOTION) as OrbMood[]).map((mood) => ({ mood, clock: fieldClock(FIELD_MOTION[mood]), still: fieldStill(FIELD_MOTION[mood]) })),
+    steps,
+    frames,
+    tints: { dim: RIM_DIM, rims: [0, 0.0005, 0.4, 1, 1.5].map((rim) => ({ rim, aurum: fieldColours(AURUM, rim), gareth: fieldColours(knightField("gareth").colours, rim) })) },
+    tones: ([[0, 0, 0], [0.02, 0.01, 0.005], [0.2, 0.12, 0.03], [1.2, 0.25, 0.05], [3, 2.2, 1], [40, 40, 40], [-1, 0.5, 2]] as [number, number, number][]).flatMap((rgb) => [FIELD_EXPOSURE, 0.8].map((exposure) => ({ rgb, exposure, shown: fieldTone(rgb[0], rgb[1], rgb[2], exposure) }))),
+    inks: [AURUM, knightField("ada").colours, knightField("gareth").colours].map((colours) => {
+      const inks = fieldInks(colours);
+      return { colours, inks, keyRgb: rgbOf(colours.key[1]), shown: ([[1, 0], [0, 1], [0.5, 0.5], [0.2, 0.05], [0, 0]] as [number, number][]).map(([lit, rim]) => ({ lit, rim, ink: fieldInk(inks, lit, rim) })) };
+    }),
+  };
+}
+
+/** Fails if a field's candidate point lies within a millionth of a cut: the core's (r 0.32) or the dark's (k 0.02). */
+function offTheCuts(who: string, options: FieldOptions, turn: number, colours: FieldColours) {
+  const model = fieldModel(options);
+  const light = fieldLight(colours);
+  const [cx, sx, cy, sy, cz, sz] = model.lean;
+  for (let line = 0; line < model.lines; line++) {
+    const p = model.phi[line]! + turn;
+    for (let j = 1; j < model.steps; j++) {
+      const r = model.width[line]! * model.sin2[j]!;
+      if (Math.abs(r - 0.32) < 1e-6) fail(`${who}: a point on the core's cut`);
+      if (r < 0.32) continue;
+      const a0 = r * model.sin[j]! * Math.cos(p), a1 = r * model.cos[j]!, a2 = r * model.sin[j]! * Math.sin(p);
+      const x = a0 * cz - a1 * sz, y0 = a0 * sz + a1 * cz;
+      const x2 = x * cy + a2 * sy, z2 = -x * sy + a2 * cy;
+      const y3 = y0 * cx - z2 * sx, z3 = y0 * sx + z2 * cx;
+      const l = Math.hypot(x2, y3, z3);
+      if (Math.abs(shadeLit([x2 / l, y3 / l, z3 / l], light).k - 0.02) < 1e-6) fail(`${who}: a point on the dark's cut`);
+    }
+  }
+}
+
+/** Fails if an ember of a frame is within a millionth of the turn of its life (where it would set out again elsewhere). */
+function offTheTurn(_clock: FieldClock, t: number, seed: number) {
+  for (let i = 0; i < FIELD_EMBERS.count; i++) {
+    const life = FIELD_EMBERS.life[0] + (FIELD_EMBERS.life[1] - FIELD_EMBERS.life[0]) * orbRand(seed >>> 0, i, 70);
+    const at = t / life + orbRand(seed >>> 0, i, 71);
+    const u = at - Math.floor(at);
+    if (u < 1e-6 || u > 1 - 1e-6) fail(`an ember at the turn of its life at ${t}`);
+  }
+}
+
 /** The orbs' spheres of glyphs (the PWA's own lib/orb-sphere.ts): each handle's sphere, its points, its glyphs as they
  * change, what is seen of them at given turns, sizes, breaths, moods and pages, the shades, a knight's arcs and
  * Galahad's data ring, for every app to draw the same glyphs. (Times are picked well away from a beat's edge.) */
@@ -924,6 +1047,7 @@ const vectors = {
   desktop,
   faces,
   orb,
+  field,
   connectorStates,
   threads,
   chats,
