@@ -34,7 +34,7 @@ It is the node's own work, and no model is in it. The bytes go from Gmail's or M
 
 ## Your Drive ✅
 
-Galahad reads all of it, on your word of 18 November 2026 (`drive.readonly`). In chat, ask him to find something by its name, its folder or the words in it ("the BLXMP bilag from October"): Drive's own search reads the words of a PDF too. He looks up where a file is and reads a Google Doc, Sheet or Slides as text; a PDF or a picture he finds and links, but doesn't open. Shared drives are searched as well when asked.
+Galahad reads all of it, on your word of 18 November 2026 (`drive.readonly`). In chat, ask him to find something by its name, its folder or the words in it ("the ACME bilag from October"): Drive's own search reads the words of a PDF too. He looks up where a file is and reads a Google Doc, Sheet or Slides as text; a PDF or a picture he finds and links, but doesn't open. Shared drives are searched as well when asked.
 
 What he reads there stays in the answer that read it, as your mail does: once he has read it, nothing else that could carry it out runs in that answer.
 

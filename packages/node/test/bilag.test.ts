@@ -132,7 +132,7 @@ describe("what is a bilag, and where it goes", () => {
     expect(forwardedFrom("Faktura", "Begin forwarded message:\n\nFrom: *Topaz Labs* <billing@topazlabs.com>\n")).toBe("Topaz Labs <billing@topazlabs.com>");
     // Not forwarded: a From line in the words is just words, and a reply's quote of yours leaves it the sender's.
     expect(forwardedFrom("Din regning", "From: someone@else.dk wrote about it")).toBeNull();
-    expect(forwardedFrom("RE: Faktura", "Her er fakturaen.\n\n-----Original Message-----\nFrom: William <me@blxmp.dk>\nSent: Monday")).toBeNull();
+    expect(forwardedFrom("RE: Faktura", "Her er fakturaen.\n\n-----Original Message-----\nFrom: Kim <kim@example.com>\nSent: Monday")).toBeNull();
     expect(forwardedFrom("FW: Faktura", "-----Original Message-----\nFrom: Telenor <faktura@telenor.dk>\nSent: Monday")).toBe("Telenor <faktura@telenor.dk>");
     // Forwarded, but naming no one with an address: who sent it stands.
     expect(forwardedFrom("Fwd: kvittering", "From: the shop\n")).toBeNull();
@@ -214,8 +214,8 @@ describe("copying them", () => {
 
   test("a mail you forwarded is named for who first sent it, from Gmail or Outlook; one you didn't, for who sent it", async () => {
     const s = services();
-    s.gmail.g1 = { from: "William <me@wckd.dk>", at: LATE, subject: "Fwd: Din faktura", text: "Til bogføring.\n\n---------- Forwarded message ---------\nFrom: Telenor <faktura@telenor.dk>\nDate: Wed, Nov 18, 2026\nSubject: Din faktura\n", parts: [{ name: "Faktura.pdf", type: "application/pdf", size: 40_000, data: pdf("telenor") }] };
-    s.outlook.o1 = { from: { name: "William", address: "me@blxmp.dk" }, at: "2026-11-18T09:00:00Z", subject: "VS: Kvittering", text: "________________________________\nFra: Hetzner Online GmbH <billing@hetzner.com>\nSendt: 17. november 2026\nEmne: Kvittering\n", attachments: [{ id: "a1", name: "Invoice.pdf", type: "application/pdf", size: 30_000, data: pdf("hetzner") }] };
+    s.gmail.g1 = { from: "Kim <kim@example.com>", at: LATE, subject: "Fwd: Din faktura", text: "Til bogføring.\n\n---------- Forwarded message ---------\nFrom: Telenor <faktura@telenor.dk>\nDate: Wed, Nov 18, 2026\nSubject: Din faktura\n", parts: [{ name: "Faktura.pdf", type: "application/pdf", size: 40_000, data: pdf("telenor") }] };
+    s.outlook.o1 = { from: { name: "Kim", address: "kim@example.com" }, at: "2026-11-18T09:00:00Z", subject: "VS: Kvittering", text: "________________________________\nFra: Hetzner Online GmbH <billing@hetzner.com>\nSendt: 17. november 2026\nEmne: Kvittering\n", attachments: [{ id: "a1", name: "Invoice.pdf", type: "application/pdf", size: 30_000, data: pdf("hetzner") }] };
     s.gmail.g2 = { from: '"Telia" <faktura@telia.dk>', at: LATE, subject: "Din regning", text: "From: someone@else.dk wrote about it", parts: [{ name: "Regning.pdf", type: "application/pdf", size: 40_000, data: pdf("telia") }] };
     const report = await copyBilag(s.deps, [{ mailbox: "gmail", id: "g1" }, { mailbox: "outlook", id: "o1" }, { mailbox: "gmail", id: "g2" }]);
     expect(report.copied.map((c) => c.name)).toEqual(["2026-11-19 Telenor – Faktura.pdf", "2026-11-18 Hetzner Online GmbH – Invoice.pdf", "2026-11-19 Telia – Regning.pdf"]);
@@ -225,16 +225,16 @@ describe("copying them", () => {
 
   test("copies made before are renamed for who first sent their forwarded mail: their day and own name as they were, the rest left alone", async () => {
     const s = services();
-    s.gmail.g1 = { from: "William <me@wckd.dk>", at: LATE, subject: "Fwd: Din faktura", text: "---------- Videresendt meddelelse ---------\nFra: Telenor <faktura@telenor.dk>\nDato: 18. nov. 2026\n", parts: [{ name: "Faktura.pdf", type: "application/pdf", size: 40_000 }] };
+    s.gmail.g1 = { from: "Kim <kim@example.com>", at: LATE, subject: "Fwd: Din faktura", text: "---------- Videresendt meddelelse ---------\nFra: Telenor <faktura@telenor.dk>\nDato: 18. nov. 2026\n", parts: [{ name: "Faktura.pdf", type: "application/pdf", size: 40_000 }] };
     s.gmail.g2 = { from: '"Telia" <faktura@telia.dk>', at: LATE, parts: [{ name: "Regning.pdf", type: "application/pdf", size: 40_000 }] };
     const local = s.deps.local;
     await copyBilag(s.deps, []);
-    local.query("INSERT INTO bilag_copied (sha256, file, name, link, at) VALUES (?, ?, ?, ?, ?)").run("aa", "file-a", "2026-11-19 William – Faktura.pdf", null, 1);
+    local.query("INSERT INTO bilag_copied (sha256, file, name, link, at) VALUES (?, ?, ?, ?, ?)").run("aa", "file-a", "2026-11-19 Kim – Faktura.pdf", null, 1);
     local.query("INSERT INTO bilag_copied (sha256, file, name, link, at) VALUES (?, ?, ?, ?, ?)").run("bb", "file-b", "2026-11-19 Telia – Regning.pdf", null, 2);
     local.query("INSERT INTO bilag_seen (part, sha256, at) VALUES (?, ?, ?)").run("gmail:g1:Faktura.pdf:40000", "aa", 1);
     local.query("INSERT INTO bilag_seen (part, sha256, at) VALUES (?, ?, ?)").run("gmail:g2:Regning.pdf:40000", "bb", 2);
     const done = await renameForwarded(s.deps);
-    expect(done).toEqual({ renamed: [{ from: "2026-11-19 William – Faktura.pdf", to: "2026-11-19 Telenor – Faktura.pdf" }], failed: [] });
+    expect(done).toEqual({ renamed: [{ from: "2026-11-19 Kim – Faktura.pdf", to: "2026-11-19 Telenor – Faktura.pdf" }], failed: [] });
     expect(s.renames).toEqual([{ file: "file-a", name: "2026-11-19 Telenor – Faktura.pdf" }]);
     expect(s.calls.filter((c) => c.method === "PATCH").every((c) => c.connector === "gdrive" && c.class === "modify")).toBe(true);
     expect(local.query<{ name: string }, []>("SELECT name FROM bilag_copied ORDER BY at").all().map((r) => r.name)).toEqual(["2026-11-19 Telenor – Faktura.pdf", "2026-11-19 Telia – Regning.pdf"]);

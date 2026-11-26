@@ -371,7 +371,7 @@ export const CATALOG: Record<string, CatalogEntry> = {
       auth: { secret: "gdrive", scheme: "oauth", oauth: { provider: "google", scopes: ["https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.file", "openid", "email"] } },
       tools: {
         files: {
-          description: "Find files anywhere in your Drive. q is Drive's search words: name contains 'BLXMP', fullText contains 'faktura' (a PDF's words too), '<folder id>' in parents, mimeType = 'application/pdf', trashed = false. fields: files(id,name,mimeType,parents,createdTime,webViewLink),nextPageToken. pageToken for the next page. Shared drives too: corpora allDrives, includeItemsFromAllDrives and supportsAllDrives true.",
+          description: "Find files anywhere in your Drive. q is Drive's search words: name contains 'ACME', fullText contains 'faktura' (a PDF's words too), '<folder id>' in parents, mimeType = 'application/pdf', trashed = false. fields: files(id,name,mimeType,parents,createdTime,webViewLink),nextPageToken. pageToken for the next page. Shared drives too: corpora allDrives, includeItemsFromAllDrives and supportsAllDrives true.",
           method: "GET",
           path: "/drive/v3/files",
           params: {
