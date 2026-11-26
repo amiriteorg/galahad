@@ -28,7 +28,7 @@ export interface ToastOptions {
 
 interface Live {
   el: HTMLElement;
-  /** Its height drawn whole: the stack, tucked, draws those behind the front one at the front one's height. */
+  /** Its height drawn whole: the stack, tucked, draws those behind the front one as tall as it (by a scale). */
   height: number;
   remaining: number;
   started: number;
@@ -60,19 +60,19 @@ function ensureToaster(): HTMLElement {
   return toaster;
 }
 
-/** Each toast in its place (lib/alerts.ts stackPlaces): `--i` its step back while tucked, `--offset` its height above
- * the foot when fanned out; the front one marked, and its height the stack's (`--front-h`). */
+/** Each toast in its place (lib/alerts.ts stackPlaces): `--i` its step back while tucked, `--fit` its height then
+ * (the front one's, by a scale), `--offset` its height above the foot when fanned out; the front one marked. */
 function layout(): void {
   const places = stackPlaces(live.map((item) => item.height));
   live.forEach((item, index) => {
     const place = places[index]!;
     item.el.style.setProperty("--i", String(place.step));
     item.el.style.setProperty("--offset", `${place.offset}px`);
+    item.el.style.setProperty("--fit", String(place.fit));
     item.el.style.zIndex = String(place.z);
     item.el.dataset.hidden = String(place.hidden);
     item.el.toggleAttribute("data-front", place.depth === 0);
   });
-  toaster?.style.setProperty("--front-h", `${live.at(-1)?.height ?? 0}px`);
 }
 
 function schedule(item: Live): void {
@@ -158,7 +158,7 @@ export function toast(title: string, options: ToastOptions = {}): () => void {
   const tone = options.tone ?? "info";
   const duration = options.duration ?? (tone === "error" ? 8000 : options.action ? 6000 : 4000);
   const el = toastCard(title, options, () => dismiss(item));
-  // It comes in at the front: drawn whole, so its height is its own (the tucked ones take it from it).
+  // It comes in at the front, drawn whole: its height is its own (the tucked ones are drawn as tall, by a scale).
   el.classList.add("entering");
   el.toggleAttribute("data-front", true);
   const item: Live = { el, height: 0, remaining: duration, started: Date.now(), timer: null };

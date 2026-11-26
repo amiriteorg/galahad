@@ -9,6 +9,7 @@
  * loopback with index.html's head (the tokens and all the CSS), its font and its pictures.
  */
 import { badge, button, callout, card, chipInput, copyField, count, disclosure, dot, empty, errorState, field, formActions, kbd, kv, linkButton, list, listRow, meta, meter, note, pageHead, rangeControl, rows, sasCode, secretInput, section, segmented, skeletonBlock, skeletonRows, skeletonStat, spinner, statTile, switchControl, type Tone } from "../src/ui/controls.ts";
+import { bannerPill, connectionBanner } from "../src/ui/banner.ts";
 import { type ConfirmOptions, confirmAction, openSheet } from "../src/ui/dialog.ts";
 import { leadMark, seat, stateChip } from "../src/ui/avatar.ts";
 import type { KnightState } from "../src/lib/knight-state.ts";
@@ -74,8 +75,8 @@ function confirmInPlace(options: ConfirmOptions): HTMLElement {
 
 // ---- the alerts: what tells you something happened, or needs you ----
 const toasts = (...each: [string, ToastOptions][]) => h("div", { class: "gallery-toasts" }, ...each.map(([title, options]) => toastCard(title, options)));
-// The banner as the shell raises it while Galahad can't be reached.
-const bannerToday = (text: string) => h("div", { class: "banner", role: "status" }, icon("offline", { size: 16 }), h("span", { class: "grow" }, text), button("Retry", { size: "sm" }));
+// The banner as the shell raises it under its top bar (ui/banner.ts), here in the page's flow.
+const banner = (said: Parameters<typeof bannerPill>[0]) => h("div", { class: "gallery-banner" }, bannerPill(said));
 // The Roundtable's strip while its updates are paused (views/team.ts).
 const teamNotice = h("div", { class: "team-notice", role: "status" }, icon("offline", { size: 14 }), h("span", { class: "grow" }, "Updates paused. What you see may be out of date."), button("Retry", { size: "sm" }));
 // The card at the top of the Inbox while he can't reach this device (views/notifications.ts reachNote), each way it reads.
@@ -102,6 +103,9 @@ const notices = card(
     findingRow({} as Ctx, { severity: "info", title: "A push to main", body: "wckdboy pushed 3 commits.", icon: "bell" }, [h("span", {}, "Your rule pushes"), h("span", {}, "2 h ago")], button("Dismiss", { size: "sm", variant: "ghost", icon: "x" })),
   ),
 );
+// The real banner, hanging at the top of this page as it hangs under the app's top bar.
+const liveBanner = h("div", { class: "banner", role: "status", hidden: true, style: "--banner-top: 0px" });
+const reach = connectionBanner(liveBanner, () => {}, scope.signal);
 // To see them move (the screenshots are taken with motion reduced, so each is still where it ends).
 const tryThem = h(
   "div",
@@ -114,6 +118,8 @@ const tryThem = h(
       setTimeout(() => toast("Couldn't dismiss it", { tone: "error", description: "The node didn't answer." }), 320);
     },
   }),
+  button("Lose Galahad", { onClick: () => reach(false) }),
+  button("Reach him again", { onClick: () => reach(true) }),
   button("A confirmation", { onClick: () => void confirmAction({ title: "Revoke Owner's iPhone?", body: "It is cut off at once and must be paired again.", confirmLabel: "Revoke", typeToConfirm: "Owner's iPhone" }) }),
 );
 
@@ -302,9 +308,10 @@ const page = h(
 
     shown(
       "The banner",
-      "Under the top bar while Galahad can't be reached, and gone once he can.",
-      state("can't reach him", bannerToday("Can't reach Galahad right now. What you see may be out of date.")),
-      state("offline", bannerToday("You're offline. The app is cached; live data returns when you reconnect.")),
+      "Under the top bar, over the page, while Galahad can't be reached; for a moment once he is again, then gone. Nothing under it moves.",
+      state("can't reach him: trying again, a slow line of light along its foot", banner("unreachable")),
+      state("offline: no error", banner("offline")),
+      state("reached again, for a moment", banner("reconnected")),
     ),
 
     shown(
@@ -349,7 +356,9 @@ const css = h(
    .gallery-sheet-frame { position: relative; padding: var(--sp-4) 0; }
    dialog.sheet.gallery-sheet { position: relative; inset: auto; margin: 0 auto; opacity: 1; transform: none; max-height: none; }
    .gallery-state dialog.sheet.gallery-sheet { max-width: 100%; }
+   .gallery-banner { display: flex; justify-content: center; padding: var(--sp-1) 0 var(--sp-3); }
+   .gallery-banner .banner-pill { margin-top: 0; }
    .gallery-toasts { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 380px; }
    .gallery-toasts .toast { position: relative; inset: auto; transform: none; opacity: 1; }`,
 );
-document.getElementById("gallery")!.append(css, page);
+document.getElementById("gallery")!.append(css, liveBanner, page);

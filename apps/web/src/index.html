@@ -496,11 +496,39 @@
       .activity-pill { padding-right: var(--sp-1); }
       .topbar .actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-1); }
 
-      .banner {
-        display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); font-size: var(--fs-13);
-        background: var(--warn-soft); color: var(--warn); border-bottom: 1px solid color-mix(in srgb, var(--warn) 20%, transparent);
+      /* The banner: Galahad can't be reached, or this device is offline, then for a moment that he is reached again
+         (ui/banner.ts). A thin capsule hanging under the top bar over the page; its place takes no room, so nothing under
+         it moves when it comes or goes (--banner-top: where it hangs, the top bar's foot unless a page without one says).
+         Offline is grey, no error; can't reach him is amber, and while the app tries again one slow line of light runs
+         along its foot; reached again it turns green where it is. Nothing blinks. */
+      .banner { position: sticky; top: calc(var(--safe-top) + var(--banner-top, var(--topbar-h))); z-index: 21; height: 0; display: flex; align-items: flex-start; justify-content: center; pointer-events: none; }
+      .banner-pill {
+        position: relative; display: flex; align-items: center; gap: var(--sp-2); width: min(600px, calc(100% - 2 * var(--sp-4))); margin-top: var(--sp-2);
+        min-height: 36px; padding: 3px 4px 3px 12px; border-radius: 18px; overflow: hidden; pointer-events: auto;
+        color: var(--text); font-size: var(--fs-13); line-height: 1.35;
+        background: var(--alert-bg); border: 1px solid color-mix(in oklab, var(--tone, var(--text-3)) 30%, var(--alert-line));
+        box-shadow: inset 0 1px 0 var(--alert-lit), var(--shadow-2);
+        transition: transform var(--d-enter) var(--ease-out), opacity var(--d-enter) var(--ease-out), filter var(--d-enter) var(--ease-out), border-color var(--d-3) var(--ease-out);
       }
-      .banner .grow { color: var(--text); }
+      /* (One width while it is up, whatever it says: centred, a capsule that grew or shrank would move on the page.) */
+      .banner-pill:not(:has(.btn)) { padding-right: 14px; }
+      .banner-pill[data-said="reconnected"] { justify-content: center; }
+      .banner-pill[data-said="reconnected"] .banner-text { flex: none; }
+      .banner-pill > svg { flex: none; color: var(--tone, var(--text-2)); transition: color var(--d-3) var(--ease-out); }
+      .banner-text { flex: 1; min-width: 0; padding: 4px 0; }
+      .banner-pill .btn { flex: none; border-radius: var(--r-full); }
+      /* Coming: dropping in a few pixels, out of a slight blur. Going: a short fade, up and away. */
+      .banner-pill.entering { opacity: 0; transform: translateY(-8px) scale(0.98); filter: blur(4px); }
+      .banner-pill.leaving { opacity: 0; transform: translateY(-6px); transition: transform var(--d-2) var(--ease-exit), opacity var(--d-2) var(--ease-exit); }
+      /* Trying again: one slow pass of light along its foot, then a rest; taken away where motion is reduced. */
+      .banner-pill[data-trying]::after {
+        content: ""; position: absolute; left: 0; bottom: 0; width: 40%; height: 1px; pointer-events: none;
+        background: linear-gradient(90deg, transparent, var(--tone), transparent); transform: translateX(-100%);
+        animation: banner-sweep var(--d-sweep) var(--ease-in-out) infinite;
+      }
+      @keyframes banner-sweep { 0% { transform: translateX(-100%); } 70%, 100% { transform: translateX(250%); } }
+      :root[data-motion="reduce"] .banner-pill[data-trying]::after { animation: none; }
+      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .banner-pill[data-trying]::after { animation: none; } }
 
       /* ---------- page scaffolding ---------- */
       /* Navigation is frequent, so pages appear instantly (no enter animation). */
@@ -1011,21 +1039,21 @@
         border: 1px solid color-mix(in oklab, var(--tone, var(--text-3)) 22%, var(--alert-line));
         box-shadow: inset 0 1px 0 var(--alert-lit), var(--shadow-2);
         transform-origin: bottom center;
-        transform: translateY(calc(var(--i) * -10px)) scale(calc(1 - var(--i) * 0.05)); opacity: calc(1 - var(--i) * 0.2);
+        transform: translateY(calc(var(--i) * -10px)) scale(calc(1 - var(--i) * 0.05), calc((1 - var(--i) * 0.05) * var(--fit, 1))); opacity: calc(1 - var(--i) * 0.2);
         transition: transform var(--d-enter) var(--ease-out), opacity var(--d-enter) var(--ease-out), filter var(--d-enter) var(--ease-out);
       }
       @media (max-width: 639px) { .toast { font-size: var(--fs-14); } }
       /* Coming in: a few pixels below, out of a slight blur, a whisper smaller. */
       .toast.entering { opacity: 0; transform: translateY(14px) scale(0.97); filter: blur(6px); }
       /* Going: a short fade and drop, quicker than it came. */
-      .toast.leaving { opacity: 0; transform: translateY(calc(var(--i) * -10px + 10px)) scale(calc(1 - var(--i) * 0.05)); transition: transform var(--d-2) var(--ease-exit), opacity var(--d-2) var(--ease-exit); }
+      .toast.leaving { opacity: 0; transform: translateY(calc(var(--i) * -10px + 10px)) scale(calc(1 - var(--i) * 0.05), calc((1 - var(--i) * 0.05) * var(--fit, 1))); transition: transform var(--d-2) var(--ease-exit), opacity var(--d-2) var(--ease-exit); }
       .toast[data-hidden="true"] { opacity: 0; pointer-events: none; }
       /* Fanned out under the pointer, or where a finger's focus is: each whole, above the newer ones. */
       .toaster:is(:hover, :focus-within) .toast { transform: translateY(calc(var(--offset, 0px) * -1)); opacity: 1; transition-duration: var(--d-3); }
       .toaster:is(:hover, :focus-within) .toast.entering { transform: translateY(calc(var(--offset, 0px) * -1 + 14px)) scale(0.97); opacity: 0; }
       .toaster:is(:hover, :focus-within) .toast.leaving { transform: translateY(calc(var(--offset, 0px) * -1 + 10px)); opacity: 0; transition-duration: var(--d-2); }
-      /* Tucked: those behind the front one are drawn at its height with their words out of sight, so only edges show. */
-      .toaster:not(:hover):not(:focus-within) .toast:not([data-front]) { height: var(--front-h, auto); }
+      /* Tucked: those behind the front one are drawn as tall as it (--fit, a scale: a new height would move them on the
+         page) with their words out of sight, so only their edges show. */
       .toast > * { transition: opacity var(--d-2) var(--ease-out); }
       .toaster:not(:hover):not(:focus-within) .toast:not([data-front]) > * { opacity: 0; }
       .toast-lead { flex: none; display: grid; place-items: center; width: 20px; height: 20px; color: var(--tone, var(--text-2)); }

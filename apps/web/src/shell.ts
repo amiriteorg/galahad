@@ -26,6 +26,7 @@ import { readOpenMessage } from "./lib/push.ts";
 import { badgeMessage, type Badging, showBadge } from "./lib/badge.ts";
 import { readsFor } from "./lib/prefetch.ts";
 import { reachability } from "./lib/reach.ts";
+import { connectionBanner } from "./ui/banner.ts";
 import { syncPush } from "./views/notifications.ts";
 import { connectorsView } from "./views/connectors.ts";
 import { findingsView } from "./views/findings.ts";
@@ -284,20 +285,12 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     replace(fleetPill, dot(tone, { live: true }), h("span", { class: "tnum" }, `${fleet.name || base.whoami.fleetName || "fleet"} · ${onlineCount}/${nodes.length} online`));
     fleetPill.setAttribute("aria-label", `Fleet ${fleet.name}: ${onlineCount} of ${nodes.length} nodes online`);
   });
+  // The banner under the top bar while Galahad can't be reached, and "Reconnected" for a moment once he can (ui/banner.ts).
+  const reach = connectionBanner(banner, () => void live.refreshFleet(), lifetime.signal);
   live.online.subscribe((ok) => {
-    banner.hidden = ok;
-    if (!ok) {
-      replace(
-        banner,
-        icon("offline", { size: 16 }),
-        h("span", { class: "grow" }, navigator.onLine ? "Can't reach Galahad right now. What you see may be out of date." : "You're offline. The app is cached; live data returns when you reconnect."),
-        button("Retry", { size: "sm", onClick: () => void live.refreshFleet() }),
-      );
-    } else {
-      // Whatever failed while the node was away is asked again, so the page heals by itself.
-      retryFailed(main);
-      toast("Reconnected", { tone: "ok", duration: 2000 });
-    }
+    reach(ok);
+    // Whatever failed while the node was away is asked again, so the page heals by itself.
+    if (ok) retryFailed(main);
   });
 
   function toggleSidebar(): void {
