@@ -54,9 +54,10 @@ completed task.
 
 ## Brand Commitments
 
-- **The knights** are orbs of glyphs (25 November 2026: the drawings gave way to them): each a sphere of monospace glyphs
-  round a bright nucleus, in a colour you chose or one of 24 its handle picks, turning slowly; Galahad's is his state's
-  colour inside his heads-up rings (`apps/web/src/lib/orb.ts`, `orb-sphere.ts`; core's `knightColors`).
+- **The knights** are orbs (25 November 2026: the drawings gave way to them), and since 26 November 2026 in the web app
+  each is Galahad's field, the app icon's lines of force round a dark core, in a colour you chose or one of 24 its handle
+  picks, still where they are many; Galahad's is gold, inside his heads-up ring with its oxblood seat
+  (`apps/web/src/lib/field-orb.ts`; core's `knightColors`). The native apps still draw the glyph spheres until they port it.
 - **The marks**: Galahad's helm and the Roundtable seen from above (`apps/web/src/brand.ts`); the app icon is Galahad's field in gold, rendered as light (`apps/web/src/lib/field.ts`, `scripts/field-icon.ts`).
 - **Colours with meaning**: Galahad's red is his seat and what needs you; ink and cream are the rest (`brand.ts`).
 - **Voice**: courteous and candid (`docs/OATH.md`): say plainly what it does and what it doesn't.
