@@ -37,8 +37,9 @@ function diffParts(diff: string): Map<string, string> {
   return parts;
 }
 
-export function openWorkspace(ctx: Ctx, knight: { id: string; name: string }, start: "files" | "changes" = "files"): void {
-  const sheet = openSheet({ title: `${knight.name}'s workspace`, description: "Read only: its files, and what its latest task changed.", size: "wide", body: h("div") });
+/** `task`: what that task changed, rather than the knight's latest (a task's own page opens it so). */
+export function openWorkspace(ctx: Ctx, knight: { id: string; name: string }, start: "files" | "changes" = "files", task?: string): void {
+  const sheet = openSheet({ title: `${knight.name}'s workspace`, description: task ? "Read only: its files, and what this task changed." : "Read only: its files, and what its latest task changed.", size: "wide", body: h("div") });
   const stack: Page[] = [start === "files" ? { kind: "folder", path: "/work" } : { kind: "changes" }];
   const shown = segmented<"files" | "changes">(
     [
@@ -117,7 +118,7 @@ export function openWorkspace(ctx: Ctx, knight: { id: string; name: string }, st
         return empty({ icon: "file", title: file.kind === "large" ? "Too big to show here" : "Not text", body: `${bytesLabel(file.size)}${file.kind === "large" ? ": a picture past what is shown here." : " that isn't text or a picture."}`, compact: true });
       }
       case "changes": {
-        const changes = await ctx.api.post<TeamChangesView>("/api/team/changes", { id: knight.id });
+        const changes = await ctx.api.post<TeamChangesView>("/api/team/changes", { id: knight.id, ...(task ? { task } : {}) });
         const parts = diffParts(changes.diff);
         const from = changes.base ? `from ${changes.base.slice(0, 8)}` : "since its last commit";
         const rows = [
@@ -140,7 +141,7 @@ export function openWorkspace(ctx: Ctx, knight: { id: string; name: string }, st
         return h(
           "div",
           { class: "stack" },
-          h("p", { class: "small muted" }, `${changes.task ? "Its latest task" : "Its repository"}, ${from}.`, changes.cut ? " The diff is cut: only its beginning is here." : "", changes.redacted ? " Something that looked like a key was redacted." : ""),
+          h("p", { class: "small muted" }, `${changes.task ? (task ? "This task" : "Its latest task") : "Its repository"}, ${from}.`, changes.cut ? " The diff is cut: only its beginning is here." : "", changes.redacted ? " Something that looked like a key was redacted." : ""),
           rows.length ? h("div", { class: "card flat" }, h("div", { class: "rows" }, ...rows)) : empty({ icon: "check", title: "Nothing changed yet", compact: true }),
           whole ? h("div", { class: "row" }, whole) : null,
         );
