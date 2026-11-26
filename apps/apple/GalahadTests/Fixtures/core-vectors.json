@@ -30193,6 +30193,28 @@
           "at": 1763199880000,
           "text": "Review · revise\nThe test doesn't cover the drop."
         }
+      ],
+      "timed": [
+        {
+          "n": 1,
+          "at": 1763199280000,
+          "text": "Gates · 1. bun test\n2. bun run typecheck"
+        },
+        {
+          "n": 2,
+          "at": 1763199340000,
+          "text": "Submitted for review · timed"
+        },
+        {
+          "n": 3,
+          "at": 1763199400000,
+          "text": "Gate 1/2 · exit 0 · bun test\nexit 0 · 1 ms\nrequired gate passed"
+        },
+        {
+          "n": 4,
+          "at": 1763199460000,
+          "text": "Gate 2/2 · exit 1 · bun run typecheck\nexit 1 · 412 ms\nstderr:\nerror TS2322"
+        }
       ]
     },
     "groups": {
@@ -30761,6 +30783,29 @@
             "exit": null,
             "ms": null,
             "said": "",
+            "before": null
+          }
+        ]
+      },
+      {
+        "trail": "timed",
+        "gates": [],
+        "running": false,
+        "rows": [
+          {
+            "command": "bun test",
+            "state": "passed",
+            "exit": 0,
+            "ms": 60000,
+            "said": "required gate passed",
+            "before": null
+          },
+          {
+            "command": "bun run typecheck",
+            "state": "failed",
+            "exit": 1,
+            "ms": 60000,
+            "said": "error TS2322",
             "before": null
           }
         ]

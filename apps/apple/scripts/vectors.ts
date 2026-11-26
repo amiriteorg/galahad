@@ -1171,6 +1171,14 @@ const roundsTrail = trailOf([
   [37, "Gate 1/3 · exit 0 · bun test\n13 pass"],
 ]);
 const editsOnly = trailOf([[10, `Running · edit '${W}/a/one.ts' <<'EOF'\nx\nEOF`], [9, "Exit 0 · ok"], [8, `Running · edit '${W}/a/two.ts' --all <<'EOF'\nx\nEOF`], [7, "Exit 0 · ok"], [6, `Running · edit '${W}/a/b/three.ts' <<'EOF'\nx\nEOF`], [5, "Exit 0 · ok"], [4, `Running · edit '${W}/a/b/four.ts' <<'EOF'\nx\nEOF`], [3, "Exit 0 · ok"], [2, "Review · revise\nThe test doesn't cover the drop."]]);
+// What a gate printed under the runner's own line ("exit 0 · 412 ms"), which its row says already (26 November 2026: a
+// gate read "exit 0 · 0:00 · exit 0 · 1 ms"): what it said is the line after it.
+const timedTrail = trailOf([
+  [12, "Gates · 1. bun test\n2. bun run typecheck"],
+  [11, "Submitted for review · timed"],
+  [10, "Gate 1/2 · exit 0 · bun test\nexit 0 · 1 ms\nrequired gate passed"],
+  [9, "Gate 2/2 · exit 1 · bun run typecheck\nexit 1 · 412 ms\nstderr:\nerror TS2322"],
+]);
 const lastLines = ["Running · bun test packages/link\nmore", "Submitted for review · x", "Gate 1/2 · exit 0 · bun test", "Gate 2/2 · exit 0 · bun run typecheck", "Plan · x", "Review · pass", "Review · revise\nmore", "Exit 0 · ok", "Thinking · x", "Budget · $0.40 of $0.50 spent: wrapping up", "Gates · all 2 passed"];
 const stepTask = (status: core.TeamWorkStatus, gates: string[], extra: Partial<core.TeamTask> = {}) => ({ ...task("steps", "ada", status, { gates }), ...extra });
 const steps = {
@@ -1188,7 +1196,7 @@ const steps = {
     "bun test packages/link",
     "",
   ].map((command) => ({ command, ...commandKind(command) })),
-  trails: { full: fullTrail, rounds: roundsTrail, edits: editsOnly },
+  trails: { full: fullTrail, rounds: roundsTrail, edits: editsOnly, timed: timedTrail },
   groups: { full: stepGroups(fullTrail), rounds: stepGroups(roundsTrail), edits: stepGroups(editsOnly), none: stepGroups([]) },
   summaries: [
     { trail: "full", record: null, summary: workSummary(fullTrail) },
@@ -1211,6 +1219,7 @@ const steps = {
     { trail: "rounds", gates: [], running: false, rows: gateRows([], roundsTrail, false) },
     { trail: "edits", gates: ["bun test", "bun run lint"], running: true, rows: gateRows(["bun test", "bun run lint"], editsOnly, true) },
     { trail: "none", gates: ["bun test"], running: true, rows: gateRows(["bun test"], [], true) },
+    { trail: "timed", gates: [], running: false, rows: gateRows([], timedTrail, false) },
   ],
   reviews: { full: reviewOf(fullTrail), rounds: reviewOf(roundsTrail), edits: reviewOf(editsOnly), none: reviewOf([]) },
   sameModel: { full: sameModelReview(fullTrail), edits: sameModelReview(editsOnly) },

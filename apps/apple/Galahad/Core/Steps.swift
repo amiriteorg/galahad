@@ -354,10 +354,11 @@ enum Steps {
         }
     }
 
-    /// The first line of what a command printed that says something (not its exit, not "stderr:").
+    /// The first line of what a command printed that says something (not its exit, not "stderr:"; not the runner's own
+    /// line, "exit 0" or "exit 0 · 12 ms", which the gate's row says already).
     private static func firstSaid(_ output: String) -> String {
         let line = output.components(separatedBy: "\n").map(Markdown.trim).first { line in
-            !line.isEmpty && line != "stderr:" && line != "(no output)" && line.wholeMatch(of: #/exit -?[0-9]+/#) == nil
+            !line.isEmpty && line != "stderr:" && line != "(no output)" && line.wholeMatch(of: #/exit -?[0-9]+( · [0-9]+ ms\b.*)?/#) == nil
         } ?? ""
         let units = Array(line.utf16)
         return units.count > 200 ? String(decoding: units.prefix(200), as: UTF16.self) : line

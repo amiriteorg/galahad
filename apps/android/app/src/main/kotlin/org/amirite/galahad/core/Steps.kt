@@ -286,9 +286,11 @@ object Steps {
         if (summary.edited > 0) "edited ${plural(summary.edited, "file")}" else if (summary.read > 0) "read ${plural(summary.read, "file")}" else null,
     ).joinToString(" · ")
 
-    private val exitLine = Regex("exit -?\\d+")
+    /** The runner's own line: "exit 0", or "exit 0 · 12 ms", which the gate's row says already. */
+    private val exitLine = Regex("exit -?\\d+( · \\d+ ms\\b.*)?")
 
-    /** The first line of what a command printed that says something (not its exit, not "stderr:"). */
+    /** The first line of what a command printed that says something (not its exit, not "stderr:", not the runner's own
+     * line). */
     private fun firstSaid(output: String): String {
         val line = output.split("\n").map(JsText::trim).firstOrNull { it.isNotEmpty() && it != "stderr:" && it != "(no output)" && !exitLine.matches(it) } ?: return ""
         return line.take(200)
