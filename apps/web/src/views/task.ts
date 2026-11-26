@@ -58,12 +58,13 @@ function conversationOf(room: TeamRoomView | null, task: TeamTask): TeamMessage[
   return room.messages.filter((message) => message.createdAt >= task.createdAt && message.createdAt < next && message.speaker !== "system");
 }
 
-/** Who gave it, and how, in a line (the dispatch): Galahad or you to the Roundtable, a knight's proposal, or by name. */
+/** Who gave it, and how, in a line (the dispatch): Galahad or you to the Roundtable, a knight's proposal, or by name. No
+ * full stop: its time follows it after a dot ("Given to Ada by name · just now"), never as a sentence of its own. */
 function dispatchWords(task: TeamTask, knight: string, proposer: string | null): string {
-  if (task.proposedBy) return task.status === "proposed" ? `${proposer ?? task.proposedBy} proposes it: it starts when you approve it.` : `${proposer ?? task.proposedBy} proposed it, and it was approved.`;
-  if (task.givenBy === "galahad") return `Galahad gave it to the Roundtable, and ${knight} took it as best suited.`;
-  if (task.givenBy === "owner") return `You gave it to the Roundtable, and ${knight} took it as best suited.`;
-  return `Given to ${knight} by name.`;
+  if (task.proposedBy) return task.status === "proposed" ? `${proposer ?? task.proposedBy} proposes it: it starts when you approve it` : `${proposer ?? task.proposedBy} proposed it, and it was approved`;
+  if (task.givenBy === "galahad") return `Galahad gave it to the Roundtable, and ${knight} took it as best suited`;
+  if (task.givenBy === "owner") return `You gave it to the Roundtable, and ${knight} took it as best suited`;
+  return `Given to ${knight} by name`;
 }
 
 const GATE_ICON: Record<GateRow["state"], IconName> = { passed: "check", failed: "x", running: "play", waiting: "clock" };
@@ -455,7 +456,7 @@ export const taskView: View = (root, ctx, { scope, opts }) => {
       replace(
         thread,
         // Who gave it, and how; then the brief itself.
-        h("p", { class: "thread-dispatch" }, task.givenBy === "galahad" || task.proposedBy === "galahad" ? orb({ size: 18 }) : icon(task.proposedBy ? "lightbulb" : "layers", { size: 15 }), h("span", {}, dispatchWords(task, n.name, proposer), " ", h("time", { class: "subtle", datetime: new Date(task.createdAt).toISOString(), title: new Date(task.createdAt).toLocaleString() }, relativeTime(task.createdAt)))),
+        h("p", { class: "thread-dispatch" }, task.givenBy === "galahad" || task.proposedBy === "galahad" ? orb({ size: 18 }) : icon(task.proposedBy ? "lightbulb" : "layers", { size: 15 }), h("span", {}, dispatchWords(task, n.name, proposer), h("span", { class: "subtle" }, " · "), h("time", { class: "subtle", datetime: new Date(task.createdAt).toISOString(), title: new Date(task.createdAt).toLocaleString() }, relativeTime(task.createdAt)))),
         h("section", { class: "thread-brief", "aria-label": "The brief" }, h("p", { class: "pre-wrap" }, task.goal)),
         facts.length ? h("p", { class: "thread-facts subtle" }, facts.join(" · ")) : null,
         dependents.length ? h("p", { class: "thread-facts subtle" }, `${dependents.map((other) => `“${other.title}”`).join(", ")} ${dependents.length === 1 ? "waits" : "wait"} on it.`) : null,
