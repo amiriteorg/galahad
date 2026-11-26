@@ -1859,6 +1859,20 @@
         .capacity .cap-row { grid-template-columns: minmax(0, 1fr) auto; }
         .capacity .cap-label { grid-column: 1 / -1; }
       }
+      /* The "…" sheet's places (views/places.ts placeTile): a tile of one line each, two or more a row, so the whole index
+         fits a phone's screen (it was seventeen rows of two lines, six to a screen). */
+      .place-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 148px), 1fr)); gap: 6px; }
+      .place-tile {
+        display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: var(--r-lg);
+        background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border); color: var(--text); text-decoration: none;
+        font-size: var(--fs-14); font-weight: 550; letter-spacing: -0.005em;
+        transition: box-shadow var(--d-1) var(--ease-out), background-color var(--d-1) var(--ease-out), transform var(--d-1) var(--ease-out);
+      }
+      .place-tile:hover { box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border-strong); }
+      .place-tile:active { transform: scale(0.98); background: var(--surface-2); }
+      .place-tile-icon { flex: none; display: grid; place-items: center; color: var(--text-2); }
+      .place-tile > .count { margin-left: auto; flex: none; }
+      .places-index .section { gap: var(--sp-2); }
       .place-rank { display: flex; flex-direction: column; gap: var(--sp-2); }
       .place-row { display: grid; grid-template-columns: 22px 1fr auto; gap: var(--sp-3); align-items: center; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); }
       .place-row.first { border-color: var(--accent-border); background: var(--accent-soft); }

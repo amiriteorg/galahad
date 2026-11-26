@@ -3,6 +3,7 @@ import { type Place, placesFor, placesIndex } from "../lib/nav.ts";
 import { button, list, listRow, section } from "../ui/controls.ts";
 import { openSheet } from "../ui/dialog.ts";
 import { h, isMac } from "../ui/dom.ts";
+import { icon } from "../ui/icons.ts";
 import { giveToRoundtable } from "./team-forms.ts";
 
 /*
@@ -24,10 +25,29 @@ export function placeRow(place: Place, waiting = 0): HTMLElement {
   });
 }
 
-/** The index as sections: the Roundtable on its own, then More's headings. */
-export function placesSections(ctx: Ctx): HTMLElement[] {
+/** A place as a tile in the "…" sheet: its icon and its name on one line, 44 px tall (what is there is its tooltip, it is
+ * read out after its name, and the palette's search shows it), so the whole index fits a phone's screen. */
+export function placeTile(place: Place, waiting = 0): HTMLElement {
+  return h(
+    "a",
+    { class: "place-tile", href: `#/${place.id}`, title: place.about },
+    h("span", { class: "place-tile-icon", "aria-hidden": "true" }, icon(place.icon, { size: 16 })),
+    h("span", { class: "place-tile-label ellipsis" }, place.label),
+    h("span", { class: "sr-only" }, `: ${place.about}`),
+    place.id === "inbox" && waiting ? h("span", { class: "count", "aria-label": `${waiting} waiting` }, waiting > 99 ? "99+" : String(waiting)) : null,
+  );
+}
+
+/** The index as sections: the Roundtable on its own, then More's headings. `compact` (the "…" sheet): the Roundtable as a
+ * row with what is there, every other place a tile of one line, two or more a row; otherwise (More's page) rows of two
+ * lines. */
+export function placesSections(ctx: Ctx, compact = false): HTMLElement[] {
   const waiting = ctx.live.inboxCount.value;
-  return placesIndex(placesFor(ctx.can)).map((group) => (group.heading ? section(group.heading, {}, list(group.places.map((place) => placeRow(place, waiting)), { nav: group.heading })) : list(group.places.map((place) => placeRow(place, waiting)), { nav: "The Roundtable" })));
+  return placesIndex(placesFor(ctx.can)).map((group) => {
+    if (!group.heading) return list(group.places.map((place) => placeRow(place, waiting)), { nav: "The Roundtable" });
+    if (!compact) return section(group.heading, {}, list(group.places.map((place) => placeRow(place, waiting)), { nav: group.heading }));
+    return section(group.heading, {}, h("nav", { class: "place-tiles", "aria-label": group.heading }, ...group.places.map((place) => placeTile(place, waiting))));
+  });
 }
 
 /** Opens the index under "…": a search and a task to give at its head, then every place. */
@@ -47,7 +67,7 @@ export function openPlaces(ctx: Ctx, from?: Element): void {
         // (What the rail's Add was: the palette, on everything this device may add, a key, an MCP server, a loop…)
         button("Add…", { icon: "plus", title: "Add a key, an MCP server, a connector, a loop and more", onClick: () => (sheet.close(), ctx.palette("Add ", from)) }),
       ),
-      ...placesSections(ctx),
+      ...placesSections(ctx, true),
     ),
   });
 }
