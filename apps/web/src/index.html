@@ -1090,7 +1090,7 @@
       @media (max-width: 959px) { .toaster { left: 50%; right: auto; transform: translateX(-50%); bottom: max(calc(var(--tabbar-h) + var(--safe-bottom) + var(--sp-3)), calc(var(--dock-h, 0px) + var(--sp-2))); } }
       .toast {
         --i: 0; position: absolute; right: 0; bottom: 0; width: 100%; pointer-events: auto; overflow: hidden;
-        display: flex; align-items: flex-start; gap: 10px; padding: var(--sp-3) var(--sp-2) var(--sp-3) 14px;
+        display: flex; align-items: flex-start; gap: 10px; padding: 14px 10px 14px var(--sp-4);
         color: var(--text); font-size: var(--fs-13); border-radius: var(--r-xl);
         background: radial-gradient(112px 56px at 24px 22px, var(--tone-soft, transparent), transparent), var(--alert-glass);
         -webkit-backdrop-filter: var(--alert-blur, none); backdrop-filter: var(--alert-blur, none);
@@ -1100,7 +1100,7 @@
         transform: translateY(calc(var(--i) * -10px)) scale(calc(1 - var(--i) * 0.05), calc((1 - var(--i) * 0.05) * var(--fit, 1))); opacity: calc(1 - var(--i) * 0.2);
         transition: transform var(--d-spring) var(--ease-spring), opacity var(--d-enter) var(--ease-out), filter var(--d-enter) var(--ease-out);
       }
-      @media (max-width: 639px) { .toast { font-size: var(--fs-14); } }
+      @media (max-width: 639px) { .toast { font-size: var(--fs-15); } }
       /* Coming in: a few pixels below, out of a slight blur, a whisper smaller. */
       .toast.entering { opacity: 0; transform: translateY(14px) scale(0.97); filter: blur(6px); }
       /* Going: a short fade and drop, quicker than it came. */
@@ -1115,10 +1115,10 @@
       .toast > * { transition: opacity var(--d-2) var(--ease-out); }
       .toaster:not(:hover):not(:focus-within) .toast:not([data-front]) > * { opacity: 0; }
       .toast-lead { flex: none; display: grid; place-items: center; width: 20px; height: 20px; color: var(--tone, var(--text-2)); }
-      @media (max-width: 639px) { .toast-lead { height: 21px; } }
+      @media (max-width: 639px) { .toast-lead { height: 22px; } }
       /* A knight's face or his orb: who it is about, still, beside their name in the title. */
       .toast-lead.is-face { width: 28px; height: 28px; margin: -4px 0; }
-      .toast-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+      .toast-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
       .toast-title { font-weight: 600; letter-spacing: -0.005em; }
       .toast-desc { color: var(--text-2); overflow-wrap: anywhere; }
       .toast .toast-action { flex: none; margin: -4px 0; border-radius: var(--r-full); padding-inline: 12px; }
