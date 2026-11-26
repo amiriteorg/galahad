@@ -209,6 +209,10 @@ class FieldVectorsTest {
         near(l["glow"]["alpha"], FieldOrb.Lance.GLOW_ALPHA, "lance.glow.alpha")
         near(l["ink"]["width"], FieldOrb.Lance.INK_WIDTH, "lance.ink.width")
         near(l["ink"]["alpha"], FieldOrb.Lance.INK_ALPHA, "lance.ink.alpha")
+        near(l["ink"]["least"], FieldOrb.Lance.INK_LEAST, "lance.ink.least")
+        near(l["ink"]["fade"], FieldOrb.Lance.INK_FADE, "lance.ink.fade")
+        near(l["ink"]["glow"]["width"], FieldOrb.Lance.INK_GLOW_WIDTH, "lance.ink.glow.width")
+        near(l["ink"]["glow"]["alpha"], FieldOrb.Lance.INK_GLOW_ALPHA, "lance.ink.glow.alpha")
         assertEquals(3, l["lines"].list.size)
         for (line in l["lines"].list) {
             val zoom = line["zoom"].double!!
@@ -235,6 +239,7 @@ class FieldVectorsTest {
         near(s["glow"]["width"], FieldOrb.Stroke.GLOW_WIDTH, "glow.width")
         near(s["glow"]["alpha"], FieldOrb.Stroke.GLOW_ALPHA, "glow.alpha")
         near(s["ink"], FieldOrb.Stroke.INK, "ink")
+        near(s["inkLeast"], FieldOrb.Stroke.INK_LEAST, "inkLeast")
         near(s["light"], FieldOrb.Stroke.LIGHT, "light")
         near(s["full"], FieldOrb.Stroke.FULL, "full")
         for (l in s["lights"].list) near(l["light"], FieldOrb.strokeLight(l["size"].double!!), "light at ${l["size"].double}")
@@ -253,6 +258,7 @@ class FieldVectorsTest {
             near(e[key][1], pair.second, "embers.$key[1]")
         }
         near(e["rise"], FieldOrb.Embers.RISE, "embers.rise")
+        near(e["fadeIn"], FieldOrb.Embers.FADE_IN, "embers.fadeIn")
         near(e["spread"], FieldOrb.Embers.SPREAD, "embers.spread")
         near(e["rimAngle"], FieldOrb.RIM_ANGLE, "rimAngle")
     }
@@ -300,6 +306,7 @@ class FieldVectorsTest {
             val inks = FieldOrb.inks(colours(c["colours"]))
             assertEquals(c["inks"]["key"].list.map { it.int }, inks.key.toList())
             assertEquals(c["inks"]["rim"].list.map { it.int }, inks.rim.toList())
+            assertEquals(c["inks"]["sheen"].list.map { it.int }, inks.sheen.toList())
             for (s in c["shown"].list) {
                 val ink = FieldOrb.ink(inks, s["lit"].double!!, s["rim"].double!!)
                 val want = s["ink"]
@@ -310,6 +317,62 @@ class FieldVectorsTest {
                 near(want["alpha"], ink.alpha, "ink.alpha")
             }
         }
+        // A colour as an ink on the light page (26 November 2026): its hue kept, more saturated, as light as its contrast
+        // allows; and the model's own numbers.
+        val ink = f["ink"]
+        near(ink["key"], FieldOrb.Ink.KEY, "ink.key")
+        near(ink["rim"], FieldOrb.Ink.RIM, "ink.rim")
+        near(ink["sheen"]["contrast"], FieldOrb.Ink.SHEEN_CONTRAST, "ink.sheen.contrast")
+        near(ink["sheen"]["from"], FieldOrb.Ink.SHEEN_FROM, "ink.sheen.from")
+        near(ink["sheen"]["most"], FieldOrb.Ink.SHEEN_MOST, "ink.sheen.most")
+        near(ink["chroma"], FieldOrb.Ink.CHROMA, "ink.chroma")
+        near(ink["floor"], FieldOrb.Ink.FLOOR, "ink.floor")
+        near(ink["curve"], FieldOrb.Ink.CURVE, "ink.curve")
+        assertTrue(ink["of"].list.size >= 24)
+        for (o in ink["of"].list) {
+            val hex = o["hex"].string!!
+            val contrast = o["contrast"].double!!
+            assertEquals("$hex at $contrast", o["rgb"].list.map { it.int }, FieldOrb.inkOf(hex, contrast).toList())
+        }
+    }
+
+    /** As a frame draws a point's ink on a light page (making nothing): the same colour, its opacity within a thousandth. */
+    @Test fun aFramesInkIsTheInksWithinAThousandth() {
+        val out = DoubleArray(4)
+        for (colours in listOf(Field.AURUM, FieldOrb.knight("ada").colours, FieldOrb.knight("gareth").colours)) {
+            val inks = FieldOrb.inks(colours)
+            for ((lit, rim) in listOf(0.0 to 0.0, 0.2 to 0.05, 0.5 to 0.5, 0.8 to 0.0, 1.0 to 0.0, 0.0 to 1.0, 0.37 to 0.61)) {
+                FieldOrb.inkInto(inks, lit, rim, out)
+                val exact = FieldOrb.ink(inks, lit, rim)
+                for ((c, want) in listOf(exact.r, exact.g, exact.b).withIndex()) assertEquals("$lit/$rim [$c]", want, out[c], 1e-9)
+                assertTrue("$lit/$rim alpha ${out[3]} vs ${exact.alpha}", kotlin.math.abs(out[3] - exact.alpha) < 0.001)
+            }
+            // The far lines faint but there, and whole where fully lit.
+            assertEquals(FieldOrb.Ink.FLOOR, FieldOrb.ink(inks, 0.0, 0.0).alpha, 0.0)
+            assertEquals(1.0, FieldOrb.ink(inks, 1.0, 0.0).alpha, 0.0)
+        }
+    }
+
+    /** Nothing moves at rest (your word, 26 November 2026: "nothing animating at rest"): his orb idle, done, queued, paused
+     * or failed is still and asks for no frame; at work, its embers drifting, 20 a second, and 30 only while a mood arrives. */
+    @Test fun nothingMovesAtRest() {
+        for (mood in listOf(OrbMotion.Mood.IDLE, OrbMotion.Mood.DONE, OrbMotion.Mood.QUEUED, OrbMotion.Mood.PAUSED, OrbMotion.Mood.FAILED)) {
+            val motion = FieldOrb.motion(mood, knight = false)
+            assertEquals("$mood turns", 0.0, motion.turn, 0.0)
+            assertEquals("$mood breathes", null, motion.breath)
+            assertEquals("$mood fps", 0, FieldOrb.fps(FieldOrb.clock(motion), motion))
+        }
+        val working = FieldOrb.motion(OrbMotion.Mood.WORKING, knight = false)
+        assertEquals(20, FieldOrb.fps(FieldOrb.clock(working), working))
+        val waiting = FieldOrb.motion(OrbMotion.Mood.WAITING, knight = false)
+        assertEquals(20, FieldOrb.fps(FieldOrb.clock(waiting), waiting))
+        // At work, then done: it eases to a stop (30 while it eases), then asks for none.
+        val done = FieldOrb.motion(OrbMotion.Mood.DONE, knight = false)
+        var clock = FieldOrb.clock(working)
+        repeat(6) { clock = FieldOrb.step(clock, done, 1.0 / 30) }
+        assertEquals(30, FieldOrb.fps(clock, done))
+        repeat(600) { clock = FieldOrb.step(clock, done, 1.0 / 30) }
+        assertEquals(0, FieldOrb.fps(clock, done))
     }
 
     /** No line inside the core, and none where the lights leave it dark: what reads as a bright middle never is drawn. */

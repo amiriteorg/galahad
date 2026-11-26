@@ -7,6 +7,7 @@ import android.graphics.BlendMode
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.os.Handler
 import android.os.Looper
@@ -40,6 +41,7 @@ import kotlin.math.PI
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.tan
 
@@ -49,7 +51,8 @@ import kotlin.math.tan
  * the heads-up ring he wore until then: "remove the old mark around galahad. make the primary agent distinct in some other
  * cool way"); a knight's is in its own colours, with no lance. The app's own mark is his field alone (AppMark). Each line
  * of a field is a stroke from point to point, its light added to the others on a dark page (a canvas's "lighter":
- * Android's BlendMode.PLUS) over a close, faint glow of its own and no fog; on a light page it is ink. Where it is one of
+ * Android's BlendMode.PLUS) over a close, faint glow of its own and no fog; on a light page it is ink, each colour a
+ * saturated ink of its own hue, lit where the light strikes (FieldOrb.Ink), in one pass. Where it is one of
  * many (a row, a conversation's history) an orb is still and drawn once; where it is the one you are looking at, it moves
  * as its mood does, slowly (your words, 25 and 26 November 2026: "slow and calming movement", "i dont want them to be too
  * visually distractin"), only as often as FieldOrb.fps asks, never at rest, and never while the phone's animations are off.
@@ -255,6 +258,7 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
     private val last = HashMap<Int, Int>()
     private val used = ArrayList<Int>()
     private val toned = DoubleArray(3)
+    private val inked = DoubleArray(4)
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -278,7 +282,7 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
         val count = Field.at(model, frame.turn, buffer, if (colours === identity.colours) model.light else Field.light(colours))
         val half = px / 2.0
         val f = half * FOCAL * look.zoom
-        val inks = if (paper) FieldOrb.inks(colours) else null
+        val inks = if (paper) PaperInks.of(colours) else null
         val glow = max(0.0, frame.glow)
         val light = FieldOrb.strokeLight(sizeDp)
         fun q(v: Double, steps: Int) = max(0, min(steps - 1, FieldOrb.jsRound(v * (steps - 1)).toInt()))
@@ -291,11 +295,12 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
             var b: Double
             val level: Double
             if (inks != null) {
-                val ink = FieldOrb.ink(inks, buffer.lit[i], buffer.rim[i])
-                r = ink.r / 255
-                gg = ink.g / 255
-                b = ink.b / 255
-                level = min(1.0, ink.alpha * glow)
+                // (Into one array kept from frame to frame: a frame makes nothing for each of its thousands of points.)
+                FieldOrb.inkInto(inks, buffer.lit[i], buffer.rim[i], inked)
+                r = inked[0] / 255
+                gg = inked[1] / 255
+                b = inked[2] / 255
+                level = min(1.0, inked[3] * glow)
             } else {
                 FieldOrb.tone(buffer.r[i] * glow * light, buffer.g[i] * glow * light, buffer.b[i] * glow * light, FieldOrb.EXPOSURE, toned)
                 // Its colour at full brightness, and how bright: so a stroke of one colour can be drawn at a step of brightness.
@@ -325,6 +330,7 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
         stroke.blendMode = if (paper) null else BlendMode.PLUS
         fill.blendMode = if (paper) null else BlendMode.PLUS
         blade.blendMode = if (paper) null else BlendMode.PLUS
+        // (On a light page the lines are ink, with no glow under them: one pass.)
         for (pass in if (paper) LINE_ONLY else GLOW_THEN_LINE) {
             // His lance, under his lines (on a light page they cross over it; on a dark one light adds alike either way).
             if (pass == LINE && lance) drawLance(g, px, density, sizeDp, colours, glow, inks)
@@ -332,28 +338,29 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
                 val level = (kind and 0xf).toDouble() / (LEVELS - 1)
                 val hue = kind shr 4
                 fun channel(shift: Int) = FieldOrb.jsRound((((hue shr shift) and 0xf).toDouble() / (HUES - 1)) * 255).toInt()
-                val width = (FieldOrb.Stroke.LEAST + FieldOrb.Stroke.MORE * level) * weight * (if (paper) FieldOrb.Stroke.INK else 1.0)
+                // (On a light page, one ink at every size: the small sizes' boldness is for light, which spreads.)
+                val width = if (paper) max(FieldOrb.Stroke.INK_LEAST, (FieldOrb.Stroke.LEAST + FieldOrb.Stroke.MORE * level) * FieldOrb.Stroke.INK) * density
+                    else (FieldOrb.Stroke.LEAST + FieldOrb.Stroke.MORE * level) * weight
                 stroke.strokeWidth = (if (pass == GLOW) width * FieldOrb.Stroke.GLOW_WIDTH else width).toFloat()
                 val alpha = if (pass == GLOW) level * FieldOrb.Stroke.GLOW_ALPHA else level
                 stroke.color = android.graphics.Color.argb((alpha * 255).roundToInt().coerceIn(0, 255), channel(8), channel(4), channel(0))
                 g.drawPath(paths.getValue(kind), stroke)
             }
         }
-        // His embers: a point of his rim's light drifting off it, a close glow round it on a dark page.
+        // His embers: a soft light of his rim's (or its ink) drifting off it, falling away from its middle to nothing at three
+        // times its radius, never a hard dot.
         if (frame.embers.isNotEmpty()) {
-            val (er, eg, eb) = if (paper) FieldOrb.inks(colours).rim.let { Triple(it[0].toDouble(), it[1].toDouble(), it[2].toDouble()) } else emberLight(colours)
+            val (er, eg, eb) = if (paper) inks!!.rim.let { Triple(it[0], it[1], it[2]) } else emberLight(colours).let { Triple(FieldOrb.jsRound(it.first).toInt(), FieldOrb.jsRound(it.second).toInt(), FieldOrb.jsRound(it.third).toInt()) }
+            fun argb(alpha: Double) = android.graphics.Color.argb((FieldOrb.jsRound(max(0.0, min(1.0, alpha)) * 1000) / 1000 * 255).roundToInt(), er, eg, eb)
             for (e in frame.embers) {
                 if (e.alpha < 0.01) continue
                 val r = max(0.6 * density, e.r * half)
                 val x = (half + e.x * half).toFloat()
                 val y = (half + e.y * half).toFloat()
-                if (!paper) {
-                    fill.color = android.graphics.Color.argb((e.alpha * FieldOrb.Stroke.GLOW_ALPHA * 2 * 255).roundToInt().coerceIn(0, 255), er.roundToInt(), eg.roundToInt(), eb.roundToInt())
-                    g.drawCircle(x, y, (r * 2.4).toFloat(), fill)
-                }
-                fill.color = android.graphics.Color.argb((min(1.0, e.alpha) * 255).roundToInt(), er.roundToInt(), eg.roundToInt(), eb.roundToInt())
-                g.drawCircle(x, y, r.toFloat(), fill)
+                fill.shader = RadialGradient(x, y, (r * 3).toFloat(), intArrayOf(argb(e.alpha), argb(e.alpha * 0.55), argb(0.0)), EMBER_STOPS, Shader.TileMode.CLAMP)
+                g.drawCircle(x, y, (r * 3).toFloat(), fill)
             }
+            fill.shader = null
         }
     }
 
@@ -365,19 +372,21 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
      */
     private fun drawLance(g: android.graphics.Canvas, px: Int, density: Float, sizeDp: Double, colours: Field.Colours, glow: Double, inks: FieldOrb.Inks?) {
         val half = px / 2.0
-        // Half its width at its root, in pixels: never under half a dp (a dp across).
-        val root = max(0.5, (sizeDp * FieldOrb.Lance.WIDTH) / 2) * density
+        // Half its width at its root, in pixels: never under half a dp (a dp across); on a light page, never under its ink's
+        // least, so it holds as a blade where he is small.
+        val root = max(if (inks != null) FieldOrb.Lance.INK_LEAST else 0.5, (sizeDp * FieldOrb.Lance.WIDTH) / 2) * density
         val strength = min(1.0, max(0.0, glow))
         fun rgb(hex: String) = intArrayOf(hex.substring(1, 3).toInt(16), hex.substring(3, 5).toInt(16), hex.substring(5, 7).toInt(16))
         fun mix(a: IntArray, b: IntArray, t: Double) = IntArray(3) { FieldOrb.jsRound(a[it] + (b[it] - a[it]) * t).toInt() }
         val lit = rgb(colours.key[0])
         val gold = rgb(colours.key[1])
         val rim = rgb(colours.rim)
-        fun colourAt(hue: Double): IntArray = when {
-            inks != null -> mix(inks.key, inks.rim, hue)
-            hue <= 0.5 -> mix(lit, gold, hue * 2)
-            else -> mix(gold, rim, (hue - 0.5) * 2)
-        }
+        // From his lit gold through his gold to his rim's copper; on a light page, his inks the same way: his sheen, his key,
+        // his rim.
+        val first = inks?.sheen ?: lit
+        val middle = inks?.key ?: gold
+        val last = inks?.rim ?: rim
+        fun colourAt(hue: Double): IntArray = if (hue <= 0.5) mix(first, middle, hue * 2) else mix(middle, last, (hue - 0.5) * 2)
         val stops = FloatArray(LANCE_STOPS + 1) { it.toFloat() / LANCE_STOPS }
         for (each in FieldOrb.lanceLine(identity, look.zoom)) {
             val x0 = half + each.root[0] * half
@@ -387,13 +396,23 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
             val length = hypot(x1 - x0, y1 - y0).takeIf { it > 0 } ?: 1.0
             val nx = -(y1 - y0) / length
             val ny = (x1 - x0) / length
-            for (pass in if (inks != null) LINE_ONLY else GLOW_THEN_LINE) {
-                val spread = if (pass == GLOW) FieldOrb.Lance.GLOW_WIDTH else if (inks != null) FieldOrb.Lance.INK_WIDTH else 1.0
-                val strong = strength * (if (pass == GLOW) FieldOrb.Lance.GLOW_ALPHA else if (inks != null) FieldOrb.Lance.INK_ALPHA else 1.0)
+            for (pass in GLOW_THEN_LINE) {
+                val spread = when {
+                    inks != null -> if (pass == GLOW) FieldOrb.Lance.INK_GLOW_WIDTH else FieldOrb.Lance.INK_WIDTH
+                    pass == GLOW -> FieldOrb.Lance.GLOW_WIDTH
+                    else -> 1.0
+                }
+                val strong = strength * when {
+                    inks != null -> if (pass == GLOW) FieldOrb.Lance.INK_GLOW_ALPHA else FieldOrb.Lance.INK_ALPHA
+                    pass == GLOW -> FieldOrb.Lance.GLOW_ALPHA
+                    else -> 1.0
+                }
                 val colors = IntArray(LANCE_STOPS + 1) { i ->
                     val at = FieldOrb.lanceAt(i.toDouble() / LANCE_STOPS)
                     val c = colourAt(at.hue)
-                    val alpha = FieldOrb.jsRound(min(1.0, at.light * strong) * 1000) / 1000
+                    // (Ink fades slower than light: on a light page the blade holds further out towards its tip.)
+                    val light = if (inks != null) at.light.pow(FieldOrb.Lance.INK_FADE) else at.light
+                    val alpha = FieldOrb.jsRound(min(1.0, light * strong) * 1000) / 1000
                     android.graphics.Color.argb((alpha * 255).roundToInt().coerceIn(0, 255), c[0], c[1], c[2])
                 }
                 blade.shader = LinearGradient(x0.toFloat(), y0.toFloat(), x1.toFloat(), y1.toFloat(), colors, stops, Shader.TileMode.CLAMP)
@@ -423,9 +442,21 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
         const val LINE = 1
         /** How many steps of colour and light a blade of his lance is filled with, along it. */
         const val LANCE_STOPS = 8
+        /** An ember's light: whole at its middle, a little over half at a third of the way out, nothing at its edge. */
+        val EMBER_STOPS = floatArrayOf(0f, 0.33f, 1f)
         val GLOW_THEN_LINE = intArrayOf(GLOW, LINE)
         val LINE_ONLY = intArrayOf(LINE)
     }
+}
+
+/** A field's inks on a light page (FieldOrb.inks), worked out once for each field's colours: a frame on a light page
+ * reads them, and an ink takes a few hundred steps. The latest 64 kept; touched only on the main thread, where drawing is. */
+private object PaperInks {
+    private val kept = object : LinkedHashMap<Field.Colours, FieldOrb.Inks>(80, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Field.Colours, FieldOrb.Inks>?): Boolean = size > 64
+    }
+
+    fun of(colours: Field.Colours): FieldOrb.Inks = kept.getOrPut(colours) { FieldOrb.inks(colours) }
 }
 
 /** An ember's colour on a dark page: its rim's, a third of the way to its key's deep gold. */

@@ -3,6 +3,7 @@ package org.amirite.galahad.core
 import kotlin.math.PI
 import kotlin.math.asin
 import kotlin.math.atan2
+import kotlin.math.cbrt
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.floor
@@ -71,9 +72,11 @@ object FieldOrb {
      * nothing at its tip, its light fading as it goes ([lanceAt]). On a dark page its light is added as the field's is,
      * with a close glow [GLOW_WIDTH] times as wide and [GLOW_ALPHA] as strong (no fog); on a light page it is ink,
      * [INK_WIDTH] times as wide and [INK_ALPHA] times as strong as its light (ink on white reads thinner than light on
-     * black). Its outline is taken at [STEPS] steps along it. The field turns about it; it shines as the field does, never
-     * past its light at rest (breathing while something waits, dimmer while queued or paused, its tip red-brown when its
-     * work failed).
+     * black), its root never under [INK_LEAST] dp each side (so at 34 dp it holds as a blade, not a needle), its ink
+     * fading slower than its light does ([lanceAt]'s light to the power [INK_FADE]), over a close tint of its ink
+     * ([INK_GLOW_WIDTH] times as wide, [INK_GLOW_ALPHA] as strong). Its outline is taken at [STEPS] steps along it. The
+     * field turns about it; it shines as the field does, never past its light at rest (breathing while something waits,
+     * dimmer while queued or paused, its tip red-brown when its work failed).
      */
     object Lance {
         const val FROM = 0.36
@@ -82,8 +85,12 @@ object FieldOrb {
         const val STEPS = 16
         const val GLOW_WIDTH = 3.2
         const val GLOW_ALPHA = 0.2
-        const val INK_WIDTH = 1.3
-        const val INK_ALPHA = 1.2
+        const val INK_WIDTH = 1.6
+        const val INK_ALPHA = 1.5
+        const val INK_LEAST = 0.85
+        const val INK_FADE = 0.6
+        const val INK_GLOW_WIDTH = 3.2
+        const val INK_GLOW_ALPHA = 0.24
     }
 
     /** A half of his lance in an orb's square (its middle 0, its edge 1; x right, y down, as an ember's): its root, out of
@@ -143,16 +150,18 @@ object FieldOrb {
      */
     data class Motion(val turn: Double, val glow: Double, val breath: Breath?, val embers: Boolean, val rim: Double)
 
-    /** Galahad's moods: at rest it turns slowly; at work a little quicker, embers drifting off its rim; waiting on you it
-     * breathes; queued and paused it dims and slows (paused stops); done, it settles; failed, its rim dims to red-brown. */
+    /** Galahad's moods: only while something is going on does it move (your word, 26 November 2026: "nothing animating at
+     * rest"): at work it turns, embers drifting off its rim; waiting on you it breathes, turning slowly. At rest (idle),
+     * done (it settles), queued, paused and failed it comes to rest, still, in its mood's light: dimmer while queued or
+     * paused, its rim red-brown when its work failed. (Until 26 November 2026 it turned at rest too, a turn a minute.) */
     val MOTION: Map<OrbMotion.Mood, Motion> = mapOf(
-        OrbMotion.Mood.IDLE to Motion(0.1, 1.0, null, false, 0.0),
+        OrbMotion.Mood.IDLE to Motion(0.0, 1.0, null, false, 0.0),
         OrbMotion.Mood.WORKING to Motion(0.2, 1.08, null, true, 0.0),
         OrbMotion.Mood.WAITING to Motion(0.08, 1.0, Breath(5.2, 0.2), false, 0.0),
-        OrbMotion.Mood.QUEUED to Motion(0.06, 0.85, null, false, 0.0),
+        OrbMotion.Mood.QUEUED to Motion(0.0, 0.85, null, false, 0.0),
         OrbMotion.Mood.PAUSED to Motion(0.0, 0.7, null, false, 0.0),
-        OrbMotion.Mood.DONE to Motion(0.035, 1.0, null, false, 0.0),
-        OrbMotion.Mood.FAILED to Motion(0.03, 0.88, null, false, 1.0),
+        OrbMotion.Mood.DONE to Motion(0.0, 1.0, null, false, 0.0),
+        OrbMotion.Mood.FAILED to Motion(0.0, 0.88, null, false, 1.0),
     )
 
     /** A knight's: it moves only while it works (your word, 26 November 2026: still in rows, moving only in its own
@@ -204,10 +213,11 @@ object FieldOrb {
     }
 
     /** How many frames a second a field needs now: as few as look smooth (each frame costs a battery). While it eases to a
-     * mood or its embers drift, 30; breathing, 20; only turning, 15; and none once it has come to rest. */
+     * mood, 30; while its embers drift (slowly: a frame moves one a third of a pixel at 168 dp) or it breathes, 20; only
+     * turning, 15; and none once it has come to rest. */
     fun fps(clock: Clock, motion: Motion): Int {
-        if (!settled(clock, motion) || clock.embers > 0.01) return 30
-        if (clock.depth > 0.002) return 20
+        if (!settled(clock, motion)) return 30
+        if (clock.embers > 0.01 || clock.depth > 0.002) return 20
         return if (clock.speed > 0.0005) 15 else 0
     }
 
@@ -218,21 +228,24 @@ object FieldOrb {
     /** A moment of a field: how far it is turned, how bright, how far its rim has dimmed, and its embers. */
     data class Frame(val turn: Double, val glow: Double, val rim: Double, val embers: List<Ember>)
 
-    /** His embers: how many; each lives 2.8 to 4.4 seconds; where they set out (a share of the way from the middle to the
-     * edge of the orb's square) and how far each drifts; how much they rise; how far round from the rim's burning side
-     * they may set out (degrees either way); and their radius. Always inside his square. */
+    /** His embers, refined (26 November 2026: few, small and slow, so they say he works without pulling the eye): how
+     * many; each lives 3.6 to 5.6 seconds (then another sets out); where they set out (a share of the way from the middle
+     * to the edge of the orb's square) and how far each drifts; how much they rise; how far round from the rim's burning
+     * side they may set out (degrees either way); their radius; and how long each takes to come into sight (a share of
+     * its life). Always inside his square. Drawn soft (a light that falls away from its middle), never a hard dot. */
     object Embers {
-        const val COUNT = 7
-        const val LIFE_FROM = 2.8
-        const val LIFE_TO = 4.4
-        const val FROM_FROM = 0.56
+        const val COUNT = 5
+        const val LIFE_FROM = 3.6
+        const val LIFE_TO = 5.6
+        const val FROM_FROM = 0.58
         const val FROM_TO = 0.64
-        const val DRIFT_FROM = 0.1
-        const val DRIFT_TO = 0.2
-        const val RISE = 0.06
-        const val SPREAD = 70.0
-        const val SIZE_FROM = 0.016
-        const val SIZE_TO = 0.028
+        const val DRIFT_FROM = 0.08
+        const val DRIFT_TO = 0.15
+        const val RISE = 0.05
+        const val SPREAD = 60.0
+        const val SIZE_FROM = 0.012
+        const val SIZE_TO = 0.022
+        const val FADE_IN = 0.25
     }
 
     /** Where the rim burns, in degrees clockwise from the top (Field's rim light, seen from the front: lower right). */
@@ -261,7 +274,7 @@ object FieldOrb {
             val lot = (seed + (round.toLong().toInt() * 0x9e3779b1.toInt()).toLong()) and 0xffffffffL
             val angle = ((RIM_ANGLE + Embers.SPREAD * (2 * OrbMotion.rand(lot, i, 72) - 1)) * PI) / 180
             val reach = Embers.FROM_FROM + (Embers.FROM_TO - Embers.FROM_FROM) * OrbMotion.rand(lot, i, 73) + (Embers.DRIFT_FROM + (Embers.DRIFT_TO - Embers.DRIFT_FROM) * OrbMotion.rand(lot, i, 74)) * u
-            val fadeIn = min(1.0, u / 0.15)
+            val fadeIn = min(1.0, u / Embers.FADE_IN)
             out += Ember(
                 x = reach * sin(angle),
                 y = -reach * cos(angle) - Embers.RISE * u,
@@ -308,15 +321,19 @@ object FieldOrb {
      * How a field's lines are drawn, from point to point along each (dp): a line's width from [LEAST] where it is faintest
      * to [LEAST] + [MORE] where brightest, times its look's weight; under each line on a dark page its light again,
      * [GLOW_WIDTH] times as wide and [GLOW_ALPHA] as strong (close, so no fog: your word, 26 November 2026, "less fog, so
-     * it reads clearer"); a line's width on a light page, [INK] of its width on a dark one; and how much of its points'
-     * light a line shows on a dark page ([LIGHT]), less again where it is smaller than [FULL].
+     * it reads clearer"); a line's width on a light page, [INK] of its width on a dark one at its largest, the same at
+     * every size (a look's weight, its boldness where small, is for light, which spreads): wider, as ink on paper has no
+     * glow to carry it (until 26 November 2026, 0.85 of the dark page's at each size: the knights read as thin scribbles
+     * there), and never narrower than [INK_LEAST] dp, so a 14 dp face keeps its lines (no glow under them there); and how
+     * much of its points' light a line shows on a dark page ([LIGHT]), less again where it is smaller than [FULL].
      */
     object Stroke {
         const val LEAST = 0.42
         const val MORE = 0.5
         const val GLOW_WIDTH = 3.2
         const val GLOW_ALPHA = 0.12
-        const val INK = 0.85
+        const val INK = 1.35
+        const val INK_LEAST = 0.55
         const val LIGHT = 0.22
         const val FULL = 96.0
     }
@@ -324,24 +341,138 @@ object FieldOrb {
     /** How much of its points' light a field [size] wide shows on a dark page. */
     fun strokeLight(size: Double): Double = Stroke.LIGHT * min(1.0, size / Stroke.FULL)
 
-    /** A field's inks on a light page, as sRGB (0 to 255 each): where its key light falls, its key's deep colour darkened
-     * (it would be white on white otherwise), and where its rim burns, its rim's, darkened less. */
-    data class Inks(val key: IntArray, val rim: IntArray)
+    /** A field's inks on a light page, as sRGB (0 to 255 each): where its key light falls, its key's deep colour as ink,
+     * where its rim burns, its rim's, and where the key light strikes hardest, its lit colour as a lighter ink (its
+     * [sheen], which says it is lit) ([Ink]). */
+    data class Inks(val key: IntArray, val rim: IntArray, val sheen: IntArray)
 
-    fun inks(colours: Field.Colours): Inks {
-        fun rgb(hex: String) = intArrayOf(hex.substring(1, 3).toInt(16), hex.substring(3, 5).toInt(16), hex.substring(5, 7).toInt(16))
-        return Inks(rgb(Avatar.blendHex(colours.key[1], "#000000", 0.38)), rgb(Avatar.blendHex(colours.rim, "#000000", 0.22)))
+    fun inks(colours: Field.Colours): Inks =
+        Inks(inkOf(colours.key[1], Ink.KEY), inkOf(colours.rim, Ink.RIM), inkOf(colours.key[0], Ink.SHEEN_CONTRAST))
+
+    /**
+     * A point's ink on a light page, from the key's light on it and the rim's: between its two inks by their shares, and
+     * as opaque as it is lit ([Ink]'s floor and curve), so the field keeps its depth on paper and its far lines don't
+     * vanish.
+     *
+     * The ink itself (26 November 2026: it read as "flat line art" there, the knights' above all, which the icon rounds
+     * had turned down): each colour as a saturated ink rather than darkened towards black (which made gold brown and
+     * every tint muddy):
+     * - [KEY], [RIM]: how far its key's ink and its rim's stand from the page (#fafafa) where fully lit, as a contrast
+     *   ratio (3:1 is a graphic's floor; the key, nearer you, stronger);
+     * - [CHROMA]: how much more saturated each ink is than its colour, as far as sRGB allows at its lightness;
+     * - sheen: where the key light strikes hardest (past [SHEEN_FROM] of its light), its ink goes up to [SHEEN_MOST] of
+     *   the way to its lit colour as an ink [SHEEN_CONTRAST] to 1 from the page: the light page's white-hot, so it reads
+     *   as lit, not drawn;
+     * - [FLOOR], [CURVE]: how opaque a line is by its light, from [FLOOR] where the lights leave it to whole where it is
+     *   fully lit, along [CURVE] (under 1, it gains sooner): the far lines faint but there, so the field keeps its volume.
+     */
+    class Ink(val r: Double, val g: Double, val b: Double, val alpha: Double) {
+        companion object {
+            const val KEY = 3.4
+            const val RIM = 3.1
+            const val SHEEN_CONTRAST = 2.2
+            const val SHEEN_FROM = 0.55
+            const val SHEEN_MOST = 0.7
+            const val CHROMA = 1.2
+            const val FLOOR = 0.22
+            const val CURVE = 0.9
+        }
     }
-
-    /** A point's ink on a light page: between its two inks by the key's and the rim's shares of its light, and as opaque
-     * as it is lit, faint where it is dark (so the field keeps its depth on paper). */
-    class Ink(val r: Double, val g: Double, val b: Double, val alpha: Double)
 
     fun ink(inks: Inks, lit: Double, rim: Double): Ink {
         val total = lit + rim
         val share = if (total > 0) rim / total else 0.0
-        fun mix(at: Int) = inks.key[at] + (inks.rim[at] - inks.key[at]) * share
-        return Ink(mix(0), mix(1), mix(2), min(1.0, 0.1 + 0.95 * max(lit, rim)))
+        // Where the key strikes hardest (past SHEEN_FROM of its light), its sheen: up to SHEEN_MOST of the way to it.
+        val sheen = Ink.SHEEN_MOST * max(0.0, min(1.0, (lit - Ink.SHEEN_FROM) / (1 - Ink.SHEEN_FROM))) * (1 - share)
+        fun mix(at: Int): Double {
+            val ink = inks.key[at] + (inks.rim[at] - inks.key[at]) * share
+            return ink + (inks.sheen[at] - ink) * sheen
+        }
+        val light = min(1.0, max(0.0, max(lit, rim)))
+        return Ink(mix(0), mix(1), mix(2), Ink.FLOOR + (1 - Ink.FLOOR) * light.pow(Ink.CURVE))
+    }
+
+    /** [ink] for each point of each frame on a light page, making nothing: its colour into [out] (0 to 255 a channel) and
+     * its opacity as `out[3]`, read from [Ink]'s curve taken in 1024 steps (within a thousandth of [ink]'s; a stroke is
+     * drawn in sixteen steps of it anyway). */
+    fun inkInto(inks: Inks, lit: Double, rim: Double, out: DoubleArray) {
+        val total = lit + rim
+        val share = if (total > 0) rim / total else 0.0
+        val sheen = Ink.SHEEN_MOST * max(0.0, min(1.0, (lit - Ink.SHEEN_FROM) / (1 - Ink.SHEEN_FROM))) * (1 - share)
+        for (c in 0 until 3) {
+            val ink = inks.key[c] + (inks.rim[c] - inks.key[c]) * share
+            out[c] = ink + (inks.sheen[c] - ink) * sheen
+        }
+        out[3] = INK_ALPHA[jsRound(min(1.0, max(0.0, max(lit, rim))) * 1023).toInt()]
+    }
+
+    private val INK_ALPHA = DoubleArray(1024) { Ink.FLOOR + (1 - Ink.FLOOR) * (it / 1023.0).pow(Ink.CURVE) }
+
+    /** A colour as an ink on the light page: its hue kept, its chroma [Ink.CHROMA] times its own (as far as sRGB goes),
+     * and as light as it can be while it stands [contrast] to 1 from the page (or as it is, where it is darker already). */
+    fun inkOf(hex: String, contrast: Double): IntArray {
+        val lab = oklab(Field.linear(hex))
+        val l0 = lab[0]
+        val c0 = hypot(lab[1], lab[2]) * Ink.CHROMA
+        val h = atan2(lab[2], lab[1])
+        val ch = cos(h)
+        val sh = sin(h)
+        // The most chroma up to c0 that sRGB holds at a lightness (bisected: 16 steps, under a ten-thousandth of the range,
+        // finer than a byte of sRGB can tell).
+        fun held(l: Double): DoubleArray {
+            var lo = 0.0
+            var hi = c0
+            if (inGamut(fromOklab(l, c0 * ch, c0 * sh))) lo = c0
+            else for (i in 0 until 16) {
+                val mid = (lo + hi) / 2
+                if (inGamut(fromOklab(l, mid * ch, mid * sh))) lo = mid else hi = mid
+            }
+            return fromOklab(l, lo * ch, lo * sh)
+        }
+        val most = (PAGE_LUMINANCE + 0.05) / contrast - 0.05
+        var shown = held(l0)
+        if (relativeLuminance(shown) > most) {
+            // As light as it may be: the lightness that stands `contrast` from the page (bisected, 16 steps).
+            var lo = 0.0
+            var hi = l0
+            for (i in 0 until 16) {
+                val mid = (lo + hi) / 2
+                if (relativeLuminance(held(mid)) > most) hi = mid else lo = mid
+            }
+            shown = held(lo)
+        }
+        return intArrayOf(srgb8(shown[0]), srgb8(shown[1]), srgb8(shown[2]))
+    }
+
+    // (Colour in OKLab, Björn Ottosson's: a lightness and two axes of hue, so an ink keeps its hue as it darkens.)
+    /** The light page's own luminance (#fafafa). */
+    private val PAGE_LUMINANCE = ((250 / 255.0 + 0.055) / 1.055).pow(2.4)
+
+    private fun oklab(rgb: DoubleArray): DoubleArray {
+        val r = rgb[0]
+        val g = rgb[1]
+        val b = rgb[2]
+        val l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+        val m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+        val s = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+        return doubleArrayOf(0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s)
+    }
+
+    private fun fromOklab(lightness: Double, a: Double, b: Double): DoubleArray {
+        val l = (lightness + 0.3963377774 * a + 0.2158037573 * b).pow(3)
+        val m = (lightness - 0.1055613458 * a - 0.0638541728 * b).pow(3)
+        val s = (lightness - 0.0894841775 * a - 1.291485548 * b).pow(3)
+        return doubleArrayOf(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)
+    }
+
+    private fun inGamut(rgb: DoubleArray): Boolean = rgb.all { it >= -1e-9 && it <= 1 + 1e-9 }
+
+    private fun relativeLuminance(rgb: DoubleArray): Double = 0.2126 * max(0.0, rgb[0]) + 0.7152 * max(0.0, rgb[1]) + 0.0722 * max(0.0, rgb[2])
+
+    /** Linear light to an sRGB byte. */
+    private fun srgb8(v: Double): Int {
+        val c = max(0.0, min(1.0, v))
+        return jsRound(255 * (if (c <= 0.0031308) c * 12.92 else 1.055 * c.pow(1 / 2.4) - 0.055)).toInt()
     }
 
     /** JavaScript's Math.round: halves go up (towards +∞). */
