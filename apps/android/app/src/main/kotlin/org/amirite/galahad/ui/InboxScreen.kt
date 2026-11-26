@@ -61,7 +61,7 @@ import org.amirite.galahad.core.text
  * at once, signed by this phone's key; nothing here is answered for you. [watch]: a Mac he is using, by its node.
  */
 @Composable
-fun InboxScreen(app: AppModel, watch: (node: String) -> Unit) {
+fun InboxScreen(app: AppModel, watch: (node: String) -> Unit, back: () -> Unit) {
     val inbox by app.inbox.collectAsState()
     val table by app.table.collectAsState()
     var said by remember { mutableStateOf<String?>(null) }
@@ -76,30 +76,15 @@ fun InboxScreen(app: AppModel, watch: (node: String) -> Unit) {
     }
     val asker = askerIn(table)
 
+    Column(Modifier.fillMaxSize()) {
+    PageBar("Inbox", back)
     LazyColumn(Modifier.fillMaxSize()) {
-        item { Text("Inbox", style = MaterialTheme.typography.headlineLargeEmphasized, modifier = Modifier.padding(start = Space.margin, top = Space.s4, bottom = Space.s2)) }
         said?.let { item { Problem(it) } }
         if (inbox.count == 0) {
             item { Text("Nothing needs you.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(Space.margin)) }
         }
         if (inbox.pairings.isNotEmpty()) item { SectionTitle("Devices asking to join") }
-        items(inbox.pairings, key = Inbox::pairingKey) { p ->
-            Panel {
-                Text(p["name"].string ?: "A device", style = MaterialTheme.typography.titleMediumEmphasized)
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    Text("Its code", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(p["sas"].string ?: "", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.headlineSmallEmphasized)
-                }
-                Text("Approve only if this is the code that device shows.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (p["conflict"].bool == true) Text("Two devices asked with one invite: approving either is refused.", color = LocalBrand.current.failed)
-                Decision(
-                    no = "Decline",
-                    yes = "Approve",
-                    onNo = { act { app.answerPairing(p["invite"].string!!, p["device"].string!!, false) } },
-                    onYes = { act { app.answerPairing(p["invite"].string!!, p["device"].string!!, true) } },
-                )
-            }
-        }
+        items(inbox.pairings, key = Inbox::pairingKey) { p -> Pairing(p) { approve -> act { app.answerPairing(p["invite"].string!!, p["device"].string!!, approve) } } }
         if (inbox.questions.isNotEmpty()) item { SectionTitle("Services ask you") }
         items(inbox.questions, key = { "q:${it["id"].string}" }) { q -> Question(q) { accept, content -> act { app.answerQuestion(q["id"].string!!, accept, content) } } }
         if (inbox.screens.isNotEmpty()) item { SectionTitle("His use of a Mac itself") }
@@ -125,10 +110,26 @@ fun InboxScreen(app: AppModel, watch: (node: String) -> Unit) {
         items(inbox.notices, key = { "n:${it["key"].string}" }) { n -> Notice(n) { act { app.dismissNotice(n["key"].string!!) } } }
         item { Spacer(Modifier.height(Space.s10)) }
     }
+    }
+}
+
+/** A device asking to join: its name and the code it shows, to compare before you let it in. */
+@Composable
+internal fun Pairing(p: Json, answer: (Boolean) -> Unit) {
+    Panel {
+        Text(p["name"].string ?: "A device", style = MaterialTheme.typography.titleMediumEmphasized)
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+            Text("Its code", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(p["sas"].string ?: "", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.headlineSmallEmphasized)
+        }
+        Text("Approve only if this is the code that device shows.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (p["conflict"].bool == true) Text("Two devices asked with one invite: approving either is refused.", color = LocalBrand.current.failed)
+        Decision(no = "Decline", yes = "Approve", onNo = { answer(false) }, onYes = { answer(true) })
+    }
 }
 
 /** Who asked, in words: a knight by its name, a loop, or Galahad (his own calls, his tools' and his nodes'). */
-private fun askerIn(table: Table): (String) -> String {
+internal fun askerIn(table: Table): (String) -> String {
     val knights = table.snapshot?.teammates ?: emptyList()
     return { by ->
         Roster.knightOfCaller(by)?.let { id -> knights.firstOrNull { it.id == id }?.name ?: id }
@@ -136,54 +137,9 @@ private fun askerIn(table: Table): (String) -> String {
     }
 }
 
-/**
- * What Galahad asks you, answered where you talk to him (the PWA's views/galahad-asks.ts, the iPhone's GalahadAsks): the
- * approvals the oath leaves to you (his and the knights', each saying who asked), the keys he asked for, and what
- * services ask you in the middle of his calls, each as the Inbox has it. At most four; the rest are counted, a press
- * from the Inbox, which still holds everything else (devices asking to join, facts, notices).
- */
-@Composable
-fun GalahadAsks(app: AppModel, showInbox: () -> Unit) {
-    val inbox by app.inbox.collectAsState()
-    val table by app.table.collectAsState()
-    var said by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    fun act(block: suspend () -> Unit) = scope.launch {
-        try {
-            block()
-            said = null
-        } catch (e: NodeError) {
-            said = e.message
-        }
-    }
-    val asker = askerIn(table)
-    val now = System.currentTimeMillis()
-    val asks: List<Pair<String, @Composable () -> Unit>> = buildList {
-        for (a in inbox.actions) add("a:${a["id"].string}" to @Composable { Approval(a, asker(a["by"].string ?: "")) { approve -> act { app.decide(a["id"].string!!, approve) } } })
-        for (k in inbox.keys) add("k:${k["name"].string}" to @Composable {
-            KeyAsked(k, asker(k["requestedBy"].string ?: ""), seal = { value -> act { app.sealKey(k["name"].string!!, value, k["provider"].string) } }, dismiss = { act { app.dismissKey(k["name"].string!!) } })
-        })
-        for (q in inbox.questions.filter { (it["expires"].long ?: Long.MAX_VALUE) > now }) add("q:${q["id"].string}" to @Composable {
-            Question(q) { accept, content -> act { app.answerQuestion(q["id"].string!!, accept, content) } }
-        })
-    }
-    if (asks.isEmpty()) return
-    Column(Modifier.fillMaxWidth().padding(vertical = Space.s2)) {
-        SectionTitle("Galahad asks you")
-        said?.let { Problem(it) }
-        for ((id, ask) in asks.take(SHOWN_ASKS)) key(id) { ask() }
-        if (asks.size > SHOWN_ASKS) {
-            TextButton(onClick = showInbox, modifier = Modifier.padding(horizontal = Space.s2)) { Text("${asks.size - SHOWN_ASKS} more in the Inbox") }
-        }
-    }
-}
-
-/** At most this many asks under his orb; the rest are counted, a press from the Inbox. */
-private const val SHOWN_ASKS = 4
-
 /** An approval as you read it before you answer: who asks, what it would do and to what, why, and the request itself. */
 @Composable
-private fun Approval(a: Json, who: String, answer: (Boolean) -> Unit) {
+internal fun Approval(a: Json, who: String, answer: (Boolean) -> Unit) {
     val brand = LocalBrand.current
     var shown by remember { mutableStateOf(false) }
     val kind = a["class"].string
@@ -206,7 +162,7 @@ private fun Approval(a: Json, who: String, answer: (Boolean) -> Unit) {
 
 /** A service's question, asked mid-call (MCP elicitation): its fields as a form, checked again on the node. */
 @Composable
-private fun Question(q: Json, answer: (Boolean, Map<String, Any?>) -> Unit) {
+internal fun Question(q: Json, answer: (Boolean, Map<String, Any?>) -> Unit) {
     val values = remember(q["id"].string) { mutableStateMapOf<String, Any?>() }
     Panel {
         Text("${q["label"].string ?: q["connector"].string} asks", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -268,7 +224,7 @@ private fun Question(q: Json, answer: (Boolean, Map<String, Any?>) -> Unit) {
 
 /** A key asked for: it goes into the vault, sealed, and is never shown again (here or anywhere). */
 @Composable
-private fun KeyAsked(k: Json, who: String, seal: (String) -> Unit, dismiss: () -> Unit) {
+internal fun KeyAsked(k: Json, who: String, seal: (String) -> Unit, dismiss: () -> Unit) {
     var adding by remember { mutableStateOf(false) }
     Panel {
         Text("$who asks for a key", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -306,7 +262,7 @@ private fun KeyAsked(k: Json, who: String, seal: (String) -> Unit, dismiss: () -
  * Letting him asks once more, saying what it means: that account holds the node's keys.
  */
 @Composable
-private fun MacSession(s: Json, answer: (Boolean) -> Unit, end: () -> Unit, watch: () -> Unit) {
+internal fun MacSession(s: Json, answer: (Boolean) -> Unit, end: () -> Unit, watch: () -> Unit) {
     var confirming by remember { mutableStateOf(false) }
     val name = s["nodeName"].string ?: "a Mac"
     val minutes = s["minutes"].long ?: 0
@@ -341,7 +297,7 @@ private fun MacSession(s: Json, answer: (Boolean) -> Unit, end: () -> Unit, watc
 
 /** A fact he noticed about you: kept as he said it or in your words (then it goes with every answer of his), or dropped. */
 @Composable
-private fun Fact(f: Json, keep: (String?) -> Unit, drop: () -> Unit) {
+internal fun Fact(f: Json, keep: (String?) -> Unit, drop: () -> Unit) {
     var rewording by remember { mutableStateOf(false) }
     Panel {
         Text(f["text"].string ?: "", style = MaterialTheme.typography.bodyLarge)
@@ -365,7 +321,7 @@ private fun Fact(f: Json, keep: (String?) -> Unit, drop: () -> Unit) {
 
 /** What the heartbeat, a loop or a rule of yours noticed: its words (a command it names in monospace), from where, when. */
 @Composable
-private fun Notice(n: Json, dismiss: () -> Unit) {
+internal fun Notice(n: Json, dismiss: () -> Unit) {
     val brand = LocalBrand.current
     val tone = when (n["severity"].string) { "alert" -> brand.failed; "warn" -> brand.needs; else -> MaterialTheme.colorScheme.onSurfaceVariant }
     Panel {
@@ -392,7 +348,7 @@ private fun clock(ms: Long?): String {
 }
 
 /** A while, as it's said: minutes under an hour, hours under two days, else days. */
-private fun within(ms: Long): String {
+internal fun within(ms: Long): String {
     val minutes = ms / 60_000
     val hours = (ms + 1_800_000) / 3_600_000
     return when {

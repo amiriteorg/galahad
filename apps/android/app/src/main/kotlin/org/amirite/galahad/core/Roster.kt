@@ -20,12 +20,14 @@ data class Teammate(
     val avatar: Json?,
     /** Its VM, once it has one (null: none yet). */
     val workspace: Json? = null,
+    /** The repository it works in (an https address), which names its tasks' project (Work); null: other work. */
+    val repository: String? = null,
 ) {
     companion object {
         fun of(j: Json) = Teammate(
             j["id"].string ?: "", j["name"].string ?: "", j["instructions"].string ?: "", j["role"].string ?: "",
             j["enabled"].bool ?: true, j["dailyTurns"].int ?: 0, j["turnsToday"].int ?: 0, j["createdBy"].string, j["avatar"],
-            j["workspace"]?.takeIf { it != Json.Null },
+            j["workspace"]?.takeIf { it != Json.Null }, j["repository"].string,
         )
     }
 }

@@ -23,12 +23,14 @@ class KeptTableTest {
         """
         {"teammates":[{"id":"ada","name":"Ada","role":"engineer","instructions":"Never push to main; my bank PIN is not yours to know.","memory":"Working notes: the staging password rotates on Fridays.",
                        "keys":[{"name":"stripe-live"}],"acp":"goose acp","enabled":true,"dailyTurns":40,"turnsToday":3,"createdBy":"you","avatar":{"look":"gareth"},
-                       "workspace":{"id":"0123456789","status":"running"}},
+                       "workspace":{"id":"0123456789","status":"running"},"repository":"https://github.com/amiriteorg/galahad"},
                       {"id":"bors","name":"Bors","role":"engineer","instructions":"","memory":"","enabled":false}],
          "rooms":[{"id":"r1","name":"Release room","direct":false,"members":["ada","bors"],"updatedAt":1763700000000,"paused":false}],
          "tasks":[{"id":"t1","title":"Sync survives a dropped connection","goal":"The whole brief, with the customer's address in it","assignee":"ada","status":"running","verified":false,
                    "updatedAt":1763700000000,"progress":"Running · bun test","changes":{"files":3,"patch":"diff --git a/secret.env"},"proposedBy":"gawain","room":"r1","dependsOn":["t0"]},
-                  {"id":"t2","title":"The importer reads ISO dates","assignee":"bors","status":"failed","verified":false,"updatedAt":1763690000000,"error":"gave up"}],
+                  {"id":"t2","title":"The importer reads ISO dates","assignee":"bors","status":"failed","verified":false,"updatedAt":1763690000000,"error":"gave up"},
+                  {"id":"t3","title":"Release notes","assignee":"ada","status":"done","verified":true,"createdAt":1763600000000,"updatedAt":1763610000000,
+                   "shipped":{"url":"https://forge.example.test/private-org/pull/7","pr":7},"gates":["bun test --secret-flag"],"output":"what it said"}],
          "deliveries":[{"id":"d1","teammate":"ada","status":"queued","updatedAt":1763700000000,"room":"r1","text":"a message's words"}],"removed":[{"id":"gone","name":"Gone"}],
          "seen":{"ada":1763690000000},"primary":"ada",
          "outcomes":[{"id":"o1","goal":"Something the Roundtable doesn't draw"}]}
@@ -55,11 +57,20 @@ class KeptTableTest {
         // A knight's instructions and working notes, the keys it may use, its agent's command, a task's brief and patch,
         // a message's words, what the team holds beyond the roster, a chat's words: none of it is kept.
         for (absent in listOf("instructions", "bank PIN", "memory", "staging password", "stripe-live", "goose acp", "the customer's address", "secret.env",
-            "a message's words", "outcomes", "Something the Roundtable", "words of a chat", "a temporary chat's words", "his answer")) assertFalse(absent, text.contains(absent))
+            "a message's words", "outcomes", "Something the Roundtable", "words of a chat", "a temporary chat's words", "his answer",
+            // (A pull request's number is kept for its row, never where it is; a task's gates and what it said are its thread's.)
+            "private-org", "--secret-flag", "what it said")) assertFalse(absent, text.contains(absent))
         val kept = KeptTable.read(Json.parse(text), node)!!
         assertEquals(listOf("teammates", "rooms", "tasks", "deliveries", "removed", "seen", "primary"), (kept.team as Json.Obj).fields.keys.toList())
         assertEquals(Snapshot.of(team), Snapshot.of(kept.team).copy(teammates = Snapshot.of(kept.team).teammates.map { it.copy(instructions = Snapshot.of(team).teammates.first { t -> t.id == it.id }.instructions) }))
         assertEquals(listOf("Ada", "Bors"), kept.team["teammates"].list.map { it["name"].string })
+        // What the work's rows draw is kept: the project a knight works in, when a task began, its pull request's number.
+        val rows = { team: org.amirite.galahad.core.Json -> org.amirite.galahad.core.Work.byAttention(
+            org.amirite.galahad.core.Work.attended(Snapshot.of(team).teammates, org.amirite.galahad.core.TeamTask.all(team), Snapshot.of(team).seen, emptyList(), asks, 1_763_700_200_000),
+        ) }
+        assertEquals(rows(team), rows(kept.team))
+        assertEquals("PR #7", rows(kept.team).first { it.id == "t3" }.detail)
+        assertEquals("galahad", rows(kept.team).first { it.id == "t3" }.project.name)
     }
 
     @Test fun aListThatIsntOneIsLeftOutNeverKeptWhole() {

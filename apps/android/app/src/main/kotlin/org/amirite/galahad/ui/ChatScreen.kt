@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -61,7 +62,7 @@ import org.amirite.galahad.core.string
  * A fresh chat opens with what happened while you were away, from the node's own record (no model writes it).
  */
 @Composable
-fun ChatScreen(app: AppModel, back: () -> Unit, openKnight: (String) -> Unit = {}) {
+fun ChatScreen(app: AppModel, back: () -> Unit, openTask: (String) -> Unit = {}) {
     val chat = app.chat
     val bubbles by chat.bubbles.collectAsState()
     val live by chat.live.collectAsState()
@@ -70,6 +71,8 @@ fun ChatScreen(app: AppModel, back: () -> Unit, openKnight: (String) -> Unit = {
     val table by app.table.collectAsState()
     var listing by remember { mutableStateOf(false) }
     var away by remember { mutableStateOf<List<Json>>(emptyList()) }
+    // A suggestion pressed: handed to the message box (counted, so the same one pressed again is handed again).
+    var offered by remember { mutableStateOf<Pair<Int, String>?>(null) }
     val list = rememberLazyListState()
 
     LaunchedEffect(Unit) {
@@ -86,7 +89,7 @@ fun ChatScreen(app: AppModel, back: () -> Unit, openKnight: (String) -> Unit = {
     // Back from your chats returns to this chat, not past it.
     BackHandler(enabled = listing) { listing = false }
     if (listing) {
-        Chats(app, close = { listing = false })
+        Chats(app, close = { listing = false }, opened = { listing = false })
         return
     }
     Column(Modifier.fillMaxSize().imePadding()) {
@@ -97,9 +100,23 @@ fun ChatScreen(app: AppModel, back: () -> Unit, openKnight: (String) -> Unit = {
         LazyColumn(Modifier.weight(1f), state = list) {
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s2), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
-                    // His orb, at work while he answers here, before the node has said so.
-                    Face("galahad", null, if (live) KnightState.WORKING else table.galahad.state, size = 48.dp)
-                    Text(table.galahad.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    // His orb, the one in focus here: moving while he answers (before the node has said so), else still.
+                    GalahadOrb(40.dp, if (live) org.amirite.galahad.core.OrbMotion.Mood.WORKING else null, key = "galahad:chat")
+                    Text(table.galahad.text, style = Type.meta, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                }
+            }
+            // A new conversation: what you might ask him first (the PWA's welcome's), a press puts it in the message box.
+            if (bubbles.isEmpty() && !live) {
+                item {
+                    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(horizontal = Space.margin, vertical = Space.s2), horizontalArrangement = Arrangement.spacedBy(Space.s2), verticalArrangement = Arrangement.spacedBy(Space.s2)) {
+                        for ((label, words) in SUGGESTIONS) {
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = { offered = (offered?.first ?: 0) + 1 to words },
+                                border = androidx.compose.foundation.BorderStroke(1.dp, LocalBrand.current.line),
+                                modifier = Modifier.heightIn(min = Space.touch),
+                            ) { Text(label) }
+                        }
+                    }
                 }
             }
             if (bubbles.isEmpty() && away.isNotEmpty()) {
@@ -122,8 +139,8 @@ fun ChatScreen(app: AppModel, back: () -> Unit, openKnight: (String) -> Unit = {
             problem?.let { p -> item { Problem(p) } }
         }
         // What is under way in this chat: his knights' tasks given here (Stop on each), his looks that wait (Cancel).
-        UnderwayBar(app, live, openKnight)
-        ChatComposer(app, live)
+        UnderwayBar(app, live, openTask)
+        ChatComposer(app, live, offered = offered)
     }
 }
 
@@ -135,7 +152,7 @@ fun ChatScreen(app: AppModel, back: () -> Unit, openKnight: (String) -> Unit = {
  * goes from here as he takes it), else every half minute.
  */
 @Composable
-private fun UnderwayBar(app: AppModel, live: Boolean, openKnight: (String) -> Unit) {
+private fun UnderwayBar(app: AppModel, live: Boolean, openTask: (String) -> Unit) {
     val conversation by app.chat.conversation.collectAsState()
     val table by app.table.collectAsState()
     var shown by remember { mutableStateOf(Underway()) }
@@ -153,8 +170,8 @@ private fun UnderwayBar(app: AppModel, live: Boolean, openKnight: (String) -> Un
         for (task in shown.tasks) {
             val row = table.rows.firstOrNull { it.kind == "knight" && it.id == task.assignee }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                Row(Modifier.weight(1f).clickable { openKnight(task.assignee) }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
-                    Face(task.assignee, row?.avatar, KnightState.WORKING, size = 28.dp, description = task.name)
+                Row(Modifier.weight(1f).clickable { openTask(task.id) }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s2)) {
+                    KnightOrb(task.assignee, row?.avatar, 28.dp, description = task.name)
                     Column(Modifier.weight(1f)) {
                         Text("${task.name} · ${UnderwayWords.state(task)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(task.title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -335,9 +352,17 @@ private fun Message(b: Bubble, choose: ((String) -> Unit)?) {
     }
 }
 
-/** Your kept chats, the latest first: one opens where it was, and his answer still being written goes on there. */
+/** What you might ask him first (the PWA's welcome's, the iPhone's): a press puts it in the message box, to send or change. */
+private val SUGGESTIONS = listOf(
+    "Catch me up" to "What has my fleet been doing today, and does anything need me?",
+    "Plan" to "Plan this week's work on Galahad as a short, ordered list.",
+    "Recall" to "What do we remember about how the fleet is deployed?",
+    "Place" to "Which of my machines should run a long build, and why?",
+)
+
+/** Your kept chats, the latest first: one opens where it was ([opened]), and his answer still being written goes on there. */
 @Composable
-private fun Chats(app: AppModel, close: () -> Unit) {
+internal fun Chats(app: AppModel, close: () -> Unit, opened: () -> Unit) {
     val chats by app.chat.chats.collectAsState()
     LaunchedEffect(Unit) { app.chat.loadChats() }
     val brand = LocalBrand.current
@@ -347,7 +372,7 @@ private fun Chats(app: AppModel, close: () -> Unit) {
             items(chats, key = { it["id"].string ?: "" }) { c ->
                 val state = c["state"].string
                 Row(
-                    Modifier.fillMaxWidth().clickable { c["id"].string?.let(app.chat::open); close() }.padding(horizontal = Space.margin, vertical = Space.s3),
+                    Modifier.fillMaxWidth().clickable { c["id"].string?.let(app.chat::open); opened() }.padding(horizontal = Space.margin, vertical = Space.s3),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.s2),
                 ) {
