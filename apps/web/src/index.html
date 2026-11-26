@@ -733,8 +733,21 @@
       @keyframes arrive-halo { 0% { transform: scale(1); opacity: 0; } 35% { transform: scale(2.4); opacity: 0.34; } 100% { transform: scale(3); opacity: 0; } }
       .count[data-arrived] { animation: arrive-glow var(--d-breath) var(--ease-in-out) 1; }
       @keyframes arrive-glow { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--needs) 0%, transparent); } 35% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--needs) 30%, transparent); } }
-      :root[data-motion="reduce"] .dot[data-arrived]::after, :root[data-motion="reduce"] .count[data-arrived] { animation: none; }
-      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .dot[data-arrived]::after, :root:not([data-motion="full"]) .count[data-arrived] { animation: none; } }
+      /* A card that holds what needs you (Home's Needs-you cards, an approval in a thread): an alert's surface, its tone
+         (data-tone, "needs" for amber) in its edge and a faint light at its head. arrive() breathes its edge once. */
+      .alert-card {
+        border-radius: var(--r-xl); color: var(--text);
+        background: radial-gradient(240px 90px at 24px 0, var(--tone-soft, transparent), transparent), var(--alert-bg);
+        border: 1px solid color-mix(in oklab, var(--tone, var(--text-3)) 26%, var(--alert-line));
+        box-shadow: inset 0 1px 0 var(--alert-lit), var(--shadow-1);
+      }
+      .alert-card[data-arrived] { animation: arrive-ring var(--d-breath) var(--ease-in-out) 1; }
+      @keyframes arrive-ring {
+        0%, 100% { box-shadow: inset 0 1px 0 var(--alert-lit), var(--shadow-1), 0 0 0 0 color-mix(in srgb, var(--tone, var(--needs)) 0%, transparent); }
+        35% { box-shadow: inset 0 1px 0 var(--alert-lit), var(--shadow-1), 0 0 0 4px color-mix(in srgb, var(--tone, var(--needs)) 22%, transparent); }
+      }
+      :root[data-motion="reduce"] .dot[data-arrived]::after, :root[data-motion="reduce"] .count[data-arrived], :root[data-motion="reduce"] .alert-card[data-arrived] { animation: none; }
+      @media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .dot[data-arrived]::after, :root:not([data-motion="full"]) .count[data-arrived], :root:not([data-motion="full"]) .alert-card[data-arrived] { animation: none; } }
       .chip {
         display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 var(--sp-2); border-radius: var(--r-sm);
         background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-12); font-weight: 500; white-space: nowrap;

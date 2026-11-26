@@ -69,7 +69,7 @@ export function setCount(el: HTMLElement, n: number): void {
 const BREATH_MS = 2600;
 
 /**
- * Something new that needs you, said by one slow breath of its light (a dot's, a count's): once, never a loop, and not
+ * Something new that needs you, said by one slow breath of its light (a dot's, a count's, an .alert-card's edge): once, never a loop, and not
  * at all where motion is reduced. Called again while it breathes, the one breath goes on.
  */
 export function arrive(el: HTMLElement): void {

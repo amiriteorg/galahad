@@ -111,6 +111,8 @@ const more = () => {
   setCount(waiting, Number(waiting.dataset.count) + 1);
   arrive(waiting);
   arrive(needsDot);
+  const card = document.querySelector<HTMLElement>(".gallery-alert-card");
+  if (card) arrive(card);
 };
 const fewer = () => setCount(waiting, Math.max(0, Number(waiting.dataset.count) - 1));
 // The real banner, hanging at the top of this page as it hangs under the app's top bar.
@@ -330,6 +332,16 @@ const page = h(
       state("counts: ink, quiet, and amber for what waits on you", h("div", { class: "row wrap" }, count(1), count(12), count(128), count(3, true), count(2, false, "needs"))),
       state("needs you", h("div", { class: "row wrap" }, h("span", { class: "row tight small" }, dot("needs"), "Needs you"), h("span", { class: "row tight small" }, dot("work", { live: true }), "Working"))),
       state("changing: the figure rolls, and something new breathes once", h("div", { class: "row wrap" }, liveNeeds, button("Something new", { size: "sm", onClick: more }), button("One answered", { size: "sm", variant: "ghost", onClick: fewer }))),
+      state(
+        "a card that holds what needs you: .alert-card, data-tone \"needs\"",
+        h(
+          "article",
+          { class: "alert-card gallery-alert-card", "data-tone": "needs" },
+          h("div", { class: "row tight tiny subtle" }, knightFace({ id: "ada", size: 20 }), "Ada · Fix the flaky link test"),
+          h("p", { class: "small" }, "Outward · ", h("span", { class: "mono" }, "github.pr.create"), " wckdboy/galahad"),
+          h("div", { class: "row wrap" }, button("Allow once", { size: "sm", variant: "primary" }), button("Deny", { size: "sm" })),
+        ),
+      ),
     ),
 
     shown(
@@ -367,6 +379,7 @@ const css = h(
    .gallery-sheet-frame { position: relative; padding: var(--sp-4) 0; }
    dialog.sheet.gallery-sheet { position: relative; inset: auto; margin: 0 auto; opacity: 1; transform: none; max-height: none; }
    .gallery-state dialog.sheet.gallery-sheet { max-width: 100%; }
+   .gallery-alert-card { display: flex; flex-direction: column; gap: var(--sp-2); padding: 12px 14px; }
    .gallery-banner { display: flex; justify-content: center; padding: var(--sp-1) 0 var(--sp-3); }
    .gallery-banner .banner-pill { margin-top: 0; }
    .gallery-toasts { display: flex; flex-direction: column; gap: var(--sp-2); max-width: 380px; }
