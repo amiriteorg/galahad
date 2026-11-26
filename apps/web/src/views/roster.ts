@@ -3,7 +3,7 @@ import type { Ctx } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { GALAHAD, placed, seating } from "../lib/arrange.ts";
 import { galahadState, type KnightState } from "../lib/knight-state.ts";
-import { galahadNow, type Now } from "../lib/now.ts";
+import { needsFirst, type Now } from "../lib/now.ts";
 import { galahadNeeds, rosterRows, type RosterRow, type Said } from "../lib/roster.ts";
 import { teamHash } from "../lib/team.ts";
 import { seat } from "../ui/avatar.ts";
@@ -62,7 +62,7 @@ export function tableOf(ctx: Ctx): Table {
   const asks = ctx.live.actions.value.filter((action) => isWaiting(action, now));
   const rows = snapshot ? rosterRows({ snapshot, said, asks, now }) : [];
   const knights = rows.filter((row) => row.kind === "knight");
-  const galahad = galahadNow({ ...galahadWork(), needs: ctx.live.inboxLoaded.value ? galahadNeeds(ctx.live.inboxCount.value, asks, snapshot?.teammates.map((person) => person.id) ?? []) : null });
+  const galahad = needsFirst({ ...galahadWork(), needs: ctx.live.inboxLoaded.value ? galahadNeeds(ctx.live.inboxCount.value, asks, snapshot?.teammates.map((person) => person.id) ?? []) : null });
   const primary = snapshot ? primaryOf(snapshot) : GALAHAD;
   const seats = seating(knights.map((row) => row.id), primary).map((id): Seat => {
     if (id === GALAHAD) return { id, name: "Galahad", line: galahad.text, state: galahadState(galahad), needs: galahad.tone === "warn", href: "#/chat", room: null, row: null, now: galahad };

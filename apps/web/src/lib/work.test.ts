@@ -222,10 +222,10 @@ describe("the work by attention", () => {
     expect([seenOnOpen(running.id, theirs), seenOnOpen("task-nope00000000", theirs), seenOnOpen(newer.id, snapshot([ada], [newer]))]).toEqual([null, null, null]);
   });
 
-  test("Home's line: how many are at work and what needs you, else his own", () => {
+  test("Home's line: what needs you first (its colour and its first words agree), then how many are at work, else his own", () => {
     const work = attended({ snapshot: snapshot([ada], [task("ada", "running", 1), task("ada", "running", 2), task("ada", "queued", 3)], {}), projects: [], now: NOW });
-    expect(atAGlance(work, 2, "Idle")).toEqual({ text: "2 at work · 2 need you", needs: true });
-    expect(atAGlance(work, 1, "Idle")).toEqual({ text: "2 at work · 1 needs you", needs: true });
+    expect(atAGlance(work, 2, "Idle")).toEqual({ text: "2 need you · 2 at work", needs: true });
+    expect(atAGlance(work, 1, "Idle")).toEqual({ text: "1 needs you · 2 at work", needs: true });
     expect(atAGlance(work, 0, "Idle")).toEqual({ text: "2 at work", needs: false });
     expect(atAGlance({ working: [] }, 0, "Idle · nothing needs you")).toEqual({ text: "Idle · nothing needs you", needs: false });
   });

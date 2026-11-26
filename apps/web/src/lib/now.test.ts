@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { galahadNow, needsYou } from "./now.ts";
+import { galahadNow, needsFirst, needsYou } from "./now.ts";
 
 const quest = (goal: string) => ({ goal });
 const turn = (title: string | null = null) => ({ title });
@@ -27,6 +27,13 @@ describe("what Galahad is doing now, in a line", () => {
     expect(galahadNow({ turns: [turn()], quests: [], needs: 0 }).text).toBe("Working in a temporary chat");
     expect(galahadNow({ turns: [], quests: [quest("Make sync resume after a dropped connection\nand prove it")], needs: 0 }).text).toBe("Working on: Make sync resume after a dropped connection");
     expect(galahadNow({ turns: [turn("Release plan")], quests: [quest("a"), quest("b")], needs: 0 })).toEqual({ text: "Working on 3 things", expression: "working", tone: "accent" });
+  });
+
+  test("as the PWA shows it, what needs you comes first when there is any: the line is amber, and its first words agree", () => {
+    expect(needsFirst({ turns: [], quests: [quest("Make sync resume after a dropped connection")], needs: 2 })).toEqual({ text: "2 things need you · Working on: Make sync resume after a dropped connection", expression: "working", tone: "warn" });
+    expect(needsFirst({ step: "Answering", turns: [], quests: [], needs: 1 })).toEqual({ text: "1 thing needs you · Answering", expression: "thinking", tone: "warn" });
+    // Otherwise as galahadNow says it, word for word.
+    for (const input of [{ turns: [], quests: [], needs: 3 }, { turns: [turn("Release plan")], quests: [], needs: 0 }, { turns: [], quests: [], needs: null }, { turns: [], quests: [], needs: 0, unread: [{ title: "Release plan" }] }]) expect(needsFirst(input)).toEqual(galahadNow(input));
   });
 
   test("what needs you is said after the work (a narrow screen cuts the line's end; the Inbox's badge still counts it), and marks the line", () => {

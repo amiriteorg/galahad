@@ -1,7 +1,7 @@
 import type { Ctx, Route } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { galahadState } from "../lib/knight-state.ts";
-import { galahadNow, type Now } from "../lib/now.ts";
+import { needsFirst, type Now } from "../lib/now.ts";
 import { orbMoodOfState } from "../lib/orb-motion.ts";
 import { galahadNeeds } from "../lib/roster.ts";
 import { type Attended, failedIn, inboxBeyond, type WorkRow } from "../lib/work.ts";
@@ -39,7 +39,7 @@ const galahadSources = (ctx: Ctx): Signal<unknown>[] => [nodeTurns, questsInHand
 export function galahadLine(ctx: Ctx): Now {
   const waiting = ctx.live.actions.value.filter((action) => isWaiting(action));
   const needs = ctx.live.inboxLoaded.value ? galahadNeeds(ctx.live.inboxCount.value, waiting, ctx.live.team.value?.teammates.map((person) => person.id) ?? []) : null;
-  return galahadNow({ ...galahadWork(), needs });
+  return needsFirst({ ...galahadWork(), needs });
 }
 
 export function sidebarNav(ctx: Ctx, shell: { toggle(): void }): Sidebar {

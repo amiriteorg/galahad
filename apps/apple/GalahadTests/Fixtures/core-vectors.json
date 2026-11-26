@@ -29660,7 +29660,7 @@
         "count": 1,
         "his": "At rest.",
         "working": true,
-        "text": "4 at work · 1 needs you",
+        "text": "1 needs you · 4 at work",
         "needs": true
       },
       {
@@ -29674,7 +29674,7 @@
         "count": 3,
         "his": "At rest.",
         "working": true,
-        "text": "4 at work · 3 need you",
+        "text": "3 need you · 4 at work",
         "needs": true
       },
       {

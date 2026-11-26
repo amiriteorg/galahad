@@ -5,7 +5,7 @@ import { type Api, ApiError, isAbort } from "../api.ts";
 import { errorMessage, type Live, type View } from "../context.ts";
 import { isWaiting } from "../live.ts";
 import { type ChatAction, chatActions, CHATS_MENU, filterConversations, groupConversations, mostRecent } from "../lib/chats.ts";
-import { galahadNow, type NowInput } from "../lib/now.ts";
+import { needsFirst, type NowInput } from "../lib/now.ts";
 import { questInHand } from "../lib/quests.ts";
 import { galahadNeeds } from "../lib/roster.ts";
 import { plural } from "../lib/text.ts";
@@ -749,7 +749,7 @@ export const chatView: View = (root, ctx, { scope, opts }) => {
   function renderNow(): void {
     const waiting = ctx.live.actions.value.filter((action) => isWaiting(action));
     const needs = ctx.live.inboxLoaded.value ? galahadNeeds(ctx.live.inboxCount.value, waiting, ctx.live.team.value?.teammates.map((person) => person.id) ?? []) : null;
-    const now = galahadNow({ ...galahadWork(), needs });
+    const now = needsFirst({ ...galahadWork(), needs });
     if (nowLine.textContent !== now.text) {
       nowLine.textContent = now.text;
       nowLine.dataset.tone = now.tone;

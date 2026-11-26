@@ -384,10 +384,11 @@ export function seenOnOpen(id: string, snapshot: Pick<TeamSnapshot, "tasks" | "s
   return newest?.id === task.id ? { knight: task.assignee } : null;
 }
 
-/** Home's line under Galahad's name (the phone's header): how many are at work and how much needs you, else his own line. */
+/** Home's line under Galahad's name (the phone's header): how much needs you, first (the line is amber then, and its first
+ * words agree with its colour), and how many are at work; else his own line. */
 export function atAGlance(work: Pick<Attended, "working">, needs: number, his: string): { text: string; needs: boolean } {
   const atWork = work.working.filter((row) => row.state === "working").length;
-  const parts = [atWork ? `${atWork} at work` : null, needs ? `${needs} need${needs === 1 ? "s" : ""} you` : null].filter((part): part is string => part !== null);
+  const parts = [needs ? `${needs} need${needs === 1 ? "s" : ""} you` : null, atWork ? `${atWork} at work` : null].filter((part): part is string => part !== null);
   return parts.length ? { text: parts.join(" · "), needs: needs > 0 } : { text: his, needs: false };
 }
 
