@@ -20243,10 +20243,6 @@
       },
       "ink": 1.35,
       "inkLeast": 0.55,
-      "inkGlow": {
-        "width": 2.4,
-        "alpha": 0.06
-      },
       "light": 0.22,
       "full": 96,
       "lights": [

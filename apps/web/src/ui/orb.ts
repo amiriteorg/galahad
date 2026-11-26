@@ -290,8 +290,9 @@ function drawField(g: CanvasRenderingContext2D, px: number, dpr: number, size: n
   g.lineCap = "round";
   g.lineJoin = "round";
   g.globalCompositeOperation = onPaper ? "source-over" : "lighter";
-  const halo = onPaper ? FIELD_STROKE.inkGlow : FIELD_STROKE.glow;
-  for (const pass of ["glow", "line"] as const) {
+  const halo = FIELD_STROKE.glow;
+  // (On a light page the lines are ink, with no glow under them: one pass.)
+  for (const pass of onPaper ? (["line"] as const) : (["glow", "line"] as const)) {
     // His lance, under his lines (on a light page they cross over it; on a dark one light adds alike either way).
     if (pass === "line" && spec.lance) lance(g, px, dpr, size, look.zoom, colours, glow, inks);
     for (const [kind, held] of paths) {

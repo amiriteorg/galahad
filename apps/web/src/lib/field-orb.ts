@@ -321,13 +321,12 @@ export function fieldTone(r: number, g: number, b: number, exposure = FIELD_EXPO
  * - ink: a line's width on a light page, as a share of its width on a dark one at its largest, the same at every size (a
  *   look's weight, its boldness where small, is for light, which spreads): wider, as ink on paper has no glow to carry it
  *   (until 26 November 2026, 0.85 of the dark page's at each size: the knights read as thin scribbles there).
- * - inkLeast: no line on a light page is narrower than this (CSS pixels), so a 14 px face keeps its lines.
- * - inkGlow: under each line on a light page, its ink again as `width` times as wide and `alpha` as strong: a close tint
- *   of its colour, so it reads as lit rather than drawn (no fog: as close as the dark page's glow).
+ * - inkLeast: no line on a light page is narrower than this (CSS pixels), so a 14 px face keeps its lines. (No glow under
+ *   them there: a tint of 6 % showed next to nothing and cost a second pass of every stroke, each frame.)
  * - light: how much of its points' light a line shows on a dark page (a line is lit along its length where the icon's
  *   points are dots); less again where it is smaller than `full`, where its lines lie closer and their light adds up.
  */
-export const FIELD_STROKE = { least: 0.42, more: 0.5, glow: { width: 3.2, alpha: 0.12 }, ink: 1.35, inkLeast: 0.55, inkGlow: { width: 2.4, alpha: 0.06 }, light: 0.22, full: 96 } as const;
+export const FIELD_STROKE = { least: 0.42, more: 0.5, glow: { width: 3.2, alpha: 0.12 }, ink: 1.35, inkLeast: 0.55, light: 0.22, full: 96 } as const;
 /** How much of its points' light a field `size` wide shows on a dark page. */
 export const strokeLight = (size: number): number => FIELD_STROKE.light * Math.min(1, size / FIELD_STROKE.full);
 
@@ -354,8 +353,17 @@ export interface FieldInks {
   sheen: [number, number, number];
 }
 export function fieldInks(colours: FieldColours): FieldInks {
-  return { key: inkOf(colours.key[1], FIELD_INK.key), rim: inkOf(colours.rim, FIELD_INK.rim), sheen: inkOf(colours.key[0], FIELD_INK.sheen.contrast) };
+  // (Worked out once for each field's colours: a frame on a light page reads them, and an ink takes a few hundred steps.)
+  const key = `${colours.key[0]}|${colours.key[1]}|${colours.rim}`;
+  let inks = inked.get(key);
+  if (!inks) {
+    inks = { key: inkOf(colours.key[1], FIELD_INK.key), rim: inkOf(colours.rim, FIELD_INK.rim), sheen: inkOf(colours.key[0], FIELD_INK.sheen.contrast) };
+    if (inked.size >= 64) inked.delete(inked.keys().next().value!);
+    inked.set(key, inks);
+  }
+  return inks;
 }
+const inked = new Map<string, FieldInks>();
 
 /** A colour as an ink on the light page: its hue kept, its chroma FIELD_INK.chroma times its own (as far as sRGB goes),
  * and as light as it can be while it stands `contrast` to 1 from the page (or as it is, where it is darker already). */
@@ -363,11 +371,12 @@ export function inkOf(hex: string, contrast: number): [number, number, number] {
   const [L, a, b] = oklab(linear(hex));
   const C = Math.hypot(a, b) * FIELD_INK.chroma, h = Math.atan2(b, a);
   const ch = Math.cos(h), sh = Math.sin(h);
-  // The most chroma up to C that sRGB holds at a lightness (bisected: 30 steps, a billionth of the range).
+  // The most chroma up to C that sRGB holds at a lightness (bisected: 16 steps, under a ten-thousandth of the range,
+  // finer than a byte of sRGB can tell).
   const held = (l: number): [number, number, number] => {
     let lo = 0, hi = C;
     if (inGamut(fromOklab(l, C * ch, C * sh))) lo = C;
-    else for (let i = 0; i < 30; i++) {
+    else for (let i = 0; i < 16; i++) {
       const mid = (lo + hi) / 2;
       if (inGamut(fromOklab(l, mid * ch, mid * sh))) lo = mid;
       else hi = mid;
@@ -377,9 +386,9 @@ export function inkOf(hex: string, contrast: number): [number, number, number] {
   const most = (PAGE_LUMINANCE + 0.05) / contrast - 0.05;
   let shown = held(L);
   if (relativeLuminance(shown) > most) {
-    // As light as it may be: the lightness that stands `contrast` from the page (bisected, 30 steps).
+    // As light as it may be: the lightness that stands `contrast` from the page (bisected, 16 steps).
     let lo = 0, hi = L;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 16; i++) {
       const mid = (lo + hi) / 2;
       if (relativeLuminance(held(mid)) > most) hi = mid;
       else lo = mid;

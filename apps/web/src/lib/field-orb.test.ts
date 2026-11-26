@@ -287,6 +287,8 @@ describe("its colours", () => {
     }
     const inks = fieldInks(AURUM);
     expect(luminance(inks.key)).toBeLessThan(luminance(hexRgb(AURUM.key[1])));
+    // Worked out once for the same colours: a frame reads them, it doesn't work them out again.
+    expect(fieldInks(AURUM)).toBe(inks);
     // Gold stays gold: its red the most, its blue the least (darkened, it had gone brown).
     expect(inks.key[0] > inks.key[1] && inks.key[1] > inks.key[2]).toBe(true);
     // Its key where the key's light is moderate, its rim where the rim burns; toward its sheen where the key strikes hardest.
@@ -307,9 +309,7 @@ describe("its colours", () => {
     // At 34 px his lance's root is at least 2.5 px across on paper (a pixel and a half wider than on a dark page's 1).
     const at34 = 2 * Math.max(GALAHAD_LANCE.ink.least, (34 * GALAHAD_LANCE.width) / 2) * GALAHAD_LANCE.ink.width;
     expect(at34).toBeGreaterThan(2.5);
-    // A close tint under it, and under each line: as close as the dark page's glow, never fog.
+    // A close tint under his lance: as close as the dark page's glow, never fog.
     expect(GALAHAD_LANCE.ink.glow.width).toBeLessThanOrEqual(GALAHAD_LANCE.glow.width);
-    expect(FIELD_STROKE.inkGlow.width).toBeLessThanOrEqual(FIELD_STROKE.glow.width);
-    expect(FIELD_STROKE.inkGlow.alpha).toBeLessThanOrEqual(FIELD_STROKE.glow.alpha);
   });
 });
