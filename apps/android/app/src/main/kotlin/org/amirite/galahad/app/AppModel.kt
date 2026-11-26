@@ -21,7 +21,11 @@ import org.amirite.galahad.core.NodeError
 import org.amirite.galahad.core.Reach
 import org.amirite.galahad.core.Roster
 import org.amirite.galahad.core.RosterRow
+import org.amirite.galahad.core.Price
+import org.amirite.galahad.core.ProjectName
 import org.amirite.galahad.core.Snapshot
+import org.amirite.galahad.core.Spend
+import org.amirite.galahad.core.TeamTask
 import org.amirite.galahad.core.UsageMeter
 import org.amirite.galahad.core.bool
 import org.amirite.galahad.core.get
@@ -94,6 +98,8 @@ data class Table(
     val chats: String? = null,
     /** The last Roundtable this phone kept, as the node said it then (KeptTable): until the node answers. Null: the node's answer. */
     val asOf: Long? = null,
+    /** The team's tasks as the work reads them (Work, a task's thread): read from the same answer as [snapshot]. */
+    val tasks: List<TeamTask> = emptyList(),
 ) {
     /**
      * The Roundtable after a look at the node: `team` its answer for the team (null: it couldn't be read), `turns` its
@@ -102,9 +108,10 @@ data class Table(
      * empty Inbox while the node is away), so it is never taken for the node's word; otherwise its last team is drawn
      * again with what's new.
      */
-    fun after(team: Snapshot?, turns: Json?, asks: List<Ask>, waiting: Int, now: Long): Table {
+    fun after(team: Snapshot?, turns: Json?, asks: List<Ask>, waiting: Int, now: Long, tasks: List<TeamTask>? = null): Table {
         if (team == null && asOf != null) return this
         val snapshot = team ?: this.snapshot
+        val work = if (team != null) tasks ?: emptyList() else this.tasks
         val unread = turns?.let { it["unread"].list } ?: this.unread
         val galahad = Roster.galahadNow(
             turns = (turns?.let { it["turns"].list } ?: emptyList()).map { it["title"].string },
@@ -112,7 +119,21 @@ data class Table(
             needs = Roster.galahadNeeds(waiting, asks, snapshot?.teammates?.map { it.id } ?: emptyList()),
             unread = unread.map { it["title"].string },
         )
-        return Table(snapshot, snapshot?.let { Roster.rows(it, asks, now) } ?: emptyList(), galahad, unread, turns?.get("chats")?.text() ?: chats)
+        return Table(snapshot, snapshot?.let { Roster.rows(it, asks, now) } ?: emptyList(), galahad, unread, turns?.get("chats")?.text() ?: chats, tasks = work)
+    }
+}
+
+/** How the fleet stands, for the machine chip: how many of its nodes are online. */
+data class FleetLook(val nodes: Int, val online: Int) {
+    companion object {
+        /** GET /api/fleet: its nodes (not revoked), and which are online (this node is, the others as their peers say). */
+        fun of(j: Json): FleetLook {
+            val self = j["self"].string
+            val nodes = j["devices"].list.filter { it["kind"].string == "node" && (it["revokedAt"] == null || it["revokedAt"] == Json.Null) }
+            val peers = j["peers"].list
+            val online = nodes.count { d -> d["id"].string == self || peers.any { it["device"].string == d["id"].string && it["online"].bool == true } }
+            return FleetLook(nodes.size, online)
+        }
     }
 }
 
@@ -141,6 +162,20 @@ class AppModel(context: Context) {
     /** This period's model calls at your prices, against your budget (null: not read yet, or a node from before the meter). */
     private val _usage = MutableStateFlow<UsageMeter?>(null)
     val usage: StateFlow<UsageMeter?> = _usage.asStateFlow()
+
+    /** Your projects (GET /api/projects), for the names the work's projects go by: asked once a session (again if it failed). */
+    private val _projects = MutableStateFlow<List<ProjectName>>(emptyList())
+    val projects: StateFlow<List<ProjectName>> = _projects.asStateFlow()
+    private var projectsAsked = false
+
+    /** Your prices as money goes (GET /api/prices, coding plans free), for what a task and a knight cost: asked once a session. */
+    private val _prices = MutableStateFlow<Map<String, Price>?>(null)
+    val prices: StateFlow<Map<String, Price>?> = _prices.asStateFlow()
+
+    /** How the fleet stands (GET /api/fleet), asked every minute or so while the app is on screen. */
+    private val _fleet = MutableStateFlow<FleetLook?>(null)
+    val fleet: StateFlow<FleetLook?> = _fleet.asStateFlow()
+    private var fleetAt = 0L
 
     /** The last thing that went wrong asking the node (null: the last ask was answered). */
     private val _problem = MutableStateFlow<NodeError?>(null)
@@ -185,7 +220,7 @@ class AppModel(context: Context) {
         val snapshot = runCatching { Snapshot.of(kept.team) }.getOrNull() ?: return
         val needs = Roster.galahadNeeds(kept.waiting, kept.asks, snapshot.teammates.map { it.id })
         val galahad = Roster.galahadNow(turns = kept.turns, quests = emptyList(), needs = needs, unread = kept.unread.map { it["title"].string })
-        _table.value = Table(snapshot, Roster.rows(snapshot, kept.asks, System.currentTimeMillis()), galahad, kept.unread, asOf = kept.at)
+        _table.value = Table(snapshot, Roster.rows(snapshot, kept.asks, System.currentTimeMillis()), galahad, kept.unread, asOf = kept.at, tasks = TeamTask.all(kept.team))
     }
 
     /** What the node just said of the Roundtable, kept for the next time the app opens (off the main thread). */
@@ -257,6 +292,11 @@ class AppModel(context: Context) {
         _table.value = Table()
         _inbox.value = Inbox()
         _usage.value = null
+        _projects.value = emptyList()
+        projectsAsked = false
+        _prices.value = null
+        _fleet.value = null
+        fleetAt = 0
         chat.reset()
     }
 
@@ -353,12 +393,40 @@ class AppModel(context: Context) {
             got[9].getOrNull()?.let(UsageMeter::of)?.let { _usage.value = it }
             val turnsJson = got[5].getOrNull()
             val asks = inbox.actions.map { Ask(it["by"].string ?: "", it["connector"].string, it["tool"].string) }
-            _table.value = _table.value.after(got[0].getOrNull()?.let(Snapshot::of), turnsJson, asks, inbox.count, System.currentTimeMillis())
+            val teamJson = got[0].getOrNull()
+            _table.value = _table.value.after(teamJson?.let(Snapshot::of), turnsJson, asks, inbox.count, System.currentTimeMillis(), teamJson?.let(TeamTask::all))
             // (What the node said of the team just now is kept for the next time the app opens: KeptTable.)
             got[0].getOrNull()?.let { team -> keep(team, turnsJson, asks, inbox.count) }
         }
         chat.follow(_table.value.chats)
+        lookAround(c)
     }
+
+    /** What the work's names, a task's cost and the machine chip read, asked beside the rest and far less often. */
+    private suspend fun lookAround(c: NodeClient) {
+        if (!projectsAsked) {
+            projectsAsked = true
+            attempt { c.get("/api/projects") }.onSuccess { j ->
+                _projects.value = j["projects"].list.mapNotNull { p -> p["name"].string?.let { ProjectName(it, p["repo"].string) } }
+            }.onFailure { projectsAsked = false }
+        }
+        if (_prices.value == null) attempt { c.get("/api/prices") }.onSuccess { _prices.value = Spend.pricesOf(it) }
+        val now = System.currentTimeMillis()
+        if (now - fleetAt > 60_000) {
+            fleetAt = now
+            attempt { c.get("/api/fleet") }.onSuccess { _fleet.value = FleetLook.of(it) }
+        }
+    }
+
+    /** That you've looked at a knight's results (opening a task that ended): no longer new to you, on any device. */
+    suspend fun seen(knight: String) {
+        client?.post("/api/team/seen", Json.obj("knight" to knight))
+        refresh()
+    }
+
+    /** The approvals still waiting for your answer, as the work reads them (who asked, for which tool). */
+    fun asks(now: Long = System.currentTimeMillis()): List<Ask> =
+        _inbox.value.actions.filter { (it["expires"].long ?: Long.MAX_VALUE) > now }.map { Ask(it["by"].string ?: "", it["connector"].string, it["tool"].string) }
 
     private suspend fun <T> attempt(block: suspend () -> T): Result<T> = try {
         Result.success(block())
