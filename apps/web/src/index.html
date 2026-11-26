@@ -485,7 +485,7 @@
       .avatar.agent { background: var(--accent-soft); color: var(--accent); }
       .avatar.agent.orb-avatar { background: none; }
       /* A toned avatar: a notice's severity, a run's status, a tool's class. */
-      .avatar[data-tone] { background: var(--tone-soft); color: var(--tone); }
+      .avatar[data-tone] { background: var(--tone-soft); color: var(--tone); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tone) 18%, transparent); }
 
       .fleet-pill {
         display: inline-flex; align-items: center; gap: var(--sp-2); height: 28px; padding: 0 10px; border-radius: var(--r-full);
@@ -834,9 +834,12 @@
       .chip-input .tag button:hover { color: var(--danger); }
 
       /* ---------- callouts, states ---------- */
+      /* What a part of a page wants you to know (ui/controls.ts callout(); the reach card is one): as an alert is drawn, its
+         tone in its edge and in a faint light behind its mark, on the surface it sits on, never a tinted slab. */
       .callout {
-        display: flex; gap: 10px; align-items: flex-start; padding: var(--sp-3); border-radius: var(--r-md);
-        background: var(--tone-soft, var(--info-soft)); border: 1px solid color-mix(in srgb, var(--tone, var(--info)) 18%, transparent); color: var(--text); font-size: var(--fs-13);
+        display: flex; gap: 10px; align-items: flex-start; padding: var(--sp-3) var(--sp-3) var(--sp-3) 14px; border-radius: var(--r-lg);
+        background: radial-gradient(150px 64px at 22px 20px, var(--tone-soft, var(--info-soft)), transparent), var(--surface);
+        border: 1px solid color-mix(in oklab, var(--tone, var(--info)) 26%, var(--border)); color: var(--text); font-size: var(--fs-13);
       }
       .callout > svg { color: var(--tone, var(--info)); margin-top: 1px; }
       .callout .callout-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -1378,7 +1381,10 @@
       .team-content { min-height: 0; overflow: auto; overscroll-behavior: contain; flex: 1; }
       .team-panel { padding: var(--sp-6); max-width: 980px; margin: 0 auto; }
       .team-panel h3 { font-size: var(--fs-15); }
-      .team-notice { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); background: var(--warn-soft); color: var(--warn); font-size: var(--fs-12); }
+      /* The Roundtable's strip (its updates paused; an outcome's bar): sunken, a hairline under it, its words quiet; the
+         amber is its mark's alone. */
+      .team-notice { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); background: var(--bg-sunken); border-bottom: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-12); }
+      .team-notice > svg { flex: none; color: var(--warn); }
       .team-thread { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-6); max-width: 880px; margin: 0 auto; }
       .team-message { display: flex; gap: var(--sp-3); min-width: 0; }
       .team-message-body { min-width: 0; flex: 1; overflow-wrap: anywhere; }
