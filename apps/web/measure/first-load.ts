@@ -1023,7 +1023,7 @@ try {
       { name: "sheet-new-knight", hash: "#/team", open: [press("New knight", "Add a knight")] },
       { name: "sheet-new-project", hash: "#/projects", open: [press("New project")] },
       { name: "sheet-add-loop", hash: "#/loops", open: [press("Add loop", "Add a loop")] },
-      { name: "sheet-add-tripwire", hash: "#/loops", open: [press("Add tripwire")] },
+      { name: "sheet-add-tripwire", hash: "#/loops", open: [press("Add rule")] },
       { name: "sheet-remember", hash: "#/memory", open: [press("Remember something", "Remember")] },
       { name: "sheet-write-skill", hash: "#/skills", open: [press("Write a skill")] },
       { name: "sheet-new-idea", hash: "#/archive", open: [press("New idea")] },
