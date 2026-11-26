@@ -141,11 +141,37 @@ describe("his orb", () => {
 
   test("on a light page, ink: nothing is added as light, his lance in ink too, each over a close tint of its ink", () => {
     root.dataset.theme = "light";
-    const canvas = canvasOf(orb({ size: 50, mood: "idle", key: "test:paper" }) as unknown as Node_)!;
+    // (Waiting on you, so it is drawn on its own canvas: at rest it would be stamped from a picture.)
+    const canvas = canvasOf(orb({ size: 50, mood: "waiting", key: "test:paper" }) as unknown as Node_)!;
     expect(canvas.blends).not.toContain("lighter");
     expect(count(canvas.calls, "stroke")).toBeGreaterThan(5);
     // Each half of his lance, its tint and its blade (so it holds where he is small, rather than a needle).
     expect(count(canvas.calls, "createLinearGradient")).toBe(4);
+  });
+
+  test("at rest (idle), done, queued, paused or failed, still: drawn once, asking for no frame (nothing animates at rest)", () => {
+    for (const mood of ["idle", "done", "queued", "paused", "failed"] as const) {
+      const canvas = canvasOf(orb({ size: 48, mood, key: `test:rest-${mood}` }) as unknown as Node_)!;
+      expect([mood, count(canvas.calls, "drawImage")]).toEqual([mood, 1]);
+    }
+    const before = asked;
+    run(1000);
+    run(2000);
+    expect(asked).toBe(before);
+    expect(frames).toEqual([]);
+  });
+
+  test("at work, then at rest: it settles, and asks for no more frames once still", () => {
+    const working = canvasOf(orb({ size: 48, mood: "working", key: "test:settles" }) as unknown as Node_)!;
+    run(1000);
+    expect(frames.length + timers.length).toBeGreaterThan(0);
+    working.isConnected = false;
+    const resting = canvasOf(orb({ size: 48, mood: "idle", key: "test:settles" }) as unknown as Node_)!;
+    for (let ms = 1000; ms < 12_000; ms += 50) run(ms);
+    const drawn = resting.calls.length;
+    for (let ms = 12_000; ms < 14_000; ms += 50) run(ms);
+    expect(resting.calls.length).toBe(drawn);
+    expect([frames, timers]).toEqual([[], []]);
   });
 
   test("still where motion is reduced: drawn once, and nothing more", () => {
@@ -179,11 +205,11 @@ describe("his orb", () => {
     const first = canvas.calls.length;
     run(5000);
     expect(canvas.calls.length).toBeGreaterThan(first);
-    // (A frame sooner than its next is due draws nothing: at work it is drawn at 30 a second.)
+    // (A frame sooner than its next is due draws nothing: at work, its embers drifting, it is drawn at 20 a second.)
     const drawn = canvas.calls.length;
-    run(5010);
+    run(5030);
     expect(canvas.calls.length).toBe(drawn);
-    run(5034);
+    run(5051);
     expect(canvas.calls.length).toBeGreaterThan(drawn);
     canvas.isConnected = false;
     const gone = canvas.calls.length;

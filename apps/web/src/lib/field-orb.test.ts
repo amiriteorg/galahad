@@ -132,7 +132,7 @@ describe("how a field is drawn at a size", () => {
 });
 
 describe("how it moves", () => {
-  test("slowly: a turn takes half a minute or more, a breath five seconds, and only work sends off embers", () => {
+  test("slowly, and only while something is going on: a turn takes half a minute or more, a breath five seconds, only work sends off embers", () => {
     expect(Object.keys(FIELD_MOTION).sort()).toEqual([...ORB_MOODS].sort());
     for (const [mood, motion] of Object.entries(FIELD_MOTION)) {
       expect(motion.turn).toBeLessThanOrEqual((2 * Math.PI) / 30);
@@ -140,12 +140,13 @@ describe("how it moves", () => {
       if (motion.breath) expect([motion.breath.period >= 4, motion.breath.depth <= 0.25]).toEqual([true, true]);
       expect(motion.embers).toBe(mood === "working");
     }
-    // At work, a little quicker than at rest; done, it settles; paused, it stops; failed, its rim dims.
-    expect(FIELD_MOTION.working.turn).toBeGreaterThan(FIELD_MOTION.idle.turn);
-    expect(FIELD_MOTION.done.turn).toBeLessThan(FIELD_MOTION.idle.turn);
-    expect(FIELD_MOTION.paused.turn).toBe(0);
-    expect(FIELD_MOTION.failed.rim).toBe(1);
+    // Only while something is going on (your word, 26 November 2026: "nothing animating at rest"): at work it turns,
+    // waiting on you it breathes; at rest, done (it settles), queued, paused and failed it is still, in its mood's light.
+    expect(FIELD_MOTION.working.turn).toBeGreaterThan(0);
     expect(FIELD_MOTION.waiting.breath).not.toBeNull();
+    for (const mood of ["idle", "done", "queued", "paused", "failed"] as const) expect([mood, FIELD_MOTION[mood].turn, FIELD_MOTION[mood].breath]).toEqual([mood, 0, null]);
+    expect(FIELD_MOTION.paused.glow).toBeLessThan(FIELD_MOTION.queued.glow);
+    expect(FIELD_MOTION.failed.rim).toBe(1);
   });
 
   test("a knight moves only while it works, and never sends off embers", () => {
@@ -181,15 +182,22 @@ describe("how it moves", () => {
     expect(back.turn).toBeCloseTo(FIELD_MOTION.working.turn * ORB_LONGEST_STEP, 12);
   });
 
-  test("as few frames as look smooth: none once a knight has come to rest", () => {
+  test("as few frames as look smooth: none once it has come to rest, his or a knight's", () => {
     const resting = fieldMotion("idle", true);
     let clock = run(fieldClock(FIELD_MOTION.working), resting, 0.2);
     expect(fieldFps(clock, resting)).toBe(30);
     clock = run(clock, resting, 8);
     expect(fieldFps(clock, resting)).toBe(0);
-    expect(fieldFps(fieldClock(FIELD_MOTION.idle), FIELD_MOTION.idle)).toBe(15);
+    // His, at rest: none; done after work, it eases to a stop (30 while it eases) and then none.
+    expect(fieldFps(fieldClock(FIELD_MOTION.idle), FIELD_MOTION.idle)).toBe(0);
+    let done = run(fieldClock(FIELD_MOTION.working), FIELD_MOTION.done, 0.2);
+    expect(fieldFps(done, FIELD_MOTION.done)).toBe(30);
+    done = run(done, FIELD_MOTION.done, 8);
+    expect([fieldFps(done, FIELD_MOTION.done), done.speed]).toEqual([0, expect.any(Number)]);
+    expect(done.speed).toBeLessThan(0.0005);
+    // Breathing, or its embers drifting (slowly), 20; only easing to a mood takes 30.
     expect(fieldFps(fieldClock(FIELD_MOTION.waiting), FIELD_MOTION.waiting)).toBe(20);
-    expect(fieldFps(fieldClock(FIELD_MOTION.working), FIELD_MOTION.working)).toBe(30);
+    expect(fieldFps(fieldClock(FIELD_MOTION.working), FIELD_MOTION.working)).toBe(20);
   });
 
   test("waiting on you, a slow breath of brightness; still, none", () => {

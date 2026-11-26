@@ -133,16 +133,18 @@ export interface FieldMotion {
   rim: number;
 }
 
-/** Galahad's moods: at rest it turns slowly; at work a little quicker, embers drifting off its rim; waiting on you it
- * breathes; queued and paused it dims and slows (paused stops); done, it settles; failed, its rim dims to red-brown. */
+/** Galahad's moods: only while something is going on does it move (your word, 26 November 2026: "nothing animating at
+ * rest"): at work it turns, embers drifting off its rim; waiting on you it breathes, turning slowly. At rest (idle), done
+ * (it settles), queued, paused and failed it comes to rest, still, in its mood's light: dimmer while queued or paused, its
+ * rim red-brown when its work failed. (Until 26 November 2026 it turned at rest too, a turn a minute.) */
 export const FIELD_MOTION: Readonly<Record<OrbMood, FieldMotion>> = {
-  idle: { turn: 0.1, glow: 1, breath: null, embers: false, rim: 0 },
+  idle: { turn: 0, glow: 1, breath: null, embers: false, rim: 0 },
   working: { turn: 0.2, glow: 1.08, breath: null, embers: true, rim: 0 },
   waiting: { turn: 0.08, glow: 1, breath: { period: 5.2, depth: 0.2 }, embers: false, rim: 0 },
-  queued: { turn: 0.06, glow: 0.85, breath: null, embers: false, rim: 0 },
+  queued: { turn: 0, glow: 0.85, breath: null, embers: false, rim: 0 },
   paused: { turn: 0, glow: 0.7, breath: null, embers: false, rim: 0 },
-  done: { turn: 0.035, glow: 1, breath: null, embers: false, rim: 0 },
-  failed: { turn: 0.03, glow: 0.88, breath: null, embers: false, rim: 1 },
+  done: { turn: 0, glow: 1, breath: null, embers: false, rim: 0 },
+  failed: { turn: 0, glow: 0.88, breath: null, embers: false, rim: 1 },
 };
 
 /** A knight's: it moves only while it works (your word, 26 November 2026: still in rows, moving only in its own
@@ -208,10 +210,11 @@ export function fieldSettled(clock: FieldClock, motion: FieldMotion): boolean {
 }
 
 /** How many frames a second a field needs now: as few as look smooth (each frame costs a battery). While it eases to a
- * mood or its embers drift, 30; breathing, 20; only turning, 15; and none once it has come to rest. */
+ * mood, 30; while its embers drift (slowly: a frame moves one a third of a pixel at 168 px) or it breathes, 20; only
+ * turning, 15; and none once it has come to rest. */
 export function fieldFps(clock: FieldClock, motion: FieldMotion): number {
-  if (!fieldSettled(clock, motion) || clock.embers > 0.01) return 30;
-  if (clock.depth > 0.002) return 20;
+  if (!fieldSettled(clock, motion)) return 30;
+  if (clock.embers > 0.01 || clock.depth > 0.002) return 20;
   return clock.speed > 0.0005 ? 15 : 0;
 }
 
