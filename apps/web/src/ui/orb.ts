@@ -290,16 +290,18 @@ function drawField(g: CanvasRenderingContext2D, px: number, dpr: number, size: n
   g.lineCap = "round";
   g.lineJoin = "round";
   g.globalCompositeOperation = onPaper ? "source-over" : "lighter";
-  for (const pass of onPaper ? (["line"] as const) : (["glow", "line"] as const)) {
+  const halo = onPaper ? FIELD_STROKE.inkGlow : FIELD_STROKE.glow;
+  for (const pass of ["glow", "line"] as const) {
     // His lance, under his lines (on a light page they cross over it; on a dark one light adds alike either way).
     if (pass === "line" && spec.lance) lance(g, px, dpr, size, look.zoom, colours, glow, inks);
     for (const [kind, held] of paths) {
       const level = (kind & 0xf) / (LEVELS - 1);
       const hue = kind >> 4;
       const channel = (shift: number) => Math.round((((hue >> shift) & 0xf) / (HUES - 1)) * 255);
-      const width = (FIELD_STROKE.least + FIELD_STROKE.more * level) * weight * (onPaper ? FIELD_STROKE.ink : 1);
-      g.lineWidth = pass === "glow" ? width * FIELD_STROKE.glow.width : width;
-      g.strokeStyle = `rgba(${channel(8)},${channel(4)},${channel(0)},${Math.round((pass === "glow" ? level * FIELD_STROKE.glow.alpha : level) * 1000) / 1000})`;
+      // (On a light page, one ink at every size: the small sizes' boldness is for light, which spreads.)
+      const width = onPaper ? Math.max(FIELD_STROKE.inkLeast, (FIELD_STROKE.least + FIELD_STROKE.more * level) * FIELD_STROKE.ink) * dpr : (FIELD_STROKE.least + FIELD_STROKE.more * level) * weight;
+      g.lineWidth = pass === "glow" ? width * halo.width : width;
+      g.strokeStyle = `rgba(${channel(8)},${channel(4)},${channel(0)},${Math.round((pass === "glow" ? level * halo.alpha : level) * 1000) / 1000})`;
       strokeOf(g, held.path);
     }
   }
@@ -333,27 +335,33 @@ function drawField(g: CanvasRenderingContext2D, px: number, dpr: number, size: n
 function lance(g: CanvasRenderingContext2D, px: number, dpr: number, size: number, zoom: number, colours: FieldColours, glow: number, inks: FieldInks | null): void {
   const L = GALAHAD_LANCE;
   const half = px / 2;
-  // Half its width at its root, in device pixels: never under half a pixel (a pixel across).
-  const root = Math.max(0.5, (size * L.width) / 2) * dpr;
+  // Half its width at its root, in device pixels: never under half a pixel (a pixel across); on a light page, never under
+  // its ink's least, so it holds as a blade where he is small.
+  const root = Math.max(inks ? L.ink.least : 0.5, (size * L.width) / 2) * dpr;
   const strength = Math.min(1, Math.max(0, glow));
   const hex = (value: string): [number, number, number] => [1, 3, 5].map((at) => parseInt(value.slice(at, at + 2), 16)) as [number, number, number];
   const mix = (a: readonly number[], b: readonly number[], t: number) => a.map((v, c) => Math.round(v + (b[c]! - v) * t));
   const lit = hex(colours.key[0]), gold = hex(colours.key[1]), rim = hex(colours.rim);
-  const colourAt = (hue: number) => (inks ? mix(inks.key, inks.rim, hue) : hue <= 0.5 ? mix(lit, gold, hue * 2) : mix(gold, rim, (hue - 0.5) * 2));
+  // From his lit gold through his gold to his rim's copper; on a light page, his inks the same way: his sheen, his key, his rim.
+  const [first, middle, last] = inks ? [inks.sheen, inks.key, inks.rim] : [lit, gold, rim];
+  const colourAt = (hue: number) => (hue <= 0.5 ? mix(first, middle, hue * 2) : mix(middle, last, (hue - 0.5) * 2));
   const STOPS = 8;
   for (const blade of lanceLine(GALAHAD_FIELD, zoom)) {
     const x0 = half + blade.root[0] * half, y0 = half + blade.root[1] * half;
     const x1 = half + blade.tip[0] * half, y1 = half + blade.tip[1] * half;
     const length = Math.hypot(x1 - x0, y1 - y0) || 1;
     const nx = -(y1 - y0) / length, ny = (x1 - x0) / length;
-    for (const pass of inks ? (["line"] as const) : (["glow", "line"] as const)) {
-      const spread = pass === "glow" ? L.glow.width : inks ? L.ink.width : 1;
-      const strong = strength * (pass === "glow" ? L.glow.alpha : inks ? L.ink.alpha : 1);
+    for (const pass of ["glow", "line"] as const) {
+      const shape = inks ? (pass === "glow" ? L.ink.glow : L.ink) : pass === "glow" ? L.glow : { width: 1, alpha: 1 };
+      const spread = shape.width;
+      const strong = strength * shape.alpha;
       const fill = g.createLinearGradient(x0, y0, x1, y1);
       for (let i = 0; i <= STOPS; i++) {
         const at = lanceAt(i / STOPS);
         const [r, gg, b] = colourAt(at.hue);
-        fill.addColorStop(i / STOPS, `rgba(${r},${gg},${b},${Math.round(Math.min(1, at.light * strong) * 1000) / 1000})`);
+        // (Ink fades slower than light: on a light page the blade holds further out towards its tip.)
+        const light = inks ? Math.pow(at.light, L.ink.fade) : at.light;
+        fill.addColorStop(i / STOPS, `rgba(${r},${gg},${b},${Math.round(Math.min(1, light * strong) * 1000) / 1000})`);
       }
       g.fillStyle = fill;
       g.beginPath();

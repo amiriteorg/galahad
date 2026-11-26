@@ -1,5 +1,5 @@
 import { blendHex, knightColors } from "@galahad/core/avatar";
-import { AURUM, FIELD_RIM, project, type FieldColours } from "./field.ts";
+import { AURUM, FIELD_RIM, linear, project, type FieldColours, type Rgb } from "./field.ts";
 import { ORB_LONGEST_STEP, orbRand, orbSeed, type OrbMood } from "./orb-motion.ts";
 
 /*
@@ -73,11 +73,13 @@ export function fieldLook(identity: FieldIdentity, size: number, galahad: boolea
  * of its middle (so the core, r < 0.32, stays dark), `width` of the orb's width across at its root (never under a pixel),
  * narrowing to nothing at its tip, its light fading as it goes (lanceAt). On a dark page its light is added as the
  * field's is, with a close glow `glow.width` times as wide and `glow.alpha` as strong (no fog); on a light page it is ink,
- * `ink.width` times as wide and `ink.alpha` times as strong as its light (ink on white reads thinner than light on black).
- * Its outline is taken at `steps` steps along it. The field turns about it; it shines as the field does, never past its
+ * `ink.width` times as wide and `ink.alpha` times as strong as its light (ink on white reads thinner than light on black),
+ * its root never under `ink.least` CSS pixels each side (so at 34 px it holds as a blade, not a needle), its ink fading
+ * slower than its light does (lanceAt's light to the power `ink.fade`), over a close tint of its ink (`ink.glow`). Its
+ * outline is taken at `steps` steps along it. The field turns about it; it shines as the field does, never past its
  * light at rest (breathing while something waits, dimmer while queued or paused, its tip red-brown when its work failed).
  */
-export const GALAHAD_LANCE = { from: 0.36, to: 1.72, width: 1 / 40, steps: 16, glow: { width: 3.2, alpha: 0.2 }, ink: { width: 1.3, alpha: 1.2 } } as const;
+export const GALAHAD_LANCE = { from: 0.36, to: 1.72, width: 1 / 40, steps: 16, glow: { width: 3.2, alpha: 0.2 }, ink: { width: 1.6, alpha: 1.5, least: 0.85, fade: 0.6, glow: { width: 3.2, alpha: 0.24 } } } as const;
 
 /** A direction in the field's own space turned as its lean turns its points (lib/field.ts' fieldAt: Rx·Ry·Rz). */
 function leaned([x0, y0, z0]: [number, number, number], [ax, ay, az]: [number, number, number]): [number, number, number] {
@@ -311,32 +313,115 @@ export function fieldTone(r: number, g: number, b: number, exposure = FIELD_EXPO
  *   weight.
  * - glow: under each line on a dark page, its light again as `width` times as wide and `alpha` as strong: close, so no
  *   fog (your word, 26 November 2026: "less fog, so it reads clearer").
- * - ink: a line's width on a light page, as a share of its width on a dark one.
+ * - ink: a line's width on a light page, as a share of its width on a dark one at its largest, the same at every size (a
+ *   look's weight, its boldness where small, is for light, which spreads): wider, as ink on paper has no glow to carry it
+ *   (until 26 November 2026, 0.85 of the dark page's at each size: the knights read as thin scribbles there).
+ * - inkLeast: no line on a light page is narrower than this (CSS pixels), so a 14 px face keeps its lines.
+ * - inkGlow: under each line on a light page, its ink again as `width` times as wide and `alpha` as strong: a close tint
+ *   of its colour, so it reads as lit rather than drawn (no fog: as close as the dark page's glow).
  * - light: how much of its points' light a line shows on a dark page (a line is lit along its length where the icon's
  *   points are dots); less again where it is smaller than `full`, where its lines lie closer and their light adds up.
  */
-export const FIELD_STROKE = { least: 0.42, more: 0.5, glow: { width: 3.2, alpha: 0.12 }, ink: 0.85, light: 0.22, full: 96 } as const;
+export const FIELD_STROKE = { least: 0.42, more: 0.5, glow: { width: 3.2, alpha: 0.12 }, ink: 1.35, inkLeast: 0.55, inkGlow: { width: 2.4, alpha: 0.06 }, light: 0.22, full: 96 } as const;
 /** How much of its points' light a field `size` wide shows on a dark page. */
 export const strokeLight = (size: number): number => FIELD_STROKE.light * Math.min(1, size / FIELD_STROKE.full);
 
-/** A field's inks on a light page, as sRGB (0 to 255 each): where its key light falls, its key's deep colour darkened
- * (it would be white on white otherwise), and where its rim burns, its rim's, darkened less. */
+/**
+ * A field's ink on a light page (26 November 2026: it read as "flat line art" there, the knights' above all, which the icon
+ * rounds had turned down): each colour as a saturated ink rather than darkened towards black (which made gold brown and
+ * every tint muddy):
+ * - key, rim: how far its key's ink and its rim's stand from the page (#fafafa) where fully lit, as a contrast ratio
+ *   (3:1 is a graphic's floor; the key, nearer you, stronger);
+ * - chroma: how much more saturated each ink is than its colour, as far as sRGB allows at its lightness;
+ * - sheen: where the key light strikes hardest (past `from` of its light), its ink goes up to `most` of the way to its lit
+ *   colour as an ink `contrast` to 1 from the page: the light page's white-hot, so it reads as lit, not drawn;
+ * - floor, curve: how opaque a line is by its light, from `floor` where the lights leave it to whole where it is fully
+ *   lit, along `curve` (under 1, it gains sooner): the far lines faint but there, so the field keeps its volume.
+ */
+export const FIELD_INK = { key: 3.4, rim: 3.1, sheen: { contrast: 2.2, from: 0.55, most: 0.7 }, chroma: 1.2, floor: 0.22, curve: 0.9 } as const;
+
+/** A field's inks on a light page, as sRGB (0 to 255 each): where its key light falls, its key's deep colour as ink, and
+ * where its rim burns, its rim's (FIELD_INK). */
 export interface FieldInks {
   key: [number, number, number];
   rim: [number, number, number];
+  /** Where the key light strikes hardest, its lit colour as a lighter ink: the sheen that says it is lit. */
+  sheen: [number, number, number];
 }
 export function fieldInks(colours: FieldColours): FieldInks {
-  const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
-  return { key: rgb(blendHex(colours.key[1], "#000000", 0.38)), rim: rgb(blendHex(colours.rim, "#000000", 0.22)) };
+  return { key: inkOf(colours.key[1], FIELD_INK.key), rim: inkOf(colours.rim, FIELD_INK.rim), sheen: inkOf(colours.key[0], FIELD_INK.sheen.contrast) };
+}
+
+/** A colour as an ink on the light page: its hue kept, its chroma FIELD_INK.chroma times its own (as far as sRGB goes),
+ * and as light as it can be while it stands `contrast` to 1 from the page (or as it is, where it is darker already). */
+export function inkOf(hex: string, contrast: number): [number, number, number] {
+  const [L, a, b] = oklab(linear(hex));
+  const C = Math.hypot(a, b) * FIELD_INK.chroma, h = Math.atan2(b, a);
+  const ch = Math.cos(h), sh = Math.sin(h);
+  // The most chroma up to C that sRGB holds at a lightness (bisected: 30 steps, a billionth of the range).
+  const held = (l: number): [number, number, number] => {
+    let lo = 0, hi = C;
+    if (inGamut(fromOklab(l, C * ch, C * sh))) lo = C;
+    else for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      if (inGamut(fromOklab(l, mid * ch, mid * sh))) lo = mid;
+      else hi = mid;
+    }
+    return fromOklab(l, lo * ch, lo * sh);
+  };
+  const most = (PAGE_LUMINANCE + 0.05) / contrast - 0.05;
+  let shown = held(L);
+  if (relativeLuminance(shown) > most) {
+    // As light as it may be: the lightness that stands `contrast` from the page (bisected, 30 steps).
+    let lo = 0, hi = L;
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      if (relativeLuminance(held(mid)) > most) hi = mid;
+      else lo = mid;
+    }
+    shown = held(lo);
+  }
+  return [srgb8(shown[0]), srgb8(shown[1]), srgb8(shown[2])];
 }
 
 /** A point's ink on a light page, from the key's light on it and the rim's (lib/field.ts' shadeLit): between its two
- * inks by their shares, and as opaque as it is lit, faint where it is dark (so the field keeps its depth on paper). */
+ * inks by their shares, and as opaque as it is lit (FIELD_INK's floor and curve), so the field keeps its depth on paper
+ * and its far lines don't vanish. */
 export function fieldInk(inks: FieldInks, lit: number, rim: number): { rgb: [number, number, number]; alpha: number } {
   const total = lit + rim;
   const share = total > 0 ? rim / total : 0;
-  const mix = (at: 0 | 1 | 2) => inks.key[at] + (inks.rim[at] - inks.key[at]) * share;
-  return { rgb: [mix(0), mix(1), mix(2)], alpha: Math.min(1, 0.1 + 0.95 * Math.max(lit, rim)) };
+  // Where the key strikes hardest (past `sheen.from` of its light), its sheen: up to `sheen.most` of the way to it.
+  const S = FIELD_INK.sheen;
+  const sheen = S.most * Math.max(0, Math.min(1, (lit - S.from) / (1 - S.from))) * (1 - share);
+  const mix = (at: 0 | 1 | 2) => {
+    const ink = inks.key[at] + (inks.rim[at] - inks.key[at]) * share;
+    return ink + (inks.sheen[at] - ink) * sheen;
+  };
+  const light = Math.min(1, Math.max(0, lit, rim));
+  return { rgb: [mix(0), mix(1), mix(2)], alpha: FIELD_INK.floor + (1 - FIELD_INK.floor) * Math.pow(light, FIELD_INK.curve) };
+}
+
+// (Colour in OKLab, Björn Ottosson's: a lightness and two axes of hue, so an ink keeps its hue as it darkens.)
+/** The light page's own luminance (#fafafa, --bg). */
+const PAGE_LUMINANCE = Math.pow((250 / 255 + 0.055) / 1.055, 2.4);
+function oklab([r, g, b]: Rgb): [number, number, number] {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+}
+function fromOklab(L: number, a: number, b: number): Rgb {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+}
+const inGamut = (rgb: Rgb): boolean => rgb.every((c) => c >= -1e-9 && c <= 1 + 1e-9);
+const relativeLuminance = ([r, g, b]: Rgb): number => 0.2126 * Math.max(0, r) + 0.7152 * Math.max(0, g) + 0.0722 * Math.max(0, b);
+/** Linear light to an sRGB byte. */
+function srgb8(v: number): number {
+  const c = Math.max(0, Math.min(1, v));
+  return Math.round(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055));
 }
 
 function fract(x: number): number {

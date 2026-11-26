@@ -25,7 +25,7 @@ import { DATA_GLYPHS, dataGlyph, GLYPH_LADDER, KNIGHT_SPHERE, knightArcs, orbSph
 import { ORB_TONES, orbLevel, orbPalette, orbParts, orbToneOfState } from "../../web/src/lib/orb.ts";
 import { AURUM, FIELD_KEY, FIELD_RIM, fieldAt, fieldBuffer, fieldLight, fieldModel, linear, project, shadeLit, type FieldColours, type FieldOptions } from "../../web/src/lib/field.ts";
 import {
-  FIELD_EASE, FIELD_EMBERS, FIELD_EXPOSURE, FIELD_MOTION, FIELD_STROKE, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInk, fieldInks, fieldLook, fieldMotion, fieldStep, fieldStill, fieldTone,
+  FIELD_EASE, FIELD_EMBERS, FIELD_EXPOSURE, FIELD_INK, FIELD_MOTION, FIELD_STROKE, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInk, fieldInks, fieldLook, fieldMotion, fieldStep, fieldStill, fieldTone, inkOf,
   GALAHAD_FIELD, GALAHAD_LANCE, knightField, lanceAt, lanceLine, RIM_ANGLE, RIM_DIM, strokeLight, type FieldClock, type FieldIdentity,
 } from "../../web/src/lib/field-orb.ts";
 import { ORB_ARRIVE, ORB_BURST, ORB_BURST_MOTES, ORB_EASE, ORB_LONGEST_STEP, ORB_MOODS, ORB_MOTION, ORB_MOVES, ORB_STAGES, orbBursts, orbClock, orbFrame, orbMoodOfExpression, orbMoodOfState, orbRand, orbSeed, orbStep, type OrbClock, type OrbMood } from "../../web/src/lib/orb-motion.ts";
@@ -578,8 +578,10 @@ function fieldVectors() {
     tones: ([[0, 0, 0], [0.02, 0.01, 0.005], [0.2, 0.12, 0.03], [1.2, 0.25, 0.05], [3, 2.2, 1], [40, 40, 40], [-1, 0.5, 2]] as [number, number, number][]).flatMap((rgb) => [FIELD_EXPOSURE, 0.8].map((exposure) => ({ rgb, exposure, shown: fieldTone(rgb[0], rgb[1], rgb[2], exposure) }))),
     inks: [AURUM, knightField("ada").colours, knightField("gareth").colours].map((colours) => {
       const inks = fieldInks(colours);
-      return { colours, inks, keyRgb: rgbOf(colours.key[1]), shown: ([[1, 0], [0, 1], [0.5, 0.5], [0.2, 0.05], [0, 0]] as [number, number][]).map(([lit, rim]) => ({ lit, rim, ink: fieldInk(inks, lit, rim) })) };
+      return { colours, inks, keyRgb: rgbOf(colours.key[1]), shown: ([[1, 0], [0, 1], [0.5, 0.5], [0.2, 0.05], [0, 0], [0.8, 0], [0.9, 0.1]] as [number, number][]).map(([lit, rim]) => ({ lit, rim, ink: fieldInk(inks, lit, rim) })) };
     }),
+    // A colour as an ink on the light page (26 November 2026): its hue kept, more saturated, as light as its contrast allows.
+    ink: { ...FIELD_INK, of: ["#ffb12e", "#ff5a2a", "#fff4d6", "#3abeff", "#0a0b0c", "#ffffff", "#7f7f7f", "#00ff00"].flatMap((hex) => [FIELD_INK.key, FIELD_INK.rim, FIELD_INK.sheen.contrast].map((contrast) => ({ hex, contrast, rgb: inkOf(hex, contrast) }))) },
   };
 }
 

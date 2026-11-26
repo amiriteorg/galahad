@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { KNIGHT_TINTS, knightColors } from "@galahad/core/avatar";
+import { blendHex, KNIGHT_TINTS, knightColors } from "@galahad/core/avatar";
 import { AURUM, fieldPoints, project } from "./field.ts";
 import {
-  FIELD_EASE, FIELD_EMBERS, FIELD_MOTION, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInk, fieldInks, fieldLook, fieldMotion, fieldSettled, fieldStep, fieldStill, fieldTone,
+  FIELD_EASE, FIELD_EMBERS, FIELD_INK, FIELD_MOTION, FIELD_STROKE, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInk, fieldInks, fieldLook, fieldMotion, fieldSettled, fieldStep, fieldStill, fieldTone,
   GALAHAD_FIELD, GALAHAD_LANCE, knightField, lanceAt, lanceLine, RIM_ANGLE, RIM_DIM, type FieldClock, type FieldMotion,
 } from "./field-orb.ts";
 import { ORB_LONGEST_STEP, ORB_MOODS } from "./orb-motion.ts";
@@ -245,17 +245,47 @@ describe("its colours", () => {
     expect(r > g && g > b).toBe(true);
   });
 
-  test("on a light page, ink: darker than its light, readable on the page, as opaque as it is lit", () => {
-    for (const handle of HANDLES.slice(0, 40)) {
-      const inks = fieldInks(knightField(handle).colours);
+  test("on a light page, ink: saturated (not darkened towards black), readable on the page, lit where the light strikes, as opaque as it is lit", () => {
+    const contrast = (rgb: [number, number, number]) => (luminance([250, 250, 250]) + 0.05) / (luminance(rgb) + 0.05);
+    /** How colourful (its channels' spread, 0 to 255). */
+    const colourful = (rgb: readonly number[]) => Math.max(...rgb) - Math.min(...rgb);
+    for (const handle of HANDLES) {
+      const colours = knightField(handle).colours;
+      const inks = fieldInks(colours);
       // At least 3 to 1 against the light page's ground (#fafafa) where it is fully lit, as a graphic needs.
-      for (const ink of [inks.key, inks.rim]) expect((luminance([250, 250, 250]) + 0.05) / (luminance(ink) + 0.05)).toBeGreaterThan(3);
+      for (const ink of [inks.key, inks.rim]) expect(contrast(ink)).toBeGreaterThan(3);
+      // More colourful than the colour darkened towards black (until 26 November 2026's ink, which read as muddy line
+      // art), its hue its own.
+      expect(colourful(inks.key)).toBeGreaterThan(colourful(hexRgb(blendHex(colours.key[1], "#000000", 0.38))));
+      expect(colourful(inks.rim)).toBeGreaterThan(colourful(hexRgb(blendHex(colours.rim, "#000000", 0.22))));
+      // Its sheen (where the key strikes hardest) lighter than its key ink: it reads as lit, not drawn.
+      expect(luminance(inks.sheen)).toBeGreaterThan(luminance(inks.key));
     }
     const inks = fieldInks(AURUM);
     expect(luminance(inks.key)).toBeLessThan(luminance(hexRgb(AURUM.key[1])));
-    expect(fieldInk(inks, 1, 0).rgb).toEqual(inks.key);
+    // Gold stays gold: its red the most, its blue the least (darkened, it had gone brown).
+    expect(inks.key[0] > inks.key[1] && inks.key[1] > inks.key[2]).toBe(true);
+    // Its key where the key's light is moderate, its rim where the rim burns; toward its sheen where the key strikes hardest.
+    expect(fieldInk(inks, FIELD_INK.sheen.from, 0).rgb).toEqual(inks.key);
     expect(fieldInk(inks, 0, 1).rgb).toEqual(inks.rim);
+    expect(luminance(fieldInk(inks, 1, 0).rgb as [number, number, number])).toBeGreaterThan(luminance(inks.key));
     expect(fieldInk(inks, 0.9, 0).alpha).toBeGreaterThan(fieldInk(inks, 0.2, 0).alpha);
-    expect(fieldInk(inks, 0, 0)).toEqual({ rgb: inks.key, alpha: 0.1 });
+    // The far lines faint but there (a floor, so it keeps its volume), and whole where it is fully lit.
+    expect(fieldInk(inks, 0, 0)).toEqual({ rgb: inks.key, alpha: FIELD_INK.floor });
+    expect(FIELD_INK.floor).toBeGreaterThan(0.15);
+    expect(fieldInk(inks, 1, 0).alpha).toBe(1);
+  });
+
+  test("on a light page, its lines hold at the smallest size and his lance holds as a blade", () => {
+    // No line narrower than FIELD_STROKE.inkLeast, wider than on a dark page (ink has no glow to carry it).
+    expect(FIELD_STROKE.inkLeast).toBeGreaterThanOrEqual(0.5);
+    expect(FIELD_STROKE.ink).toBeGreaterThanOrEqual(1);
+    // At 34 px his lance's root is at least 2.5 px across on paper (a pixel and a half wider than on a dark page's 1).
+    const at34 = 2 * Math.max(GALAHAD_LANCE.ink.least, (34 * GALAHAD_LANCE.width) / 2) * GALAHAD_LANCE.ink.width;
+    expect(at34).toBeGreaterThan(2.5);
+    // A close tint under it, and under each line: as close as the dark page's glow, never fog.
+    expect(GALAHAD_LANCE.ink.glow.width).toBeLessThanOrEqual(GALAHAD_LANCE.glow.width);
+    expect(FIELD_STROKE.inkGlow.width).toBeLessThanOrEqual(FIELD_STROKE.glow.width);
+    expect(FIELD_STROKE.inkGlow.alpha).toBeLessThanOrEqual(FIELD_STROKE.glow.alpha);
   });
 });

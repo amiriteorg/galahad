@@ -139,13 +139,13 @@ describe("his orb", () => {
     expect(frames.length).toBeGreaterThan(0);
   });
 
-  test("on a light page, ink: nothing is added as light, his lance in ink too", () => {
+  test("on a light page, ink: nothing is added as light, his lance in ink too, each over a close tint of its ink", () => {
     root.dataset.theme = "light";
     const canvas = canvasOf(orb({ size: 50, mood: "idle", key: "test:paper" }) as unknown as Node_)!;
     expect(canvas.blends).not.toContain("lighter");
     expect(count(canvas.calls, "stroke")).toBeGreaterThan(5);
-    // Each half of his lance, once (no glow under it on paper).
-    expect(count(canvas.calls, "createLinearGradient")).toBe(2);
+    // Each half of his lance, its tint and its blade (so it holds where he is small, rather than a needle).
+    expect(count(canvas.calls, "createLinearGradient")).toBe(4);
   });
 
   test("still where motion is reduced: drawn once, and nothing more", () => {
