@@ -4,8 +4,10 @@ import android.content.Context
 import android.database.ContentObserver
 import android.graphics.Bitmap
 import android.graphics.BlendMode
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Shader
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -35,6 +37,7 @@ import org.amirite.galahad.core.FieldOrb
 import org.amirite.galahad.core.Json
 import org.amirite.galahad.core.OrbMotion
 import kotlin.math.PI
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -42,23 +45,35 @@ import kotlin.math.tan
 
 /*
  * The orbs (26 November 2026): every orb is Galahad's field (core/Field.kt, core/FieldOrb.kt), drawn as the PWA's
- * ui/orb.ts draws it. His is in gold inside his heads-up ring with its oxblood seat; a knight's is in its own colours, with
- * no ring. Each line of a field is a stroke from point to point, its light added to the others on a dark page (a canvas's
- * "lighter": Android's BlendMode.PLUS) over a close, faint glow of its own and no fog; on a light page it is ink. Where it
- * is one of many (a row, a conversation's history) an orb is still and drawn once; where it is the one you are looking at,
- * it moves as its mood does, slowly (your words, 25 and 26 November 2026: "slow and calming movement", "i dont want them
- * to be too visually distractin"), only as often as FieldOrb.fps asks, never at rest, and never while the phone's
- * animations are off.
+ * ui/orb.ts draws it. His is in gold, with his lance of light through it along his axis (your word, 26 November 2026, of
+ * the heads-up ring he wore until then: "remove the old mark around galahad. make the primary agent distinct in some other
+ * cool way"); a knight's is in its own colours, with no lance. The app's own mark is his field alone (AppMark). Each line
+ * of a field is a stroke from point to point, its light added to the others on a dark page (a canvas's "lighter":
+ * Android's BlendMode.PLUS) over a close, faint glow of its own and no fog; on a light page it is ink. Where it is one of
+ * many (a row, a conversation's history) an orb is still and drawn once; where it is the one you are looking at, it moves
+ * as its mood does, slowly (your words, 25 and 26 November 2026: "slow and calming movement", "i dont want them to be too
+ * visually distractin"), only as often as FieldOrb.fps asks, never at rest, and never while the phone's animations are off.
  */
 
 /**
- * Galahad's orb: his field in gold inside his heads-up ring. Given a [mood] (where he stands), it moves as that mood does;
+ * Galahad's orb: his field in gold, his lance through it. Given a [mood] (where he stands), it moves as that mood does;
  * without one, and while the phone's animations are off, it is still. Decorative beside his name; named ([description])
  * where it stands alone. [key] says which orb it is, so one drawn again carries on where it was and a change of mood eases.
  */
 @Composable
 fun GalahadOrb(size: Dp, mood: OrbMotion.Mood? = null, description: String? = null, key: String = "galahad") {
-    FieldCanvas(size, FieldOrb.GALAHAD, ringed = true, knight = false, mood = mood, key = key, description = description)
+    FieldCanvas(size, FieldOrb.GALAHAD, lance = true, knight = false, mood = mood, key = key, description = description)
+}
+
+/**
+ * The app's mark where a page shows it (the sidebar's head beside GALAHAD, Settings' About): the app icon's field, his in
+ * gold, alone (no lance: that is his as the one you talk to), still, and on nothing, so it sits on a light page as on a
+ * dark one (your word, 26 November 2026: "make sure the app icon is transparent so it works in dark and white mode"):
+ * light added to light on a dark page, ink on a light one, as every orb is. Decorative: what it is in is named.
+ */
+@Composable
+fun AppMark(size: Dp) {
+    FieldCanvas(size, FieldOrb.GALAHAD, lance = false, knight = false, mood = null, key = "galahad:mark", description = null)
 }
 
 /**
@@ -70,7 +85,7 @@ fun GalahadOrb(size: Dp, mood: OrbMotion.Mood? = null, description: String? = nu
 @Composable
 fun KnightOrb(id: String, profile: Json?, size: Dp, mood: OrbMotion.Mood? = null, description: String? = null, key: String = "face:$id") {
     val identity = remember(id, profile) { FieldOrb.knight(id, profile) }
-    FieldCanvas(size, identity, ringed = false, knight = true, mood = mood, key = key, description = description)
+    FieldCanvas(size, identity, lance = false, knight = true, mood = mood, key = key, description = description)
 }
 
 /** A knight's or Galahad's orb by handle ("galahad" is his), still unless given a mood. */
@@ -84,8 +99,8 @@ fun Face(id: String, profile: Json?, size: Dp, mood: OrbMotion.Mood? = null, des
 internal fun onPaper(): Boolean = LocalBrand.current.paper.luminance() > 0.5f
 
 @Composable
-private fun FieldCanvas(size: Dp, identity: FieldOrb.Identity, ringed: Boolean, knight: Boolean, mood: OrbMotion.Mood?, key: String, description: String?) {
-    val look = remember(identity, size, ringed) { FieldOrb.look(identity, size.value.toDouble(), ringed) }
+private fun FieldCanvas(size: Dp, identity: FieldOrb.Identity, lance: Boolean, knight: Boolean, mood: OrbMotion.Mood?, key: String, description: String?) {
+    val look = remember(identity, size, knight) { FieldOrb.look(identity, size.value.toDouble(), galahad = !knight) }
     val motion = mood?.let { FieldOrb.motion(it, knight) } ?: STILL
     val paper = onPaper()
     val allowed = motionAllowed()
@@ -94,7 +109,7 @@ private fun FieldCanvas(size: Dp, identity: FieldOrb.Identity, ringed: Boolean, 
     val moving = mood != null && (moves(motion) || Courses.has(key))
     val course = if (moving) remember(key, motion) { Courses.keep(key, motion) } else null
     val time = if (course != null) frameTime(course, motion, allowed) else null
-    val painter = if (course != null) remember(identity, look, ringed) { Painter(identity, look, ringed) } else null
+    val painter = if (course != null) remember(identity, look, lance) { Painter(identity, look, lance) } else null
     val semantics = if (description != null) Modifier.clearAndSetSemantics { contentDescription = description } else Modifier.clearAndSetSemantics { }
     Canvas(Modifier.size(size).then(semantics)) {
         val px = this.size.width.roundToInt().coerceAtLeast(1)
@@ -103,7 +118,7 @@ private fun FieldCanvas(size: Dp, identity: FieldOrb.Identity, ringed: Boolean, 
             val frame = if (t != null && allowed) Courses.advance(course, t, OrbMotion.seed(key), !knight) else FieldOrb.still(course.motion).copy(turn = course.clock.turn)
             painter.frame(px, density, size.value.toDouble(), frame, paper)
         } else {
-            Stills.of(identity, look, ringed, FieldOrb.still(motion), px, density, size.value.toDouble(), paper)
+            Stills.of(identity, look, lance, FieldOrb.still(motion), px, density, size.value.toDouble(), paper)
         }
         drawIntoCanvas { it.nativeCanvas.drawBitmap(bitmap, 0f, 0f, null) }
     }
@@ -228,9 +243,9 @@ private const val DISTANCE = 8.3
 /**
  * A field made ready to draw a frame at a time: its model and the buffer its points are written to (made once), the paths
  * its strokes are gathered into (one for each colour and brightness, so a frame is a few dozen draws, not one for each
- * point), and the picture it draws into, kept and drawn again.
+ * point), and the picture it draws into, kept and drawn again. With [lance], his lance goes under his lines.
  */
-private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, val ringed: Boolean) {
+private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, val lance: Boolean) {
     private val model = Field.model(look.lines, look.steps, identity.tilt.toDoubleArray(), look.weight, identity.colours, identity.seed)
     private val buffer = Field.buffer(model)
     private val xs = FloatArray(model.lines * model.steps)
@@ -246,10 +261,8 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
         strokeJoin = Paint.Join.ROUND
     }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.BUTT
-    }
+    private val blade = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val outline = Path()
     private var picture: Bitmap? = null
 
     /** A frame drawn into this orb's own picture, [px] pixels wide ([sizeDp] dp at [density]). */
@@ -311,7 +324,10 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
         val weight = look.weight * density
         stroke.blendMode = if (paper) null else BlendMode.PLUS
         fill.blendMode = if (paper) null else BlendMode.PLUS
+        blade.blendMode = if (paper) null else BlendMode.PLUS
         for (pass in if (paper) LINE_ONLY else GLOW_THEN_LINE) {
+            // His lance, under his lines (on a light page they cross over it; on a dark one light adds alike either way).
+            if (pass == LINE && lance) drawLance(g, px, density, sizeDp, colours, glow, inks)
             for (kind in used) {
                 val level = (kind and 0xf).toDouble() / (LEVELS - 1)
                 val hue = kind shr 4
@@ -339,24 +355,74 @@ private class Painter(val identity: FieldOrb.Identity, val look: FieldOrb.Look, 
                 g.drawCircle(x, y, r.toFloat(), fill)
             }
         }
-        if (ringed) ring(g, px, FieldOrb.ringWidth(sizeDp) * density, paper)
     }
 
-    /** His heads-up ring: five arcs of ink, and his seat at the top in oxblood. */
-    private fun ring(g: android.graphics.Canvas, px: Int, width: Double, paper: Boolean) {
-        val r = (px * FieldOrb.Ring.R).toFloat()
-        val c = px / 2f
-        ring.strokeWidth = width.toFloat()
-        ring.color = hexColor(if (paper) FieldOrb.Ring.INK_PAPER else FieldOrb.Ring.INK_DARK, if (paper) FieldOrb.Ring.ALPHA_PAPER else FieldOrb.Ring.ALPHA_DARK)
-        for ((from, to) in FieldOrb.Ring.ARCS) g.drawArc(c - r, c - r, c + r, c + r, (from - 90).toFloat(), (to - from).toFloat(), false, ring)
-        ring.strokeWidth = (width * FieldOrb.Ring.SEAT_WIDTH).toFloat()
-        ring.color = hexColor(if (paper) FieldOrb.Ring.OXBLOOD_PAPER else FieldOrb.Ring.OXBLOOD_DARK, 1.0)
-        g.drawArc(c - r, c - r, c + r, c + r, (FieldOrb.Ring.SEAT_FROM - 90).toFloat(), (FieldOrb.Ring.SEAT_TO - FieldOrb.Ring.SEAT_FROM).toFloat(), false, ring)
+    /**
+     * His lance (FieldOrb.Lance, lanceLine, lanceAt; ui/orb.ts' lance): each half one blade, from its root out of his core
+     * to its tip, narrowing to a point and fading as it goes, filled along its length with his lit gold going to his gold
+     * and then his rim's copper (its light added, over a close glow), or on a light page his inks; as bright as his field
+     * is now ([glow]). One path and one fill a half and a pass, so no seam shows where light is added to light.
+     */
+    private fun drawLance(g: android.graphics.Canvas, px: Int, density: Float, sizeDp: Double, colours: Field.Colours, glow: Double, inks: FieldOrb.Inks?) {
+        val half = px / 2.0
+        // Half its width at its root, in pixels: never under half a dp (a dp across).
+        val root = max(0.5, (sizeDp * FieldOrb.Lance.WIDTH) / 2) * density
+        val strength = min(1.0, max(0.0, glow))
+        fun rgb(hex: String) = intArrayOf(hex.substring(1, 3).toInt(16), hex.substring(3, 5).toInt(16), hex.substring(5, 7).toInt(16))
+        fun mix(a: IntArray, b: IntArray, t: Double) = IntArray(3) { FieldOrb.jsRound(a[it] + (b[it] - a[it]) * t).toInt() }
+        val lit = rgb(colours.key[0])
+        val gold = rgb(colours.key[1])
+        val rim = rgb(colours.rim)
+        fun colourAt(hue: Double): IntArray = when {
+            inks != null -> mix(inks.key, inks.rim, hue)
+            hue <= 0.5 -> mix(lit, gold, hue * 2)
+            else -> mix(gold, rim, (hue - 0.5) * 2)
+        }
+        val stops = FloatArray(LANCE_STOPS + 1) { it.toFloat() / LANCE_STOPS }
+        for (each in FieldOrb.lanceLine(identity, look.zoom)) {
+            val x0 = half + each.root[0] * half
+            val y0 = half + each.root[1] * half
+            val x1 = half + each.tip[0] * half
+            val y1 = half + each.tip[1] * half
+            val length = hypot(x1 - x0, y1 - y0).takeIf { it > 0 } ?: 1.0
+            val nx = -(y1 - y0) / length
+            val ny = (x1 - x0) / length
+            for (pass in if (inks != null) LINE_ONLY else GLOW_THEN_LINE) {
+                val spread = if (pass == GLOW) FieldOrb.Lance.GLOW_WIDTH else if (inks != null) FieldOrb.Lance.INK_WIDTH else 1.0
+                val strong = strength * (if (pass == GLOW) FieldOrb.Lance.GLOW_ALPHA else if (inks != null) FieldOrb.Lance.INK_ALPHA else 1.0)
+                val colors = IntArray(LANCE_STOPS + 1) { i ->
+                    val at = FieldOrb.lanceAt(i.toDouble() / LANCE_STOPS)
+                    val c = colourAt(at.hue)
+                    val alpha = FieldOrb.jsRound(min(1.0, at.light * strong) * 1000) / 1000
+                    android.graphics.Color.argb((alpha * 255).roundToInt().coerceIn(0, 255), c[0], c[1], c[2])
+                }
+                blade.shader = LinearGradient(x0.toFloat(), y0.toFloat(), x1.toFloat(), y1.toFloat(), colors, stops, Shader.TileMode.CLAMP)
+                // One side from root to tip, the other back: its width at each step its root's times lanceAt's share.
+                outline.rewind()
+                for (i in 0..FieldOrb.Lance.STEPS) {
+                    val u = i.toDouble() / FieldOrb.Lance.STEPS
+                    val w = root * spread * FieldOrb.lanceAt(u).width
+                    val x = (x0 + (x1 - x0) * u + nx * w).toFloat()
+                    val y = (y0 + (y1 - y0) * u + ny * w).toFloat()
+                    if (i == 0) outline.moveTo(x, y) else outline.lineTo(x, y)
+                }
+                for (i in FieldOrb.Lance.STEPS downTo 0) {
+                    val u = i.toDouble() / FieldOrb.Lance.STEPS
+                    val w = root * spread * FieldOrb.lanceAt(u).width
+                    outline.lineTo((x0 + (x1 - x0) * u - nx * w).toFloat(), (y0 + (y1 - y0) * u - ny * w).toFloat())
+                }
+                outline.close()
+                g.drawPath(outline, blade)
+            }
+        }
+        blade.shader = null
     }
 
     private companion object {
         const val GLOW = 0
         const val LINE = 1
+        /** How many steps of colour and light a blade of his lance is filled with, along it. */
+        const val LANCE_STOPS = 8
         val GLOW_THEN_LINE = intArrayOf(GLOW, LINE)
         val LINE_ONLY = intArrayOf(LINE)
     }
@@ -370,9 +436,6 @@ private fun emberLight(colours: Field.Colours): Triple<Double, Double, Double> {
     return Triple(a[0] + (b[0] - a[0]) / 3.0, a[1] + (b[1] - a[1]) / 3.0, a[2] + (b[2] - a[2]) / 3.0)
 }
 
-private fun hexColor(hex: String, alpha: Double): Int =
-    android.graphics.Color.argb((alpha * 255).roundToInt(), hex.substring(1, 3).toInt(16), hex.substring(3, 5).toInt(16), hex.substring(5, 7).toInt(16))
-
 /**
  * Still orbs' pictures, drawn once and stamped from then on wherever the same orb is still (a knight in twenty rows is
  * drawn once): the latest forty kept, small ones only (a large one is drawn into a picture of its own each time it is
@@ -383,11 +446,11 @@ private object Stills {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?): Boolean = size > 40
     }
 
-    fun of(identity: FieldOrb.Identity, look: FieldOrb.Look, ringed: Boolean, frame: FieldOrb.Frame, px: Int, density: Float, sizeDp: Double, paper: Boolean): Bitmap {
-        val key = "${identity.seed}/${identity.tilt}/${identity.lines}/${identity.colours}|$look|$ringed|${frame.glow}/${frame.rim}|$px|$paper"
+    fun of(identity: FieldOrb.Identity, look: FieldOrb.Look, lance: Boolean, frame: FieldOrb.Frame, px: Int, density: Float, sizeDp: Double, paper: Boolean): Bitmap {
+        val key = "${identity.seed}/${identity.tilt}/${identity.lines}/${identity.colours}|$look|$lance|${frame.glow}/${frame.rim}|$px|$paper"
         kept[key]?.let { return it }
         val bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
-        Painter(identity, look, ringed).draw(android.graphics.Canvas(bitmap), px, density, sizeDp, frame, paper)
+        Painter(identity, look, lance).draw(android.graphics.Canvas(bitmap), px, density, sizeDp, frame, paper)
         if (px <= 384) kept[key] = bitmap
         return bitmap
     }

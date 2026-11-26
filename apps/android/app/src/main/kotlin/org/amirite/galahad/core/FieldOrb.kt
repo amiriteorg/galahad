@@ -14,12 +14,13 @@ import kotlin.math.sin
 
 /**
  * The orbs as fields (the PWA's lib/field-orb.ts, 26 November 2026): Galahad's field (Field) is every orb, his in gold
- * inside his heads-up ring, each knight's in its own colours. The owner's words: the glyph spheres "still look a little
- * strange/not cool enough, and almost like nipples", and "i dont want them to be too visually distractin". So a field
- * has no bright middle (its core stays dark), no regular lattice of dots, and no ring round a knight; it is still where it
- * is one of many, and moves slowly where it is the one you are looking at. Pure: whose field an orb is, how it is drawn
- * at a size, how it moves in each mood, its embers and its ink on a light page. ui/Field.kt draws it; the vectors'
- * `field` section holds it to the PWA's own numbers.
+ * with his lance of light through it, each knight's in its own colours. The owner's words: the glyph spheres "still look
+ * a little strange/not cool enough, and almost like nipples", and "i dont want them to be too visually distractin"; then,
+ * of the heads-up ring he had worn round his field, "remove the old mark around galahad. make the primary agent distinct
+ * in some other cool way". So a field has no bright middle (its core stays dark), no regular lattice of dots, and no ring
+ * round it, his or a knight's; it is still where it is one of many, and moves slowly where it is the one you are looking
+ * at. Pure: whose field an orb is, how it is drawn at a size, his lance, how it moves in each mood, its embers and its ink
+ * on a light page. ui/Field.kt draws it; the vectors' `field` section holds it to the PWA's own numbers.
  */
 object FieldOrb {
     /** Whose field an orb is: its seed (its lines' longitudes and widths), its lean (Field.model's tilt), how many lines,
@@ -53,34 +54,82 @@ object FieldOrb {
      * its square (at 1 its widest point is 0.44 to 0.47 of its width from the middle). */
     data class Look(val lines: Int, val steps: Int, val weight: Double, val zoom: Double)
 
-    /** A field at a size. In Galahad's ring ([ringed]) it is drawn smaller, clear of the ring, and with fewer of his lines
-     * where he is small; a knight's fills its square. The larger, the more points along a line, and the smaller, the bolder. */
-    fun look(identity: Identity, size: Double, ringed: Boolean): Look {
+    /** A field at a size. His ([galahad]) keeps fewer of his 46 lines where he is small, so it reads at 18 dp; every field
+     * fills its square alike (his no longer drawn in, clear of a ring). The larger, the more points along a line, and the
+     * smaller, the bolder. */
+    fun look(identity: Identity, size: Double, galahad: Boolean): Look {
         val s = if (size.isFinite()) max(8.0, size) else 36.0
-        val lines = if (ringed) min(identity.lines, if (s < 30) 26 else if (s < 56) 34 else 46) else identity.lines
-        return Look(lines, jsRound(max(20.0, min(96.0, s * 0.55))).toInt(), if (s <= 24) 1.5 else if (s <= 48) 1.25 else 1.0, if (ringed) 0.86 else 0.94)
+        val lines = if (galahad) min(identity.lines, if (s < 30) 26 else if (s < 56) 34 else 46) else identity.lines
+        return Look(lines, jsRound(max(20.0, min(96.0, s * 0.55))).toInt(), if (s <= 24) 1.5 else if (s <= 48) 1.25 else 1.0, 0.94)
     }
 
-    /** Galahad's heads-up ring round his field: five arcs of ink a sixth of the way round each, with gaps between, and at
-     * the top, alone, his seat in oxblood. Angles are degrees clockwise from the top; the radius and widths are shares of
-     * the orb's width, never thinner than a pixel. */
-    object Ring {
-        const val R = 0.465
-        const val WIDTH = 1.0 / 64
-        val ARCS: List<Pair<Double, Double>> = listOf(38.0 to 82.0, 98.0 to 142.0, 158.0 to 202.0, 218.0 to 262.0, 278.0 to 322.0)
-        const val SEAT_FROM = -15.0
-        const val SEAT_TO = 15.0
-        const val SEAT_WIDTH = 1.8
-        const val INK_DARK = "#e8eaf0"
-        const val INK_PAPER = "#181a22"
-        const val ALPHA_DARK = 0.26
-        const val ALPHA_PAPER = 0.28
-        const val OXBLOOD_DARK = "#c8323f"
-        const val OXBLOOD_PAPER = "#9a1f2b"
+    /**
+     * His lance: what marks him out, now his heads-up ring has gone (the owner's word, 26 November 2026: "make the primary
+     * agent distinct in some other cool way"). A blade of light along his field's own axis, out of both its poles, as a
+     * pulsar's jets go: no knight has one. Each half runs from [FROM] to [TO] of the field's units out of its middle (so the
+     * core, r < 0.32, stays dark), [WIDTH] of the orb's width across at its root (never under a pixel), narrowing to
+     * nothing at its tip, its light fading as it goes ([lanceAt]). On a dark page its light is added as the field's is,
+     * with a close glow [GLOW_WIDTH] times as wide and [GLOW_ALPHA] as strong (no fog); on a light page it is ink,
+     * [INK_WIDTH] times as wide and [INK_ALPHA] times as strong as its light (ink on white reads thinner than light on
+     * black). Its outline is taken at [STEPS] steps along it. The field turns about it; it shines as the field does, never
+     * past its light at rest (breathing while something waits, dimmer while queued or paused, its tip red-brown when its
+     * work failed).
+     */
+    object Lance {
+        const val FROM = 0.36
+        const val TO = 1.72
+        const val WIDTH = 1.0 / 40
+        const val STEPS = 16
+        const val GLOW_WIDTH = 3.2
+        const val GLOW_ALPHA = 0.2
+        const val INK_WIDTH = 1.3
+        const val INK_ALPHA = 1.2
     }
 
-    /** How wide his ring's line is, in pixels, for an orb [size] pixels wide (its seat's is Ring.SEAT_WIDTH as wide). */
-    fun ringWidth(size: Double): Double = max(1.0, size * Ring.WIDTH)
+    /** A half of his lance in an orb's square (its middle 0, its edge 1; x right, y down, as an ember's): its root, out of
+     * his core, and its tip, each as x and y. */
+    data class Blade(val root: List<Double>, val tip: List<Double>)
+
+    /** A direction in the field's own space turned as its lean turns its points (Field.at: Rx·Ry·Rz). */
+    fun leaned(v: List<Double>, tilt: List<Double>): List<Double> {
+        val cx = cos(tilt[0])
+        val sx = sin(tilt[0])
+        val cy = cos(tilt[1])
+        val sy = sin(tilt[1])
+        val cz = cos(tilt[2])
+        val sz = sin(tilt[2])
+        var x = v[0] * cz - v[1] * sz
+        val y = v[0] * sz + v[1] * cz
+        var z = v[2]
+        val x2 = x * cy + z * sy
+        val z2 = -x * sy + z * cy
+        x = x2
+        z = z2
+        return listOf(x, y * cx - z * sx, y * sx + z * cx)
+    }
+
+    /** His lance in an orb's square at a zoom: each half's root and tip, along his axis (Field.project's camera, as his
+     * points are seen), the upper half first. */
+    fun lanceLine(identity: Identity, zoom: Double): List<Blade> {
+        val axis = leaned(listOf(0.0, 1.0, 0.0), identity.tilt)
+        fun seen(k: Double): List<Double> {
+            // (Placed as a point is: Field.at's points are its units times 1.05.)
+            val q = Field.project(axis[0] * k * 1.05, axis[1] * k * 1.05, axis[2] * k * 1.05, 0.0, 2.0, zoom = zoom)
+            return listOf(q.x - 1, q.y - 1)
+        }
+        val halves = listOf(1.0, -1.0).map { dir -> Blade(seen(dir * Lance.FROM), seen(dir * Lance.TO)) }
+        return if (halves[0].tip[1] <= halves[1].tip[1]) halves else listOf(halves[1], halves[0])
+    }
+
+    /** Along a half of his lance, [u] of the way from its root (0) to its tip (1): its width as a share of the root's (it
+     * narrows to a point), how much of its light is left, and how far its colour has gone from his key's lit gold (0)
+     * through his gold (0.5) to his rim's copper (1). */
+    data class Along(val width: Double, val light: Double, val hue: Double)
+
+    fun lanceAt(u: Double): Along {
+        val t = max(0.0, min(1.0, u))
+        return Along((1 - t).pow(0.55), (1 - t).pow(1.1), t)
+    }
 
     // ---- how it moves ------------------------------------------------------------------------------------------------
 
@@ -171,7 +220,7 @@ object FieldOrb {
 
     /** His embers: how many; each lives 2.8 to 4.4 seconds; where they set out (a share of the way from the middle to the
      * edge of the orb's square) and how far each drifts; how much they rise; how far round from the rim's burning side
-     * they may set out (degrees either way); and their radius. Inside his ring always. */
+     * they may set out (degrees either way); and their radius. Always inside his square. */
     object Embers {
         const val COUNT = 7
         const val LIFE_FROM = 2.8

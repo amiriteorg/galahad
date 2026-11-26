@@ -71,6 +71,9 @@ fun Sidebar(app: AppModel, nav: Nav, give: () -> Unit, places: () -> Unit, colla
     Column(Modifier.width(Space.sidebar).fillMaxHeight().background(brand.paper)) {
         // ---- the head: the mark, a task to give, the sidebar folded away ----
         Row(Modifier.fillMaxWidth().padding(start = Space.s4, end = Space.s1, top = Space.s2), verticalAlignment = Alignment.CenterVertically) {
+            // The app's mark (AppMark: the icon's field on nothing, so no tile sits on a light page), then the wordmark.
+            AppMark(20.dp)
+            Spacer(Modifier.width(9.dp))
             Text("GALAHAD", style = Type.section.copy(letterSpacing = 2.4.sp), modifier = Modifier.weight(1f))
             IconButton(onClick = give, enabled = table.asOf == null, modifier = Modifier.semantics { contentDescription = "Give a task" }) { Icon(ComposeIcon, null, Modifier.size(20.dp)) }
             IconButton(onClick = collapse, modifier = Modifier.semantics { contentDescription = "Hide the sidebar" }) { Icon(PanelIcon, null, Modifier.size(20.dp)) }

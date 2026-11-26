@@ -32,9 +32,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.amirite.galahad.app.AppModel
@@ -90,8 +92,14 @@ fun SettingsScreen(app: AppModel, openKeys: () -> Unit, openConnectors: () -> Un
             }
         }
         Panel {
-            Text("Galahad $version", style = MaterialTheme.typography.titleMediumEmphasized)
-            Text("Open source (Apache-2.0).", style = MaterialTheme.typography.bodyMedium)
+            // The app's mark, on nothing (AppMark): no tile on a light page.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s3)) {
+                AppMark(40.dp)
+                Column {
+                    Text("Galahad $version", style = MaterialTheme.typography.titleMediumEmphasized)
+                    Text("Open source (Apache-2.0).", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/amiriteorg/galahad"))) }) { Text("The source on GitHub") }
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://galahad.sh"))) }) { Text("galahad.sh") }
         }

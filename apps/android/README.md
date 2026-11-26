@@ -7,23 +7,23 @@ phone has one) that never leaves it.
 
 It's small on purpose: a signed release is about 3 MB, nearly all of it the code; it carries no pictures of the
 knights, which it draws itself. It needs no Google services: HTTP, JSON and the cryptography are what Android ships, and
-the only libraries are AndroidX's Compose, activity-compose and profile installer, and Kotlin's coroutines. Every knight
-is an orb (your words, 25 November 2026: "drop the knight avatars, and just use custom/procedurally generated colored
-particle orbs", "use glyph and randomness on the orbs, like Jarvis/Ultron in the movies, and my other project Phren"):
-a sphere of monospace glyphs round a bright nucleus, in the colour you chose for it on its page or the one of 24 its
-handle picks (`core/Avatar.kt`, core's avatar.ts), its sphere, glyphs and arcs its handle's (`core/OrbSphere.kt`, the
-PWA's lib/orb-sphere.ts), ink on paper in the light theme. A state moves as long as it lasts (your word, 24 November
-2026), slowly and calmly (25 November 2026: "slow and calming movement"): Galahad's orb and every knight's orb in its
-seat in their state's mood (`core/OrbMotion.kt`, the PWA's lib/orb-motion.ts held to it by the vectors), only as often
-as the mood needs, and one still frame while the phone's animations are off; a knight's state is still its ring's
-colour and a word.
+the only libraries are AndroidX's Compose, activity-compose and profile installer, and Kotlin's coroutines. Every orb
+is Galahad's field (your words, 26 November 2026: the glyph spheres looked "almost like nipples", and "i dont want them
+to be too visually distractin"): lines of force round a dark core (`core/Field.kt`, `core/FieldOrb.kt`, drawn by
+`ui/Field.kt`), the PWA's lib/field.ts and lib/field-orb.ts, held to them by the parity vectors' `field` section. His is
+in gold with his lance of light through it along his axis (his heads-up ring went the same day: "remove the old mark
+around galahad. make the primary agent distinct in some other cool way"); each knight's is in the colour you chose for
+it on its page or the one of 24 its handle picks (`core/Avatar.kt`, core's avatar.ts), with its handle's lean and lines.
+Where orbs are many they are still, drawn once; the one in focus moves slowly in its mood (his on Home, a knight's in
+its own thread while it works), only as often as the mood needs (his turns once a minute at rest; a knight's settles to
+no frames at all), and never while the phone's animations are off. In the light theme a field is ink on paper. The app's own mark (the sidebar's head, Settings' About) is his
+field alone, on nothing (`AppMark`).
 
-It opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything): his place, at the
-bar's right end, is his home (`ui/GalahadHome.kt`), his orb large in the colour of where he stands, his line, what you
-might ask, what he asks you (the Inbox's own cards), your recent chats and the message box, each chat shown over it. His
-orb (`core/Orb.kt`, drawn by `ui/Orb.kt`: his heads-up rings, a ring of data turning in them, and his own sphere of
-glyphs) is the PWA's and the iPhone's, part for part, held to them by the parity vectors, and moves as theirs do; it is
-his seat at the Roundtable and the place's icon too (still, in the bar).
+It opens on Galahad (your word, 23 November 2026: he is the one you talk to, for nearly everything), with no tab bar:
+Home (`ui/Home.kt`) is his orb, his name, the line at a glance, the machine chip and "…" for everything else (the
+Roundtable, the Inbox, his chats, keys, connectors, settings, a task to give), then what needs you with each answer in
+place, the work by attention, and his message box docked. A task opens as a thread of its own (`ui/TaskScreen.kt`). A
+tablet (720 dp and wider) has T3's panes: the sidebar (`ui/Sidebar.kt`) beside the page.
 
 What it does (21 November 2026): join your node with an invite and the six-digit code; the Roundtable, Galahad first,
 each knight in its state's ring with one line of what it's doing (the same line the PWA and the iPhone show: the roster

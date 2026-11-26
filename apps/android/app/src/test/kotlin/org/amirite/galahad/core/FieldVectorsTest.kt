@@ -20,7 +20,7 @@ internal object Fixture {
 /**
  * The orbs as fields (the PWA's lib/field.ts and lib/field-orb.ts) against the vectors' `field` section: the lights,
  * whose field each orb is, a field's lines and points at given turns, where they fall on a picture, each size's look,
- * his ring, how a field moves in each mood, its embers, tints, tone and inks. Numbers to a billionth, all else exactly.
+ * his lance, how a field moves in each mood, its embers, tints, tone and inks. Numbers to a billionth, all else exactly.
  */
 class FieldVectorsTest {
     private val f = Fixture.vectors["field"]!!
@@ -130,11 +130,11 @@ class FieldVectorsTest {
             val who = p["who"].string!!
             val id = identity(who)
             val size = p["size"].double!!
-            val ringed = p["ringed"].bool!!
+            val galahad = p["galahad"].bool!!
             val rim = p["rim"].double!!
             val options = p["options"]
             // Its look at its size, and its colours in its rim's light, as the PWA chose them.
-            val look = FieldOrb.look(id, size, ringed)
+            val look = FieldOrb.look(id, size, galahad)
             assertEquals(who, options["lines"].int, look.lines)
             near(options["weight"], look.weight, "$who.weight")
             assertEquals(who, colours(options["colours"]), id.colours)
@@ -189,7 +189,7 @@ class FieldVectorsTest {
     @Test fun eachSizesLook() {
         for (l in f["looks"].list) {
             val who = l["who"].string!!
-            val got = FieldOrb.look(identity(who), l["size"].double!!, l["ringed"].bool!!)
+            val got = FieldOrb.look(identity(who), l["size"].double!!, l["galahad"].bool!!)
             val want = l["look"]
             val at = "$who at ${l["size"].double}"
             assertEquals(at, want["lines"].int, got.lines)
@@ -199,25 +199,36 @@ class FieldVectorsTest {
         }
     }
 
-    @Test fun hisRingAndTheStrokes() {
-        val r = f["ring"]
-        near(r["r"], FieldOrb.Ring.R, "ring.r")
-        near(r["width"], FieldOrb.Ring.WIDTH, "ring.width")
-        r["arcs"].list.forEachIndexed { i, a ->
-            near(a[0], FieldOrb.Ring.ARCS[i].first, "arc[$i].from")
-            near(a[1], FieldOrb.Ring.ARCS[i].second, "arc[$i].to")
+    @Test fun hisLanceAndTheStrokes() {
+        val l = f["lance"]
+        near(l["from"], FieldOrb.Lance.FROM, "lance.from")
+        near(l["to"], FieldOrb.Lance.TO, "lance.to")
+        near(l["width"], FieldOrb.Lance.WIDTH, "lance.width")
+        assertEquals(l["steps"].int, FieldOrb.Lance.STEPS)
+        near(l["glow"]["width"], FieldOrb.Lance.GLOW_WIDTH, "lance.glow.width")
+        near(l["glow"]["alpha"], FieldOrb.Lance.GLOW_ALPHA, "lance.glow.alpha")
+        near(l["ink"]["width"], FieldOrb.Lance.INK_WIDTH, "lance.ink.width")
+        near(l["ink"]["alpha"], FieldOrb.Lance.INK_ALPHA, "lance.ink.alpha")
+        assertEquals(3, l["lines"].list.size)
+        for (line in l["lines"].list) {
+            val zoom = line["zoom"].double!!
+            val got = FieldOrb.lanceLine(FieldOrb.GALAHAD, zoom)
+            val halves = line["halves"].list
+            assertEquals("halves at $zoom", 2, halves.size)
+            assertEquals("halves at $zoom", halves.size, got.size)
+            halves.forEachIndexed { i, half ->
+                Fixture.numbers(half["root"]).forEachIndexed { k, v -> Fixture.near(v, got[i].root[k], "lance at $zoom [$i].root[$k]") }
+                Fixture.numbers(half["tip"]).forEachIndexed { k, v -> Fixture.near(v, got[i].tip[k], "lance at $zoom [$i].tip[$k]") }
+            }
         }
-        assertEquals(r["arcs"].list.size, FieldOrb.Ring.ARCS.size)
-        near(r["seat"]["from"], FieldOrb.Ring.SEAT_FROM, "seat.from")
-        near(r["seat"]["to"], FieldOrb.Ring.SEAT_TO, "seat.to")
-        near(r["seat"]["width"], FieldOrb.Ring.SEAT_WIDTH, "seat.width")
-        assertEquals(r["ink"]["dark"].string, FieldOrb.Ring.INK_DARK)
-        assertEquals(r["ink"]["paper"].string, FieldOrb.Ring.INK_PAPER)
-        near(r["ink"]["alpha"]["dark"], FieldOrb.Ring.ALPHA_DARK, "ink.alpha.dark")
-        near(r["ink"]["alpha"]["paper"], FieldOrb.Ring.ALPHA_PAPER, "ink.alpha.paper")
-        assertEquals(r["oxblood"]["dark"].string, FieldOrb.Ring.OXBLOOD_DARK)
-        assertEquals(r["oxblood"]["paper"].string, FieldOrb.Ring.OXBLOOD_PAPER)
-        for (w in r["widths"].list) near(w["width"], FieldOrb.ringWidth(w["size"].double!!), "ring width at ${w["size"].double}")
+        assertTrue(l["along"].list.size >= 5)
+        for (a in l["along"].list) {
+            val u = a["u"].double!!
+            val got = FieldOrb.lanceAt(u)
+            near(a["width"], got.width, "lance at u $u: width")
+            near(a["light"], got.light, "lance at u $u: light")
+            near(a["hue"], got.hue, "lance at u $u: hue")
+        }
         val s = f["stroke"]
         near(s["least"], FieldOrb.Stroke.LEAST, "least")
         near(s["more"], FieldOrb.Stroke.MORE, "more")
