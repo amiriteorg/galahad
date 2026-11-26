@@ -4,7 +4,7 @@ import { galahadState } from "../lib/knight-state.ts";
 import { orbMoodOfState } from "../lib/orb-motion.ts";
 import { atAGlance, type Attended, inProject, type WorkRow } from "../lib/work.ts";
 import { setWorkOpen, workOpen } from "../prefs.ts";
-import { button, callout, dot, skeletonRows } from "../ui/controls.ts";
+import { arrive, button, callout, count, dot, setCount, skeletonRows } from "../ui/controls.ts";
 import { cx, h, keepPlace, replace } from "../ui/dom.ts";
 import { icon } from "../ui/icons.ts";
 import { orb } from "../ui/orb.ts";
@@ -49,7 +49,11 @@ export const homeView: View = (root, ctx, { scope }) => {
   );
 
   // ---- what needs you, then the work ----
-  const needs = h("section", { class: "home-needs", "aria-label": "Needs you", hidden: true });
+  // In the alerts' look (an .alert-card in amber): its count rolls as it changes, and something new breathes once.
+  const needs = h("section", { class: "home-needs alert-card", "data-tone": "needs", "aria-label": "Needs you", hidden: true });
+  const needsShown = count(0, false, "needs");
+  const needsHead = h("h2", { class: "home-needs-head" }, dot("needs"), h("span", {}, "Needs you"), needsShown);
+  let needsBefore: number | null = null;
   const filters = h("div", { class: "home-filters", role: "group", "aria-label": "Show the work of" });
   const list = h("div", { class: "home-work-rows" }, skeletonRows(4, { avatar: true }));
   const work = h("section", { class: "home-work", "aria-labelledby": "home-work-head" }, h("div", { class: "home-work-head" }, h("h2", { id: "home-work-head" }, "Work"), filters), list);
@@ -151,7 +155,13 @@ export const homeView: View = (root, ctx, { scope }) => {
     // What needs you: amber, only when something waits.
     const items = all ? needsItems(ctx, all) : [];
     needs.hidden = !items.length;
-    if (items.length) replace(needs, h("h2", { class: "home-needs-head" }, dot("needs"), `Needs you · ${items.length}`), ...items);
+    if (items.length) {
+      setCount(needsShown, items.length);
+      replace(needs, needsHead, ...items);
+      // More waiting than when it was last drawn (not the page's first drawing): one slow breath of its edge.
+      if (needsBefore !== null && items.length > needsBefore) arrive(needs);
+    }
+    if (all) needsBefore = items.length;
     if (!all) {
       if (ctx.live.teamProblem.value) {
         replace(list, h("p", { class: "home-note" }, "The work can't be read just now. ", button("Try again", { variant: "ghost", size: "sm", onClick: () => void ctx.live.refreshTeam() })));

@@ -413,10 +413,8 @@
       .home-chip:hover { border-color: var(--border-strong); color: var(--text); }
       .home-head > .btn { flex: none; }
       /* What needs you: amber, only while something waits, each with its answer in place (views/needs.ts). */
-      .home-needs {
-        margin: 0 calc(var(--sp-3) + var(--safe-right)) var(--sp-5) calc(var(--sp-3) + var(--safe-left)); border-radius: var(--r-xl); background: var(--surface);
-        box-shadow: var(--shadow-1), inset 0 0 0 1px color-mix(in srgb, var(--needs) 30%, var(--border));
-      }
+      /* (Its surface, edge and light are the alerts' .alert-card, in amber.) */
+      .home-needs { margin: 0 calc(var(--sp-3) + var(--safe-right)) var(--sp-5) calc(var(--sp-3) + var(--safe-left)); }
       .home-needs[hidden] { display: none; }
       .home-needs-head { display: flex; align-items: center; gap: var(--sp-2); padding: 12px 14px 2px; font-size: var(--fs-13); font-weight: 600; color: var(--needs); }
       .need { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px 12px; }
@@ -1415,8 +1413,9 @@
       .team-panel h3 { font-size: var(--fs-15); }
       /* The Roundtable's strip (its updates paused; an outcome's bar): sunken, a hairline under it, its words quiet; the
          amber is its mark's alone. */
-      .team-notice { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); background: var(--bg-sunken); border-bottom: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-12); }
-      .team-notice > svg { flex: none; color: var(--warn); }
+      /* Updates paused: the banner's capsule, hanging under the Roundtable's head over its timeline. Its place takes no
+         room, so nothing under it moves when it comes or goes. */
+      .team-notice { position: relative; z-index: 21; height: 0; display: flex; justify-content: center; pointer-events: none; }
       .team-thread { display: flex; flex-direction: column; gap: var(--sp-5); padding: var(--sp-6); max-width: 880px; margin: 0 auto; }
       .team-message { display: flex; gap: var(--sp-3); min-width: 0; }
       .team-message-body { min-width: 0; flex: 1; overflow-wrap: anywhere; }
