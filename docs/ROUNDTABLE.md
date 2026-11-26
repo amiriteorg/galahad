@@ -307,7 +307,7 @@ Hermes can also use Galahad's shared memory through a separate native memory pro
 
 Each knight is an orb of its own (the owner's word, 25 November 2026: "drop the knight avatars, and just use custom/procedurally generated colored particle orbs"): since 26 November 2026 in the web app, Galahad's field (the app icon's lines of force round a dark core) in a colour of its own, after the owner found the glyph spheres before it "almost like nipples". Its key light is its colour, lit and as it is, and its rim burns in a second colour three to six steps round the colour wheel from it. Its handle makes it its own, the same on every device: 12 to 20 lines, their longitudes and widths, and its lean (always seen from the side, never end on). Its colour is the one you chose for it, or else one of 24 (Rose to Blush, every 15 degrees of hue) picked by its handle, so renaming it changes nothing. The iPhone, iPad, Mac and Android apps and galahad.sh still draw the glyph spheres of 25 November until they take up the field.
 
-Galahad is the orb the knights' orbs are made after: his field in gold, inside his heads-up ring with his seat at the top in oxblood.
+Galahad is the orb the knights' orbs are made after: his field in gold, with his lance of light through it along its axis (no knight has one).
 
 ```sh
 bun galahad roundtable avatar ada                    # its orb's colours: its tint, lit and shadowed, and its second

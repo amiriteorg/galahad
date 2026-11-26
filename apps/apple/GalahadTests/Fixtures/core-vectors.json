@@ -14669,7 +14669,7 @@
       {
         "who": "galahad",
         "size": 160,
-        "ringed": true,
+        "galahad": true,
         "turn": 0,
         "rim": 0,
         "options": {
@@ -15964,7 +15964,7 @@
       {
         "who": "galahad",
         "size": 18,
-        "ringed": true,
+        "galahad": true,
         "turn": 1.3,
         "rim": 0,
         "options": {
@@ -17063,7 +17063,7 @@
       {
         "who": "ada",
         "size": 34,
-        "ringed": false,
+        "galahad": false,
         "turn": 0.5,
         "rim": 0,
         "options": {
@@ -17980,7 +17980,7 @@
       {
         "who": "gareth",
         "size": 18,
-        "ringed": false,
+        "galahad": false,
         "turn": 4.2,
         "rim": 0,
         "options": {
@@ -18603,7 +18603,7 @@
       {
         "who": "ada, chosen",
         "size": 50,
-        "ringed": false,
+        "galahad": false,
         "turn": 2.75,
         "rim": 0.6,
         "options": {
@@ -19687,18 +19687,18 @@
       {
         "who": "galahad",
         "size": 8,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 26,
           "steps": 20,
           "weight": 1.5,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 8,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 20,
@@ -19709,18 +19709,18 @@
       {
         "who": "galahad",
         "size": 14,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 26,
           "steps": 20,
           "weight": 1.5,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 14,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 20,
@@ -19731,18 +19731,18 @@
       {
         "who": "galahad",
         "size": 16,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 26,
           "steps": 20,
           "weight": 1.5,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 16,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 20,
@@ -19753,18 +19753,18 @@
       {
         "who": "galahad",
         "size": 18,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 26,
           "steps": 20,
           "weight": 1.5,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 18,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 20,
@@ -19775,18 +19775,18 @@
       {
         "who": "galahad",
         "size": 24,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 26,
           "steps": 20,
           "weight": 1.5,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 24,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 20,
@@ -19797,18 +19797,18 @@
       {
         "who": "galahad",
         "size": 25,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 26,
           "steps": 20,
           "weight": 1.25,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 25,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 20,
@@ -19819,18 +19819,18 @@
       {
         "who": "galahad",
         "size": 29,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 26,
           "steps": 20,
           "weight": 1.25,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 29,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 20,
@@ -19841,18 +19841,18 @@
       {
         "who": "galahad",
         "size": 30,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 34,
           "steps": 20,
           "weight": 1.25,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 30,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 20,
@@ -19863,18 +19863,18 @@
       {
         "who": "galahad",
         "size": 34,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 34,
           "steps": 20,
           "weight": 1.25,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 34,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 20,
@@ -19885,18 +19885,18 @@
       {
         "who": "galahad",
         "size": 48,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 34,
           "steps": 26,
           "weight": 1.25,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 48,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 26,
@@ -19907,18 +19907,18 @@
       {
         "who": "galahad",
         "size": 49,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 34,
           "steps": 27,
           "weight": 1,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 49,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 27,
@@ -19929,18 +19929,18 @@
       {
         "who": "galahad",
         "size": 50,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 34,
           "steps": 28,
           "weight": 1,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 50,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 28,
@@ -19951,18 +19951,18 @@
       {
         "who": "galahad",
         "size": 55,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 34,
           "steps": 30,
           "weight": 1,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 55,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 30,
@@ -19973,18 +19973,18 @@
       {
         "who": "galahad",
         "size": 56,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 46,
           "steps": 31,
           "weight": 1,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 56,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 31,
@@ -19995,18 +19995,18 @@
       {
         "who": "galahad",
         "size": 96,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 46,
           "steps": 53,
           "weight": 1,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 96,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 53,
@@ -20017,18 +20017,18 @@
       {
         "who": "galahad",
         "size": 160,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 46,
           "steps": 88,
           "weight": 1,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 160,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 88,
@@ -20039,18 +20039,18 @@
       {
         "who": "galahad",
         "size": 175,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 46,
           "steps": 96,
           "weight": 1,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 175,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 96,
@@ -20061,18 +20061,18 @@
       {
         "who": "galahad",
         "size": 320,
-        "ringed": true,
+        "galahad": true,
         "look": {
           "lines": 46,
           "steps": 96,
           "weight": 1,
-          "zoom": 0.86
+          "zoom": 0.94
         }
       },
       {
         "who": "ada",
         "size": 320,
-        "ringed": false,
+        "galahad": false,
         "look": {
           "lines": 16,
           "steps": 96,
@@ -20081,72 +20081,150 @@
         }
       }
     ],
-    "ring": {
-      "r": 0.465,
-      "width": 0.015625,
-      "arcs": [
-        [
-          38,
-          82
-        ],
-        [
-          98,
-          142
-        ],
-        [
-          158,
-          202
-        ],
-        [
-          218,
-          262
-        ],
-        [
-          278,
-          322
-        ]
-      ],
-      "seat": {
-        "from": -15,
-        "to": 15,
-        "width": 1.8
+    "lance": {
+      "from": 0.36,
+      "to": 1.72,
+      "width": 0.025,
+      "steps": 16,
+      "glow": {
+        "width": 3.2,
+        "alpha": 0.2
       },
       "ink": {
-        "dark": "#e8eaf0",
-        "paper": "#181a22",
-        "alpha": {
-          "dark": 0.26,
-          "paper": 0.28
+        "width": 1.3,
+        "alpha": 1.2
+      },
+      "lines": [
+        {
+          "zoom": 0.94,
+          "halves": [
+            {
+              "root": [
+                0.029846095587307886,
+                -0.16052836363526435
+              ],
+              "tip": [
+                0.15197504622881342,
+                -0.8174035834315155
+              ]
+            },
+            {
+              "root": [
+                -0.028902002689145112,
+                0.15545052396881864
+              ],
+              "tip": [
+                -0.1303018854754494,
+                0.7008336615680653
+              ]
+            }
+          ]
+        },
+        {
+          "zoom": 0.86,
+          "halves": [
+            {
+              "root": [
+                0.027306002345834912,
+                -0.14686637524077373
+              ],
+              "tip": [
+                0.13904099974125472,
+                -0.747837321011812
+              ]
+            },
+            {
+              "root": [
+                -0.026442257779430545,
+                0.1422206921416851
+              ],
+              "tip": [
+                -0.11921236330732599,
+                0.6411882435622724
+              ]
+            }
+          ]
+        },
+        {
+          "zoom": 1,
+          "halves": [
+            {
+              "root": [
+                0.031751165518412616,
+                -0.1707748549311323
+              ],
+              "tip": [
+                0.16167558109448232,
+                -0.8695782802462931
+              ]
+            },
+            {
+              "root": [
+                -0.03074681137143087,
+                0.16537289783916864
+              ],
+              "tip": [
+                -0.13861902710154195,
+                0.74556772507241
+              ]
+            }
+          ]
         }
-      },
-      "oxblood": {
-        "dark": "#c8323f",
-        "paper": "#9a1f2b"
-      },
-      "widths": [
+      ],
+      "along": [
         {
-          "size": 16,
-          "width": 1
+          "u": -0.5,
+          "width": 1,
+          "light": 1,
+          "hue": 0
         },
         {
-          "size": 36,
-          "width": 1
+          "u": 0,
+          "width": 1,
+          "light": 1,
+          "hue": 0
         },
         {
-          "size": 64,
-          "width": 1
+          "u": 0.125,
+          "width": 0.9291897901388063,
+          "light": 0.8633936660981989,
+          "hue": 0.125
         },
         {
-          "size": 100,
-          "width": 1.5625
+          "u": 0.25,
+          "width": 0.8536575679962692,
+          "light": 0.7287312433973051,
+          "hue": 0.25
         },
         {
-          "size": 160,
-          "width": 2.5
+          "u": 0.5,
+          "width": 0.6830201283771977,
+          "light": 0.4665164957684037,
+          "hue": 0.5
         },
         {
-          "size": 320,
-          "width": 5
+          "u": 0.75,
+          "width": 0.4665164957684037,
+          "light": 0.217637640824031,
+          "hue": 0.75
+        },
+        {
+          "u": 0.9375,
+          "width": 0.217637640824031,
+          "light": 0.04736614270344993,
+          "hue": 0.9375
+        },
+        {
+          "u": 1,
+          "width": 0,
+          "light": 0,
+          "hue": 1
+        },
+        {
+          "u": 1.5,
+          "width": 0,
+          "light": 0,
+          "hue": 1
         }
       ]
     },

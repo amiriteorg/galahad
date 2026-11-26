@@ -26,7 +26,7 @@ import { ORB_TONES, orbLevel, orbPalette, orbParts, orbToneOfState } from "../..
 import { AURUM, FIELD_KEY, FIELD_RIM, fieldAt, fieldBuffer, fieldLight, fieldModel, linear, project, shadeLit, type FieldColours, type FieldOptions } from "../../web/src/lib/field.ts";
 import {
   FIELD_EASE, FIELD_EMBERS, FIELD_EXPOSURE, FIELD_MOTION, FIELD_STROKE, fieldClock, fieldColours, fieldFps, fieldFrame, fieldInk, fieldInks, fieldLook, fieldMotion, fieldStep, fieldStill, fieldTone,
-  GALAHAD_FIELD, GALAHAD_RING, knightField, RIM_ANGLE, RIM_DIM, ringWidth, strokeLight, type FieldClock, type FieldIdentity,
+  GALAHAD_FIELD, GALAHAD_LANCE, knightField, lanceAt, lanceLine, RIM_ANGLE, RIM_DIM, strokeLight, type FieldClock, type FieldIdentity,
 } from "../../web/src/lib/field-orb.ts";
 import { ORB_ARRIVE, ORB_BURST, ORB_BURST_MOTES, ORB_EASE, ORB_LONGEST_STEP, ORB_MOODS, ORB_MOTION, ORB_MOVES, ORB_STAGES, orbBursts, orbClock, orbFrame, orbMoodOfExpression, orbMoodOfState, orbRand, orbSeed, orbStep, type OrbClock, type OrbMood } from "../../web/src/lib/orb-motion.ts";
 import { connectorState } from "../../web/src/lib/connector-state.ts";
@@ -494,13 +494,14 @@ const orb = {
   sphere: orbSpheres(),
 };
 
-// ---- the orbs as fields (the PWA's own lib/field.ts and lib/field-orb.ts, 26 November 2026): Galahad's field in gold in
-// his heads-up ring, each knight's in its own colours. (The orb section above is what the apps draw until they port it.)
+// ---- the orbs as fields (the PWA's own lib/field.ts and lib/field-orb.ts, 26 November 2026): Galahad's field in gold with
+// his lance through it (the heads-up ring went the same day), each knight's in its own colours. (The orb section above is
+// what the apps draw until they port it.)
 const field = fieldVectors();
 
 /** Galahad's field as every orb (the PWA's own lib/field.ts and lib/field-orb.ts): the lights, whose field each is, a
  * field's lines and points at given turns (a few steps along each line: the same function at any count), where they fall
- * on a picture, each size's look, his ring, how a field moves in each mood (its clock, its frames, its embers), its tints
+ * on a picture, each size's look, his lance, how a field moves in each mood (its clock, its frames, its embers), its tints
  * and its light and ink, for every app to draw the same orbs. A point on a cut (the core's, r < 0.32, or the dark's, a
  * light under 0.02) or an ember at the turn of its life would part on another processor's last digit: none is within a
  * millionth of one here, or the vectors aren't written. */
@@ -509,8 +510,8 @@ function fieldVectors() {
   const chosen = { v: 2, color: "#3ABEFF" };
   /** A field's points at a look and a turn (its model's lines at `steps` a line), with each one's place on its line and
    * the key's and the rim's light on it; checked off the cuts. */
-  const pointsOf = (who: string, identity: FieldIdentity, ringed: boolean, size: number, turn: number, steps: number, rim = 0) => {
-    const look = fieldLook(identity, size, ringed);
+  const pointsOf = (who: string, identity: FieldIdentity, galahad: boolean, size: number, turn: number, steps: number, rim = 0) => {
+    const look = fieldLook(identity, size, galahad);
     const colours = fieldColours(identity.colours, rim);
     const options: FieldOptions = { lines: look.lines, steps, tilt: identity.tilt, seed: identity.seed, colours: identity.colours, weight: look.weight, turn };
     const model = fieldModel(options);
@@ -518,7 +519,7 @@ function fieldVectors() {
     const out = fieldBuffer(model);
     const count = fieldAt(model, turn, out, fieldLight(colours));
     return {
-      who, size, ringed, turn, rim, options, colours,
+      who, size, galahad, turn, rim, options, colours,
       points: Array.from({ length: count }, (_, i) => ({ at: out.at[i]!, x: out.x[i]!, y: out.y[i]!, z: out.z[i]!, rgb: [out.r[i]!, out.g[i]!, out.b[i]!], size: out.size[i]!, lit: out.lit[i]!, rim: out.rim[i]! })),
     };
   };
@@ -562,8 +563,9 @@ function fieldVectors() {
     }),
     points,
     projections: points.slice(0, 3).flatMap((each) => [[1, 1], [36, 0.86], [100, 0.94]].map(([size, zoom]) => ({ who: each.who, size, zoom, shown: each.points.slice(0, 6).map((p) => project({ x: p.x, y: p.y, z: p.z, rgb: [0, 0, 0], size: p.size }, size!, { zoom })) }))),
-    looks: [8, 14, 16, 18, 24, 25, 29, 30, 34, 48, 49, 50, 55, 56, 96, 160, 175, 320].flatMap((size) => [{ who: "galahad", size, ringed: true, look: fieldLook(GALAHAD_FIELD, size, true) }, { who: "ada", size, ringed: false, look: fieldLook(knightField("ada"), size, false) }]),
-    ring: { ...GALAHAD_RING, widths: [16, 36, 64, 100, 160, 320].map((size) => ({ size, width: ringWidth(size) })) },
+    looks: [8, 14, 16, 18, 24, 25, 29, 30, 34, 48, 49, 50, 55, 56, 96, 160, 175, 320].flatMap((size) => [{ who: "galahad", size, galahad: true, look: fieldLook(GALAHAD_FIELD, size, true) }, { who: "ada", size, galahad: false, look: fieldLook(knightField("ada"), size, false) }]),
+    // His lance: where its halves fall in the square at a zoom, and its width, light and colour along it.
+    lance: { ...GALAHAD_LANCE, lines: [0.94, 0.86, 1].map((zoom) => ({ zoom, halves: lanceLine(GALAHAD_FIELD, zoom) })), along: [-0.5, 0, 0.125, 0.25, 0.5, 0.75, 0.9375, 1, 1.5].map((u) => ({ u, ...lanceAt(u) })) },
     stroke: { ...FIELD_STROKE, lights: [14, 18, 34, 50, 96, 160].map((size) => ({ size, light: strokeLight(size) })) },
     motion: FIELD_MOTION,
     knightMotion: Object.fromEntries((Object.keys(FIELD_MOTION) as OrbMood[]).map((mood) => [mood, fieldMotion(mood, true)])),
