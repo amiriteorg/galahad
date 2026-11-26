@@ -10,6 +10,8 @@ import { button, dot, kbd, retryFailed } from "./ui/controls.ts";
 import { openSheet } from "./ui/dialog.ts";
 import { h, isMac, isTyping, replace, Scope } from "./ui/dom.ts";
 import { icon } from "./ui/icons.ts";
+import { knightFace, orb } from "./ui/orb.ts";
+import { knightOfCaller } from "./lib/roster.ts";
 import { type Command, isPaletteOpen, openPalette } from "./ui/palette.ts";
 import { toast } from "./ui/toast.ts";
 import { activityView } from "./views/activity.ts";
@@ -111,8 +113,13 @@ export function renderShell(root: HTMLElement, base: ShellBase): { dispose(): vo
     },
     onNewAction(action: ActionView) {
       if (current === "inbox") return;
-      toast(action.class === "delete" ? "Galahad asks to delete something" : "Galahad asks your leave", {
+      // Who asks, by name and with their orb, still: a knight while its task runs, else Galahad (his loops are his).
+      const knight = knightOfCaller(action.by);
+      const mate = knight ? live.team.value?.teammates.find((one) => one.id === knight) : undefined;
+      const who = knight ? (mate?.name ?? knight) : "Galahad";
+      toast(action.class === "delete" ? `${who} asks to delete something` : `${who} asks your leave`, {
         description: `${action.connector}.${action.tool}: ${action.target}`,
+        lead: knight ? knightFace({ id: knight, profile: mate?.avatar, size: 28 }) : orb({ size: 28 }),
         action: { label: "Review", run: () => ctx.navigate("inbox") },
         duration: 12_000,
       });
